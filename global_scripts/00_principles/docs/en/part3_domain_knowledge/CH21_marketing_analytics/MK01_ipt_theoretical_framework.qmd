@@ -1,0 +1,276 @@
+---
+title: "MK01: Inter-Purchase Time (IPT) Theoretical Framework"
+subtitle: "Comprehensive theoretical foundation for understanding and analyzing customer purchase timing patterns"
+chapter: "CH20"
+category: "marketing_knowledge"
+number: "MK01"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "domain_knowledge"
+law: "Marketing Analytics"
+article-number: "Knowledge Article 1"
+related_to:
+  - "D01_dna_analysis"
+  - "D02_filtered_customer_views"
+  - "MP030_vectorization_principle"
+  - "R050_data_table_vectorization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Knowledge Article 1: IPT Theoretical Framework {#overview}
+
+## Section 1: Definition and Importance {#definition}
+
+### Subsection 1: Core Definition {#core-def}
+
+Inter-Purchase Time (IPT) represents the elapsed time between consecutive purchases made by the same customer. This metric provides fundamental insights into customer purchasing patterns, loyalty, and lifecycle stage.
+
+### Subsection 2: Theoretical Importance {#importance}
+
+1. **Customer Behavior Modeling**: IPT is a core metric in understanding the temporal aspects of customer purchase behavior
+2. **Purchasing Rhythm**: Reveals natural purchasing cycles for different customer segments
+3. **Predictive Analytics Foundation**: Forms the basis for predicting next purchase timing
+4. **Churn Risk Indicator**: Extended IPTs beyond customer norms may signal potential churn
+
+## Section 2: Statistical Distribution of IPT {#distributions}
+
+### Subsection 1: Common Distributions {#common-dist}
+
+IPT typically follows specific statistical distributions:
+
+#### Exponential Distribution {#exponential}
+- Common in frequent purchase categories
+- Memoryless property suitable for random purchasing
+- Parameter: λ (rate parameter)
+
+#### Weibull Distribution {#weibull}
+- More flexible than exponential
+- Captures both increasing and decreasing failure rates
+- Parameters: k (shape), λ (scale)
+
+#### Log-normal Distribution {#lognormal}
+- Suitable when IPT data is right-skewed
+- Natural for multiplicative processes
+- Parameters: μ (mean of log), σ (std of log)
+
+#### Gamma Distribution {#gamma}
+- Useful for modeling waiting times with positive skew
+- Generalizes exponential distribution
+- Parameters: α (shape), β (rate)
+
+## Section 3: Advanced IPT Metrics {#advanced-metrics}
+
+### Subsection 1: Time-Normalized IPT {#time-normalized}
+
+Accounts for overall changes in purchasing frequency across the customer base, allowing for comparative analysis across time periods.
+
+```r
+# Time normalization calculation
+normalized_ipt <- ipt / mean_population_ipt_at_time
+```
+
+### Subsection 2: Category-Specific IPT {#category-specific}
+
+Measures IPT within specific product categories to identify cross-category purchasing relationships.
+
+```r
+# Category-specific IPT
+category_ipt <- customer_data %>%
+  group_by(customer_id, product_category) %>%
+  arrange(purchase_date) %>%
+  mutate(ipt = as.numeric(difftime(purchase_date, lag(purchase_date), units = "days")))
+```
+
+### Subsection 3: Conditional IPT {#conditional}
+
+IPT conditioned on customer attributes, purchase value, or contextual factors.
+
+### Subsection 4: Coefficient of Variation {#cv-ipt}
+
+Measures IPT consistency; lower values indicate more predictable purchasing patterns.
+
+```r
+cv_ipt <- sd(ipt, na.rm = TRUE) / mean(ipt, na.rm = TRUE)
+```
+
+## Section 4: Statistical Models {#models}
+
+### Subsection 1: Survival Analysis {#survival}
+
+#### Kaplan-Meier Estimator {#kaplan-meier}
+Non-parametric method to estimate the survival function:
+```r
+library(survival)
+km_fit <- survfit(Surv(ipt, event) ~ 1, data = customer_data)
+```
+
+#### Cox Proportional Hazards Model {#cox}
+Assesses how covariates affect the hazard rate:
+```r
+cox_model <- coxph(Surv(ipt, event) ~ age + segment + clv, data = customer_data)
+```
+
+#### Accelerated Failure Time Models {#aft}
+Directly model the expected time until the next purchase:
+```r
+aft_model <- survreg(Surv(ipt, event) ~ age + segment, dist = "weibull")
+```
+
+### Subsection 2: Hidden Markov Models {#hmm}
+
+Models customers moving through different latent states with varying propensities to purchase.
+
+```r
+library(depmixS4)
+hmm_model <- depmix(ipt ~ 1, data = customer_data, nstates = 3)
+fitted_hmm <- fit(hmm_model)
+```
+
+### Subsection 3: Point Process Models {#point-process}
+
+#### Hawkes Process {#hawkes}
+Captures self-exciting nature of purchases where recent purchases increase likelihood of future purchases.
+
+#### Poisson Process {#poisson}
+Models randomly occurring events with a constant rate:
+```r
+poisson_rate <- n_purchases / observation_period
+```
+
+### Subsection 4: Bayesian Approaches {#bayesian}
+
+Incorporate prior knowledge about customer behavior into IPT models, especially valuable for customers with limited purchase history.
+
+```r
+library(brms)
+bayesian_ipt <- brm(ipt ~ segment + (1|customer_id), 
+                    data = customer_data,
+                    family = Gamma(link = "log"),
+                    prior = prior(normal(0, 10), class = Intercept))
+```
+
+## Section 5: Business Applications {#applications}
+
+### Subsection 1: Segmentation Strategies {#segmentation}
+
+#### Frequency-Based Segmentation {#freq-segment}
+Group customers based on average IPT:
+```r
+segments <- customer_data %>%
+  group_by(customer_id) %>%
+  summarise(avg_ipt = mean(ipt, na.rm = TRUE)) %>%
+  mutate(segment = cut(avg_ipt, 
+                       breaks = c(0, 7, 30, 90, Inf),
+                       labels = c("Daily", "Weekly", "Monthly", "Occasional")))
+```
+
+#### Consistency-Based Segmentation {#consistency-segment}
+Group based on IPT variability:
+```r
+consistency_segments <- customer_data %>%
+  group_by(customer_id) %>%
+  summarise(cv_ipt = sd(ipt, na.rm = TRUE) / mean(ipt, na.rm = TRUE)) %>%
+  mutate(segment = cut(cv_ipt,
+                       breaks = c(0, 0.5, 1, Inf),
+                       labels = c("Consistent", "Variable", "Erratic")))
+```
+
+#### Trend-Based Segmentation {#trend-segment}
+Group based on changes in IPT over time.
+
+### Subsection 2: Campaign Timing Optimization {#campaign-timing}
+
+Determine optimal timing for marketing interventions based on expected IPT patterns:
+
+```r
+optimal_contact_time <- predicted_next_purchase - lead_time
+```
+
+### Subsection 3: Inventory Management {#inventory}
+
+Adjust inventory levels based on aggregate IPT distributions for different product categories.
+
+### Subsection 4: Early Warning Systems {#early-warning}
+
+Detect significant deviations from expected IPT to identify at-risk customers:
+
+```r
+at_risk <- current_ipt > (expected_ipt * 1.5)
+```
+
+### Subsection 5: CLV Calculation {#clv}
+
+Incorporate IPT distributions into CLV models for more accurate forecasting:
+
+```r
+clv <- sum(expected_revenue * discount_factor^expected_ipt)
+```
+
+## Section 6: Theoretical Challenges {#challenges}
+
+### Subsection 1: Right-Censoring {#right-censoring}
+
+Customers who haven't made a subsequent purchase may do so in the future; their true IPT is unknown.
+
+### Subsection 2: Left-Truncation {#left-truncation}
+
+Missing information about purchases before the observation period begins.
+
+### Subsection 3: Seasonal Effects {#seasonal}
+
+Separating seasonal patterns from true changes in customer behavior.
+
+### Subsection 4: Product Life Cycle Effects {#lifecycle}
+
+Distinguishing between changes in IPT due to customer behavior versus product lifecycle stage.
+
+### Subsection 5: Multi-Category Interactions {#multi-category}
+
+Modeling how purchases in one category affect IPT in other categories.
+
+## Section 7: Special Cases {#special-cases}
+
+### Subsection 1: Multiple Orders in a Single Day {#same-day}
+
+When a customer makes multiple purchases on the same day, theoretical considerations include:
+
+1. **Temporal Granularity**: Determining the appropriate time scale (days vs. hours) based on business context
+2. **Representative Timestamp**: Using the earliest purchase time to represent the day's purchase activity
+3. **Micro-Patterns**: Analyzing within-day purchasing patterns as a separate phenomenon from day-to-day patterns
+4. **Aggregation Approaches**: Theoretical justification for using minimum time vs. weighted average time
+
+### Subsection 2: Implementation Example {#implementation}
+
+```r
+# Aggregate multiple daily orders to earliest time
+daily_aggregated <- customer_data %>%
+  group_by(customer_id, date = as.Date(purchase_time)) %>%
+  summarise(
+    first_time_by_date = min(purchase_time),
+    n_orders = n(),
+    total_value = sum(order_value),
+    .groups = "drop"
+  ) %>%
+  arrange(customer_id, date) %>%
+  group_by(customer_id) %>%
+  mutate(
+    ipt = as.numeric(difftime(first_time_by_date, 
+                              lag(first_time_by_date), 
+                              units = "days"))
+  )
+```
+
+## Section 8: Conclusion {#conclusion}
+
+Inter-Purchase Time analysis provides a theoretical foundation for understanding customer behavior over time. By combining IPT analysis with other customer metrics, organizations can develop sophisticated models of customer behavior that drive effective marketing strategies and operational decisions.
+
+---
+
+*This theoretical framework establishes IPT as a fundamental metric in customer analytics, providing the mathematical and statistical foundation for advanced marketing applications.*

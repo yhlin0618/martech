@@ -1,0 +1,210 @@
+---
+
+title: "D02_06: Application Module Consumers"
+subtitle: "UI modules that consume D02 derivation outputs"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_06"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D02_04_dna_integration"
+  - "D02_05_execution"
+implements:
+  - "DM_R049": "Derivation Consumer Documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_06: Application Module Consumers {#overview}
+
+This task documents which application UI modules consume the outputs from the D02 Customer View Filtering derivation. This completes the data flow traceability from ETL -> DRV -> APP.
+
+## Output-to-Module Mapping {#mapping}
+
+| D02 Output Table | Consuming Module | Component Location |
+|------------------|------------------|-------------------|
+| `df_sales_by_customer_{key}` | microCustomer2 | `micro/microCustomer/` |
+| `df_sales_by_customer_{key}` | microDNADistribution | `micro/microDNA/` |
+| `df_customer_complete_{key}` | microMacroKPI | `micro/microMacroKPI/` |
+| `df_sales_{key}` | reportIntegration | `report/reportIntegration/` |
+
+## Primary Consuming Modules {#modules}
+
+### microCustomer2
+
+**Location**: `global_scripts/10_rshinyapp_components/micro/microCustomer/microCustomer2.R`
+
+**Purpose**: Customer analysis visualization module for the Shiny application.
+
+**Tables Consumed**:
+- `df_sales_by_customer_{condition_key}` - Customer aggregated data
+
+**Data Access Pattern**:
+```nsql
+# Pattern: Load customer data filtered by UI inputs
+QUERY df_sales_by_customer
+  FILTER BY: source_filter, time_condition, product_line_id_filter, state_filter
+  COLLECT TO: customer_data
+```
+
+### microDNADistribution
+
+**Location**: `global_scripts/10_rshinyapp_components/micro/microDNA/microDNADistribution.R`
+
+**Purpose**: DNA distribution visualization showing customer segment breakdown.
+
+**Tables Consumed**:
+- `df_sales_by_customer_{condition_key}` joined with DNA profiles
+- `df_customer_complete_{condition_key}` - Complete customer view
+
+### microMacroKPI
+
+**Location**: `global_scripts/10_rshinyapp_components/micro/microMacroKPI/`
+
+**Purpose**: KPI summary module displaying key customer metrics.
+
+**Tables Consumed**:
+- `df_customer_complete_{condition_key}` - Aggregated KPIs
+
+### reportIntegration
+
+**Location**: `global_scripts/10_rshinyapp_components/report/reportIntegration/`
+
+**Purpose**: Report generation module for customer analysis exports.
+
+**Tables Consumed**:
+- `df_sales_{condition_key}` - Full sales data for reporting
+- `df_sales_by_customer_{condition_key}` - Customer summary for reporting
+
+## Data Flow Diagram {#data-flow}
+
+```
+                    D02 Derivation Pipeline
+                           │
+    ┌──────────────────────┼──────────────────────┐
+    │                      │                      │
+    ▼                      ▼                      ▼
+┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐
+│df_sales_     │  │df_sales_by_     │  │df_customer_      │
+│{condition}   │  │customer_{cond}  │  │complete_{cond}   │
+└──────┬───────┘  └────────┬────────┘  └────────┬─────────┘
+       │                   │                    │
+       └───────────────────┼────────────────────┘
+                           │
+                    ┌──────┴──────┐
+                    │ app_data    │
+                    │ (DuckDB)    │
+                    └──────┬──────┘
+                           │
+    ┌─────────┬────────────┼────────────┬─────────┐
+    │         │            │            │         │
+    ▼         ▼            ▼            ▼         ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+│micro   │ │micro   │ │micro   │ │report  │ │other   │
+│Customer│ │DNA     │ │MacroKPI│ │Integ.  │ │modules │
+└────────┘ └────────┘ └────────┘ └────────┘ └────────┘
+```
+
+## Module Data Access Patterns {#usage}
+
+### Filter-Based Query (NSQL)
+
+```nsql
+# Pattern: Query filtered views using UI input values
+ACCESS_PATTERN filter_query:
+  # Build condition key from UI inputs
+  condition_key: CONCAT(
+    input.source, '_',
+    input.time_horizon, '_',
+    input.product_line, '_',
+    LOWER(input.region)
+  )
+
+  # Query specific view
+  QUERY:
+    FROM processed_data.filtered.df_sales_by_customer_{condition_key}
+    COLLECT TO customer_data
+```
+
+### Dynamic Filter Query (NSQL)
+
+```nsql
+# Pattern: Query with filter columns
+ACCESS_PATTERN dynamic_filter:
+  QUERY:
+    FROM processed_data.filtered.df_sales_by_customer
+
+    FILTER:
+      source_filter = input.source
+      time_condition = input.time_horizon
+      product_line_id_filter = CAST(input.product_line AS INTEGER)
+      state_filter = input.region
+
+    COLLECT TO customer_data
+```
+
+### Complete Customer Query (NSQL)
+
+```nsql
+# Pattern: Load complete customer data with DNA
+ACCESS_PATTERN complete_customer:
+  condition_key: build_condition_key(input)
+
+  QUERY:
+    FROM app_data.df_customer_complete_{condition_key}
+
+    SELECT:
+      customer_id
+      transaction_count, total_spent
+      r_label, f_label, m_label
+      nes_status, dna_segment
+      clv
+
+    COLLECT TO complete_customer_data
+```
+
+## Impact Analysis {#impact}
+
+When modifying D02 outputs, the following modules will be affected:
+
+| Change Type | Affected Modules | Required Actions |
+|-------------|-----------------|------------------|
+| Column rename in filtered views | ALL modules | Update column references |
+| New filter dimension added | microCustomer2 | Add UI input control |
+| Schema change in customer views | microDNADistribution | Update data processing |
+| Condition key format change | ALL modules | Update key generation |
+| View removal | ALL | Critical: requires major refactoring |
+
+## UI Filter Controls {#ui-controls}
+
+Modules typically implement these filter controls:
+
+| Filter | UI Type | Values |
+|--------|---------|--------|
+| `source` | selectInput | amazon, ebay, retail, cbz |
+| `time_horizon` | selectInput | now, m1year, m1quarter, m1month |
+| `product_line` | selectInput | 0 (All), 1, 2, 3... |
+| `region` | selectInput | ALL, CA, NY, TX... |
+
+## Principle Compliance {#compliance}
+
+This documentation implements **DM_R049 (Derivation Consumer Documentation)** by:
+
+1. **Output-Consumer Mapping**: Every output table is mapped to its consumers
+2. **Module Location**: Full paths provided in `10_rshinyapp_components/`
+3. **Data Flow Visualization**: ASCII diagram showing complete flow
+4. **Impact Analysis**: Change impact documented for maintenance
+
+## Related Documentation
+
+- [D02_05_execution.qmd](D02_05_execution.qmd) - Master execution flow
+- [D02_04_dna_integration.qmd](D02_04_dna_integration.qmd) - DNA integration
+- [D02_03_customer_views.qmd](D02_03_customer_views.qmd) - Customer aggregation
+- [DM_R049](../../../part1_principles/CH02_data_management/rules/DM_R049_derivation_consumer_documentation.qmd) - Consumer documentation requirement

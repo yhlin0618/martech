@@ -1,0 +1,1062 @@
+---
+id: "DF005"
+title: "Application Data"
+type: "data-flow"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "DF004": "Processing Operations"
+  - "MP0052": "Unidirectional Data Flow"
+relates_to:
+  - "R009": "UI-Server-Defaults Triple"
+  - "MP0044": "Functor-Module Correspondence"
+  - "R072": "Component ID Consistency"
+  - "R100": "Database Access Tbl Rule"
+---
+
+# DF05: Application Data
+
+## Core Principle
+
+Application data operations prepare **UI-optimized consumption data**, transforming processed business insights into formats specifically designed for interactive applications, dashboards, and real-time user experiences.
+
+## Purpose and Scope
+
+### What Application Data Does
+- **UI performance optimization**: Pre-aggregate data for fast dashboard loading
+- **Component-specific views**: Create data structures matching UI component needs
+- **Real-time calculation prep**: Optimize data for interactive filters and selections
+- **Mobile-friendly formatting**: Ensure data works across devices and screen sizes
+- **Caching strategy implementation**: Create cacheable data structures for performance
+- **API endpoint preparation**: Format data for microservice consumption
+
+### What Application Data Does NOT Do
+- **Business logic calculations**: No KPIs or metrics (handled in DF04)
+- **Data quality fixes**: No validation or cleansing (handled in DF03)
+- **Real-time updates**: No live data streaming (handled at application runtime)
+- **User-specific personalization**: No individual user customizations (handled in application layer)
+
+## Layer Position in Pipeline
+
+```mermaid
+graph LR
+    A[raw_data] --> B[staged_data]
+    B --> C[transformed_data]
+    C --> D[cleansed_data]
+    D --> E[processed_data]
+    E --> F[app_data]
+    
+    F -.-> F1["Application Layer<br/>• UI optimization<br/>• Component views<br/>• Performance caching<br/>• API preparation"]
+    
+    style F fill:#f3e5f5
+    style F1 fill:#f3e5f5
+```
+
+**Input**: `processed_data.duckdb` (Layer 5)  
+**Output**: `app_data.duckdb` (Layer 6)  
+**Directory**: `app_data/`
+
+## UI Component Data Optimization
+
+### 1. Dashboard Summary Views
+
+Create pre-aggregated data for dashboard KPI displays:
+
+```r
+#' Generate dashboard summary data
+#' 
+#' Creates optimized summary data for dashboard KPI cards and charts
+#'
+generate_dashboard_summaries <- function(processed_conn, app_conn) {
+  
+  # Executive summary metrics
+  exec_summary <- list()
+  
+  # Customer metrics summary
+  customer_analytics <- tbl2(processed_conn, "customer_analytics") %>% collect()
+  
+  exec_summary$customer_metrics <- customer_analytics %>%
+    dplyr::summarise(
+      total_customers = dplyr::n(),
+      active_customers = sum(customer_activity_status %in% c("Highly Active", "Active"), na.rm = TRUE),
+      high_value_customers = sum(customer_value_tier == "High Value", na.rm = TRUE),
+      champions = sum(customer_segment_rfm == "Champions", na.rm = TRUE),
+      
+      # Activity rates
+      activity_rate = round(100 * active_customers / total_customers, 1),
+      high_value_rate = round(100 * high_value_customers / total_customers, 1),
+      champion_rate = round(100 * champions / total_customers, 1),
+      
+      # Monetary metrics
+      total_customer_value = sum(monetary_total, na.rm = TRUE),
+      avg_customer_value = round(mean(monetary_total, na.rm = TRUE), 2),
+      median_customer_value = round(median(monetary_total, na.rm = TRUE), 2),
+      
+      # Engagement metrics
+      avg_frequency = round(mean(frequency_orders, na.rm = TRUE), 1),
+      avg_recency_days = round(mean(recency_days, na.rm = TRUE), 0),
+      
+      # Metadata
+      last_updated = Sys.time(),
+      data_version = "DF05_dashboard_v1.0"
+    )
+  
+  # Product metrics summary
+  product_analytics <- tbl2(processed_conn, "product_analytics") %>% collect()
+  
+  exec_summary$product_metrics <- product_analytics %>%
+    dplyr::summarise(
+      total_products = dplyr::n(),
+      star_performers = sum(performance_tier == "Star Performer", na.rm = TRUE),
+      products_in_growth = sum(lifecycle_stage == "Growth", na.rm = TRUE),
+      underperformers = sum(performance_tier %in% c("Underperformer", "Poor Performer"), na.rm = TRUE),
+      
+      # Performance rates
+      star_performer_rate = round(100 * star_performers / total_products, 1),
+      growth_stage_rate = round(100 * products_in_growth / total_products, 1),
+      underperformer_rate = round(100 * underperformers / total_products, 1),
+      
+      # Revenue metrics
+      total_product_revenue = sum(total_revenue, na.rm = TRUE),
+      avg_product_revenue = round(mean(total_revenue, na.rm = TRUE), 2),
+      top_product_revenue = max(total_revenue, na.rm = TRUE),
+      
+      # Market metrics
+      avg_products_per_customer = round(mean(unique_customers, na.rm = TRUE), 1),
+      total_units_sold = sum(total_quantity_sold, na.rm = TRUE),
+      
+      # Metadata
+      last_updated = Sys.time(),
+      data_version = "DF05_dashboard_v1.0"
+    )
+  
+  # Time-series summary (recent trends)
+  monthly_metrics <- tbl2(processed_conn, "monthly_metrics") %>% 
+    collect() %>%
+    dplyr::arrange(desc(month_start)) %>%
+    dplyr::slice_head(n = 12)  # Last 12 months
+  
+  exec_summary$trend_metrics <- monthly_metrics %>%
+    dplyr::summarise(
+      # Current month vs previous month
+      current_month_revenue = dplyr::first(total_revenue),
+      previous_month_revenue = dplyr::nth(total_revenue, 2),
+      mom_growth_rate = round(dplyr::first(revenue_mom_growth), 1),
+      
+      # Current month vs year ago
+      yoy_growth_rate = round(dplyr::first(revenue_yoy_growth), 1),
+      
+      # 12-month aggregates
+      twelve_month_revenue = sum(total_revenue, na.rm = TRUE),
+      twelve_month_orders = sum(total_orders, na.rm = TRUE),
+      twelve_month_customers = sum(unique_customers, na.rm = TRUE),
+      
+      # Averages
+      avg_monthly_revenue = round(mean(total_revenue, na.rm = TRUE), 2),
+      avg_monthly_orders = round(mean(total_orders, na.rm = TRUE), 0),
+      
+      # Trends
+      revenue_trend_direction = dplyr::case_when(
+        mom_growth_rate > 5 ~ "Strong Growth",
+        mom_growth_rate > 0 ~ "Growth", 
+        mom_growth_rate > -5 ~ "Stable",
+        TRUE ~ "Declining"
+      ),
+      
+      # Metadata
+      last_updated = Sys.time(),
+      data_version = "DF05_dashboard_v1.0"
+    )
+  
+  # Write summary tables to app database
+  DBI::dbWriteTable(app_conn, "dashboard_customer_summary", exec_summary$customer_metrics,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "dashboard_product_summary", exec_summary$product_metrics,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "dashboard_trend_summary", exec_summary$trend_metrics,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Dashboard summaries generated: customer, product, trend metrics")
+  return(exec_summary)
+}
+```
+
+### 2. Component-Specific Data Views
+
+Create data views optimized for specific UI components:
+
+```r
+#' Generate component-specific data views
+#' 
+#' Creates data structures optimized for specific Shiny UI components
+#'
+generate_component_views <- function(processed_conn, app_conn) {
+  
+  component_views <- list()
+  
+  # Customer DNA Distribution Component Data
+  customer_analytics <- tbl2(processed_conn, "customer_analytics") %>% collect()
+  
+  component_views$dna_distribution <- customer_analytics %>%
+    dplyr::select(
+      customer_id = customer_profile_email,
+      segment = customer_segment_rfm,
+      value_tier = customer_value_tier,
+      activity_status = customer_activity_status,
+      rfm_score,
+      recency_score,
+      frequency_score,
+      monetary_score,
+      total_spent = monetary_total,
+      order_count = frequency_orders,
+      last_order_days = recency_days
+    ) %>%
+    dplyr::mutate(
+      # Create display-friendly categories
+      spending_category = dplyr::case_when(
+        total_spent >= quantile(total_spent, 0.9, na.rm = TRUE) ~ "Top 10%",
+        total_spent >= quantile(total_spent, 0.75, na.rm = TRUE) ~ "Top 25%", 
+        total_spent >= quantile(total_spent, 0.5, na.rm = TRUE) ~ "Top 50%",
+        total_spent > 0 ~ "Bottom 50%",
+        TRUE ~ "No Purchases"
+      ),
+      
+      frequency_category = dplyr::case_when(
+        order_count >= 10 ~ "High Frequency (10+)",
+        order_count >= 5 ~ "Medium Frequency (5-9)",
+        order_count >= 2 ~ "Low Frequency (2-4)", 
+        order_count == 1 ~ "Single Purchase",
+        TRUE ~ "No Purchases"
+      ),
+      
+      recency_category = dplyr::case_when(
+        last_order_days <= 30 ~ "Recent (30 days)",
+        last_order_days <= 90 ~ "Moderate (90 days)",
+        last_order_days <= 180 ~ "Old (180 days)",
+        last_order_days <= 365 ~ "Very Old (1 year)",
+        TRUE ~ "Ancient (1+ years)"
+      ),
+      
+      # Component metadata
+      component_id = "microDNADistribution",
+      last_updated = Sys.time(),
+      data_version = "DF05_component_v1.0"
+    )
+  
+  # Customer Profile Component Data
+  component_views$customer_profile <- customer_analytics %>%
+    dplyr::select(
+      customer_id = customer_profile_email,
+      first_name = customer_profile_first_name,
+      last_name = customer_profile_last_name,
+      full_name = customer_profile_full_name,
+      registration_date = customer_profile_registration_date,
+      segment = customer_segment_rfm,
+      value_tier = customer_value_tier,
+      activity_status = customer_activity_status,
+      
+      # Key metrics for profile display
+      total_spent = monetary_total,
+      total_orders = frequency_orders,
+      avg_order_value = monetary_average,
+      last_order_date,
+      days_since_last_order = recency_days,
+      customer_tenure_days,
+      
+      # Scores for profile visualization
+      recency_score,
+      frequency_score,
+      monetary_score,
+      rfm_score
+    ) %>%
+    dplyr::mutate(
+      # UI display formatting
+      total_spent_formatted = scales::dollar(total_spent),
+      avg_order_value_formatted = scales::dollar(avg_order_value),
+      tenure_formatted = paste(round(customer_tenure_days / 365.25, 1), "years"),
+      
+      # Status indicators for UI
+      status_color = dplyr::case_when(
+        activity_status == "Highly Active" ~ "success",
+        activity_status == "Active" ~ "primary",
+        activity_status == "Moderately Active" ~ "warning",
+        TRUE ~ "danger"
+      ),
+      
+      value_color = dplyr::case_when(
+        value_tier == "High Value" ~ "success",
+        value_tier == "Medium Value" ~ "primary", 
+        value_tier == "Regular Value" ~ "info",
+        TRUE ~ "secondary"
+      ),
+      
+      # Component metadata
+      component_id = "microCustomer",
+      last_updated = Sys.time(),
+      data_version = "DF05_component_v1.0"
+    )
+  
+  # Time Series Chart Component Data
+  monthly_metrics <- tbl2(processed_conn, "monthly_metrics") %>%
+    collect() %>%
+    dplyr::arrange(month_start) %>%
+    dplyr::slice_tail(n = 24)  # Last 24 months for charts
+  
+  component_views$time_series_chart <- monthly_metrics %>%
+    dplyr::select(
+      date = month_start,
+      revenue = total_revenue,
+      orders = total_orders,
+      customers = unique_customers,
+      avg_order_value,
+      revenue_growth = revenue_mom_growth,
+      orders_growth = orders_mom_growth
+    ) %>%
+    dplyr::mutate(
+      # Format for chart display
+      date_label = format(date, "%b %Y"),
+      revenue_formatted = scales::dollar(revenue, scale = 1e-3, suffix = "K"),
+      orders_formatted = scales::comma(orders),
+      
+      # Growth indicators
+      revenue_growth_direction = ifelse(revenue_growth > 0, "up", "down"),
+      orders_growth_direction = ifelse(orders_growth > 0, "up", "down"),
+      
+      # Component metadata
+      component_id = "macroTrend",
+      chart_type = "time_series",
+      last_updated = Sys.time(),
+      data_version = "DF05_component_v1.0"
+    )
+  
+  # Product Performance Table Component Data
+  product_analytics <- tbl2(processed_conn, "product_analytics") %>%
+    collect() %>%
+    dplyr::arrange(desc(total_revenue)) %>%
+    dplyr::slice_head(n = 100)  # Top 100 products for table
+  
+  component_views$product_table <- product_analytics %>%
+    dplyr::select(
+      product_id = order_detail_product_id,
+      product_name = product_a_name,
+      category = product_info_category,
+      brand = product_info_brand,
+      revenue = total_revenue,
+      units_sold = total_quantity_sold,
+      orders = total_orders,
+      customers = unique_customers,
+      avg_price = avg_unit_price,
+      performance_tier,
+      lifecycle_stage,
+      revenue_percentile,
+      recommendation
+    ) %>%
+    dplyr::mutate(
+      # Format for table display
+      revenue_formatted = scales::dollar(revenue),
+      units_formatted = scales::comma(units_sold),
+      avg_price_formatted = scales::dollar(avg_price),
+      revenue_rank = dplyr::row_number(),
+      
+      # Status indicators
+      performance_color = dplyr::case_when(
+        performance_tier == "Star Performer" ~ "success",
+        performance_tier == "Strong Performer" ~ "primary",
+        performance_tier == "Average Performer" ~ "info",
+        performance_tier == "Underperformer" ~ "warning",
+        TRUE ~ "danger"
+      ),
+      
+      # Component metadata
+      component_id = "productPerformanceTable",
+      last_updated = Sys.time(),
+      data_version = "DF05_component_v1.0"
+    )
+  
+  # Write component views to app database
+  DBI::dbWriteTable(app_conn, "component_dna_distribution", component_views$dna_distribution,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "component_customer_profile", component_views$customer_profile,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "component_time_series", component_views$time_series_chart,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "component_product_table", component_views$product_table,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Component views generated: DNA distribution, customer profile, time series, product table")
+  return(component_views)
+}
+```
+
+### 3. Filter and Search Optimization
+
+Create optimized lookup tables for interactive filtering:
+
+```r
+#' Generate filter and search optimization tables
+#' 
+#' Creates lookup tables and indexes for fast filtering and search
+#'
+generate_filter_optimization <- function(processed_conn, app_conn) {
+  
+  filter_tables <- list()
+  
+  # Customer filter options
+  customer_analytics <- tbl2(processed_conn, "customer_analytics") %>% collect()
+  
+  filter_tables$customer_filters <- list(
+    segments = customer_analytics %>%
+      dplyr::count(customer_segment_rfm, name = "customer_count") %>%
+      dplyr::arrange(desc(customer_count)) %>%
+      dplyr::mutate(
+        label = customer_segment_rfm,
+        value = customer_segment_rfm,
+        category = "Customer Segment"
+      ),
+    
+    value_tiers = customer_analytics %>%
+      dplyr::count(customer_value_tier, name = "customer_count") %>%
+      dplyr::arrange(desc(customer_count)) %>%
+      dplyr::mutate(
+        label = customer_value_tier,
+        value = customer_value_tier,
+        category = "Value Tier"
+      ),
+    
+    activity_status = customer_analytics %>%
+      dplyr::count(customer_activity_status, name = "customer_count") %>%
+      dplyr::arrange(desc(customer_count)) %>%
+      dplyr::mutate(
+        label = customer_activity_status,
+        value = customer_activity_status,
+        category = "Activity Status"
+      )
+  )
+  
+  # Product filter options
+  product_analytics <- tbl2(processed_conn, "product_analytics") %>% collect()
+  
+  filter_tables$product_filters <- list(
+    categories = product_analytics %>%
+      dplyr::count(product_info_category, name = "product_count") %>%
+      dplyr::arrange(desc(product_count)) %>%
+      dplyr::mutate(
+        label = product_info_category,
+        value = product_info_category,
+        category = "Product Category"
+      ),
+    
+    brands = product_analytics %>%
+      dplyr::count(product_info_brand, name = "product_count") %>%
+      dplyr::arrange(desc(product_count)) %>%
+      dplyr::mutate(
+        label = product_info_brand,
+        value = product_info_brand,
+        category = "Brand"
+      ),
+    
+    performance_tiers = product_analytics %>%
+      dplyr::count(performance_tier, name = "product_count") %>%
+      dplyr::arrange(desc(product_count)) %>%
+      dplyr::mutate(
+        label = performance_tier,
+        value = performance_tier,
+        category = "Performance Tier"
+      )
+  )
+  
+  # Date range options for time-based filtering
+  monthly_metrics <- tbl2(processed_conn, "monthly_metrics") %>% collect()
+  
+  filter_tables$date_ranges <- monthly_metrics %>%
+    dplyr::summarise(
+      min_date = min(month_start, na.rm = TRUE),
+      max_date = max(month_start, na.rm = TRUE),
+      available_months = dplyr::n(),
+      
+      # Pre-defined ranges
+      last_3_months = max_date - months(2),
+      last_6_months = max_date - months(5), 
+      last_12_months = max_date - months(11),
+      year_to_date = as.Date(paste0(format(max_date, "%Y"), "-01-01"))
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(last_3_months, last_6_months, last_12_months, year_to_date),
+      names_to = "range_name",
+      values_to = "start_date"
+    ) %>%
+    dplyr::mutate(
+      label = dplyr::case_when(
+        range_name == "last_3_months" ~ "Last 3 Months",
+        range_name == "last_6_months" ~ "Last 6 Months",
+        range_name == "last_12_months" ~ "Last 12 Months",
+        range_name == "year_to_date" ~ "Year to Date"
+      ),
+      end_date = max_date,
+      category = "Date Range"
+    )
+  
+  # Search indexes for autocomplete
+  filter_tables$search_indexes <- list(
+    customers = customer_analytics %>%
+      dplyr::select(
+        id = customer_profile_email,
+        label = customer_profile_full_name,
+        secondary = customer_segment_rfm,
+        search_text = paste(customer_profile_full_name, customer_profile_email, customer_segment_rfm)
+      ) %>%
+      dplyr::mutate(
+        type = "customer",
+        url = paste0("/customer/", id)
+      ),
+    
+    products = product_analytics %>%
+      dplyr::select(
+        id = order_detail_product_id,
+        label = product_a_name,
+        secondary = product_info_category,
+        search_text = paste(product_a_name, product_info_category, product_info_brand)
+      ) %>%
+      dplyr::mutate(
+        type = "product",
+        url = paste0("/product/", id)
+      )
+  )
+  
+  # Write filter tables to app database
+  
+  # Combine all customer filters
+  all_customer_filters <- dplyr::bind_rows(filter_tables$customer_filters) %>%
+    dplyr::mutate(filter_type = "customer", last_updated = Sys.time())
+  
+  # Combine all product filters  
+  all_product_filters <- dplyr::bind_rows(filter_tables$product_filters) %>%
+    dplyr::mutate(filter_type = "product", last_updated = Sys.time())
+  
+  # Combine search indexes
+  all_search_indexes <- dplyr::bind_rows(filter_tables$search_indexes) %>%
+    dplyr::mutate(last_updated = Sys.time())
+  
+  DBI::dbWriteTable(app_conn, "filter_options_customer", all_customer_filters,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "filter_options_product", all_product_filters,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "filter_date_ranges", filter_tables$date_ranges,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "search_index", all_search_indexes,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Filter optimization tables generated: customer, product, date, search")
+  return(filter_tables)
+}
+```
+
+## Performance Optimization Strategies
+
+### 1. Caching and Precomputation
+
+Implement strategic caching for expensive operations:
+
+```r
+#' Generate performance-optimized cache tables
+#' 
+#' Creates cached aggregations and precomputed views for fast loading
+#'
+generate_performance_cache <- function(processed_conn, app_conn) {
+  
+  cache_tables <- list()
+  
+  # Customer segment aggregates (for fast segment switching)
+  customer_analytics <- tbl2(processed_conn, "customer_analytics") %>% collect()
+  
+  cache_tables$segment_aggregates <- customer_analytics %>%
+    dplyr::group_by(customer_segment_rfm) %>%
+    dplyr::summarise(
+      customer_count = dplyr::n(),
+      total_revenue = sum(monetary_total, na.rm = TRUE),
+      avg_revenue_per_customer = mean(monetary_total, na.rm = TRUE),
+      median_revenue = median(monetary_total, na.rm = TRUE),
+      
+      avg_frequency = mean(frequency_orders, na.rm = TRUE),
+      avg_recency = mean(recency_days, na.rm = TRUE),
+      
+      # Distribution percentiles for charts
+      revenue_p25 = quantile(monetary_total, 0.25, na.rm = TRUE),
+      revenue_p50 = quantile(monetary_total, 0.50, na.rm = TRUE),
+      revenue_p75 = quantile(monetary_total, 0.75, na.rm = TRUE),
+      revenue_p90 = quantile(monetary_total, 0.90, na.rm = TRUE),
+      
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      # Percentage of total customers
+      customer_percentage = round(100 * customer_count / sum(customer_count), 1),
+      revenue_percentage = round(100 * total_revenue / sum(total_revenue), 1),
+      
+      # Format for display
+      total_revenue_formatted = scales::dollar(total_revenue, scale = 1e-3, suffix = "K"),
+      avg_revenue_formatted = scales::dollar(avg_revenue_per_customer),
+      
+      cache_type = "segment_summary",
+      last_updated = Sys.time()
+    )
+  
+  # Monthly trend cache (for fast chart rendering)
+  monthly_metrics <- tbl2(processed_conn, "monthly_metrics") %>%
+    collect() %>%
+    dplyr::arrange(month_start)
+  
+  cache_tables$monthly_trend_cache <- monthly_metrics %>%
+    dplyr::select(
+      date = month_start,
+      revenue = total_revenue,
+      orders = total_orders,
+      customers = unique_customers,
+      aov = avg_order_value
+    ) %>%
+    dplyr::mutate(
+      # Calculate moving averages for smooth trend lines
+      revenue_3ma = slider::slide_dbl(revenue, mean, .before = 2, .complete = FALSE),
+      orders_3ma = slider::slide_dbl(orders, mean, .before = 2, .complete = FALSE),
+      
+      # Format for JSON serialization (for chart APIs)
+      chart_data = purrr::pmap(list(date, revenue, orders, customers, aov), function(d, r, o, c, a) {
+        list(
+          x = as.character(d),
+          revenue = r,
+          orders = o,
+          customers = c,
+          aov = round(a, 2)
+        )
+      }),
+      
+      cache_type = "monthly_trend",
+      last_updated = Sys.time()
+    )
+  
+  # Product performance cache (top products for quick loading)
+  product_analytics <- tbl2(processed_conn, "product_analytics") %>% collect()
+  
+  cache_tables$top_products_cache <- product_analytics %>%
+    dplyr::arrange(desc(total_revenue)) %>%
+    dplyr::slice_head(n = 50) %>%  # Top 50 for quick display
+    dplyr::select(
+      product_id = order_detail_product_id,
+      product_name = product_a_name,
+      category = product_info_category,
+      revenue = total_revenue,
+      units = total_quantity_sold,
+      performance_tier
+    ) %>%
+    dplyr::mutate(
+      revenue_rank = dplyr::row_number(),
+      revenue_formatted = scales::dollar(revenue, scale = 1e-3, suffix = "K"),
+      units_formatted = scales::comma(units),
+      
+      # Create sparkline data (simplified trend)
+      sparkline_data = revenue_rank,  # Placeholder - would be actual trend data
+      
+      cache_type = "top_products",
+      last_updated = Sys.time()
+    )
+  
+  # Write cache tables
+  DBI::dbWriteTable(app_conn, "cache_segment_aggregates", cache_tables$segment_aggregates,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "cache_monthly_trends", cache_tables$monthly_trend_cache,
+                   overwrite = TRUE, append = FALSE)  
+  DBI::dbWriteTable(app_conn, "cache_top_products", cache_tables$top_products_cache,
+                   overwrite = TRUE, append = FALSE)
+  
+  # Create indexes for fast lookups
+  tryCatch({
+    DBI::dbExecute(app_conn, "CREATE INDEX IF NOT EXISTS idx_cache_segment ON cache_segment_aggregates(customer_segment_rfm)")
+    DBI::dbExecute(app_conn, "CREATE INDEX IF NOT EXISTS idx_cache_date ON cache_monthly_trends(date)")
+    DBI::dbExecute(app_conn, "CREATE INDEX IF NOT EXISTS idx_cache_product ON cache_top_products(product_id)")
+  }, error = function(e) {
+    # Index creation is optional for performance
+  })
+  
+  message("Performance cache generated: segment aggregates, monthly trends, top products")
+  return(cache_tables)
+}
+```
+
+### 2. API Endpoint Data Preparation
+
+Format data for microservice and API consumption:
+
+```r
+#' Generate API endpoint data structures
+#' 
+#' Creates JSON-optimized data structures for API endpoints
+#'
+generate_api_endpoints <- function(processed_conn, app_conn) {
+  
+  api_data <- list()
+  
+  # Customer API endpoint data
+  customer_analytics <- tbl2(processed_conn, "customer_analytics") %>% collect()
+  
+  api_data$customers_api <- customer_analytics %>%
+    dplyr::transmute(
+      customer_id = customer_profile_email,
+      profile = purrr::pmap(list(
+        customer_profile_first_name,
+        customer_profile_last_name,
+        customer_profile_registration_date,
+        customer_segment_rfm,
+        customer_value_tier
+      ), function(fn, ln, rd, seg, tier) {
+        list(
+          firstName = fn,
+          lastName = ln,
+          registrationDate = as.character(rd),
+          segment = seg,
+          valueTier = tier
+        )
+      }),
+      
+      metrics = purrr::pmap(list(
+        monetary_total,
+        frequency_orders,
+        recency_days,
+        rfm_score
+      ), function(total, freq, rec, rfm) {
+        list(
+          totalSpent = total,
+          orderCount = freq,
+          daysSinceLastOrder = rec,
+          rfmScore = rfm
+        )
+      }),
+      
+      scores = purrr::pmap(list(
+        recency_score,
+        frequency_score,
+        monetary_score
+      ), function(r, f, m) {
+        list(
+          recency = r,
+          frequency = f,
+          monetary = m
+        )
+      }),
+      
+      # API metadata
+      endpoint = "customers",
+      version = "v1",
+      last_updated = as.character(Sys.time())
+    )
+  
+  # Product API endpoint data
+  product_analytics <- tbl2(processed_conn, "product_analytics") %>% collect()
+  
+  api_data$products_api <- product_analytics %>%
+    dplyr::transmute(
+      product_id = order_detail_product_id,
+      
+      details = purrr::pmap(list(
+        product_a_name,
+        product_info_category,
+        product_info_brand
+      ), function(name, cat, brand) {
+        list(
+          name = name,
+          category = cat,
+          brand = brand
+        )
+      }),
+      
+      performance = purrr::pmap(list(
+        total_revenue,
+        total_quantity_sold,
+        unique_customers,
+        performance_tier,
+        recommendation
+      ), function(rev, qty, cust, tier, rec) {
+        list(
+          revenue = rev,
+          unitsSold = qty,
+          customerCount = cust,
+          performanceTier = tier,
+          recommendation = rec
+        )
+      }),
+      
+      metrics = purrr::pmap(list(
+        revenue_percentile,
+        quantity_percentile,
+        customer_penetration_percentile,
+        performance_score
+      ), function(rp, qp, cp, ps) {
+        list(
+          revenuePercentile = round(rp, 3),
+          quantityPercentile = round(qp, 3),
+          customerPercentile = round(cp, 3),
+          overallScore = round(ps, 3)
+        )
+      }),
+      
+      # API metadata
+      endpoint = "products",
+      version = "v1",
+      last_updated = as.character(Sys.time())
+    )
+  
+  # Time series API endpoint data
+  monthly_metrics <- tbl2(processed_conn, "monthly_metrics") %>%
+    collect() %>%
+    dplyr::arrange(month_start)
+  
+  api_data$timeseries_api <- monthly_metrics %>%
+    dplyr::transmute(
+      date = as.character(month_start),
+      
+      metrics = purrr::pmap(list(
+        total_revenue,
+        total_orders,
+        unique_customers,
+        avg_order_value
+      ), function(rev, ord, cust, aov) {
+        list(
+          revenue = rev,
+          orders = ord,
+          customers = cust,
+          averageOrderValue = round(aov, 2)
+        )
+      }),
+      
+      growth = purrr::pmap(list(
+        revenue_mom_growth,
+        orders_mom_growth,
+        revenue_yoy_growth,
+        orders_yoy_growth
+      ), function(rmom, omom, ryoy, oyoy) {
+        list(
+          revenueMonthOverMonth = ifelse(is.na(rmom), null, round(rmom, 1)),
+          ordersMonthOverMonth = ifelse(is.na(omom), null, round(omom, 1)),
+          revenueYearOverYear = ifelse(is.na(ryoy), null, round(ryoy, 1)),
+          ordersYearOverYear = ifelse(is.na(oyoy), null, round(oyoy, 1))
+        )
+      }),
+      
+      # API metadata
+      endpoint = "timeseries",
+      version = "v1",
+      last_updated = as.character(Sys.time())
+    )
+  
+  # Write API data as JSON-serializable tables
+  DBI::dbWriteTable(app_conn, "api_customers", api_data$customers_api,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "api_products", api_data$products_api,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(app_conn, "api_timeseries", api_data$timeseries_api,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("API endpoint data generated: customers, products, timeseries")
+  return(api_data)
+}
+```
+
+## Complete Application Data Workflow
+
+### Integrated Application Data Generation
+
+```r
+#' Run complete application data generation workflow
+#' 
+#' Generates all application-optimized data structures
+#'
+run_complete_application_data_generation <- function(app_config) {
+  
+  # Connect to databases
+  processed_conn <- dbConnect_from_list("processed_data")
+  app_conn <- dbConnect_from_list("app_data")
+  
+  app_results <- list()
+  start_time <- Sys.time()
+  
+  message("Starting application data generation workflow...")
+  
+  # Step 1: Dashboard Summaries
+  if (app_config$enable_dashboard_summaries) {
+    tryCatch({
+      result <- generate_dashboard_summaries(processed_conn, app_conn)
+      app_results$dashboard_summaries <- list(success = TRUE, data = result)
+      message("✓ Dashboard summaries generated")
+    }, error = function(e) {
+      app_results$dashboard_summaries <- list(success = FALSE, error = e$message)
+      warning("✗ Dashboard summaries failed: ", e$message)
+    })
+  }
+  
+  # Step 2: Component Views
+  if (app_config$enable_component_views) {
+    tryCatch({
+      result <- generate_component_views(processed_conn, app_conn)
+      app_results$component_views <- list(success = TRUE, data = result)
+      message("✓ Component views generated")
+    }, error = function(e) {
+      app_results$component_views <- list(success = FALSE, error = e$message)
+      warning("✗ Component views failed: ", e$message)
+    })
+  }
+  
+  # Step 3: Filter Optimization
+  if (app_config$enable_filter_optimization) {
+    tryCatch({
+      result <- generate_filter_optimization(processed_conn, app_conn)
+      app_results$filter_optimization <- list(success = TRUE, data = result)
+      message("✓ Filter optimization generated")
+    }, error = function(e) {
+      app_results$filter_optimization <- list(success = FALSE, error = e$message)
+      warning("✗ Filter optimization failed: ", e$message)
+    })
+  }
+  
+  # Step 4: Performance Cache
+  if (app_config$enable_performance_cache) {
+    tryCatch({
+      result <- generate_performance_cache(processed_conn, app_conn)
+      app_results$performance_cache <- list(success = TRUE, data = result)
+      message("✓ Performance cache generated")
+    }, error = function(e) {
+      app_results$performance_cache <- list(success = FALSE, error = e$message)
+      warning("✗ Performance cache failed: ", e$message)
+    })
+  }
+  
+  # Step 5: API Endpoints
+  if (app_config$enable_api_endpoints) {
+    tryCatch({
+      result <- generate_api_endpoints(processed_conn, app_conn)
+      app_results$api_endpoints <- list(success = TRUE, data = result)
+      message("✓ API endpoints generated")
+    }, error = function(e) {
+      app_results$api_endpoints <- list(success = FALSE, error = e$message)
+      warning("✗ API endpoints failed: ", e$message)
+    })
+  }
+  
+  # Close connections
+  DBI::dbDisconnect(processed_conn)
+  DBI::dbDisconnect(app_conn)
+  
+  # Generate application data summary
+  end_time <- Sys.time()
+  generation_duration <- as.numeric(difftime(end_time, start_time, units = "mins"))
+  
+  generate_app_data_report(app_results, generation_duration)
+  
+  return(app_results)
+}
+
+#' Generate application data summary report
+generate_app_data_report <- function(results, duration_mins) {
+  
+  total_operations <- length(results)
+  successful_operations <- sum(sapply(results, function(x) x$success))
+  failed_operations <- total_operations - successful_operations
+  
+  message("\n=== APPLICATION DATA SUMMARY ===")
+  message("Total operations: ", total_operations)
+  message("Successful: ", successful_operations)
+  message("Failed: ", failed_operations)
+  message("Duration: ", round(duration_mins, 2), " minutes")
+  
+  if (failed_operations > 0) {
+    message("\nFailed operations:")
+    for (op_name in names(results)) {
+      if (!results[[op_name]]$success) {
+        message("  - ", op_name, ": ", results[[op_name]]$error)
+      }
+    }
+  }
+  
+  # Create detailed report
+  report_data <- data.frame(
+    operation = names(results),
+    success = sapply(results, function(x) x$success),
+    error = sapply(results, function(x) x$error %||% ""),
+    stringsAsFactors = FALSE
+  )
+  
+  write.csv(report_data, "app_data/application_data_report.csv", row.names = FALSE)
+  message("\nDetailed report saved to: app_data/application_data_report.csv")
+}
+
+# Example application data configuration
+default_app_config <- list(
+  enable_dashboard_summaries = TRUE,
+  enable_component_views = TRUE,
+  enable_filter_optimization = TRUE,
+  enable_performance_cache = TRUE,
+  enable_api_endpoints = TRUE
+)
+
+# Usage
+# app_results <- run_complete_application_data_generation(default_app_config)
+```
+
+## Integration with Shiny Applications
+
+The application data layer provides optimized data structures that integrate seamlessly with Shiny applications following the UI-Server-Defaults Triple pattern ([@R009]):
+
+### 1. Component Data Access Pattern
+
+```r
+# In Shiny server functions
+customer_data <- reactive({
+  tbl2(app_conn, "component_customer_profile") %>%
+    filter(customer_id == input$selected_customer) %>%
+    collect()
+})
+
+# Component uses optimized pre-formatted data
+output$customer_display <- renderText({
+  req(customer_data())
+  customer_data()$total_spent_formatted[1]
+})
+```
+
+### 2. Performance-Optimized Filtering
+
+```r
+# Fast filter options from pre-computed tables
+observe({
+  filter_options <- tbl2(app_conn, "filter_options_customer") %>%
+    filter(category == "Customer Segment") %>%
+    collect()
+  
+  updateSelectInput(session, "segment_filter",
+                   choices = setNames(filter_options$value, filter_options$label))
+})
+```
+
+### 3. Cached Dashboard Loading
+
+```r
+# Dashboard loads from pre-aggregated cache
+dashboard_metrics <- reactive({
+  tbl2(app_conn, "dashboard_customer_summary") %>% collect()
+})
+
+# Instant loading of KPI cards
+output$total_customers <- renderValueBox({
+  valueBox(
+    value = dashboard_metrics()$total_customers,
+    subtitle = "Total Customers",
+    color = "blue"
+  )
+})
+```
+
+## Conclusion
+
+Application data operations complete the data pipeline by creating UI-optimized, performance-focused data structures that enable responsive, interactive applications. By pre-computing aggregations, optimizing for component consumption, and implementing strategic caching, the application layer ensures excellent user experience while maintaining data integrity throughout the pipeline.
+
+The app_data layer serves as the final consumption point that bridges processed business intelligence with real-time user interactions in modern web applications.

@@ -1,0 +1,107 @@
+---
+title: "TD_P001: 部署模式原則"
+subtitle: "建立一致、安全、可重現的部署模式"
+chapter: "CH05"
+category: "principle"
+number: "TD_P001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "測試部署法"
+article-number:
+  number: 1
+  title: "部署模式原則"
+derives_from:
+  - "CH00.MP003: Operating Modes"
+  - "CH00.MP006: Data Source Hierarchy"
+influences:
+  - "TD_P002: Dual Testing Approach"
+  - "CH01.SO_P003: App Construction Principles"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第一條：部署模式原則 {#overview}
+
+**測試部署法第一條（部署模式原則）**
+
+此原則建立一致的部署模式，確保部署完整、可重現、且維持安全邊界。
+
+:::{.callout-important}
+## 核心原則
+部署必須遵循一致模式：**完整包含 APP_MODE 依賴、明確的部署資產清單、以及安全的環境變數管理**。
+:::
+
+# 第一項：部署範圍 {#deployment-scope}
+
+## 第一款：APP_MODE 完整包含 {#app-mode-inclusion}
+
+凡 APP_MODE 會 `source()` 的檔案與目錄，必須完整包含在部署包中。
+
+最小包含清單（依 APP_MODE 初始化）：
+
+1. `scripts/global_scripts/02_db_utils`
+2. `scripts/global_scripts/04_utils`
+3. `scripts/global_scripts/03_config`
+4. `scripts/global_scripts/10_rshinyapp_components`
+5. `scripts/global_scripts/11_rshinyapp_utils`
+6. 其他 APP_MODE 使用的設定與資料檔
+
+## 第二款：部署資產清單 {#deployment-manifest}
+
+部署應以 manifest 或明確檔案清單作為資產來源：
+
+```r
+rsconnect::writeManifest(appDir = ".")
+```
+
+# 第二項：部署流程 {#deployment-process}
+
+## 第一款：部署前驗證 {#pre-deployment}
+
+部署前必須確認 APP_MODE 可成功初始化：
+
+```r
+OPERATION_MODE <- "APP_MODE"
+source("scripts/global_scripts/00_principles/sc_initialization_app_mode.R")
+```
+
+## 第二款：環境設定 {#environment-config}
+
+敏感設定僅能來自環境變數或平台設定：
+
+- `.env` 僅限本地開發
+- 佈署平台需設定環境變數
+
+# 第三項：安全原則 {#security}
+
+- 不可提交明文密鑰
+- 生產資料庫盡量 read-only
+- 僅包含必要檔案與最小依賴
+
+# 第四項：版本與部署 {#version-control}
+
+- 重要部署建議標籤（tag）
+- 部署紀錄需包含版本與時間
+
+# 檢查清單 {#checklist}
+
+:::{.callout-note}
+## 部署模式檢查
+- [ ] APP_MODE 依賴檔案已完整納入
+- [ ] manifest.json 已更新
+- [ ] 環境變數已配置
+- [ ] 機密未寫入程式碼
+- [ ] 生產存取為唯讀或受限
+- [ ] 部署前測試通過
+:::
+
+# 結語 {#conclusion}
+
+遵循部署模式原則，可確保部署可重現、依賴完整、安全可控。

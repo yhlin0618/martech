@@ -1,0 +1,460 @@
+---
+title: "UI_P009: 單行UI元素原則"
+subtitle: "介面元素，特別是導航和控制組件，應儘可能在單行上呈現其內容（圖標、文字和其他指示器），並保持一致的高度，以最大化可讀性、保持視覺一致性，並優化螢幕空間利用"
+chapter: "CH04"
+category: "principle"
+number: "UI_P009"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI組件法"
+article: 
+  number: 9
+  title: "單行UI元素原則"
+related_to:
+  - "MP067: UI分離元原則"
+  - "UI_P005: CSS優於條件控制"
+  - "DEV_P014: 性能優化原則"
+  - "UI_R002: Shiny模組ID處理"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第九條：單行UI元素原則 {#overview}
+
+**UI組件法第九條（單行UI元素原則）**
+
+介面元素，特別是導航和控制組件，應儘可能在單行上呈現其內容（圖標、文字和其他指示器），並保持一致的高度，以最大化可讀性、保持視覺一致性，並優化螢幕空間利用。
+
+:::{.callout-important}
+## 核心原則
+透過維持單行佈局和一致高度的介面元素，創建更清晰、更可掃描的用戶介面，優化垂直空間利用，並提高整體視覺一致性。
+:::
+
+# 第一項：實施原理 {#implementation-rationale}
+
+## 第一款：單行佈局優勢 {#single-line-advantages}
+
+**採用單行元素的理由：**
+
+1. **可讀性**：單行元素創建更清潔、更易掃描的介面，用戶可以快速解析
+2. **空間效率**：UI元素的水平佈局保留垂直空間，這在網頁應用中往往更受限制，特別是在行動裝置上
+3. **資訊密度**：單行呈現允許更高的資訊密度而不犧牲清晰度
+4. **視覺一致性**：維持一致的佈局，在統一高度對齊元素可改善視覺層次並創建更專業的外觀
+5. **認知處理**：相關元素放置在同一行並保持一致高度被視為屬於一起，提高介面的直觀理解
+6. **水平對齊**：具有一致高度的元素創建清晰的水平對齊，改善可掃描性和視覺組織
+
+**佈局比較：**
+
+| 佈局類型 | 垂直空間使用 | 可掃描性 | 視覺一致性 | 響應式適應 |
+|----------|--------------|----------|------------|------------|
+| 單行 | ✅ 最小化 | ✅ 優秀 | ✅ 高度一致 | ⚠️ 需要斷點 |
+| 多行 | ❌ 浪費空間 | ❌ 較差 | ❌ 不一致 | ✅ 自然換行 |
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：導航元素 {#navigation-elements}
+
+**導航元素實施標準：**
+
+- 將圖標和對應標籤放在同一行
+- 使用flexbox的`flex-direction: row`和`align-items: center`進行適當對齊
+- 應用`white-space: nowrap`防止尷尬的文字換行
+- 在圖標和文字之間使用適當間距（通常5-8px）
+- 為所有導航元素設定一致高度（通常40px）
+- 應用與元素高度相同的line-height以確保垂直居中
+
+**實施範例：**
+
+```css
+/* 具有一致高度的單行導航欄元素 */
+.navbar .nav-item .nav-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  white-space: nowrap;
+  height: 40px;          /* 一致高度 */
+  min-height: 40px;
+  line-height: 40px;     /* 匹配高度以對齊文字 */
+  padding-top: 0;        /* 移除預設內距 */
+  padding-bottom: 0;
+  vertical-align: middle;
+}
+
+.navbar .nav-item .nav-link i {
+  margin-right: 5px;
+  display: inline-flex;
+  line-height: inherit;
+  vertical-align: middle;
+}
+```
+
+## 第二款：表單元素 {#form-elements}
+
+**表單元素佈局標準：**
+
+- 當螢幕空間允許時，水平對齊標籤和輸入
+- 對於較長的表單，考慮使用網格佈局以保持對齊
+- 在所有表單元素間使用一致的間距
+
+**實施範例：**
+
+```r
+# 良好實施 - 單行表單元素
+fluidRow(
+  column(3, 
+    tags$label("客戶名稱：", style = "line-height: 34px;")
+  ),
+  column(9,
+    textInput(ns("customer_name"), NULL, placeholder = "輸入客戶名稱")
+  )
+)
+
+# 避免 - 多行表單元素
+div(
+  tags$label("客戶名稱："),
+  br(),  # 避免強制換行
+  textInput(ns("customer_name"), NULL)
+)
+```
+
+# 第三項：組件類型實施 {#component-type-implementation}
+
+## 第一款：按鈕群組 {#button-groups}
+
+**按鈕群組標準：**
+
+- 儘可能將按鈕保持在單行
+- 對於響應式設計，定義受控斷點以進行換行
+- 在按鈕群組間保持一致高度
+
+**實施範例：**
+
+```css
+/* 具有圖標和文字在同一行的按鈕 */
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;          /* 標準按鈕高度 */
+}
+
+.btn-with-icon i {
+  margin-right: 6px;
+}
+
+/* 按鈕群組容器 */
+.btn-group-horizontal {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  flex-wrap: nowrap;     /* 防止換行 */
+}
+```
+
+## 第二款：資料表格和清單 {#data-tables-lists}
+
+**表格和清單標準：**
+
+- 確保欄位標題和資料適當對齊
+- 使用省略號(...)進行文字截斷而非允許換行
+- 對於有許多欄位的表格考慮水平捲動
+
+**實施範例：**
+
+```css
+/* 表格欄位文字截斷 */
+.table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;      /* 設定最大寬度 */
+}
+
+/* 清單項目單行 */
+.list-item {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+```
+
+## 第三款：狀態指示器 {#status-indicators}
+
+**狀態指示器標準：**
+
+- 將狀態圖標/徽章放在其描述文字的同一行
+- 有效使用顏色和形狀以最小化所需文字
+- 在類似元素間保持一致定位
+
+**實施範例：**
+
+```r
+# 狀態指示器與文字在同一行
+div(
+  class = "status-indicator",
+  style = "display: flex; align-items: center; height: 32px;",
+  icon("circle", class = "text-success mr-2"),
+  span("線上", style = "line-height: 32px;")
+)
+```
+
+# 第四項：Shiny/bs4Dash實施 {#shiny-bs4dash-implementation}
+
+## 第一款：導航標籤實施 {#navbar-tab-implementation}
+
+**bs4Dash導航標籤模式：**
+
+```r
+# 良好實施 - 使用HTML的單行導航欄標籤以保持一致高度
+bs4Dash::navbarTab(
+  text = HTML(paste0(
+    '<span style="display:flex; align-items:center; height:40px; line-height:40px;">',
+    '<i class="fa fa-chart-line mr-1" style="display:inline-flex; margin-right:5px;"></i>',
+    '<span>分析</span>',
+    '</span>'
+  )),
+  tabName = "analysis_tab"
+)
+
+# 標準實施 - 讓系統處理佈局
+bs4Dash::navbarTab(
+  text = "分析", 
+  icon = icon("chart-line"),
+  tabName = "analysis_tab"
+)
+
+# 不良實施 - 跨多行分離元素
+div(
+  icon("chart-line"),
+  br(),
+  "分析"
+)
+```
+
+## 第二款：側邊欄選單實施 {#sidebar-menu-implementation}
+
+**側邊欄選單模式：**
+
+```r
+# 具有一致高度的側邊欄選單項目
+bs4Dash::menuItem(
+  text = "儀表板",
+  icon = icon("dashboard"),
+  tabName = "dashboard",
+  # 確保單行呈現
+  badgeLabel = "新",
+  badgeColor = "success"
+)
+
+# 自訂側邊欄項目與單行佈局
+div(
+  class = "sidebar-item",
+  style = "display: flex; align-items: center; height: 44px; padding: 0 20px;",
+  icon("users", style = "margin-right: 10px;"),
+  span("用戶管理"),
+  span(
+    class = "badge badge-primary ml-auto",
+    "12"
+  )
+)
+```
+
+# 第五項：JavaScript強化 {#javascript-reinforcement}
+
+## 第一款：動態佈局修正 {#dynamic-layout-fixes}
+
+**JavaScript佈局強化：**
+
+```js
+// 修正導航欄元素以確保一致高度
+$(document).ready(function() {
+  function fixNavbarLayout() {
+    // 所有導航欄元素的標準高度
+    const standardHeight = '40px';
+    
+    // 對導航欄項目應用一致高度和佈局
+    $('.navbar .nav-link, .navbarTab')
+      .css('display', 'flex')
+      .css('align-items', 'center')
+      .css('height', standardHeight)
+      .css('line-height', standardHeight);
+  }
+  
+  // 初始執行並在延遲後為動態內容執行
+  fixNavbarLayout();
+  setTimeout(fixNavbarLayout, 1000);
+});
+```
+
+## 第二款：響應式斷點處理 {#responsive-breakpoint-handling}
+
+**響應式調整：**
+
+```js
+// 響應式單行到多行轉換
+function handleResponsiveLayout() {
+  const screenWidth = $(window).width();
+  const breakpoint = 768; // 平板斷點
+  
+  if (screenWidth < breakpoint) {
+    // 行動裝置：允許換行
+    $('.nav-horizontal').css('flex-wrap', 'wrap');
+    $('.btn-group-horizontal').css('flex-direction', 'column');
+  } else {
+    // 桌面：強制單行
+    $('.nav-horizontal').css('flex-wrap', 'nowrap');
+    $('.btn-group-horizontal').css('flex-direction', 'row');
+  }
+}
+
+$(window).resize(handleResponsiveLayout);
+handleResponsiveLayout(); // 初始調用
+```
+
+# 第六項：完整實施範例 {#complete-implementation-example}
+
+## 第一款：導航欄完整實施 {#complete-navbar-implementation}
+
+**綜合導航欄範例：**
+
+```r
+# UI函數與單行導航
+navbarUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # 自訂CSS以確保單行佈局
+    tags$style(HTML(paste0(
+      "#", ns("navbar"), " .nav-link {",
+      "  display: flex;",
+      "  align-items: center;",
+      "  height: 40px;",
+      "  line-height: 40px;",
+      "  white-space: nowrap;",
+      "}",
+      "#", ns("navbar"), " .nav-link i {",
+      "  margin-right: 5px;",
+      "}"
+    ))),
+    
+    # 導航欄結構
+    bs4Dash::bs4DashNavbar(
+      id = ns("navbar"),
+      skin = "light",
+      status = "primary",
+      
+      # 左側選單項目
+      leftUI = tagList(
+        bs4Dash::navbarTab(
+          text = "儀表板",
+          icon = icon("dashboard"),
+          tabName = "dashboard"
+        ),
+        bs4Dash::navbarTab(
+          text = "報告",
+          icon = icon("file-alt"),
+          tabName = "reports"
+        )
+      ),
+      
+      # 右側選單項目
+      rightUI = tagList(
+        bs4Dash::navbarTab(
+          text = HTML(paste0(
+            '<span style="display:flex; align-items:center;">',
+            '<i class="fa fa-user mr-1"></i>',
+            '<span>個人檔案</span>',
+            '</span>'
+          )),
+          tabName = "profile"
+        )
+      )
+    )
+  )
+}
+```
+
+## 第二款：完整CSS解決方案 {#complete-css-solution}
+
+**綜合CSS實施：**
+
+```css
+/* 單行UI元素的完整CSS解決方案 */
+
+/* 基礎單行類別 */
+.single-line {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 導航元素 */
+.nav-single-line {
+  height: 40px;
+  line-height: 40px;
+  padding: 0 15px;
+}
+
+/* 表單元素 */
+.form-single-line {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* 按鈕群組 */
+.btn-group-single-line {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 狀態指示器 */
+.status-single-line {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: #f0f0f0;
+}
+
+/* 響應式調整 */
+@media (max-width: 768px) {
+  .single-line-responsive {
+    flex-wrap: wrap;
+  }
+  
+  .form-single-line {
+    grid-template-columns: 1fr;
+  }
+}
+```
+
+# 第七項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **實施 MP067（UI分離）**：透過將UI佈局關注點與邏輯分離
+2. **補充 UI_P005（CSS優於條件控制）**：使用CSS而非程式邏輯來控制佈局
+3. **支援 DEV_P014（性能優化）**：透過減少重排和重繪來優化渲染性能
+4. **增強 UI_R002（Shiny模組ID處理）**：確保模組間的一致UI行為
+5. **改善可用性**：透過一致的視覺呈現提高用戶體驗
+
+---
+
+*基於：UI組件法第九條*  
+*相關連結：[MP067 UI分離](../../CH00_fundamental_principles/meta_principles/MP067_ui_separation.qmd), [UI_P005 CSS優於條件控制](UI_P005_css_over_conditional_controls.qmd)*

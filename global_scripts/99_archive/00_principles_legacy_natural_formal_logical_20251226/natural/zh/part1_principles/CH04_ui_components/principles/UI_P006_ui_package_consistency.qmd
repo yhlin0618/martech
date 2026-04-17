@@ -1,0 +1,339 @@
+---
+title: "UI_P006: UI套件一致性原則"
+subtitle: "應用程式應透過標準化使用單一UI框架套件來維持UI組件一致性"
+chapter: "CH04"
+category: "principle"
+number: "UI_P006"
+date-created: "2025-04-05"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI組件法"
+article: 
+  number: 6
+  title: "UI套件一致性原則"
+related_to:
+  - "CH00.MP074: 套件一致性命名"
+  - "UI_P001: 自然語言UI"
+  - "UI_P004: 組件N元組模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第六條：UI套件一致性原則 {#overview}
+
+**UI組件法第六條（UI套件一致性原則）**
+
+應用程式應透過標準化使用單一UI框架套件來維持UI組件一致性，而非混合使用不同UI套件的組件或創建已有組件的自訂實作。
+
+:::{.callout-important}
+## 核心原則
+在整個應用程式中一致地使用來自單一UI框架套件的組件，以確保視覺一致性、開發效率和維護簡便性。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：UI套件一致性的優勢 {#benefits}
+
+採用一致的UI套件方法提供：
+
+1. **視覺一致性**：確保所有UI元素的外觀、行為和樣式統一
+2. **開發效率**：減少在不同組件API之間切換的認知負荷
+3. **維護簡便性**：集中依賴管理和更新至單一套件
+4. **效能優化**：避免載入多個重疊的UI框架
+5. **文件清晰性**：讓新開發者更容易上手，只需學習一個框架
+
+## 第二款：混合框架的常見問題 {#problems}
+
+混合使用UI框架會導致：
+
+- **不一致的視覺語言**：不同的樣式系統造成視覺不協調
+- **增加捆綁大小**：多個框架增加應用程式載入時間
+- **API混亂**：開發者必須記住不同的參數結構和命名慣例
+- **更新衝突**：框架更新可能彼此衝突
+- **測試複雜性**：不同框架需要不同的測試方法
+
+# 第二項：實作指南 {#implementation}
+
+## 第一款：主要框架選擇 {#framework-selection}
+
+根據應用程式需求選擇一個主要UI框架：
+
+**針對Shiny儀表板應用程式：**
+- `bs4Dash`：具有Bootstrap 4樣式的現代儀表板
+- `shinydashboard`：傳統儀表板佈局
+- `shinyMobile`：行動優先的響應式設計
+
+**選擇標準：**
+1. **功能需求**：確保框架支援所有需要的組件類型
+2. **視覺設計目標**：將框架美學與應用程式設計需求匹配
+3. **效能需求**：考慮框架開銷和渲染效能
+4. **團隊專業知識**：考慮團隊熟悉度和學習曲線
+
+## 第二款：組件使用指南 {#component-usage}
+
+### 總是使用框架原生組件 {#native-components}
+
+優先使用框架特定組件而非通用HTML或自訂實作：
+
+```r
+# ✅ 正確：使用bs4Dash原生組件
+bs4Dash::valueBox(
+  title = "客戶數量",
+  value = 1234,
+  icon = icon("users"),
+  color = "primary"
+)
+
+bs4Dash::box(
+  title = "分析結果",
+  status = "primary",
+  solidHeader = TRUE,
+  plotOutput("analysis_plot")
+)
+
+# ❌ 錯誤：當框架組件存在時使用通用HTML
+div(
+  class = "value-box",
+  h3("客戶數量"),
+  p("1234")
+)
+
+# ❌ 錯誤：使用不同框架組件
+shiny::wellPanel(
+  h3("分析結果"),
+  plotOutput("analysis_plot")
+)
+```
+
+### 框架特定實作範例 {#framework-examples}
+
+**bs4Dash框架：**
+```r
+# 儀表板結構
+bs4DashPage(
+  header = bs4DashNavbar(...),
+  sidebar = bs4DashSidebar(...),
+  body = bs4DashBody(...)
+)
+
+# 內容組件
+bs4Card(...)         # 取代 shiny::div()
+bs4ValueBox(...)     # 用於自訂值顯示
+bs4InfoBox(...)      # 用於指標顯示
+bs4TabItems(...)     # 用於分頁內容
+```
+
+**shinydashboard框架：**
+```r
+# 儀表板結構
+dashboardPage(
+  header = dashboardHeader(...),
+  sidebar = dashboardSidebar(...),
+  body = dashboardBody(...)
+)
+
+# 內容組件
+box(...)             # 取代 shiny::div()
+valueBox(...)        # 用於指標
+infoBox(...)         # 用於資訊顯示
+tabItems(...)        # 用於分頁內容
+```
+
+## 第三款：混合框架遷移 {#migration}
+
+當繼承混合UI組件的應用程式時：
+
+### 漸進式替換策略 {#incremental-replacement}
+
+1. **審計目前使用**：記錄所有UI組件及其框架
+2. **優先處理高影響區域**：從最可見或最常用的組件開始
+3. **創建遷移計劃**：將現有組件對應到主要框架等效組件
+4. **徹底測試**：確保替換組件維持功能性
+
+### 組件功能對應 {#feature-mapping}
+
+記錄跨框架的等效組件：
+
+```r
+# 從shinydashboard到bs4Dash的遷移對應
+migration_map <- list(
+  # 舊 -> 新
+  "dashboardPage"    = "bs4DashPage",
+  "dashboardHeader"  = "bs4DashNavbar", 
+  "dashboardSidebar" = "bs4DashSidebar",
+  "dashboardBody"    = "bs4DashBody",
+  "box"              = "bs4Card",
+  "valueBox"         = "bs4ValueBox",
+  "infoBox"          = "bs4InfoBox"
+)
+
+# ❌ 錯誤：遷移期間混合框架
+shinydashboard::valueBox(...)  # 在一個地方
+bs4Dash::valueBox(...)         # 在另一個地方
+
+# ✅ 正確：完全遷移到單一框架
+bs4Dash::valueBox(...)         # 到處都是
+```
+
+# 第三項：框架特定標準 {#framework-standards}
+
+## 第一款：bs4Dash標準 {#bs4dash-standards}
+
+當使用bs4Dash作為主要框架時：
+
+```r
+# 必需的匯入
+library(bs4Dash)
+library(shiny)
+
+# 標準頁面結構
+ui <- bs4DashPage(
+  title = "應用程式標題",
+  header = bs4DashNavbar(
+    title = bs4DashBrand("應用程式名稱"),
+    rightUi = dropdownMenu(...)
+  ),
+  sidebar = bs4DashSidebar(
+    sidebarMenu(
+      menuItem("儀表板", tabName = "dashboard"),
+      menuItem("分析", tabName = "analytics")
+    )
+  ),
+  body = bs4DashBody(
+    bs4TabItems(
+      bs4TabItem(
+        tabName = "dashboard",
+        fluidRow(
+          bs4Card(...)
+        )
+      )
+    )
+  )
+)
+
+# 一致的組件使用
+bs4ValueBox(...)    # 用於指標
+bs4InfoBox(...)     # 用於資訊
+bs4Card(...)        # 用於內容容器
+bs4Alert(...)       # 用於通知
+```
+
+## 第二款：組件一致性檢查清單 {#consistency-checklist}
+
+在添加任何UI組件之前，驗證：
+
+- [ ] 主要框架是否提供此組件？
+- [ ] 您是否使用框架的命名空間（例如，`bs4Dash::`前綴）？
+- [ ] 組件是否遵循框架的參數命名慣例？
+- [ ] 組件的樣式是否與框架的主題一致？
+
+# 第四項：例外和特殊情況 {#exceptions}
+
+## 第一款：授權例外 {#authorized-exceptions}
+
+在以下情況下允許有限的例外：
+
+### 缺少組件 {#missing-components}
+
+當主要框架缺少所需組件時：
+
+```r
+# 記錄例外和理由
+# 例外：bs4Dash不提供日曆組件
+# 使用外部套件直到原生組件可用
+shinyWidgets::airDatepickerInput(
+  inputId = "date_range",
+  label = "選擇日期範圍",
+  range = TRUE
+)
+```
+
+### 效能關鍵部分 {#performance-critical}
+
+當框架開銷明顯有問題時：
+
+```r
+# 例外：高頻更新需要最小的DOM操作
+# 在即時顯示中使用直接HTML以獲得效能
+div(
+  id = "realtime-counter",
+  class = "performance-critical",
+  # 最小HTML以獲得最大更新速度
+)
+```
+
+### 嵌入式外部應用程式 {#embedded-external}
+
+來自外部來源的自包含模組：
+
+```r
+# 例外：具有自己UI框架的第三方模組
+# 包含在iframe或隔離命名空間內
+plotlyOutput("external_chart")  # plotly有自己的UI系統
+```
+
+## 第二款：例外文件化 {#exception-documentation}
+
+所有例外必須記錄：
+
+1. **例外原因**：為什麼不能使用主要框架
+2. **替代組件**：使用什麼來替代
+3. **遷移計劃**：如何/何時解決例外
+4. **影響評估**：對視覺一致性和維護的影響
+
+# 第五項：測試和驗證 {#testing}
+
+## 第一款：UI一致性測試 {#ui-testing}
+
+定期驗證UI一致性：
+
+```r
+# 自動化UI框架一致性檢查
+check_ui_consistency <- function(ui_definition) {
+  # 提取所有UI組件
+  components <- extract_ui_components(ui_definition)
+  
+  # 識別框架來源
+  frameworks <- identify_frameworks(components)
+  
+  # 報告不一致性
+  if (length(frameworks) > 1) {
+    warning("檢測到多個UI框架：", paste(frameworks, collapse = ", "))
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+
+# 手動檢視清單
+ui_review_checklist <- list(
+  visual_consistency = "所有組件遵循相同的設計語言",
+  component_usage = "全程使用框架原生組件",
+  documentation = "例外正確記錄",
+  performance = "無不必要的框架載入"
+)
+```
+
+## 第二款：遷移驗證 {#migration-validation}
+
+當在框架間遷移時：
+
+1. **功能測試**：確保組件替換後所有功能都正常運作
+2. **視覺測試**：比較前後截圖以確保一致性
+3. **效能測試**：測量載入時間和渲染效能
+4. **使用者接受測試**：驗證使用者工作流程保持完整
+
+# 結論 {#conclusion}
+
+UI套件一致性原則通過標準化使用單一UI框架，確保應用程式維持視覺連貫性和開發效率。通過避免框架混合並遵循一致的實作模式，應用程式變得更可維護、更具效能且更用戶友好。
+
+---
+
+*基於：UI組件法第六條*  
+*相關：[MP074 套件一致性命名](../../CH00_fundamental_principles/05_terminology_standards/MP074_package_consistency_naming.qmd)、[UI_P004 組件N元組模式](UI_P004_component_ntuple_pattern.qmd)*

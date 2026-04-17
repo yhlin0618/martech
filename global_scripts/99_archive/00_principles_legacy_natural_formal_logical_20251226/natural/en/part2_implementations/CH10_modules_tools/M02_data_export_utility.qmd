@@ -1,0 +1,440 @@
+---
+title: "M02: Data Export Utility Module"
+subtitle: "Platform-independent data export module for various formats and destinations"
+chapter: "CH09"
+category: "module"
+number: "M02"
+date-created: "2025-04-09"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "module"
+law: "Modules & Tools Framework"
+article: "Module 2"
+related_to:
+  - "R038_platform_numbering_convention"
+  - "R040_implementation_naming_convention"
+  - "MP047_functional_programming"
+  - "R021_one_function_one_file"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Module 2: Data Export Utility {#overview}
+
+This module provides standardized functions for exporting analytical data to various formats (CSV, Excel, JSON) while applying platform-specific formatting, branding, and data transformations. It supports automated export schedules and customizable templates.
+
+## Section 1: Module Operations {#operations}
+
+### Subsection 1: Data Selection {#data-selection}
+
+Define which data to export:
+- Select specific tables or views
+- Apply filters based on date ranges, categories, or other criteria
+- Include calculated fields or aggregations
+
+### Subsection 2: Format Configuration {#format-config}
+
+Configure export format settings:
+- File format (CSV, Excel, JSON, PDF)
+- Encoding and localization settings
+- Header/footer customization
+- Branding elements
+
+### Subsection 3: Distribution Setup {#distribution}
+
+Configure how exports are distributed:
+- File system locations
+- Email recipients
+- Cloud storage destinations
+- FTP servers
+
+## Section 2: Core Functions {#core-functions}
+
+### Subsection 1: Generic Export Function {#generic-export}
+
+```r
+#' Export data to CSV format
+#'
+#' @param data Data frame to export
+#' @param export_path Path to save the exported file
+#' @param include_headers Logical, whether to include headers in export
+#' @param date_format Format string for date columns
+#' @param verbose Logical, whether to print progress messages
+#'
+#' @return Path to the exported file if successful, otherwise FALSE
+#'
+export_data_to_csv <- function(data, export_path, include_headers = TRUE, 
+                              date_format = "%Y-%m-%d", verbose = TRUE) {
+  if(verbose) message("Exporting data to CSV...")
+  
+  tryCatch({
+    # Process date columns
+    date_cols <- sapply(data, function(x) inherits(x, "Date") || inherits(x, "POSIXt"))
+    if(any(date_cols)) {
+      for(col in names(data)[date_cols]) {
+        data[[col]] <- format(data[[col]], format = date_format)
+      }
+    }
+    
+    # Create directory if it doesn't exist
+    dir.create(dirname(export_path), recursive = TRUE, showWarnings = FALSE)
+    
+    # Write to file
+    if(include_headers) {
+      write.csv(data, export_path, row.names = FALSE, quote = TRUE)
+    } else {
+      write.table(data, export_path, sep = ",", row.names = FALSE, 
+                 col.names = FALSE, quote = TRUE)
+    }
+    
+    if(verbose) message(paste0("Export complete: ", nrow(data), " records written to ", export_path))
+    
+    return(export_path)
+  }, error = function(e) {
+    message("Error exporting data to CSV: ", e$message)
+    return(FALSE)
+  })
+}
+```
+
+### Subsection 2: Excel Export Function {#excel-export}
+
+```r
+#' Export data to Excel format with formatting
+#'
+#' @param data Data frame to export
+#' @param export_path Path to save the Excel file
+#' @param sheet_name Name of the worksheet
+#' @param apply_formatting Logical, whether to apply formatting
+#' @param verbose Logical, whether to print progress messages
+#'
+#' @return Path to the exported file if successful, otherwise FALSE
+#'
+export_data_to_excel <- function(data, export_path, sheet_name = "Data",
+                                apply_formatting = TRUE, verbose = TRUE) {
+  if(verbose) message("Exporting data to Excel...")
+  
+  library(openxlsx)
+  
+  tryCatch({
+    # Create workbook
+    wb <- createWorkbook()
+    addWorksheet(wb, sheet_name)
+    
+    # Write data
+    writeData(wb, sheet_name, data)
+    
+    # Apply formatting if requested
+    if(apply_formatting) {
+      # Header style
+      header_style <- createStyle(
+        fontColour = "#FFFFFF",
+        fgFill = "#4472C4",
+        halign = "center",
+        valign = "center",
+        textDecoration = "bold"
+      )
+      addStyle(wb, sheet_name, header_style, 
+               rows = 1, cols = 1:ncol(data), 
+               gridExpand = TRUE)
+      
+      # Auto-width columns
+      setColWidths(wb, sheet_name, cols = 1:ncol(data), widths = "auto")
+    }
+    
+    # Save workbook
+    saveWorkbook(wb, export_path, overwrite = TRUE)
+    
+    if(verbose) message(paste0("Export complete: ", nrow(data), " records written to ", export_path))
+    return(export_path)
+    
+  }, error = function(e) {
+    message("Error exporting data to Excel: ", e$message)
+    return(FALSE)
+  })
+}
+```
+
+### Subsection 3: JSON Export Function {#json-export}
+
+```r
+#' Export data to JSON format
+#'
+#' @param data Data frame to export
+#' @param export_path Path to save the JSON file
+#' @param pretty Logical, whether to format JSON for readability
+#' @param verbose Logical, whether to print progress messages
+#'
+#' @return Path to the exported file if successful, otherwise FALSE
+#'
+export_data_to_json <- function(data, export_path, pretty = TRUE, verbose = TRUE) {
+  if(verbose) message("Exporting data to JSON...")
+  
+  library(jsonlite)
+  
+  tryCatch({
+    # Convert to JSON
+    json_data <- toJSON(data, pretty = pretty, auto_unbox = TRUE)
+    
+    # Create directory if needed
+    dir.create(dirname(export_path), recursive = TRUE, showWarnings = FALSE)
+    
+    # Write to file
+    writeLines(json_data, export_path)
+    
+    if(verbose) message(paste0("Export complete: ", nrow(data), " records written to ", export_path))
+    return(export_path)
+    
+  }, error = function(e) {
+    message("Error exporting data to JSON: ", e$message)
+    return(FALSE)
+  })
+}
+```
+
+## Section 3: Platform-Specific Implementations {#platform-specific}
+
+Each platform may have specific requirements for data exports:
+
+### Subsection 1: Amazon Platform (01/AMZ) {#amazon}
+
+```r
+#' Export Amazon sales data with platform-specific formatting
+#'
+#' @param start_date Start date for data export (YYYY-MM-DD)
+#' @param end_date End date for data export (YYYY-MM-DD)
+#' @param export_path Path to save the exported file
+#' @param include_headers Logical, whether to include headers in export
+#' @param verbose Logical, whether to print progress messages
+#'
+#' @return Path to the exported file if successful, otherwise FALSE
+#'
+export_amazon_sales_data <- function(start_date, end_date, export_path = NULL, 
+                                    include_headers = TRUE, verbose = TRUE) {
+  if(verbose) message("Starting Amazon sales data export...")
+  
+  # Set default export path if not provided
+  if(is.null(export_path)) {
+    export_dir <- file.path(get_root_path(), "exports")
+    if(!dir.exists(export_dir)) dir.create(export_dir, recursive = TRUE)
+    export_path <- file.path(export_dir, 
+                            paste0("amazon_sales_", format(Sys.Date(), "%Y%m%d"), ".csv"))
+  }
+  
+  tryCatch({
+    # Connect to database
+    conn <- dbConnect(duckdb::duckdb(), dbdir = "raw_data.duckdb", read_only = TRUE)
+    on.exit(dbDisconnect(conn, shutdown = TRUE))
+    
+    # Query Amazon-specific data
+    query <- sprintf("
+      SELECT
+        order_id,
+        customer_id,
+        customer_email,
+        order_time,
+        order_total,
+        order_status,
+        'amazon' AS marketplace,
+        'FBA' AS fulfillment_type,
+        shipping_method,
+        'USD' AS currency_code
+      FROM df_amazon_sales
+      WHERE order_time >= '%s' AND order_time <= '%s'
+      ORDER BY order_time DESC
+    ", start_date, end_date)
+    
+    data <- dbGetQuery(conn, query)
+    
+    if(nrow(data) == 0) {
+      warning("No data found for the specified date range")
+      return(FALSE)
+    }
+    
+    # Apply Amazon-specific formatting
+    data$order_time <- format(as.POSIXct(data$order_time), "%m/%d/%Y %H:%M:%S")
+    
+    # Add headers if requested
+    if(include_headers) {
+      headers <- c(
+        paste0("# Amazon Sales Data Export"),
+        paste0("# Date Range: ", start_date, " to ", end_date),
+        paste0("# Export Date: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+        paste0("# Records: ", nrow(data)),
+        ""
+      )
+      
+      writeLines(headers, export_path)
+      write.table(data, export_path, append = TRUE, sep = ",", 
+                  col.names = TRUE, row.names = FALSE, quote = TRUE)
+    } else {
+      write.csv(data, export_path, row.names = FALSE)
+    }
+    
+    if(verbose) message(paste0("Export complete: ", nrow(data), 
+                               " records written to ", export_path))
+    return(export_path)
+    
+  }, error = function(e) {
+    message("Error exporting Amazon data: ", e$message)
+    return(FALSE)
+  })
+}
+```
+
+### Subsection 2: eBay Platform (06/EBY) {#ebay}
+
+- Include eBay-specific identifiers
+- Format according to eBay reporting standards
+- Support eBay Seller Hub compatible formats
+
+### Subsection 3: Cyberbiz Platform (07/CBZ) {#cyberbiz}
+
+- Include Cyberbiz-specific identifiers
+- Format according to Cyberbiz reporting standards
+- Support specialized e-commerce reporting templates
+
+## Section 4: Module Execution {#execution}
+
+### Subsection 1: Main Export Function {#main-function}
+
+```r
+#' Execute data export module
+#'
+#' @param data_source Source of data to export
+#' @param format Export format (csv, excel, json)
+#' @param start_date Start date for data export
+#' @param end_date End date for data export
+#' @param export_path Path to save the exported file
+#' @param platform Platform-specific export (amazon, ebay, cyberbiz, generic)
+#' @param verbose Logical, whether to print progress messages
+#'
+#' @return Path to the exported file if successful, otherwise FALSE
+#'
+execute_data_export <- function(data_source, format = "csv", 
+                               start_date = NULL, end_date = NULL,
+                               export_path = NULL, platform = "generic",
+                               verbose = TRUE) {
+  
+  # Default date range if not provided
+  if(is.null(end_date)) end_date <- format(Sys.Date(), "%Y-%m-%d")
+  if(is.null(start_date)) start_date <- format(Sys.Date() - 30, "%Y-%m-%d")
+  
+  if(verbose) {
+    message("Executing data export module")
+    message(paste("Format:", format))
+    message(paste("Platform:", platform))
+    message(paste("Date range:", start_date, "to", end_date))
+  }
+  
+  # Execute platform-specific export
+  result <- switch(platform,
+    amazon = export_amazon_sales_data(start_date, end_date, export_path, verbose = verbose),
+    ebay = export_ebay_sales_data(start_date, end_date, export_path, verbose = verbose),
+    cyberbiz = export_cyberbiz_sales_data(start_date, end_date, export_path, verbose = verbose),
+    generic = {
+      # Get data from source
+      data <- fetch_data_from_source(data_source, start_date, end_date)
+      
+      # Export based on format
+      switch(format,
+        csv = export_data_to_csv(data, export_path, verbose = verbose),
+        excel = export_data_to_excel(data, export_path, verbose = verbose),
+        json = export_data_to_json(data, export_path, verbose = verbose),
+        stop("Unsupported format: ", format)
+      )
+    }
+  )
+  
+  if(is.character(result)) {
+    if(verbose) message("Data export completed successfully!")
+    return(result)
+  } else {
+    if(verbose) message("Data export failed.")
+    return(FALSE)
+  }
+}
+```
+
+### Subsection 2: Batch Export {#batch-export}
+
+```r
+#' Execute batch exports for multiple platforms or formats
+#'
+#' @param export_configs List of export configurations
+#' @param verbose Logical, whether to print progress messages
+#'
+#' @return List of export results
+#'
+execute_batch_export <- function(export_configs, verbose = TRUE) {
+  results <- list()
+  
+  for(i in seq_along(export_configs)) {
+    config <- export_configs[[i]]
+    if(verbose) message(paste("\nProcessing export", i, "of", length(export_configs)))
+    
+    result <- execute_data_export(
+      data_source = config$data_source,
+      format = config$format,
+      start_date = config$start_date,
+      end_date = config$end_date,
+      export_path = config$export_path,
+      platform = config$platform,
+      verbose = verbose
+    )
+    
+    results[[i]] <- result
+  }
+  
+  return(results)
+}
+```
+
+## Section 5: Usage Examples {#usage}
+
+### Subsection 1: Single Export {#single-export}
+
+```r
+# Export Amazon sales data for last month
+result <- execute_data_export(
+  data_source = "sales",
+  format = "csv",
+  start_date = "2025-07-01",
+  end_date = "2025-07-31",
+  platform = "amazon"
+)
+```
+
+### Subsection 2: Batch Export {#batch-usage}
+
+```r
+# Configure multiple exports
+configs <- list(
+  list(
+    data_source = "sales",
+    format = "csv",
+    platform = "amazon",
+    start_date = "2025-07-01",
+    end_date = "2025-07-31"
+  ),
+  list(
+    data_source = "inventory",
+    format = "excel",
+    platform = "ebay",
+    start_date = "2025-07-01",
+    end_date = "2025-07-31"
+  )
+)
+
+# Execute batch
+results <- execute_batch_export(configs)
+```
+
+---
+
+*This module provides comprehensive data export capabilities across multiple platforms and formats, enabling efficient data distribution and reporting workflows.*

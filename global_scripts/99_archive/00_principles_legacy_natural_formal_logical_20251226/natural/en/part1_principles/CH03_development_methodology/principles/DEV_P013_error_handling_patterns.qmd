@@ -1,0 +1,527 @@
+---
+title: "DEV_P013: Error Handling Patterns Principle"
+subtitle: "Applications must implement a systematic approach to error detection, handling, and recovery with consistent user feedback. Each error type requires an appropriate detection mechanism, clear communication pattern, and defined recovery path"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P013"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article: 
+  number: 13
+  title: "Error Handling Patterns Principle"
+related_to:
+  - "MP053: Feedback Loop"
+  - "MP054: UI-Server Correspondence"
+  - "DEV_R009: UI-Server-Defaults Triple"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 13: Error Handling Patterns Principle {#overview}
+
+**Development Methodology Law Article 13 (Error Handling Patterns Principle)**
+
+Applications must implement a systematic approach to error detection, handling, and recovery with consistent user feedback. Each error type requires an appropriate detection mechanism, clear communication pattern, and defined recovery path.
+
+:::{.callout-important}
+## Core Principle
+Systematically establish error handling mechanisms ensuring every error type has clear detection, communication, and recovery strategies to maintain user trust and system stability.
+:::
+
+# Section 1: Error Type Classification {#error-types}
+
+## Subsection 1: Input Validation Errors {#input-validation-errors}
+
+**Definition and Characteristics:**
+- **Definition**: Errors occurring when user input fails validation criteria
+- **Detection Location**: Client-side validation during input or before submission
+- **Common Examples**: Invalid email format, required field missing, numeric range violations
+
+**Implementation Standards:**
+```r
+# Progressive validation during input
+observe({
+  req(input$email)
+  if (input$email != "" && !is_valid_email(input$email)) {
+    updateTextInput(session, "email", 
+      label = "Email (Invalid format)",
+      class = "input-error"
+    )
+    validation_state$email <- FALSE
+  } else {
+    updateTextInput(session, "email", 
+      label = "Email",
+      class = "input-valid"
+    )
+    validation_state$email <- TRUE
+  }
+})
+
+# Form-level validation before submission
+observeEvent(input$submit, {
+  validation_errors <- list()
+  
+  if (!validation_state$email) {
+    validation_errors$email <- "Please enter a valid email address"
+  }
+  
+  if (length(validation_errors) > 0) {
+    # Handle validation errors
+    handle_validation_errors(validation_errors)
+    return()
+  }
+  
+  # Proceed with form submission
+  submit_form(input)
+})
+```
+
+## Subsection 2: Data Access Errors {#data-access-errors}
+
+**Definition and Characteristics:**
+- **Definition**: Errors occurring when system cannot access required data sources
+- **Detection Location**: Database connection failures, missing files, network problems
+- **Common Examples**: Database timeout, table not found, network interruption
+
+**Detection Implementation:**
+```r
+# Data access with error detection
+data <- reactive({
+  tryCatch({
+    # Attempt data access
+    result <- dbGetQuery(connection, query)
+    if (nrow(result) == 0) {
+      # No data found (not technically an error, but requires handling)
+      return(list(
+        status = "empty",
+        data = NULL,
+        message = "No data found for the given criteria"
+      ))
+    }
+    return(list(
+      status = "success",
+      data = result,
+      message = NULL
+    ))
+  }, error = function(e) {
+    # Database error
+    return(list(
+      status = "error",
+      data = NULL,
+      message = paste("Database error:", e$message)
+    ))
+  })
+})
+```
+
+## Subsection 3: Processing Errors {#processing-errors}
+
+**Definition and Characteristics:**
+- **Definition**: Errors occurring during server-side data processing
+- **Detection Location**: Exception handling in business logic, unexpected data formats
+- **Common Examples**: Calculation errors, incompatible data types, unexpected null values
+
+**Processing Implementation:**
+```r
+# Processing with error detection
+processed_data <- reactive({
+  req(data())
+  
+  if (data()$status != "success") {
+    # Pass through the error state
+    return(data())
+  }
+  
+  tryCatch({
+    # Attempt processing
+    result <- process_data(data()$data)
+    return(list(
+      status = "success",
+      data = result,
+      message = NULL
+    ))
+  }, error = function(e) {
+    # Processing error
+    return(list(
+      status = "error",
+      data = NULL,
+      message = paste("Processing error:", e$message)
+    ))
+  }, warning = function(w) {
+    # Process completed with warnings
+    result <- process_data(data()$data)
+    return(list(
+      status = "warning",
+      data = result,
+      message = paste("Warning:", w$message)
+    ))
+  })
+})
+```
+
+## Subsection 4: System Errors {#system-errors}
+
+**Definition and Characteristics:**
+- **Definition**: Errors occurring due to broader system failures
+- **Detection Location**: Application monitoring, environment failures
+- **Common Examples**: Out of memory, server crashes, dependency failure
+
+# Section 2: Error Communication Patterns {#error-communication}
+
+## Subsection 1: Inline Validation Feedback {#inline-validation-feedback}
+
+**Implementation Standards:**
+```r
+# Inline validation with immediate feedback
+textInput(inputId = "email", 
+  label = "Email Address",
+  placeholder = "example@domain.com"
+)
+
+# Validation message display
+uiOutput("email_validation")
+
+# Server-side rendering of validation message
+output$email_validation <- renderUI({
+  req(input$email, input$email != "")
+  
+  if (!is_valid_email(input$email)) {
+    div(class = "validation-error",
+      icon("exclamation-circle"),
+      "Please enter a valid email address"
+    )
+  } else {
+    div(class = "validation-success",
+      icon("check-circle"),
+      "Email format is valid"
+    )
+  }
+})
+```
+
+## Subsection 2: Status-Based Data Display {#status-based-display}
+
+**Implementation Standards:**
+```r
+# UI component with status handling
+output$data_display <- renderUI({
+  req(processed_data())
+  
+  status <- processed_data()$status
+  
+  if (status == "error") {
+    div(class = "error-message",
+      icon("exclamation-triangle"),
+      h4("Error Occurred"),
+      p(processed_data()$message),
+      actionButton(ns("retry"), "Retry")
+    )
+  } else if (status == "empty") {
+    div(class = "empty-state",
+      icon("info-circle"),
+      h4("No Data Available"),
+      p(processed_data()$message),
+      p("Try changing your search criteria.")
+    )
+  } else if (status == "warning") {
+    div(
+      div(class = "warning-banner",
+        icon("exclamation-circle"),
+        "Warning: ", processed_data()$message
+      ),
+      # Still display data with warning
+      render_data_table(processed_data()$data)
+    )
+  } else {
+    # Success state
+    render_data_table(processed_data()$data)
+  }
+})
+```
+
+## Subsection 3: Modal Error Messages {#modal-error-messages}
+
+**Implementation Standards:**
+```r
+# For critical errors that prevent continuation
+display_critical_error <- function(title, message, details = NULL) {
+  showModal(modalDialog(
+    title = title,
+    div(
+      div(class = "critical-error-message", message),
+      if (!is.null(details)) {
+        div(class = "error-details",
+          h5("Technical Details:"),
+          pre(details)
+        )
+      } else NULL,
+      div(class = "error-actions",
+        actionButton("refresh", "Refresh Page", icon = icon("sync")),
+        actionButton("contact_support", "Contact Support", icon = icon("envelope"))
+      )
+    ),
+    footer = NULL,
+    easyClose = FALSE
+  ))
+}
+```
+
+# Section 3: Recovery Strategies {#recovery-patterns}
+
+## Subsection 1: Automatic Retry Mechanism {#automatic-retry}
+
+**Implementation Standards:**
+```r
+# Automatic retry with exponential backoff
+get_data_with_retry <- function(query, max_retries = 3) {
+  reactive({
+    attempt <- 1
+    retry_delay <- 1000  # Start with 1 second delay
+    
+    while (attempt <= max_retries) {
+      result <- tryCatch({
+        # Attempt to get data
+        data <- dbGetQuery(connection, query)
+        list(
+          success = TRUE,
+          data = data,
+          error = NULL
+        )
+      }, error = function(e) {
+        list(
+          success = FALSE,
+          data = NULL,
+          error = e$message
+        )
+      })
+      
+      if (result$success) {
+        return(result)
+      }
+      
+      # If this was the last attempt, return the error
+      if (attempt == max_retries) {
+        return(result)
+      }
+      
+      # Wait before retrying
+      Sys.sleep(retry_delay / 1000)
+      
+      # Increase delay for next attempt (exponential backoff)
+      retry_delay <- min(retry_delay * 2, 30000)  # Cap at 30 seconds
+      attempt <- attempt + 1
+    }
+  })
+}
+```
+
+## Subsection 2: User-Initiated Recovery {#user-initiated-recovery}
+
+**Implementation Standards:**
+```r
+# Allow user to retry operations
+observeEvent(input$retry, {
+  # Reset error state
+  error_state$current <- NULL
+  
+  # Re-trigger data loading
+  data_trigger$refresh <- Sys.time()
+})
+
+# Data loading with refresh trigger
+data <- reactive({
+  # React to refresh trigger
+  data_trigger$refresh
+  
+  tryCatch({
+    # Data loading logic
+    dbGetQuery(connection, query)
+  }, error = function(e) {
+    error_state$current <- e$message
+    NULL
+  })
+})
+```
+
+## Subsection 3: Fallback Content Mechanism {#fallback-content}
+
+**Implementation Standards:**
+```r
+# Provide fallback content when primary data is unavailable
+output$dashboard_chart <- renderPlot({
+  if (is.null(primary_data()) || primary_data()$status == "error") {
+    # Use cached data as fallback
+    cached_data <- get_cached_data()
+    
+    if (!is.null(cached_data)) {
+      # Create plot with cached data but show cached indicator
+      p <- create_plot(cached_data)
+      p + theme(
+        plot.background = element_rect(fill = "#FFF9F0"),
+        plot.caption = element_text(
+          color = "#B94700", 
+          hjust = 1, 
+          face = "italic", 
+          size = 10
+        )
+      ) + 
+      labs(caption = "* Using cached data from previous session")
+    } else {
+      # No data available - show placeholder
+      create_empty_plot("No data available")
+    }
+  } else {
+    # Normal case - use primary data
+    create_plot(primary_data()$data)
+  }
+})
+```
+
+# Section 4: Performance Optimization {#performance-optimization}
+
+## Subsection 1: Search Debouncing {#search-debouncing}
+
+**Implementation Standards:**
+```r
+# Debounced search implementation
+search_debounced <- reactive({
+  input$search_input_search
+}) %>% debounce(500)  # 500ms delay
+
+observeEvent(search_debounced(), {
+  if (nchar(search_debounced()) >= 2) {
+    perform_search(search_debounced())
+  }
+})
+```
+
+## Subsection 2: Result Limiting {#result-limiting}
+
+**Implementation Standards:**
+```r
+# Limit search result count
+search_with_limit <- function(term, max_results = 15) {
+  all_results <- perform_database_search(term)
+  
+  if (nrow(all_results) > max_results) {
+    limited_results <- all_results[1:max_results, ]
+    
+    # Add "more results" indicator
+    additional_info <- data.frame(
+      id = "more_results",
+      display_text = paste("...", nrow(all_results) - max_results, "more results")
+    )
+    
+    return(rbind(limited_results, additional_info))
+  }
+  
+  return(all_results)
+}
+```
+
+# Section 5: Documentation Requirements {#documentation-requirements}
+
+## Subsection 1: Error Handling Documentation {#error-documentation}
+
+**Standard Format:**
+```r
+#' Customer Profile Component Server
+#'
+#' @param id Module ID
+#' @param app_data_connection Database connection
+#'
+#' @return Reactive values
+#' @section Error Handling:
+#' This component handles the following errors:
+#' * Database connection errors: Shows connection failed message with retry option
+#' * Empty customer data: Shows "No customer data" message with setup instructions
+#' * Permission errors: Shows "Access denied" with request permission button
+#' @export
+customerProfileServer <- function(id, app_data_connection) {
+  # Implementation
+}
+```
+
+# Section 6: Principle Relationships {#principle-relationships}
+
+## Subsection 1: Extending Relationships {#extending-relationships}
+
+This principle:
+
+1. **Extends MP053 (Feedback Loop)** by specifying error-specific feedback patterns
+2. **Supports MP054 (UI-Server Correspondence)** by ensuring errors in server processes are reflected in the UI
+3. **Complements MP052 (Unidirectional Data Flow)** by defining how errors flow from data sources to UI
+4. **Works with DEV_R009 (UI-Server-Defaults Triple)** by ensuring default fallbacks for error states
+
+## Subsection 2: Common Anti-patterns {#common-anti-patterns}
+
+### Silent Failures {#silent-failures}
+**Problem**: Errors occur without user notification
+**Solution**: Always communicate errors to users through appropriate UI patterns
+
+### Technical Error Messages {#technical-error-messages}
+**Problem**: Displaying technical error details directly to end users
+**Solution**: Translate technical errors into user-friendly messages while preserving technical details for developers
+
+### Dead-End Errors {#dead-end-errors}
+**Problem**: Errors that offer no recovery path
+**Solution**: Always provide clear next steps after an error occurs
+
+### Inconsistent Error Handling {#inconsistent-error-handling}
+**Problem**: Different components handle similar errors differently
+**Solution**: Use consistent patterns across the application
+
+# Section 7: Testing Approach {#testing-approach}
+
+## Subsection 1: Systematic Testing {#systematic-testing}
+
+Error handling should be systematically tested:
+
+1. **Simulate each error type** to verify detection mechanisms
+2. **Verify appropriate UI feedback** for each error condition
+3. **Test recovery pathways** to ensure they work as expected
+4. **Validate fallback content** when primary content is unavailable
+
+## Subsection 2: Error Injection Testing {#error-injection-testing}
+
+```r
+# Error injection testing functionality
+test_error_scenarios <- function() {
+  # Test database connection error
+  mock_db_error <- function() {
+    stop("Connection timeout")
+  }
+  
+  # Test empty result
+  mock_empty_result <- function() {
+    data.frame()
+  }
+  
+  # Test processing error
+  mock_processing_error <- function() {
+    stop("Invalid data format")
+  }
+  
+  # Execute test cases
+  test_scenarios <- list(
+    db_error = mock_db_error,
+    empty_result = mock_empty_result,
+    processing_error = mock_processing_error
+  )
+  
+  return(test_scenarios)
+}
+```
+
+---
+
+*Based on: Development Methodology Law Article 13*  
+*Related to: [MP053 Feedback Loop](../../CH00_fundamental_principles/meta_principles/MP053_feedback_loop.qmd), [DEV_P012 Reactive Data Filtering Principle](DEV_P012_reactive_data_filtering.qmd)*

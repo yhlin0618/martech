@@ -1,0 +1,221 @@
+---
+title: "Example 03: Mock DBI Utilities Usage"
+subtitle: "Using mock database connections for testing and development"
+chapter: "CH10"
+category: "example"
+number: "EX03"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "example"
+law: "Templates & Examples"
+article-number: "Example 3"
+related_to:
+  - "R091_universal_data_access"
+  - "R114_standard_mock_database"
+  - "MP051_test_data_design"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Example 3: Mock DBI Connection Usage {#overview}
+
+This example demonstrates how to use mock DBI utilities for testing and development without requiring a real database connection.
+
+## Section 1: Basic Mock Connection {#basic-connection}
+
+```r
+#' Example Usage of Mock DBI Utilities
+#' 
+#' This file demonstrates how to use the mock DBI utilities for testing
+#' and development without requiring a real database connection.
+#'
+#' @principle R91 Universal Data Access Pattern
+
+library(dplyr)
+
+# Source the mock DBI utilities
+source("update_scripts/global_scripts/00_principles/02_db_utils/fn_list_to_mock_dbi.R")
+
+# Example 1: Create a basic mock DBI connection from a list of dataframes
+example_basic_connection <- function() {
+  # Create sample data frames
+  customers <- data.frame(
+    customer_id = 1:5,
+    buyer_name = c("Zhang San", "Li Si", "Wang Wu", "Zhao Liu", "Chen Qi"),
+    email = c("zhang@example.com", "li@example.com", "wang@example.com", 
+              "zhao@example.com", "chen@example.com"),
+    stringsAsFactors = FALSE
+  )
+  
+  orders <- data.frame(
+    order_id = 101:107,
+    customer_id = c(1, 2, 1, 3, 2, 1, 4),
+    amount = c(100, 200, 150, 300, 250, 175, 400),
+    order_date = as.Date(c("2024-01-15", "2024-01-20", "2024-02-10", 
+                            "2024-02-15", "2024-03-05", "2024-03-20", "2024-04-01")),
+    stringsAsFactors = FALSE
+  )
+  
+  # Create a list of data frames
+  data_list <- list(
+    customer_profile = customers,
+    order_history = orders
+  )
+  
+  # Convert to mock DBI connection
+  mock_conn <- list_to_mock_dbi(data_list)
+  
+  # Query the mock connection using DBI-style interface
+  customers_result <- mock_conn$dbGetQuery("SELECT * FROM customer_profile")
+  orders_result <- mock_conn$dbGetQuery("SELECT * FROM order_history")
+  
+  # More complex query with WHERE clause (basic implementation)
+  customer1_result <- mock_conn$dbGetQuery("SELECT * FROM customer_profile WHERE customer_id = 1")
+  
+  # Print results
+  cat("All customers:\n")
+  print(customers_result)
+  
+  cat("\nAll orders:\n")
+  print(orders_result)
+  
+  cat("\nCustomer 1:\n")
+  print(customer1_result)
+  
+  # Return the connection for further use
+  return(mock_conn)
+}
+```
+
+## Section 2: Advanced Usage Patterns {#advanced-usage}
+
+### Subsection 1: Module Testing {#module-testing}
+
+```r
+# Example 2: Use mock connection with a Shiny module
+example_module_testing <- function() {
+  # Create mock data
+  mock_data <- list(
+    sales = data.frame(
+      product_id = 1:10,
+      sales_amount = runif(10, 100, 1000),
+      date = seq(as.Date("2024-01-01"), by = "day", length.out = 10)
+    )
+  )
+  
+  # Create mock connection
+  mock_conn <- list_to_mock_dbi(mock_data)
+  
+  # Test module with mock connection
+  testServer(salesModule, {
+    # Provide mock connection as input
+    session$setInputs(connection = mock_conn)
+    
+    # Test that data is loaded correctly
+    expect_equal(nrow(sales_data()), 10)
+    expect_true("sales_amount" %in% names(sales_data()))
+  })
+}
+```
+
+### Subsection 2: Complex Data Structures {#complex-data}
+
+```r
+# Example 3: Create mock connection with related tables
+example_complex_mock <- function() {
+  # Create interrelated tables
+  products <- data.frame(
+    product_id = 1:5,
+    product_name = paste("Product", LETTERS[1:5]),
+    category = c("Electronics", "Clothing", "Electronics", "Books", "Clothing")
+  )
+  
+  categories <- data.frame(
+    category = c("Electronics", "Clothing", "Books"),
+    department = c("Tech", "Fashion", "Media")
+  )
+  
+  inventory <- data.frame(
+    product_id = rep(1:5, each = 2),
+    warehouse = rep(c("WH1", "WH2"), 5),
+    quantity = sample(0:100, 10)
+  )
+  
+  # Create mock connection
+  mock_conn <- list_to_mock_dbi(list(
+    products = products,
+    categories = categories,
+    inventory = inventory
+  ))
+  
+  # Test join operations
+  query <- "SELECT * FROM products JOIN categories ON products.category = categories.category"
+  result <- mock_conn$dbGetQuery(query)
+  
+  return(result)
+}
+```
+
+## Section 3: Integration with Universal Data Access {#integration}
+
+```r
+# Example 4: Use mock connection with universal data accessor
+example_universal_access <- function() {
+  # Source universal data accessor
+  source("update_scripts/global_scripts/00_principles/02_db_utils/fn_universal_data_accessor.R")
+  
+  # Create mock data
+  mock_data <- list(
+    users = data.frame(
+      user_id = 1:3,
+      username = c("alice", "bob", "charlie"),
+      active = c(TRUE, TRUE, FALSE)
+    )
+  )
+  
+  # Create mock connection
+  mock_conn <- list_to_mock_dbi(mock_data)
+  
+  # Use universal data accessor
+  users_data <- universal_data_accessor(mock_conn, "users")
+  
+  # Filter active users
+  active_users <- users_data %>%
+    filter(active == TRUE)
+  
+  return(active_users)
+}
+```
+
+## Section 4: Benefits and Use Cases {#benefits}
+
+### Subsection 1: Development Benefits {#dev-benefits}
+
+1. **No Database Setup**: Develop without database infrastructure
+2. **Rapid Prototyping**: Quick iteration on data structures
+3. **Offline Development**: Work without network connectivity
+4. **Consistent Data**: Same test data across team members
+
+### Subsection 2: Testing Benefits {#test-benefits}
+
+1. **Isolated Testing**: Test modules independently
+2. **Predictable Data**: Known data for reproducible tests
+3. **Fast Execution**: No database latency
+4. **CI/CD Friendly**: No database dependencies in pipelines
+
+## Section 5: Best Practices {#best-practices}
+
+1. **Use Realistic Data Structures**: Match production schema
+2. **Include Edge Cases**: Add NULL values, empty strings
+3. **Version Control Test Data**: Keep mock data in repository
+4. **Document Data Relationships**: Explain foreign keys and constraints
+5. **Regular Updates**: Keep mock data synchronized with schema changes
+
+---
+*This example demonstrates comprehensive usage of mock DBI connections for testing and development.*

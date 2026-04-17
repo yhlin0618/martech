@@ -1,0 +1,747 @@
+---
+id: "DF000"
+title: "Data Pipeline Architecture - 7-Layer"
+type: "data-flow"
+date_created: "2025-07-12"
+date_modified: "2025-07-18"
+author: "Claude"
+derives_from:
+  - "MP0052": "Unidirectional Data Flow"
+  - "MP0006": "Data Source Hierarchy"
+  - "MP0058": "Database Table Creation Strategy"
+influences:
+  - "DF001": "Staging Operations"
+  - "DF002": "Transformation Operations"
+  - "DF003": "Cleansing Operations"
+  - "DF004": "Processing Operations"
+  - "DF005": "Application Data"
+  - "ETL001": "Customer DNA Analysis Pipeline"
+  - "ETL002": "Customer View Filtering Pipeline"
+  - "ETL003": "product Profiles Pipeline"
+relates_to:
+  - "MP0018": "Don't Repeat Yourself"
+  - "R091": "Universal Data Access"
+  - "R092": "Universal DBI Approach"
+  - "D01": "DNA Analysis Derivation"
+  - "D02": "Customer View Filtering Derivation"
+  - "D03": "Positioning Analysis Derivation"
+---
+
+# DF00: Data Pipeline Architecture - 7-Layer
+
+## Core Principle
+
+ETL Operations provide **complete end-to-end data pipelines**, implementing a standardized **7-layer data processing architecture** that takes raw external data through systematic transformations to application-ready data. Each ETL represents a self-contained, reusable data processing workflow that business derivations can reference without duplicating implementation logic.
+
+## Revised 7-Layer ETL Architecture
+
+The ETL framework has been enhanced with a comprehensive **7-layer data flow architecture** that provides clear separation of concerns and optimal data quality control:
+
+```mermaid
+graph TD
+    A[External Source] --> B[0IM: Import]
+    B --> C[1ST: Staging] 
+    C --> D[2TR: Transform]
+    D --> E[3PR: Processed]
+    E --> F[4CL: Cleanse]
+    F --> G[5DN: DB Normalize]
+    G --> H[6NM: Data Normalize]
+    H --> I[App Data]
+    
+    B -.-> B1["Layer 0: Import<br/>• Source-specific ingestion<br/>• Metadata preservation<br/>• Platform identification"]
+    C -.-> C1["Layer 1: Staging<br/>• File preprocessing<br/>• Type optimization<br/>• Encoding standardization"]
+    D -.-> D1["Layer 2: Transform<br/>• Business logic application<br/>• Derived field calculation<br/>• Metric computation"]
+    E -.-> E1["Layer 3: Processed<br/>• Business validation checkpoint<br/>• Data completeness verification<br/>• Stable snapshot creation"]
+    F -.-> F1["Layer 4: Cleanse<br/>• Technical data quality<br/>• Duplicate removal<br/>• Format standardization"]
+    G -.-> G1["Layer 5: DB Normalize<br/>• Relational structure<br/>• Product master data<br/>• Reference integrity"]
+    H -.-> H1["Layer 6: Data Normalize<br/>• ML feature preparation<br/>• Statistical normalization<br/>• Model input formatting"]
+    I -.-> I1["Application Layer<br/>• UI-ready formatting<br/>• Performance optimization<br/>• Component integration"]
+```
+
+## 7-Layer Architecture Definitions
+
+### **0IM: Import Layer**
+- **Purpose**: Raw data ingestion from external sources
+- **Database**: `raw_data.duckdb`
+- **Responsibility**: 
+  - Platform-specific data import
+  - Metadata preservation
+  - Source identification and tracking
+
+### **1ST: Staging Layer**  
+- **Purpose**: Technical data preparation and optimization
+- **Database**: `staged_data.duckdb`
+- **Responsibility**:
+  - Data type detection and optimization
+  - Column name standardization
+  - Encoding consistency (UTF-8)
+  - Basic data validation
+
+### **2TR: Transform Layer**
+- **Purpose**: Business logic implementation
+- **Database**: `transformed_data.duckdb`
+- **Responsibility**:
+  - Derived field calculations (RFM scores, price tiers)
+  - Business rule application
+  - Metric computations
+  - Cross-table joins for business context
+
+### **3PR: Processed Layer** *(New Critical Layer)*
+- **Purpose**: Business processing completion checkpoint
+- **Database**: `processed_data.duckdb`
+- **Responsibility**:
+  - **Business logic validation**
+  - **Data completeness verification**
+  - **Stable business snapshot**
+  - **Primary data access point for business users**
+
+### **4CL: Cleanse Layer**
+- **Purpose**: Technical data quality improvement
+- **Database**: `cleansed_data.duckdb`
+- **Responsibility**:
+  - Duplicate record removal
+  - Missing value handling
+  - Outlier detection and treatment
+  - Technical format standardization
+
+### **5DN: Database Normalization Layer** *(New Layer)*
+- **Purpose**: Relational database structure optimization
+- **Database**: `normalized_data.duckdb` 
+- **Responsibility**:
+  - **Product master table creation** (`df_product_master`)
+  - **Platform alias mapping** (`df_product_platform_mapping`)
+  - **Relational integrity establishment**
+  - **Cross-platform product unification**
+
+### **6NM: Data Normalization Layer** *(New Layer)*
+- **Purpose**: Machine learning and analytics preparation
+- **Database**: `datanorm_data.duckdb`
+- **Responsibility**:
+  - **Statistical normalization** (Z-score, Min-Max scaling)
+  - **Categorical encoding** (One-hot, Label encoding)
+  - **Feature engineering**
+  - **ML model input preparation**
+
+## Data Flow and Branch Points
+
+### Primary Flow
+```
+External Data → 0IM → 1ST → 2TR → 3PR → 4CL → 5DN → 6NM → App Data
+```
+
+### Business Branch Points
+
+#### **From Processed Layer (3PR)**
+```
+3PR (Processed) ┬→ Business Reports (Direct use)
+                ├→ Ad-hoc Analysis (Analyst access)
+                ├→ External Exports (Third-party systems)
+                └→ 4CL → 5DN → 6NM → App Data (Full pipeline)
+```
+
+#### **Derived Data Entry Points**
+```
+External Data → 0IM (Full pipeline)
+Calculated Results → 3PR (Skip early stages)
+Clean Internal Data → 4CL (Skip business processing)
+ML Model Output → 6NM (Direct to features)
+```
+
+## Updated Phase-Based Naming Convention
+
+**Enhanced Naming Pattern**: All ETL operations follow this extended phase-based structure:
+
+```
+{platform}_ETL{Series}_{Phase}{Abbreviation}_{Sequence}.R
+
+Where:
+- platform: amz, eby, ggl (Amazon, eBay, Google)
+- Series: 01, 02, 03... (ETL pipeline identifier)
+- Phase: 0-6 (execution order - now 7 phases)
+- Abbreviation: 2-3 letter phase identifier  
+- Sequence: 00, 01, 02... (operations within phase)
+```
+
+### Updated Phase Mapping
+
+| Phase | Code | Abbreviation | Purpose | Database Layer |
+|-------|------|--------------|---------|----------------|
+| 0 | Import | IM | Data ingestion from external sources | raw_data |
+| 1 | Staging | ST | Technical preparation and optimization | staged_data |
+| 2 | Transform | TR | Business logic and derived calculations | transformed_data |
+| 3 | Processed | PR | Business validation checkpoint | processed_data |
+| 4 | Cleanse | CL | Technical data quality improvement | cleansed_data |
+| 5 | DB Normalize | DN | Database structure optimization | normalized_data |
+| 6 | Data Normalize | NM | ML and analytics preparation | datanorm_data |
+
+### Example ETL03 Implementation (7-Layer)
+
+```
+# Import Phase - Multiple data sources
+amz_ETL03_0IM_00.R  (Import - product Profiles from Google Sheets)
+amz_ETL03_0IM_01.R  (Import - Competitor products)  
+amz_ETL03_0IM_02.R  (Import - Comment Properties)
+
+# Sequential Processing Phases
+amz_ETL03_1ST_00.R  (Staging - Type optimization, encoding)
+amz_ETL03_2TR_00.R  (Transform - Business calculations)
+amz_ETL03_3PR_00.R  (Processed - Business validation)
+amz_ETL03_4CL_00.R  (Cleanse - Technical quality)
+amz_ETL03_5DN_00.R  (DB Normalize - Product master tables)
+amz_ETL03_6NM_00.R  (Data Normalize - ML preparation)
+```
+
+## Database Architecture
+
+### Database Organization
+```
+├── raw_data.duckdb           # 0IM: External source data
+├── staged_data.duckdb        # 1ST: Technical preparation
+├── transformed_data.duckdb   # 2TR: Business logic applied
+├── processed_data.duckdb     # 3PR: Business validation complete
+├── cleansed_data.duckdb      # 4CL: Technical quality assured
+├── normalized_data.duckdb    # 5DN: Relational structure optimized
+├── datanorm_data.duckdb      # 6NM: ML/Analytics ready
+└── app_data.duckdb           # APP: Application consumption
+```
+
+### Key Tables in Database Normalization (5DN)
+
+#### Product Master Table
+```sql
+CREATE TABLE df_product_master (
+    product_id VARCHAR PRIMARY KEY,        -- Unified internal ID
+    product_name VARCHAR NOT NULL,
+    brand VARCHAR,
+    category VARCHAR,
+    product_line_id VARCHAR,
+    specifications JSONB,                  -- Flexible product attributes
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### Platform Mapping Table
+```sql
+CREATE TABLE df_product_platform_mapping (
+    mapping_id VARCHAR PRIMARY KEY,
+    product_id VARCHAR REFERENCES df_product_master(product_id),
+    platform_id VARCHAR NOT NULL,         -- 'amz', 'eby', etc.
+    platform_product_id VARCHAR NOT NULL, -- asin, ebay_product_number, etc.
+    is_primary BOOLEAN DEFAULT FALSE,     -- Primary identifier for product
+    confidence_score DECIMAL(3,2),        -- Mapping confidence (0.00-1.00)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(platform_id, platform_product_id)
+);
+```
+
+## Enhanced ETL Implementation Patterns
+
+### Pattern 1: Multi-Source Import with Unified Processing
+
+```r
+#' Enhanced Multi-Source Import Pattern
+#' 
+#' Handles multiple external sources with unified downstream processing
+#'
+execute_enhanced_import_phase <- function(config) {
+  
+  import_results <- list()
+  
+  # Multiple import operations (0IM_00, 0IM_01, 0IM_02...)
+  for (import_config in config$import_operations) {
+    
+    # Source-specific import
+    imported_data <- switch(import_config$source_type,
+      "google_sheets" = import_from_google_sheets(import_config),
+      "csv" = import_from_csv(import_config),
+      "api" = import_from_api(import_config),
+      "database" = import_from_database(import_config)
+    )
+    
+    # Enhanced metadata
+    imported_data <- imported_data %>%
+      mutate(
+        etl_import_timestamp = Sys.time(),
+        etl_import_id = import_config$operation_id,
+        etl_source_type = import_config$source_type,
+        etl_platform_id = import_config$platform_id,
+        etl_data_lineage = paste0("import_", import_config$operation_id)
+      )
+    
+    # Write to raw_data with enhanced naming
+    table_name <- sprintf("df_%s_%s___imported", 
+                         import_config$data_type, 
+                         import_config$operation_id)
+    dbWriteTable(raw_data, table_name, imported_data, overwrite = TRUE)
+    
+    import_results[[import_config$operation_id]] <- list(
+      table_name = table_name,
+      row_count = nrow(imported_data),
+      data_type = import_config$data_type,
+      platform_id = import_config$platform_id
+    )
+  }
+  
+  return(import_results)
+}
+```
+
+### Pattern 2: Business Validation Checkpoint (3PR)
+
+```r
+#' Business Processing Validation Pattern
+#' 
+#' Creates stable business data checkpoint with comprehensive validation
+#'
+execute_processed_phase <- function(config) {
+  
+  # Connect to databases
+  dbConnect_from_list(c("transformed_data", "processed_data"))
+  
+  validation_results <- list()
+  
+  # Get all transformed tables
+  transformed_tables <- dbListTables(transformed_data)
+  target_tables <- transformed_tables[grepl("___transformed$", transformed_tables)]
+  
+  for (table_name in target_tables) {
+    
+    # Load transformed data
+    transformed_df <- dbGetQuery(transformed_data, paste("SELECT * FROM", table_name))
+    
+    # Business validation checks
+    validation_result <- validate_business_data(
+      data = transformed_df,
+      validation_rules = config$business_validation_rules,
+      table_name = table_name
+    )
+    
+    if (validation_result$passed) {
+      
+      # Add processing metadata
+      transformed_df$etl_processed_timestamp <- Sys.time()
+      transformed_df$etl_business_validated <- TRUE
+      transformed_df$etl_validation_score <- validation_result$score
+      transformed_df$etl_data_lineage <- paste0(
+        transformed_df$etl_data_lineage, " → processed"
+      )
+      
+      # Create processed table
+      processed_table_name <- gsub("___transformed$", "___processed", table_name)
+      dbWriteTable(processed_data, processed_table_name, transformed_df, overwrite = TRUE)
+      
+      validation_results[[table_name]] <- list(
+        processed_table = processed_table_name,
+        validation_passed = TRUE,
+        validation_score = validation_result$score,
+        row_count = nrow(transformed_df)
+      )
+      
+      message("✅ Business validation passed: ", table_name)
+      
+    } else {
+      
+      validation_results[[table_name]] <- list(
+        processed_table = NULL,
+        validation_passed = FALSE,
+        validation_errors = validation_result$errors,
+        row_count = nrow(transformed_df)
+      )
+      
+      warning("❌ Business validation failed: ", table_name)
+    }
+  }
+  
+  return(validation_results)
+}
+
+#' Business Data Validation
+#' 
+#' Validates business logic and data completeness
+#'
+validate_business_data <- function(data, validation_rules, table_name) {
+  
+  validation_errors <- c()
+  validation_score <- 1.0
+  
+  # Check required business fields
+  required_fields <- validation_rules$required_fields[[table_name]]
+  if (!is.null(required_fields)) {
+    missing_fields <- setdiff(required_fields, names(data))
+    if (length(missing_fields) > 0) {
+      validation_errors <- c(validation_errors, 
+                           paste("Missing required fields:", paste(missing_fields, collapse = ", ")))
+      validation_score <- validation_score * 0.8
+    }
+  }
+  
+  # Check business constraints
+  if ("business_constraints" %in% names(validation_rules)) {
+    for (constraint in validation_rules$business_constraints[[table_name]]) {
+      constraint_result <- eval(parse(text = constraint), envir = data)
+      if (!all(constraint_result, na.rm = TRUE)) {
+        validation_errors <- c(validation_errors, 
+                             paste("Business constraint failed:", constraint))
+        validation_score <- validation_score * 0.9
+      }
+    }
+  }
+  
+  # Check data completeness
+  if (validation_rules$completeness_threshold > 0) {
+    completeness_rate <- 1 - (sum(is.na(data)) / (nrow(data) * ncol(data)))
+    if (completeness_rate < validation_rules$completeness_threshold) {
+      validation_errors <- c(validation_errors, 
+                           paste("Data completeness below threshold:", 
+                                round(completeness_rate, 3)))
+      validation_score <- validation_score * completeness_rate
+    }
+  }
+  
+  return(list(
+    passed = length(validation_errors) == 0,
+    score = validation_score,
+    errors = validation_errors
+  ))
+}
+```
+
+### Pattern 3: Database Normalization (5DN)
+
+```r
+#' Database Normalization Pattern
+#' 
+#' Creates normalized relational structure with product master data
+#'
+execute_db_normalize_phase <- function(config) {
+  
+  # Connect to databases
+  dbConnect_from_list(c("cleansed_data", "normalized_data"))
+  
+  normalization_results <- list()
+  
+  # Step 1: Create Product Master Table
+  product_master_result <- create_product_master_table(
+    source_connection = cleansed_data,
+    target_connection = normalized_data,
+    config = config$product_master
+  )
+  normalization_results$product_master <- product_master_result
+  
+  # Step 2: Create Platform Mapping Table
+  platform_mapping_result <- create_platform_mapping_table(
+    source_connection = cleansed_data,
+    target_connection = normalized_data,
+    product_master = product_master_result$table_name,
+    config = config$platform_mapping
+  )
+  normalization_results$platform_mapping <- platform_mapping_result
+  
+  # Step 3: Update Foreign Key References
+  foreign_key_result <- update_foreign_key_references(
+    source_connection = cleansed_data,
+    target_connection = normalized_data,
+    product_master = product_master_result$table_name,
+    platform_mapping = platform_mapping_result$table_name,
+    config = config$foreign_keys
+  )
+  normalization_results$foreign_keys <- foreign_key_result
+  
+  return(normalization_results)
+}
+
+#' Create Product Master Table
+#' 
+#' Unifies products across platforms into single master table
+#'
+create_product_master_table <- function(source_connection, target_connection, config) {
+  
+  # Get all product data from cleansed tables
+  product_tables <- dbListTables(source_connection)
+  product_profile_tables <- product_tables[grepl("df_product_profile_.*___cleansed", product_tables)]
+  
+  unified_products <- data.frame()
+  
+  for (table_name in product_profile_tables) {
+    
+    # Extract product line from table name
+    product_line_match <- regmatches(table_name, 
+                                   regexpr("df_product_profile_([^_]+)", table_name))
+    product_line_id <- gsub("df_product_profile_", "", product_line_match)
+    
+    # Load and standardize product data
+    product_data <- dbGetQuery(source_connection, paste("SELECT * FROM", table_name)) %>%
+      mutate(
+        product_line_id = product_line_id,
+        product_name = coalesce(!!sym("product_name"), !!sym("title"), "Unknown"),
+        brand = coalesce(!!sym("brand"), "Unknown"),
+        category = coalesce(!!sym("category"), product_line_id)
+      ) %>%
+      select(product_name, brand, category, product_line_id) %>%
+      distinct()
+    
+    unified_products <- bind_rows(unified_products, product_data)
+  }
+  
+  # Generate unified product IDs
+  unified_products <- unified_products %>%
+    distinct() %>%
+    mutate(
+      product_id = paste0(
+        toupper(substr(brand, 1, 3)), "_",
+        toupper(product_line_id), "_",
+        sprintf("%03d", row_number())
+      ),
+      created_at = Sys.time(),
+      updated_at = Sys.time()
+    )
+  
+  # Write product master table
+  dbWriteTable(target_connection, "df_product_master", unified_products, overwrite = TRUE)
+  
+  return(list(
+    table_name = "df_product_master",
+    row_count = nrow(unified_products),
+    product_lines = length(unique(unified_products$product_line_id))
+  ))
+}
+```
+
+### Pattern 4: Data Normalization for ML (6NM)
+
+```r
+#' Data Normalization for ML Pattern
+#' 
+#' Prepares features for machine learning and statistical analysis
+#'
+execute_data_normalize_phase <- function(config) {
+  
+  # Connect to databases
+  dbConnect_from_list(c("normalized_data", "datanorm_data"))
+  
+  normalization_results <- list()
+  
+  # Get all normalized tables
+  normalized_tables <- dbListTables(normalized_data)
+  target_tables <- normalized_tables[!grepl("^(df_product_master|df_product_platform_mapping)$", 
+                                           normalized_tables)]
+  
+  for (table_name in target_tables) {
+    
+    # Load normalized data
+    normalized_df <- dbGetQuery(normalized_data, paste("SELECT * FROM", table_name))
+    
+    # Apply data normalization
+    ml_ready_df <- apply_ml_normalization(
+      data = normalized_df,
+      config = config$ml_normalization,
+      table_name = table_name
+    )
+    
+    # Create ML-ready table
+    ml_table_name <- paste0(table_name, "___ml_ready")
+    dbWriteTable(datanorm_data, ml_table_name, ml_ready_df, overwrite = TRUE)
+    
+    normalization_results[[table_name]] <- list(
+      ml_table = ml_table_name,
+      row_count = nrow(ml_ready_df),
+      feature_count = ncol(ml_ready_df) - length(config$ml_normalization$exclude_columns)
+    )
+  }
+  
+  return(normalization_results)
+}
+
+#' Apply ML Normalization
+#' 
+#' Applies statistical normalization and feature encoding
+#'
+apply_ml_normalization <- function(data, config, table_name) {
+  
+  # Identify numeric and categorical columns
+  exclude_cols <- config$exclude_columns %||% c("product_id", "etl_.*")
+  working_cols <- setdiff(names(data), exclude_cols)
+  
+  numeric_cols <- working_cols[sapply(data[working_cols], is.numeric)]
+  character_cols <- working_cols[sapply(data[working_cols], is.character)]
+  
+  # Apply numerical normalization
+  if (length(numeric_cols) > 0) {
+    
+    normalization_method <- config$numerical_method %||% "z_score"
+    
+    for (col in numeric_cols) {
+      normalized_values <- switch(normalization_method,
+        "z_score" = scale(data[[col]])[, 1],
+        "min_max" = (data[[col]] - min(data[[col]], na.rm = TRUE)) / 
+                   (max(data[[col]], na.rm = TRUE) - min(data[[col]], na.rm = TRUE)),
+        "robust" = (data[[col]] - median(data[[col]], na.rm = TRUE)) / 
+                  mad(data[[col]], na.rm = TRUE)
+      )
+      
+      data[[paste0(col, "_normalized")]] <- normalized_values
+    }
+  }
+  
+  # Apply categorical encoding
+  if (length(character_cols) > 0) {
+    
+    encoding_method <- config$categorical_method %||% "one_hot"
+    
+    for (col in character_cols) {
+      
+      if (encoding_method == "one_hot") {
+        # One-hot encoding
+        unique_values <- unique(data[[col]])
+        for (value in unique_values) {
+          col_name <- make_names(paste0(col, "_", value))
+          data[[col_name]] <- as.integer(data[[col]] == value)
+        }
+      } else if (encoding_method == "label") {
+        # Label encoding
+        data[[paste0(col, "_encoded")]] <- as.integer(as.factor(data[[col]]))
+      }
+    }
+  }
+  
+  # Add ML metadata
+  data$etl_ml_normalized_timestamp <- Sys.time()
+  data$etl_normalization_method <- paste0(
+    "num:", config$numerical_method %||% "z_score", 
+    "_cat:", config$categorical_method %||% "one_hot"
+  )
+  
+  return(data)
+}
+```
+
+## Integration with Existing Systems
+
+### Configuration Updates
+
+Enhanced `app_config.yaml` structure to support 7-layer architecture:
+
+```yaml
+etl_config:
+  etl_name: "product_profiles_pipeline"
+  etl_version: "2.0"
+  
+  # Data source entry points
+  data_sources:
+    primary:
+      - type: "google_sheets"
+        entry_point: "import"
+        platform_id: "amz"
+    derived:
+      - type: "calculated_metrics"
+        entry_point: "transform"
+      - type: "ml_predictions"
+        entry_point: "data_normalize"
+  
+  # Phase configurations
+  phases:
+    import:
+      operations:
+        - operation_id: "00"
+          source_type: "google_sheets"
+          data_type: "product_profile"
+          platform_id: "amz"
+    
+    staging:
+      encoding_target: "UTF-8"
+      type_optimization: true
+      validation_rules: []
+    
+    transform:
+      business_calculations:
+        - "price_tier_classification"
+        - "competitor_positioning"
+        - "market_share_estimation"
+      derived_fields:
+        - "relative_price_position"
+        - "feature_completeness_score"
+    
+    processed:
+      business_validation_rules:
+        required_fields:
+          df_product_profile_amz: ["product_id", "brand", "price"]
+        business_constraints:
+          df_product_profile_amz: ["price > 0", "!is.na(brand)"]
+        completeness_threshold: 0.85
+    
+    cleanse:
+      duplicate_strategy: "keep_latest"
+      missing_value_strategy: "domain_specific"
+      outlier_method: "iqr"
+    
+    db_normalize:
+      product_master:
+        id_generation: "brand_productline_sequence"
+        conflict_resolution: "manual_review"
+      platform_mapping:
+        confidence_threshold: 0.8
+        auto_link_rules: ["exact_match", "fuzzy_name_brand"]
+    
+    data_normalize:
+      ml_normalization:
+        numerical_method: "z_score"
+        categorical_method: "one_hot"
+        exclude_columns: ["product_id", "etl_.*", "created_at"]
+```
+
+### Directory Structure Updates
+
+```
+05_etl_utils/
+├── all/
+│   ├── import/          # 0IM
+│   ├── stage/           # 1ST
+│   ├── transform/       # 2TR
+│   ├── processed/       # 3PR (New)
+│   ├── cleanse/         # 4CL
+│   ├── dbnormalize/     # 5DN (New)
+│   └── datanormalize/   # 6NM (New)
+├── common/
+│   ├── validation/
+│   ├── normalization/
+│   └── ml_features/
+└── platform_specific/
+    ├── amz/
+    ├── eby/
+    └── ggl/
+```
+
+## Benefits of 7-Layer Architecture
+
+### 1. **Clear Business-Technical Separation**
+- Layers 0-3: Business-focused (Import → Transform → Processed)
+- Layer 3: Business validation checkpoint
+- Layers 4-6: Technical optimization (Cleanse → DB Normalize → Data Normalize)
+
+### 2. **Optimal Data Branch Points**
+- **Processed (3PR)**: Business users can access validated business data
+- **DB Normalized (5DN)**: Applications can use optimized relational structure
+- **Data Normalized (6NM)**: ML models can consume ready features
+
+### 3. **Enhanced Recovery and Debugging**
+- Clear checkpoints for rollback
+- Business vs. technical issue isolation
+- Granular processing control
+
+### 4. **Scalable Data Strategy**
+- Support for both business and analytical use cases
+- Clear data quality progression
+- Flexible entry points for different data sources
+
+## Conclusion
+
+The enhanced **7-Layer ETL Framework** provides a comprehensive, scalable foundation for data processing that explicitly separates business logic from technical optimization. The addition of Processed (3PR), DB Normalization (5DN), and Data Normalization (6NM) layers creates clear checkpoints and branch points that support both business operations and advanced analytics requirements.
+
+This architecture enables:
+- **Business users** to access stable, validated data at the Processed layer
+- **Application developers** to leverage optimized relational structures from DB Normalization
+- **Data scientists** to consume ML-ready features from Data Normalization
+- **System architects** to maintain clear separation of concerns across the entire data pipeline
+
+Each layer maintains its specific purpose while contributing to a unified, end-to-end data processing workflow that scales from simple business reports to complex machine learning applications.

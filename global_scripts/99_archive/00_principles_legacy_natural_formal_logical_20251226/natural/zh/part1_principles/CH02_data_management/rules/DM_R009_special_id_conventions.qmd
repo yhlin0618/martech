@@ -1,0 +1,205 @@
+---
+title: "DM_R009: 特殊 ID 約定"
+subtitle: "特殊類別 ID 必須在系統中遵循一致的約定，為元類別和特殊值保留模式以確保可靠的識別和處理"
+chapter: "CH02"
+category: "rule"
+number: "DM_R009"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 9
+  title: "特殊 ID 約定規則"
+related_to:
+  - "MP034: 『全部』類別的特殊處理"
+  - "DM_P003: 雙重 ID 格式"
+  - "UI_R008: 預設選擇約定"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第九條：特殊 ID 約定規則 {#overview}
+
+**資料管理法第九條（特殊 ID 約定規則）**
+
+此規則建立了整個系統中特殊類別識別符的一致約定。
+
+:::{.callout-important}
+## 核心規則
+特殊類別 ID 必須在系統中遵循一致的約定，為元類別和特殊值保留模式以確保可靠的識別和處理。
+:::
+
+# 第一項：保留 ID 模式 {#reserved-patterns}
+
+## 第一款：元類別 {#meta-categories}
+
+1. **全部類別**：`"000"` 或 `"all"`
+   - 代表所有可用產品
+   - 用於「顯示全部」選項
+   - 範例：「所有產品」、「所有平台」
+
+2. **無/不適用**：`"999"` 或 `"none"`
+   - 代表缺少分類
+   - 當產品不適合任何定義的類別時使用
+   - 範例：「未分類」、「其他」、「不適用」
+
+3. **多重選擇**：`"998"` 或 `"multiple"`
+   - 代表多個選定的產品
+   - 在選擇多個產品時用於摘要視圖
+   - 範例：「多重選擇（3 個產品）」
+
+4. **未知/未指定**：`"997"` 或 `"unknown"`
+   - 代表缺失或未知的資訊
+   - 當類別資訊真正未知時使用
+   - 範例：「未知來源」、「未指定類別」
+
+## 第二款：ID 格式化 {#id-formatting}
+
+1. **數字 ID**
+   - 標準類別：`"001"` 到 `"996"`
+   - 類別 ID 必須補零以確保長度一致
+   - 對於層次結構類別，使用點記法：`"001.002.003"`
+
+2. **字串 ID**
+   - 使用小寫字母和底線：`"category_name"`
+   - 對於特殊類別，使用前綴：
+     - `"all_"`
+     - `"other_"`
+     - `"unknown_"`
+
+3. **複合 ID**
+   - 格式：`"[type]__[id]"`
+   - 範例：`"product__001"`、`"platform__002"`
+   - 保留的元資料前綴：`"__meta__"`
+
+# 第二項：實施指導原則 {#implementation}
+
+## 第一款：資料庫儲存 {#database-storage}
+
+```sql
+-- 在維度表中包含特殊類別 ALL
+INSERT INTO product_categories (id, name_en, name_zh) VALUES ('000', 'All Products', '所有產品');
+
+-- 在維度表中包含特殊類別 OTHER
+INSERT INTO product_categories (id, name_en, name_zh) VALUES ('999', 'Other Products', '其他產品');
+```
+
+## 第二款：程式碼使用 {#code-usage}
+
+```r
+# 為特殊 ID 定義常數
+ALL_CATEGORY_ID <- "000"
+OTHER_CATEGORY_ID <- "999"
+MULTIPLE_SELECTION_ID <- "998"
+UNKNOWN_CATEGORY_ID <- "997"
+
+# 篩選邏輯中的特殊情況處理
+filter_products <- function(category_id, products) {
+  if (category_id == ALL_CATEGORY_ID) {
+    return(products)  # 返回所有產品而不篩選
+  } else if (category_id == OTHER_CATEGORY_ID) {
+    return(products[is.na(products$category_id) | products$category_id == "", ])
+  } else {
+    return(products[products$category_id == category_id, ])
+  }
+}
+```
+
+## 第三款：Excel 參數檔案 {#excel-parameters}
+
+```
+# product_line.xlsx 中的第一行：
+| id    | name_en        | name_zh    |
+| "000" | "All Products" | "所有產品" |
+
+# product_line.xlsx 中的最後一行：
+| id    | name_en         | name_zh    |
+| "999" | "Other Products" | "其他產品" |
+```
+
+# 第三項：實施範例 {#examples}
+
+## 第一款：UI 元件整合 {#ui-integration}
+
+```r
+# 在下拉選單中使用特殊 ID
+pickerInput(
+  inputId = "product_filter",
+  label = "選擇產品",
+  choices = list(
+    "所有產品" = ALL_CATEGORY_ID,
+    "產品 A" = "001",
+    "產品 B" = "002",
+    "其他產品" = OTHER_CATEGORY_ID
+  ),
+  selected = ALL_CATEGORY_ID  # 預設為「全部」
+)
+```
+
+## 第二款：資料處理邏輯 {#data-processing}
+
+```r
+# 處理特殊類別的資料聚合
+aggregate_by_category <- function(data, category_id) {
+  if (category_id == ALL_CATEGORY_ID) {
+    # 聚合所有資料
+    result <- data %>%
+      summarise(
+        total = sum(value, na.rm = TRUE),
+        count = n()
+      )
+  } else if (category_id == MULTIPLE_SELECTION_ID) {
+    # 處理多重選擇
+    result <- data %>%
+      filter(category_id %in% selected_categories) %>%
+      summarise(
+        total = sum(value, na.rm = TRUE),
+        count = n()
+      )
+  } else {
+    # 標準類別處理
+    result <- data %>%
+      filter(category_id == !!category_id) %>%
+      summarise(
+        total = sum(value, na.rm = TRUE),
+        count = n()
+      )
+  }
+  return(result)
+}
+```
+
+# 第四項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **一致處理**：實現可靠的特殊情況處理
+2. **清晰語義**：使程式碼更易讀，特殊情況明顯
+3. **查詢優化**：允許對常見情況進行高效的資料庫查詢
+4. **排序順序**：確保 UI 元件中可預測的排序
+5. **翻譯支援**：特殊類別可以像常規類別一樣翻譯
+
+# 第五項：驗證檢查清單 {#validation-checklist}
+
+實施特殊 ID 約定時：
+
+1. ☐ 定義所有特殊 ID 常數
+2. ☐ 在資料庫中創建特殊類別記錄
+3. ☐ 實施特殊情況處理邏輯
+4. ☐ 更新 Excel 參數檔案
+5. ☐ 配置 UI 元件預設值
+6. ☐ 測試篩選和聚合邏輯
+7. ☐ 驗證排序順序
+8. ☐ 確認翻譯支援
+
+---
+
+*基於：資料管理法第九條*  
+*相關連結：[MP034 『全部』類別的特殊處理](../../CH00_fundamental_principles/meta_principles/MP034_special_treatment_all.qmd), [UI_R008 預設選擇約定](../../CH04_ui_components/rules/UI_R008_default_selection_conventions.qmd)*

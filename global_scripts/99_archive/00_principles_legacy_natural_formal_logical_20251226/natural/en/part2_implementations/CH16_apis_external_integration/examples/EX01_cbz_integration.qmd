@@ -1,0 +1,867 @@
+---
+title: "EX01: Cyberbiz Integration Example"
+subtitle: "Complete Integration Implementation"
+author: "MAMBA Architecture Team"
+date: "2025-08-27"
+version: "1.0.0"
+---
+
+# Cyberbiz Integration Example
+
+## Overview
+
+This example demonstrates a complete integration with the Cyberbiz API, including authentication, data synchronization, and error handling.
+
+## Setup
+
+### Environment Configuration
+
+Create a `.env` file with your Cyberbiz credentials:
+
+```bash
+# Cyberbiz API Configuration
+CBZ_API_BASE_URL=https://api.cyberbiz.io
+CBZ_API_KEY=your_api_key_here
+CBZ_API_SECRET=your_api_secret_here
+CBZ_STORE_ID=your_store_id_here
+
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=mamba_cbz
+DB_USER=mamba_user
+DB_PASSWORD=your_db_password
+```
+
+### Required Libraries
+
+```r
+# Install required packages
+install.packages(c(
+  "httr",
+  "jsonlite",
+  "digest",
+  "DBI",
+  "RPostgres",
+  "dplyr",
+  "tidyr",
+  "purrr",
+  "lubridate",
+  "future",
+  "furrr"
+))
+```
+
+## Complete Integration Class
+
+```r
+library(R6)
+library(httr)
+library(jsonlite)
+library(digest)
+library(DBI)
+library(dplyr)
+
+CyberbizIntegration <- R6Class("CyberbizIntegration",
+  public = list(
+    initialize = function(env_file = ".env") {
+      # Load environment variables
+      if (file.exists(env_file)) {
+        readRenviron(env_file)
+      }
+      
+      # Initialize components
+      private$setup_authentication()
+      private$setup_database()
+      private$setup_rate_limiter()
+      private$setup_error_handler()
+      
+      message("Cyberbiz integration initialized successfully")
+    },
+    
+    # Sync all data from Cyberbiz
+    sync_all = function() {
+      message("Starting full synchronization...")
+      
+      # Sync in order of dependencies
+      self$sync_products()
+      self$sync_customers()
+      self$sync_orders()
+      self$sync_inventory()
+      
+      message("Full synchronization completed")
+    },
+    
+    # Sync products
+    sync_products = function() {
+      message("Syncing products...")
+      
+      products <- private$fetch_all_pages("/v1/products")
+      
+      if (length(products) > 0) {
+        # Transform and save to database
+        transformed <- private$transform_products(products)
+        private$save_to_database(transformed, "cbz_products")
+        
+        message(sprintf("Synced %d products", length(products)))
+      }
+      
+      return(invisible(products))
+    },
+    
+    # Sync customers
+    sync_customers = function() {
+      message("Syncing customers...")
+      
+      customers <- private$fetch_all_pages("/v1/customers")
+      
+      if (length(customers) > 0) {
+        transformed <- private$transform_customers(customers)
+        private$save_to_database(transformed, "cbz_customers")
+        
+        message(sprintf("Synced %d customers", length(customers)))
+      }
+      
+      return(invisible(customers))
+    },
+    
+    # Sync orders
+    sync_orders = function(since_date = NULL) {
+      message("Syncing orders...")
+      
+      params <- list()
+      if (!is.null(since_date)) {
+        params$created_at_min <- format(since_date, "%Y-%m-%dT%H:%M:%SZ")
+      }
+      
+      orders <- private$fetch_all_pages("/v1/orders", params)
+      
+      if (length(orders) > 0) {
+        # Save orders
+        transformed_orders <- private$transform_orders(orders)
+        private$save_to_database(transformed_orders, "cbz_orders")
+        
+        # Save order items
+        order_items <- private$extract_order_items(orders)
+        if (nrow(order_items) > 0) {
+          private$save_to_database(order_items, "cbz_order_items")
+        }
+        
+        message(sprintf("Synced %d orders", length(orders)))
+      }
+      
+      return(invisible(orders))
+    },
+    
+    # Sync inventory
+    sync_inventory = function() {
+      message("Syncing inventory...")
+      
+      inventory <- private$fetch_all_pages("/v1/inventory_levels")
+      
+      if (length(inventory) > 0) {
+        transformed <- private$transform_inventory(inventory)
+        private$save_to_database(transformed, "cbz_inventory")
+        
+        message(sprintf("Synced %d inventory records", length(inventory)))
+      }
+      
+      return(invisible(inventory))
+    },
+    
+    # Create order in Cyberbiz
+    create_order = function(customer_id, items, shipping_address) {
+      order_data <- list(
+        order = list(
+          customer_id = customer_id,
+          line_items = items,
+          shipping_address = shipping_address,
+          payment_method = "credit_card",
+          shipping_method = "standard"
+        )
+      )
+      
+      result <- private$make_request(
+        endpoint = "/v1/orders",
+        method = "POST",
+        body = order_data
+      )
+      
+      if (!is.null(result$order)) {
+        # Save to local database
+        transformed <- private$transform_orders(list(result$order))
+        private$save_to_database(transformed, "cbz_orders")
+        
+        message(sprintf("Created order: %s", result$order$order_number))
+      }
+      
+      return(result$order)
+    },
+    
+    # Update inventory
+    update_inventory = function(variant_id, quantity, location_id = NULL) {
+      body <- list(
+        inventory_level = list(
+          available = quantity
+        )
+      )
+      
+      if (!is.null(location_id)) {
+        body$inventory_level$location_id <- location_id
+      }
+      
+      result <- private$make_request(
+        endpoint = sprintf("/v1/inventory_levels/%s", variant_id),
+        method = "PUT",
+        body = body
+      )
+      
+      return(result)
+    },
+    
+    # Get sync status
+    get_sync_status = function() {
+      con <- private$get_connection()
+      
+      status <- dbGetQuery(con, "
+        SELECT 
+          'products' as entity,
+          COUNT(*) as count,
+          MAX(updated_at) as last_sync
+        FROM cbz_products
+        UNION ALL
+        SELECT 
+          'customers' as entity,
+          COUNT(*) as count,
+          MAX(updated_at) as last_sync
+        FROM cbz_customers
+        UNION ALL
+        SELECT 
+          'orders' as entity,
+          COUNT(*) as count,
+          MAX(updated_at) as last_sync
+        FROM cbz_orders
+      ")
+      
+      return(status)
+    },
+    
+    # Clean up resources
+    close = function() {
+      if (!is.null(private$db_connection)) {
+        dbDisconnect(private$db_connection)
+        private$db_connection <- NULL
+      }
+      message("Cyberbiz integration closed")
+    }
+  ),
+  
+  private = list(
+    api_key = NULL,
+    api_secret = NULL,
+    base_url = NULL,
+    db_connection = NULL,
+    rate_limiter = NULL,
+    error_handler = NULL,
+    
+    # Setup authentication
+    setup_authentication = function() {
+      private$api_key <- Sys.getenv("CBZ_API_KEY")
+      private$api_secret <- Sys.getenv("CBZ_API_SECRET")
+      private$base_url <- Sys.getenv("CBZ_API_BASE_URL")
+      
+      if (any(c(private$api_key, private$api_secret, private$base_url) == "")) {
+        stop("Missing Cyberbiz API credentials in environment")
+      }
+    },
+    
+    # Setup database connection
+    setup_database = function() {
+      private$db_connection <- dbConnect(
+        RPostgres::Postgres(),
+        host = Sys.getenv("DB_HOST", "localhost"),
+        port = as.integer(Sys.getenv("DB_PORT", "5432")),
+        dbname = Sys.getenv("DB_NAME", "mamba_cbz"),
+        user = Sys.getenv("DB_USER"),
+        password = Sys.getenv("DB_PASSWORD")
+      )
+      
+      # Create tables if they don't exist
+      private$create_tables()
+    },
+    
+    # Setup rate limiter
+    setup_rate_limiter = function() {
+      source("scripts/global_scripts/26_platform_apis/utils/rate_limiter.R")
+      private$rate_limiter <- TokenBucket$new(
+        capacity = 5,
+        refill_rate = 2  # 2 requests per second
+      )
+    },
+    
+    # Setup error handler
+    setup_error_handler = function() {
+      source("scripts/global_scripts/26_platform_apis/utils/error_handler.R")
+      private$error_handler <- APIErrorHandler$new("CBZ")
+    },
+    
+    # Generate HMAC signature
+    generate_signature = function(method, url, body = NULL) {
+      timestamp <- as.character(as.integer(Sys.time()))
+      
+      string_to_sign <- paste0(
+        toupper(method), "\n",
+        url, "\n",
+        timestamp, "\n",
+        ifelse(is.null(body), "", toJSON(body, auto_unbox = TRUE))
+      )
+      
+      signature <- hmac(
+        key = private$api_secret,
+        object = string_to_sign,
+        algo = "sha256"
+      )
+      
+      return(list(
+        signature = signature,
+        timestamp = timestamp
+      ))
+    },
+    
+    # Make authenticated API request
+    make_request = function(endpoint, method = "GET", body = NULL, params = NULL) {
+      # Rate limiting
+      private$rate_limiter$acquire()
+      
+      full_url <- paste0(private$base_url, endpoint)
+      
+      # Add query parameters
+      if (!is.null(params)) {
+        query_string <- paste0(
+          names(params), "=", 
+          URLencode(as.character(params)),
+          collapse = "&"
+        )
+        full_url <- paste0(full_url, "?", query_string)
+      }
+      
+      # Generate signature
+      auth <- private$generate_signature(method, full_url, body)
+      
+      # Make request with retry logic
+      response <- retry_with_recovery(
+        function() {
+          VERB(
+            verb = method,
+            url = full_url,
+            add_headers(
+              "X-API-Key" = private$api_key,
+              "X-Timestamp" = auth$timestamp,
+              "X-Signature" = auth$signature,
+              "Content-Type" = "application/json"
+            ),
+            body = body,
+            encode = if (!is.null(body)) "json" else NULL
+          )
+        },
+        error_handler = private$error_handler,
+        max_retries = 3,
+        request_info = list(endpoint = endpoint, method = method)
+      )
+      
+      # Check response
+      if (status_code(response) != 200) {
+        error_content <- content(response, "text")
+        stop(sprintf("API request failed: %s", error_content))
+      }
+      
+      return(content(response, "parsed"))
+    },
+    
+    # Fetch all pages of a resource
+    fetch_all_pages = function(endpoint, params = NULL) {
+      all_items <- list()
+      page <- 1
+      has_more <- TRUE
+      
+      while (has_more) {
+        page_params <- c(params, list(page = page, per_page = 200))
+        
+        result <- private$make_request(endpoint, params = page_params)
+        
+        # Extract items (handle different response structures)
+        items <- result[[gsub("^/v1/", "", endpoint)]]
+        if (is.null(items)) {
+          items <- result$data
+        }
+        
+        all_items <- c(all_items, items)
+        
+        # Check if more pages
+        if (!is.null(result$meta)) {
+          has_more <- page < result$meta$total_pages
+        } else {
+          has_more <- length(items) == 200
+        }
+        
+        page <- page + 1
+        
+        # Progress message
+        if (page %% 10 == 0) {
+          message(sprintf("  Fetched %d items...", length(all_items)))
+        }
+      }
+      
+      return(all_items)
+    },
+    
+    # Transform products for database
+    transform_products = function(products) {
+      df <- map_df(products, function(p) {
+        tibble(
+          product_id = p$id,
+          title = p$title %||% NA_character_,
+          vendor = p$vendor %||% NA_character_,
+          product_type = p$product_type %||% NA_character_,
+          status = p$status %||% "active",
+          tags = paste(p$tags, collapse = ","),
+          created_at = parse_datetime(p$created_at),
+          updated_at = parse_datetime(p$updated_at),
+          synced_at = Sys.time()
+        )
+      })
+      
+      return(df)
+    },
+    
+    # Transform customers for database
+    transform_customers = function(customers) {
+      df <- map_df(customers, function(c) {
+        tibble(
+          customer_id = c$id,
+          email = c$email %||% NA_character_,
+          first_name = c$first_name %||% NA_character_,
+          last_name = c$last_name %||% NA_character_,
+          phone = c$phone %||% NA_character_,
+          tags = paste(c$tags, collapse = ","),
+          accepts_marketing = c$accepts_marketing %||% FALSE,
+          total_spent = c$total_spent %||% 0,
+          orders_count = c$orders_count %||% 0,
+          created_at = parse_datetime(c$created_at),
+          updated_at = parse_datetime(c$updated_at),
+          synced_at = Sys.time()
+        )
+      })
+      
+      return(df)
+    },
+    
+    # Transform orders for database
+    transform_orders = function(orders) {
+      df <- map_df(orders, function(o) {
+        tibble(
+          order_id = o$id,
+          order_number = o$order_number,
+          customer_id = o$customer_id %||% NA_character_,
+          email = o$email %||% NA_character_,
+          status = o$status,
+          currency = o$currency,
+          subtotal_price = o$subtotal_price %||% 0,
+          total_tax = o$total_tax %||% 0,
+          total_shipping = o$total_shipping %||% 0,
+          total_price = o$total_price %||% 0,
+          payment_method = o$payment_method %||% NA_character_,
+          fulfillment_status = o$fulfillment_status %||% NA_character_,
+          financial_status = o$financial_status %||% NA_character_,
+          created_at = parse_datetime(o$created_at),
+          updated_at = parse_datetime(o$updated_at),
+          synced_at = Sys.time()
+        )
+      })
+      
+      return(df)
+    },
+    
+    # Extract order items
+    extract_order_items = function(orders) {
+      order_items <- map_df(orders, function(order) {
+        if (!is.null(order$line_items)) {
+          map_df(order$line_items, function(item) {
+            tibble(
+              order_id = order$id,
+              line_item_id = item$id,
+              product_id = item$product_id %||% NA_character_,
+              variant_id = item$variant_id %||% NA_character_,
+              title = item$title %||% NA_character_,
+              sku = item$sku %||% NA_character_,
+              quantity = item$quantity %||% 0,
+              price = item$price %||% 0,
+              total = item$total %||% 0,
+              synced_at = Sys.time()
+            )
+          })
+        }
+      })
+      
+      return(order_items)
+    },
+    
+    # Transform inventory for database
+    transform_inventory = function(inventory) {
+      df <- map_df(inventory, function(i) {
+        tibble(
+          variant_id = i$variant_id,
+          location_id = i$location_id %||% NA_character_,
+          available = i$available %||% 0,
+          reserved = i$reserved %||% 0,
+          incoming = i$incoming %||% 0,
+          updated_at = parse_datetime(i$updated_at),
+          synced_at = Sys.time()
+        )
+      })
+      
+      return(df)
+    },
+    
+    # Save data to database
+    save_to_database = function(data, table_name) {
+      if (nrow(data) == 0) {
+        return(invisible(NULL))
+      }
+      
+      con <- private$get_connection()
+      
+      # Use upsert logic
+      dbWriteTable(
+        con, 
+        table_name, 
+        data,
+        overwrite = FALSE,
+        append = TRUE,
+        row.names = FALSE
+      )
+    },
+    
+    # Get database connection
+    get_connection = function() {
+      if (is.null(private$db_connection) || !dbIsValid(private$db_connection)) {
+        private$setup_database()
+      }
+      return(private$db_connection)
+    },
+    
+    # Create database tables
+    create_tables = function() {
+      con <- private$get_connection()
+      
+      # Products table
+      dbExecute(con, "
+        CREATE TABLE IF NOT EXISTS cbz_products (
+          product_id VARCHAR(50) PRIMARY KEY,
+          title VARCHAR(255),
+          vendor VARCHAR(255),
+          product_type VARCHAR(100),
+          status VARCHAR(20),
+          tags TEXT,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP,
+          synced_at TIMESTAMP
+        )
+      ")
+      
+      # Customers table
+      dbExecute(con, "
+        CREATE TABLE IF NOT EXISTS cbz_customers (
+          customer_id VARCHAR(50) PRIMARY KEY,
+          email VARCHAR(255),
+          first_name VARCHAR(100),
+          last_name VARCHAR(100),
+          phone VARCHAR(50),
+          tags TEXT,
+          accepts_marketing BOOLEAN,
+          total_spent DECIMAL(10,2),
+          orders_count INTEGER,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP,
+          synced_at TIMESTAMP
+        )
+      ")
+      
+      # Orders table
+      dbExecute(con, "
+        CREATE TABLE IF NOT EXISTS cbz_orders (
+          order_id VARCHAR(50) PRIMARY KEY,
+          order_number VARCHAR(50),
+          customer_id VARCHAR(50),
+          email VARCHAR(255),
+          status VARCHAR(20),
+          currency VARCHAR(3),
+          subtotal_price DECIMAL(10,2),
+          total_tax DECIMAL(10,2),
+          total_shipping DECIMAL(10,2),
+          total_price DECIMAL(10,2),
+          payment_method VARCHAR(50),
+          fulfillment_status VARCHAR(20),
+          financial_status VARCHAR(20),
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP,
+          synced_at TIMESTAMP
+        )
+      ")
+      
+      # Order items table
+      dbExecute(con, "
+        CREATE TABLE IF NOT EXISTS cbz_order_items (
+          order_id VARCHAR(50),
+          line_item_id VARCHAR(50),
+          product_id VARCHAR(50),
+          variant_id VARCHAR(50),
+          title VARCHAR(255),
+          sku VARCHAR(100),
+          quantity INTEGER,
+          price DECIMAL(10,2),
+          total DECIMAL(10,2),
+          synced_at TIMESTAMP,
+          PRIMARY KEY (order_id, line_item_id)
+        )
+      ")
+      
+      # Inventory table
+      dbExecute(con, "
+        CREATE TABLE IF NOT EXISTS cbz_inventory (
+          variant_id VARCHAR(50),
+          location_id VARCHAR(50),
+          available INTEGER,
+          reserved INTEGER,
+          incoming INTEGER,
+          updated_at TIMESTAMP,
+          synced_at TIMESTAMP,
+          PRIMARY KEY (variant_id, location_id)
+        )
+      ")
+      
+      # Create indexes
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_orders_customer ON cbz_orders(customer_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_orders_created ON cbz_orders(created_at)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_order_items_product ON cbz_order_items(product_id)")
+    }
+  )
+)
+```
+
+## Usage Examples
+
+### Basic Synchronization
+
+```r
+# Initialize integration
+cbz <- CyberbizIntegration$new()
+
+# Perform full sync
+cbz$sync_all()
+
+# Check sync status
+status <- cbz$get_sync_status()
+print(status)
+
+# Close connection when done
+cbz$close()
+```
+
+### Incremental Order Sync
+
+```r
+# Sync orders from last 7 days
+cbz <- CyberbizIntegration$new()
+
+last_week <- Sys.Date() - 7
+cbz$sync_orders(since_date = last_week)
+
+cbz$close()
+```
+
+### Create New Order
+
+```r
+cbz <- CyberbizIntegration$new()
+
+# Create order
+new_order <- cbz$create_order(
+  customer_id = "cust_123456",
+  items = list(
+    list(
+      variant_id = "var_789",
+      quantity = 2,
+      price = 1500
+    )
+  ),
+  shipping_address = list(
+    first_name = "John",
+    last_name = "Doe",
+    address1 = "123 Main St",
+    city = "Taipei",
+    province = "Taiwan",
+    country = "TW",
+    zip = "104",
+    phone = "+886912345678"
+  )
+)
+
+print(new_order$order_number)
+
+cbz$close()
+```
+
+### Scheduled Sync Job
+
+```r
+# Run this as a scheduled job (e.g., via cron)
+library(cronR)
+
+sync_job <- function() {
+  tryCatch({
+    cbz <- CyberbizIntegration$new()
+    
+    # Sync recent data
+    cbz$sync_orders(since_date = Sys.Date() - 1)
+    cbz$sync_inventory()
+    
+    # Log success
+    cat(sprintf("[%s] Sync completed successfully\n", Sys.time()))
+    
+    cbz$close()
+  }, error = function(e) {
+    cat(sprintf("[%s] Sync failed: %s\n", Sys.time(), e$message))
+  })
+}
+
+# Schedule to run every hour
+cmd <- cron_rscript("sync_cyberbiz.R")
+cron_add(cmd, frequency = "0 * * * *", id = "cbz_sync")
+```
+
+## Monitoring and Alerting
+
+```r
+# Monitor integration health
+monitor_cbz_integration <- function() {
+  cbz <- CyberbizIntegration$new()
+  
+  # Check API connectivity
+  test_response <- tryCatch({
+    cbz$make_request("/v1/products?per_page=1")
+    TRUE
+  }, error = function(e) FALSE)
+  
+  # Check database connectivity
+  db_status <- tryCatch({
+    status <- cbz$get_sync_status()
+    nrow(status) > 0
+  }, error = function(e) FALSE)
+  
+  # Check data freshness
+  status <- cbz$get_sync_status()
+  stale_data <- any(
+    Sys.time() - status$last_sync > 3600  # Data older than 1 hour
+  )
+  
+  health <- list(
+    api_connected = test_response,
+    database_connected = db_status,
+    data_fresh = !stale_data,
+    last_check = Sys.time()
+  )
+  
+  # Send alert if issues
+  if (!all(health$api_connected, health$database_connected, health$data_fresh)) {
+    # Send alert (email, Slack, etc.)
+    message("⚠️ Integration health check failed")
+    print(health)
+  }
+  
+  cbz$close()
+  
+  return(health)
+}
+
+# Run health check
+health_status <- monitor_cbz_integration()
+```
+
+## Performance Optimization
+
+### Parallel Processing
+
+```r
+# Use parallel processing for large datasets
+library(future)
+library(furrr)
+
+sync_large_dataset <- function() {
+  cbz <- CyberbizIntegration$new()
+  
+  # Setup parallel processing
+  plan(multisession, workers = 4)
+  
+  # Get all product IDs
+  products <- cbz$sync_products()
+  product_ids <- map_chr(products, ~ .$id)
+  
+  # Fetch detailed data in parallel
+  detailed_products <- future_map(
+    product_ids,
+    ~ cbz$make_request(sprintf("/v1/products/%s", .x)),
+    .options = furrr_options(seed = TRUE)
+  )
+  
+  # Process results
+  # ...
+  
+  cbz$close()
+}
+```
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+1. **Authentication Errors**
+   ```r
+   # Check credentials
+   Sys.getenv("CBZ_API_KEY")
+   Sys.getenv("CBZ_API_SECRET")
+   ```
+
+2. **Rate Limiting**
+   ```r
+   # Adjust rate limiter settings
+   private$rate_limiter <- TokenBucket$new(
+     capacity = 3,      # Reduce burst
+     refill_rate = 1    # Slower rate
+   )
+   ```
+
+3. **Database Connection Issues**
+   ```r
+   # Test connection
+   con <- dbConnect(
+     RPostgres::Postgres(),
+     host = Sys.getenv("DB_HOST"),
+     # ... other params
+   )
+   dbListTables(con)
+   ```
+
+4. **Data Transformation Errors**
+   ```r
+   # Add more defensive coding
+   transform_safe <- possibly(transform_function, otherwise = NULL)
+   ```
+
+## Related Documentation
+
+- [Cyberbiz API Specification](../platforms/CBZ_cyberbiz_api.qmd)
+- [API Architecture Overview](../API00_architecture_overview.qmd)
+- [Authentication Patterns](../API01_authentication_patterns.qmd)
+- [Rate Limiting](../API02_rate_limiting.qmd)
+- [Error Handling](../API03_error_handling.qmd)

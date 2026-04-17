@@ -1,0 +1,284 @@
+---
+title: "NSQL Extension 01: Graph Theory"
+subtitle: "Extending Natural Structured Query Language with graph theory terminology"
+chapter: "CH00"
+category: "extension"
+number: "NSQL_EXT01"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "language-extension"
+law: "Terminology Standards"
+article: "Extension 1"
+related_to:
+  - "MP56_connected_component_principle"
+  - "MP63_graph_theory_in_nsql"
+  - "MP024_natural_sql_language"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Extension 1: Graph Theory in NSQL {#overview}
+
+## Section 1: Introduction {#introduction}
+
+This document extends the Natural Structured Query Language (NSQL) with graph theory terminology to support the connected component principle (MP56) and enable formal reasoning about application structure through graph-based concepts.
+
+## Section 2: Type Definitions {#type-definitions}
+
+### Subsection 1: Basic Graph Types {#basic-types}
+
+```nsql
+TYPE Vertex = Element ID and properties
+TYPE Edge = Connection between vertices with optional direction and weight
+TYPE Graph = Collection of vertices and edges
+TYPE Path = Ordered sequence of vertices connected by edges
+TYPE Component = Subgraph where all vertices are connected by some path
+```
+
+### Subsection 2: Extended Types {#extended-types}
+
+```nsql
+TYPE DirectedGraph = Graph where edges have direction
+TYPE UndirectedGraph = Graph where edges are bidirectional
+TYPE WeightedGraph = Graph where edges have numeric weights
+TYPE Tree = Connected acyclic graph
+TYPE DAG = Directed Acyclic Graph
+TYPE ConnectedComponent = Maximal connected subgraph
+```
+
+## Section 3: Graph Definition Syntax {#graph-syntax}
+
+### Subsection 1: Basic Graph Definition {#basic-graph}
+
+```nsql
+GRAPH(name) {
+  VERTICES {
+    name: properties,
+    ...
+  }
+  EDGES {
+    source -> destination [: properties],
+    ...
+  }
+}
+```
+
+### Subsection 2: Example Graph Definition {#graph-example}
+
+```nsql
+GRAPH(app_structure) {
+  VERTICES {
+    ui_component: {type: "UI", module: "microCustomer"},
+    server_component: {type: "Server", module: "microCustomer"},
+    data_connection: {type: "Data", source: "database"}
+  }
+  EDGES {
+    ui_component -> server_component: {interaction: "reactive"},
+    server_component -> data_connection: {query: "SQL"}
+  }
+}
+```
+
+## Section 4: Component Operations {#component-operations}
+
+### Subsection 1: Component Identification {#component-id}
+
+```nsql
+COMPONENT(component_name) FROM graph_name {
+  ENTRY_POINTS: [vertex_ids]
+  EXIT_POINTS: [vertex_ids]
+  INTERNAL_VERTICES: [vertex_ids]
+}
+```
+
+### Subsection 2: Component Analysis {#component-analysis}
+
+```nsql
+ANALYZE COMPONENT component_name {
+  CONNECTIVITY: strongly_connected | weakly_connected
+  CYCLES: detect_cycles()
+  CRITICAL_PATHS: find_critical_paths()
+  BOTTLENECKS: identify_bottlenecks()
+}
+```
+
+## Section 5: Path Expressions {#path-expressions}
+
+### Subsection 1: Path Definition {#path-definition}
+
+```nsql
+PATH(path_name) FROM source TO destination {
+  MAX_LENGTH: n
+  AVOID: [vertex_ids]
+  THROUGH: [required_vertex_ids]
+  WEIGHT: minimize | maximize
+}
+```
+
+### Subsection 2: Path Queries {#path-queries}
+
+```nsql
+FIND ALL PATHS FROM vertex_a TO vertex_b
+FIND SHORTEST PATH FROM vertex_a TO vertex_b
+FIND PATHS WITH LENGTH <= n
+FIND CRITICAL PATH IN component
+```
+
+## Section 6: Graph Queries {#graph-queries}
+
+### Subsection 1: Connectivity Queries {#connectivity}
+
+```nsql
+IS_CONNECTED(graph_name) -> BOOLEAN
+FIND_COMPONENTS(graph_name) -> LIST[Component]
+IS_REACHABLE(vertex_a, vertex_b) -> BOOLEAN
+DEGREE(vertex) -> INTEGER
+```
+
+### Subsection 2: Structural Queries {#structural}
+
+```nsql
+HAS_CYCLE(graph_name) -> BOOLEAN
+IS_TREE(graph_name) -> BOOLEAN
+IS_DAG(graph_name) -> BOOLEAN
+TOPOLOGICAL_SORT(graph_name) -> LIST[Vertex]
+```
+
+## Section 7: Application Structure Modeling {#app-modeling}
+
+### Subsection 1: Module Dependency Graph {#module-graph}
+
+```nsql
+GRAPH(module_dependencies) {
+  VERTICES {
+    FOR EACH module IN application {
+      module_id: {name: module.name, type: module.type}
+    }
+  }
+  EDGES {
+    FOR EACH dependency IN module.dependencies {
+      module -> dependency: {type: "requires"}
+    }
+  }
+}
+```
+
+### Subsection 2: Data Flow Graph {#data-flow}
+
+```nsql
+GRAPH(data_flow) {
+  VERTICES {
+    FOR EACH component IN ui_components {
+      component_id: {type: "UI", reactive: true}
+    }
+    FOR EACH table IN database {
+      table_id: {type: "Data", mutable: true}
+    }
+  }
+  EDGES {
+    FOR EACH data_binding IN bindings {
+      source -> destination: {flow: "unidirectional"}
+    }
+  }
+}
+```
+
+## Section 8: Graph Algorithms {#algorithms}
+
+### Subsection 1: Search Algorithms {#search}
+
+```nsql
+BFS(graph, start_vertex) -> LIST[Vertex]
+DFS(graph, start_vertex) -> LIST[Vertex]
+DIJKSTRA(graph, source, destination) -> Path
+A_STAR(graph, source, destination, heuristic) -> Path
+```
+
+### Subsection 2: Analysis Algorithms {#analysis}
+
+```nsql
+STRONGLY_CONNECTED_COMPONENTS(graph) -> LIST[Component]
+MINIMUM_SPANNING_TREE(graph) -> Tree
+MAXIMUM_FLOW(graph, source, sink) -> NUMBER
+PAGE_RANK(graph) -> MAP[Vertex, NUMBER]
+```
+
+## Section 9: Practical Examples {#examples}
+
+### Subsection 1: Component Dependency Analysis {#dependency-example}
+
+```nsql
+// Find all components that depend on a specific module
+QUERY component_dependencies {
+  GRAPH(app_structure)
+  FIND ALL PATHS TO module_id("database_connection")
+  RETURN UNIQUE VERTICES FROM PATHS
+}
+```
+
+### Subsection 2: Circular Dependency Detection {#circular-example}
+
+```nsql
+// Detect circular dependencies in module structure
+QUERY circular_dependencies {
+  GRAPH(module_dependencies)
+  FOR EACH component IN FIND_COMPONENTS(module_dependencies) {
+    IF HAS_CYCLE(component) {
+      RETURN component WITH cycle_path
+    }
+  }
+}
+```
+
+### Subsection 3: Critical Path Identification {#critical-path}
+
+```nsql
+// Find critical initialization path
+QUERY initialization_critical_path {
+  GRAPH(initialization_sequence)
+  FIND CRITICAL PATH FROM "start" TO "app_ready"
+  RETURN path WITH total_time
+}
+```
+
+## Section 10: Integration with NSQL Core {#integration}
+
+### Subsection 1: Graph-SQL Bridge {#graph-sql}
+
+```nsql
+// Convert relational data to graph
+CREATE GRAPH FROM TABLE relationships {
+  VERTICES: SELECT id, properties FROM entities
+  EDGES: SELECT source_id, target_id, relationship_type FROM relationships
+}
+
+// Query graph and return as table
+SELECT * FROM GRAPH_QUERY(module_dependencies) {
+  FIND_COMPONENTS() AS component_id,
+  COUNT(VERTICES) AS component_size
+}
+```
+
+### Subsection 2: Hybrid Queries {#hybrid}
+
+```nsql
+// Combine graph and relational operations
+QUERY hybrid_analysis {
+  components = FIND_COMPONENTS(GRAPH(app_structure))
+  FOR EACH component IN components {
+    metrics = SELECT COUNT(*), AVG(complexity) 
+              FROM modules 
+              WHERE module_id IN component.vertices
+    RETURN component WITH metrics
+  }
+}
+```
+
+---
+*This extension provides comprehensive graph theory support in NSQL, enabling sophisticated structural analysis and reasoning about application architecture.*

@@ -1,0 +1,321 @@
+---
+title: "D04: Poisson Precision Marketing Derivation Flow"
+subtitle: "Time-series sales analysis and demand forecasting using Poisson distribution models"
+chapter: "CH12"
+category: "derivation"
+number: "D04"
+date-created: "2025-06-06"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "derivation"
+law: "Derivation Workflows"
+article: "Derivation 4"
+related_to:
+  - "R038_platform_numbering_convention"
+  - "MP058_database_table_creation_strategy"
+  - "MP043_database_documentation"
+  - "MP047_functional_programming"
+  - "R021_one_function_one_file"
+  - "R069_function_file_naming"
+  - "MP081_explicit_parameter_specification"
+  - "R049_apply_over_loops"
+  - "D03_positioning_analysis"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Derivation 4: Poisson Precision Marketing {#overview}
+
+This document outlines the complete end-to-end derivation process for creating Poisson-based precision marketing data, from raw external data to final application components. This derivation enables time-series sales analysis and demand forecasting using Poisson distribution models.
+
+## Section 1: Derivation Overview {#overview-section}
+
+The Poisson precision marketing derivation processes sales data across time periods, creating a complete time-series dataset that fills missing periods with zero sales. This enables accurate demand modeling and forecasting using Poisson distribution assumptions.
+
+```
+D03 PRODUCT PROFILES → UNIFIED DICTIONARY → SALES DATA → TIME EXPANSION → PROPERTY ENRICHMENT → APP DATA
+```
+
+The derivation leverages existing product profiles from D03 positioning analysis, consolidating them into a unified product dictionary before processing platform-specific sales data.
+
+### Subsection 1: Prerequisites {#prerequisites}
+
+1. **D03_00 completed**: Product profiles must be imported by D03 positioning analysis
+2. **D04_00 completed**: Product ID dictionary must be created for product_line_id mapping
+3. External raw data sources must be accessible
+4. Product line configuration in `app_data.parameters.product_line.csv`
+5. Platform identifiers must be defined (e.g., "amz" for Amazon, "eby" for eBay, "cbz" for Cyberbiz)
+6. Time unit configuration (daily, weekly, monthly) must be specified
+7. For API-based platforms (e.g., Cyberbiz), valid API credentials must be configured
+
+**Critical Dependency Order**: D04_00 (product dictionary) → D04_02 (cleansing with product_line_id mapping) → D04_03 (aggregation validation) → D04_07 (time series expansion)
+
+## Section 2: Import Product ID Dictionary (D04_00) {#product-dictionary}
+
+### Subsection 1: Consolidate Product Profiles {#consolidate-profiles}
+
+```nsql
+CONSOLIDATE raw_data.df_product_profile_{product_line_id} 
+TO processed_data.df_product_profile_dictionary
+```
+
+- Combines product profiles from all product lines
+- Creates a master product dictionary
+- Maps products to their respective product lines
+- Provides unified product information for sales processing
+
+### Subsection 2: Dictionary Structure {#dictionary-structure}
+
+The product dictionary contains:
+- `product_id`: Unique product identifier
+- `product_line_id`: Associated product line
+- `product_name`: Product display name
+- `brand`: Product brand
+- `category`: Product category
+- Platform-specific identifiers (ASIN for Amazon, etc.)
+
+## Section 3: Import Sales Data (D04_01) {#import-sales}
+
+### Subsection 1: Platform-Specific Import {#platform-import}
+
+```nsql
+IMPORT external_raw_data.{platform}_sales 
+TO raw_data.df_{platform}_sales
+```
+
+Supported platforms:
+- **Amazon (amz)**: Transaction-level sales data
+- **eBay (eby)**: Order and item-level data
+- **Cyberbiz (cbz)**: API-based order data
+- **Retail**: POS transaction data
+
+### Subsection 2: Data Fields {#data-fields}
+
+Required fields for each platform:
+- Transaction/order identifier
+- Product identifier
+- Quantity sold
+- Transaction date/time
+- Sales amount
+- Customer information (when available)
+
+## Section 4: Cleanse and Standardize (D04_02) {#cleanse-standardize}
+
+### Subsection 1: Data Cleansing {#cleansing}
+
+```nsql
+CLEANSE raw_data.df_{platform}_sales 
+TO cleansed_data.df_{platform}_sales
+```
+
+Cleansing operations:
+- Remove duplicate transactions
+- Validate date formats
+- Standardize product identifiers
+- Handle missing values
+- Convert currency if needed
+
+### Subsection 2: Product Line Mapping {#product-mapping}
+
+```nsql
+JOIN cleansed_data.df_{platform}_sales 
+WITH processed_data.df_product_profile_dictionary 
+ON product_id
+ADD product_line_id TO cleansed_data.df_{platform}_sales
+```
+
+**Critical**: This step adds product_line_id to enable product line filtering
+
+## Section 5: Aggregate Sales Data (D04_03) {#aggregate-sales}
+
+### Subsection 1: Time-Based Aggregation {#time-aggregation}
+
+```nsql
+AGGREGATE cleansed_data.df_{platform}_sales 
+BY [date, product_id, product_line_id]
+TO processed_data.df_{platform}_sales_aggregated
+```
+
+Aggregation metrics:
+- `quantity_sold`: Total units sold
+- `revenue`: Total sales amount
+- `transaction_count`: Number of transactions
+- `unique_customers`: Distinct customer count
+
+### Subsection 2: Aggregation Levels {#aggregation-levels}
+
+Supported time granularities:
+- **Daily**: Default for short-term analysis
+- **Weekly**: For medium-term trends
+- **Monthly**: For long-term planning
+
+## Section 6: Create Time Series (D04_07) {#time-series}
+
+### Subsection 1: Time Expansion {#time-expansion}
+
+```nsql
+EXPAND processed_data.df_{platform}_sales_aggregated 
+WITH COMPLETE_TIME_SERIES(min_date, max_date, time_unit)
+FILL_MISSING WITH 0
+TO processed_data.df_{platform}_sales_timeseries
+```
+
+**Critical Feature**: Fills missing time periods with zero sales, essential for Poisson modeling
+
+### Subsection 2: Time Series Structure {#timeseries-structure}
+
+```r
+# Generate complete time series
+date_range <- seq(
+  from = min(sales_data$date),
+  to = max(sales_data$date),
+  by = time_unit
+)
+
+# Create grid of all combinations
+time_grid <- expand.grid(
+  date = date_range,
+  product_id = unique(sales_data$product_id),
+  product_line_id = unique(sales_data$product_line_id)
+)
+
+# Left join to fill missing periods with zeros
+full_timeseries <- time_grid %>%
+  left_join(sales_data, by = c("date", "product_id", "product_line_id")) %>%
+  mutate(
+    quantity_sold = replace_na(quantity_sold, 0),
+    revenue = replace_na(revenue, 0)
+  )
+```
+
+## Section 7: Calculate Poisson Metrics (D04_08) {#poisson-metrics}
+
+### Subsection 1: Poisson Parameter Estimation {#parameter-estimation}
+
+```nsql
+CALCULATE POISSON_PARAMETERS FROM processed_data.df_{platform}_sales_timeseries
+BY [product_id, product_line_id]
+TO processed_data.df_poisson_parameters
+```
+
+Calculated parameters:
+- **Lambda (λ)**: Average sales rate
+- **Variance**: Sales variance
+- **Dispersion**: Variance-to-mean ratio
+- **Zero-inflation**: Proportion of zero-sales periods
+
+### Subsection 2: Demand Forecasting {#demand-forecasting}
+
+```r
+# Calculate Poisson parameters
+poisson_params <- timeseries_data %>%
+  group_by(product_id, product_line_id) %>%
+  summarise(
+    lambda = mean(quantity_sold),
+    variance = var(quantity_sold),
+    dispersion = variance / lambda,
+    zero_proportion = mean(quantity_sold == 0),
+    .groups = "drop"
+  )
+
+# Generate forecasts
+forecasts <- poisson_params %>%
+  mutate(
+    forecast_mean = lambda,
+    forecast_lower = qpois(0.025, lambda),
+    forecast_upper = qpois(0.975, lambda),
+    stockout_probability = ppois(0, lambda)
+  )
+```
+
+## Section 8: Create Visualization Components (D04_09) {#visualization}
+
+### Subsection 1: Time Series Plot {#timeseries-plot}
+
+```nsql
+CREATE poissonTimeSeries COMPONENT
+FROM processed_data.df_{platform}_sales_timeseries
+WITH plotly_interactive
+```
+
+Visualization features:
+- Interactive time series plots
+- Actual vs. predicted sales
+- Confidence intervals
+- Zero-sales highlighting
+- Product line filtering
+
+### Subsection 2: Demand Distribution {#demand-distribution}
+
+```nsql
+CREATE poissonDistribution COMPONENT
+FROM processed_data.df_poisson_parameters
+WITH histogram_and_fitted_curve
+```
+
+Distribution visualization:
+- Histogram of actual sales
+- Fitted Poisson distribution
+- Dispersion indicators
+- Zero-inflation assessment
+
+## Section 9: Implementation Functions {#implementation}
+
+### Subsection 1: Core Functions {#core-functions}
+
+Following R021 and R069 principles:
+
+- `fn_consolidate_product_profiles.R`: Create unified dictionary
+- `fn_import_platform_sales.R`: Import sales data
+- `fn_cleanse_sales_data.R`: Clean and validate
+- `fn_map_product_lines.R`: Add product line IDs
+- `fn_aggregate_sales.R`: Time-based aggregation
+- `fn_expand_timeseries.R`: Create complete time series
+- `fn_calculate_poisson.R`: Estimate parameters
+- `fn_generate_forecasts.R`: Create predictions
+
+### Subsection 2: Functional Implementation {#functional-impl}
+
+```r
+# Process all platforms functionally
+poisson_results <- map(
+  c("amz", "eby", "cbz"),
+  ~ {
+    sales <- fn_import_platform_sales(.x)
+    cleansed <- fn_cleanse_sales_data(sales)
+    mapped <- fn_map_product_lines(cleansed, product_dictionary)
+    aggregated <- fn_aggregate_sales(mapped, time_unit = "daily")
+    timeseries <- fn_expand_timeseries(aggregated)
+    params <- fn_calculate_poisson(timeseries)
+    fn_generate_forecasts(params)
+  }
+)
+
+# Combine results
+final_poisson_data <- bind_rows(poisson_results)
+```
+
+## Section 10: Use Cases {#use-cases}
+
+### Subsection 1: Inventory Management {#inventory}
+
+- Predict stockout probabilities
+- Optimize reorder points
+- Calculate safety stock levels
+- Plan warehouse allocation
+
+### Subsection 2: Marketing Optimization {#marketing}
+
+- Identify low-demand periods for promotions
+- Target high-variance products for stabilization
+- Forecast campaign impact on demand
+- Optimize pricing strategies
+
+---
+
+*This derivation enables sophisticated demand forecasting and inventory optimization through Poisson distribution modeling, providing actionable insights for precision marketing and supply chain management.*

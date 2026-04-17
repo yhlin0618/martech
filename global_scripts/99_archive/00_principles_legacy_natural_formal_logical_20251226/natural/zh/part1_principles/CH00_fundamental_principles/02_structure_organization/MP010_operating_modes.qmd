@@ -1,0 +1,313 @@
+---
+title: "MP003: Operating Modes"
+subtitle: "操作模式"
+chapter: "CH00"
+category: "MP"
+number: "003"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP000: Axiomatization System"
+  - "MP001: Primitive Terms and Definitions"
+influences:
+  - "MP004: Mode Hierarchy"
+  - "MP006: Data Source Hierarchy"
+  - "P008: Deployment Patterns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 核心概念 {#core-concept}
+
+精準行銷系統在不同的模式下運行，這些模式控制對資料來源的存取、功能可用性和操作行為。這些模式為不同類型的操作創建清晰的邊界，並通過基於操作上下文限制存取來增強安全性。
+
+:::{.callout-important}
+## 三種操作模式
+系統定義了三種不同的操作模式，每種都有特定的用途和存取控制。
+:::
+
+# 模式定義 {#mode-definitions}
+
+## APP_MODE（應用模式）{#app-mode}
+
+:::{.callout-note icon="false"}
+## 🎯 目的
+在類似生產的環境中運行 Shiny 應用程式
+
+### 特徵
+- 對 app_data 和 Data.duckdb 的**唯讀存取**
+- **無法存取** raw_data、cleansed_data 或 processed_data
+- 載入**有限子集**的 global_scripts
+- 最小依賴
+- 安全優先方法
+:::
+
+## UPDATE_MODE（更新模式）{#update-mode}
+
+:::{.callout-note icon="false"}
+## 🔄 目的
+處理資料、更新應用資料來源和開發應用組件
+
+### 特徵
+- 對 app_data 和 Data.duckdb 的**讀寫存取**
+- 對 raw_data、cleansed_data 和 processed_data 的**讀寫存取**
+- **完全存取** 01_db 到 14_sql_utils 目錄
+- 載入更廣泛的實用程式集
+- 專注於資料處理功能
+:::
+
+## GLOBAL_MODE（全域模式）{#global-mode}
+
+:::{.callout-note icon="false"}
+## 🌐 目的
+管理全域資源和跨專案實用程式
+
+### 特徵
+- 對所有資料來源的**完全存取**
+- 全域資源的管理能力
+- 存取 30_global_data 目錄用於跨專案資料
+- 載入擴展開發實用程式
+- 用於系統維護
+:::
+
+# 模式選擇 {#mode-selection}
+
+操作模式由 `OPERATION_MODE` 環境變數控制，應在執行開始時設定：
+
+```r
+# 明確設定操作模式
+OPERATION_MODE <- "APP_MODE"  # 或 "UPDATE_MODE" 或 "GLOBAL_MODE"
+
+# 載入適當的初始化腳本
+source(file.path("update_scripts", "global_scripts", "00_principles", 
+                 "sc_initialization_app_mode.R"))
+```
+
+:::{.callout-tip}
+## 初始化腳本對應
+每個模式都有對應的初始化腳本：
+
+1. `sc_initialization_app_mode.R` → APP_MODE
+2. `sc_initialization_update_mode.R` → UPDATE_MODE
+3. `sc_initialization_global_mode.R` → GLOBAL_MODE
+:::
+
+# 模式特定初始化 {#mode-initialization}
+
+每個初始化腳本載入特定的依賴集：
+
+:::{.panel-tabset}
+
+## APP_MODE 初始化
+
+```r
+# sc_initialization_app_mode.R (簡化版)
+OPERATION_MODE <- "APP_MODE"
+
+# 只載入 Shiny 應用所需的內容
+source_directory(file.path("update_scripts", "global_scripts", "02_db_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "04_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "03_config"))
+source_directory(file.path("update_scripts", "global_scripts", "10_rshinyapp_components"))
+source_directory(file.path("update_scripts", "global_scripts", "11_rshinyapp_utils"))
+
+# 強制唯讀存取
+read_only_db_access <- TRUE
+
+# 限制對資料目錄的存取
+allow_raw_data_access <- FALSE
+allow_processed_data_access <- FALSE
+```
+
+## UPDATE_MODE 初始化
+
+```r
+# sc_initialization_update_mode.R (簡化版)
+OPERATION_MODE <- "UPDATE_MODE"
+
+# 載入所有資料處理實用程式
+source_directory(file.path("update_scripts", "global_scripts", "01_db"))
+source_directory(file.path("update_scripts", "global_scripts", "02_db_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "03_config"))
+source_directory(file.path("update_scripts", "global_scripts", "04_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "05_import"))
+# ... 額外目錄
+
+# 允許資料修改
+read_only_db_access <- FALSE
+
+# 允許存取處理資料
+allow_raw_data_access <- TRUE
+allow_processed_data_access <- TRUE
+```
+
+## GLOBAL_MODE 初始化
+
+```r
+# sc_initialization_global_mode.R (簡化版)
+OPERATION_MODE <- "GLOBAL_MODE"
+
+# 載入所有內容包括全域資源實用程式
+source_directory(file.path("update_scripts", "global_scripts", "01_db"))
+source_directory(file.path("update_scripts", "global_scripts", "02_db_utils"))
+# ... 所有目錄
+source_directory(file.path("update_scripts", "global_scripts", "99_development"))
+
+# 完全存取
+read_only_db_access <- FALSE
+allow_raw_data_access <- TRUE
+allow_processed_data_access <- TRUE
+allow_global_data_modification <- TRUE
+```
+
+:::
+
+# 基於模式的安全控制 {#security-controls}
+
+操作模式強制執行安全控制：
+
+## 資料庫存取控制 {#database-controls}
+
+```r
+# dbConnect_from_list.R 的範例
+dbConnect_from_list <- function(db_name, read_only = NULL) {
+  # 如果未指定，預設為模式特定設定
+  if (is.null(read_only)) {
+    read_only <- read_only_db_access
+  }
+  
+  # APP_MODE 強制 app_data 為唯讀
+  if (OPERATION_MODE == "APP_MODE" && db_name == "app_data") {
+    read_only <- TRUE
+  }
+  
+  # 防止在 APP_MODE 中存取原始資料
+  if (OPERATION_MODE == "APP_MODE" && 
+      db_name %in% c("raw_data", "cleansed_data", "processed_data")) {
+    stop("Access to ", db_name, " is not allowed in APP_MODE")
+  }
+  
+  # 以適當權限連接
+  duckdb::dbConnect(duckdb::duckdb(), db_path, read_only = read_only)
+}
+```
+
+## 檔案系統控制 {#filesystem-controls}
+
+```r
+# 檔案存取檢查範例
+check_file_access <- function(file_path) {
+  # 防止在 APP_MODE 中存取原始資料
+  if (OPERATION_MODE == "APP_MODE" && 
+      grepl("raw_data|cleansed_data|processed_data", file_path)) {
+    stop("Access to ", file_path, " is not allowed in APP_MODE")
+  }
+  
+  # 限制全域資料修改
+  if (OPERATION_MODE != "GLOBAL_MODE" && 
+      grepl("30_global_data", file_path) && 
+      file.access(file_path, 2) == 0) {  # 檢查寫入權限
+    stop("Modification of global data is only allowed in GLOBAL_MODE")
+  }
+  
+  # 如果檢查通過則允許存取
+  return(TRUE)
+}
+```
+
+# 最佳實務 {#best-practices}
+
+## 明確模式宣告 {#explicit-declaration}
+
+始終明確設定並驗證操作模式：
+
+```r
+# 在每個腳本的開始
+OPERATION_MODE <- "UPDATE_MODE"  # 選擇適當的模式
+
+# 驗證初始化完成
+if (!exists("INITIALIZATION_COMPLETED") || !INITIALIZATION_COMPLETED) {
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   paste0("sc_initialization_", tolower(OPERATION_MODE), ".R")))
+}
+```
+
+## 適合模式的操作 {#mode-appropriate}
+
+尊重模式邊界，只執行適合當前模式的操作：
+
+```r
+# 良好實務 - 在操作前檢查模式
+if (OPERATION_MODE == "APP_MODE") {
+  # 唯讀操作
+  display_data(read_app_data())
+} else if (OPERATION_MODE %in% c("UPDATE_MODE", "GLOBAL_MODE")) {
+  # 資料修改操作
+  update_app_data()
+}
+```
+
+## 模式測試 {#mode-testing}
+
+在所有相關模式中測試組件：
+
+```r
+# 跨模式測試函數
+test_component_in_all_modes <- function(component_name) {
+  # 保存當前模式
+  original_mode <- OPERATION_MODE
+  
+  # 在 APP_MODE 中測試
+  OPERATION_MODE <- "APP_MODE"
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+  test_result_app <- test_component(component_name)
+  
+  # 在 UPDATE_MODE 中測試
+  OPERATION_MODE <- "UPDATE_MODE"
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_update_mode.R"))
+  test_result_update <- test_component(component_name)
+  
+  # 恢復原始模式
+  OPERATION_MODE <- original_mode
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   paste0("sc_initialization_", tolower(OPERATION_MODE), ".R")))
+  
+  # 返回測試結果
+  list(app_mode = test_result_app, update_mode = test_result_update)
+}
+```
+
+# 模式比較表 {#mode-comparison}
+
+:::{.callout-tip}
+## 快速參考
+:::
+
+| 特性 | APP_MODE | UPDATE_MODE | GLOBAL_MODE |
+|------|----------|-------------|-------------|
+| **目的** | 運行應用 | 處理資料 | 系統維護 |
+| **app_data 存取** | 唯讀 | 讀寫 | 讀寫 |
+| **raw_data 存取** | ❌ 無 | ✅ 讀寫 | ✅ 讀寫 |
+| **processed_data 存取** | ❌ 無 | ✅ 讀寫 | ✅ 讀寫 |
+| **30_global_data 存取** | ❌ 無 | 唯讀 | ✅ 讀寫 |
+| **載入的腳本** | 最小集 | 資料處理集 | 完整集 |
+| **安全等級** | 最高 | 中等 | 最低 |
+| **典型用戶** | 終端用戶 | 資料分析師 | 系統管理員 |
+
+# 結論 {#conclusion}
+
+操作模式原則在不同執行上下文之間建立了清晰的分離，增強了精準行銷系統的安全性、可維護性和功能性。通過尊重模式邊界，我們確保應用程式以適當的存取控制和為其特定目的優化的依賴運行。
+
+:::{.callout-warning}
+## 重要提醒
+始終根據任務需求選擇適當的操作模式，並確保程式碼尊重模式邊界以維護系統安全性和完整性。
+:::

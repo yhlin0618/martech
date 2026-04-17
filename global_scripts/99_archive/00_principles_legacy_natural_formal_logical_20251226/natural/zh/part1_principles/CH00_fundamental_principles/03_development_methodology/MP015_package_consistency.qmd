@@ -1,0 +1,169 @@
+---
+title: "MP019: 套件一致性原則 (Package Consistency Principle)"
+subtitle: "與外部套件整合時，維持其慣例優先於內部命名標準"
+author: "Claude"
+date: "2025-04-03"
+date-modified: "2025-08-16"
+categories: [meta-principle, naming-conventions, integration]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心概念
+
+當與外部套件或生態系統整合時，維持與其既定慣例的一致性優先於我們的內部命名標準。這減少了認知負荷，改善了可讀性，並促進了與這些生態系統的更容易整合。
+
+## 原則層級
+
+套件一致性原則在我們的原則層級中處於高層：
+
+1. **MP019 - 套件一致性原則**
+2. 命名慣例（snake_case、camelCase）
+3. 檔案組織原則
+4. 其他風格和組織原則
+
+## 關鍵應用
+
+### 1. Shiny 模組命名 {#shiny-naming}
+
+Shiny 模組慣例使用 camelCase 搭配 UI/Server 後綴：
+
+```r
+# 正確：遵循 Shiny 生態系統慣例
+moduleNameUI <- function(id) { ... }
+moduleNameServer <- function(id, ...) { ... }
+
+# 我們程式碼庫中的範例：
+microCustomerUI <- function(id) { ... }
+microCustomerServer <- function(id, data_source = NULL) { ... }
+```
+
+函數名稱遵循 Shiny 的慣例，並且透過我們基於資料夾的組織，檔案名稱也與函數名稱匹配：
+
+```
+microCustomer/
+├── microCustomerUI.R
+├── microCustomerServer.R
+└── microCustomerDefaults.R
+```
+
+### 2. 資料庫介面函數 {#database-functions}
+
+包裝 DBI 功能的函數維持 DBI 的命名慣例：
+
+```r
+# 正確：遵循 DBI 生態系統慣例
+dbConnect <- function(...) { ... }
+dbGetQuery <- function(conn, query) { ... }
+
+# 我們 db_utils 中的範例：
+dbFetchAll <- function(query, conn = NULL) { ... }
+```
+
+### 3. 其他套件整合 {#other-integrations}
+
+相同原則適用於其他套件整合：
+
+| 套件 | 命名慣例 | 我們的實施 |
+|------|---------|-----------|
+| ggplot2 | snake_case 和點號（`geom_point()`） | 使用 `geom_*` 命名 |
+| dplyr | snake_case 動詞 | 維持動詞優先風格 |
+| data.table | camelCase 帶點號（`data[, .N, by=group]`） | 在 data.table 上下文中使用 data.table 語法 |
+
+## 實施指南
+
+### 1. 清晰的套件上下文 {#clear-context}
+
+實施與外部套件整合的函數時：
+
+- 清楚記錄您遵循哪個套件的慣例
+- 在適當的地方使用一致的前綴或命名空間
+- 在 Imports 或 Depends 中包含套件
+
+### 2. 介面邊界 {#interface-boundaries}
+
+- 在介面邊界維持套件一致性
+- 內部實施可以遵循我們的標準慣例
+- 如果慣例衝突嚴重，考慮包裝函數
+
+### 3. 文檔 {#documentation}
+
+- 記錄任何偏離我們標準命名慣例的地方
+- 解釋遵循哪個套件的慣例
+- 提供正確使用模式的範例
+
+### 4. 檔案和函數命名對齊 {#file-function-alignment}
+
+- 檔案應以其包含的主要函數命名
+- 這在基於資料夾的組織中尤其重要
+- 範例：函數 `microCustomerUI()` 應在名為 `microCustomerUI.R` 的檔案中
+
+## 正確實施的範例
+
+### Shiny 模組實施
+
+```r
+#' 微觀客戶 UI 組件
+#'
+#' 這遵循 Shiny 模組慣例，使用 camelCase 命名。
+#' 檔案名稱與函數名稱匹配：microCustomerUI.R
+#' 
+#' @param id 模組 ID
+#' @return UI 組件
+#' @export
+microCustomerUI <- function(id) {
+  ns <- NS(id)
+  # 實施
+}
+```
+
+### 資料庫函數實施
+
+```r
+#' 使用錯誤處理執行查詢
+#'
+#' 這遵循 DBI 命名慣例，使用 db 前綴。
+#' 
+#' @param query SQL 查詢字串
+#' @param conn 資料庫連接
+#' @return 查詢結果
+#' @export
+dbSafeExecute <- function(query, conn = default_connection) {
+  # 實施
+}
+```
+
+## 好處
+
+1. **減少認知負荷**：開發者不必在不同命名慣例之間切換上下文
+2. **改善互操作性**：程式碼與外部套件更自然地整合
+3. **更好的可讀性**：函數名稱與生態系統中的相關函數對齊
+4. **更容易的學習曲線**：熟悉外部套件的新開發者可以更快上手
+5. **更清晰的 API 設計**：介面邊界更直觀
+
+## 與規則 11（UI-Server-Defaults 三元組）的關係
+
+UI-Server-Defaults 三元組規則（R11）透過其基於資料夾的組織模式明確實施此原則。透過在資料夾中組織組件檔案並命名檔案以匹配其匯出的函數，我們在以下之間創建一致性：
+
+1. 程式碼中的函數名稱（`microCustomerUI()`）
+2. 磁碟上的檔案名稱（`microCustomerUI.R`）
+3. 組件資料夾名稱（`microCustomer/`）
+
+這種對齊創建了一個可預測的結構，同時遵循 R 套件慣例和 Shiny 慣例。
+
+## 結論
+
+套件一致性原則幫助我們平衡內部一致性與使用外部套件的實際現實。透過在介面邊界優先考慮與既定生態系統的一致性，我們創建了更直觀的程式碼，對於熟悉這些生態系統的開發者需要更少的上下文切換。
+
+當有疑問時，請問：
+1. 這個函數主要是與外部套件的 API 互動嗎？
+2. 該套件有強烈的命名慣例嗎？
+3. 遵循我們的內部慣例會造成混淆嗎？
+
+如果答案是「是」，請遵循外部套件的慣例。

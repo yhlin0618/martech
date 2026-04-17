@@ -1,0 +1,265 @@
+---
+title: "SO_R029: CHANGELOG 組織規則"
+subtitle: "所有原則審查和系統變更必須記錄在 CHANGELOG 目錄中"
+author: "Claude"
+date: "2025-08-25"
+categories: [rule, documentation, version-control, changelog]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+所有原則審查、修改、架構決策和系統變更必須按照嚴格的組織結構記錄在 CHANGELOG 目錄中。任何審查或修改文檔都不得放置在原則根目錄中。
+
+## 必需的目錄結構
+
+```
+00_principles/
+├── CHANGELOG/                      # 所有變更文檔
+│   ├── reviews/                   # 審計報告和審查
+│   │   └── YYYY-MM-DD_topic/    # 日期標記的審查會議
+│   ├── decisions/                 # 架構決策
+│   ├── improvements/              # 增強提案
+│   │   ├── PROPOSED/             # 新提案
+│   │   ├── APPROVED/             # 已批准實施
+│   │   └── IMPLEMENTED/          # 已完成改進
+│   ├── issues/                    # 問題追蹤
+│   │   ├── OPEN/                 # 新問題
+│   │   ├── IN_PROGRESS/          # 正在處理
+│   │   └── RESOLVED/             # 已解決
+│   ├── releases/                  # 版本發布說明
+│   │   └── archive/              # 歷史版本
+│   └── archive/                   # 存檔材料
+└── [原則目錄]                      # 僅活躍原則
+```
+
+## 根目錄禁止項目
+
+以下檔案絕不能存在於 `00_principles/` 根目錄中：
+
+### 審查和審計文檔
+- `PRINCIPLE_AUDIT_REPORT_*.md`
+- `PRINCIPLE_MIGRATION_GUIDE_*.md`
+- `PRINCIPLE_CONSTITUTIONAL_AMENDMENTS.md`
+- `PRINCIPLE_CONFLICT_RESOLUTION.md`
+- `PRINCIPLE_CONSOLIDATION_PLAN.md`
+- 任何以 `PRINCIPLE_`、`CHAPTER_`、`MP_`、`P_`、`R_` 開頭的審查文檔
+
+### 臨時工作檔案
+- 草稿文檔
+- 進行中的審查
+- 臨時分析檔案
+- 個人筆記或註釋
+
+## 文檔放置指南
+
+### 1. 審查目錄（`CHANGELOG/reviews/`）
+
+用於：
+- 全面的原則審計
+- 憲法對齊審查
+- 衝突解決文檔
+- 遷移指南
+- 整合計劃
+
+命名慣例：`YYYY-MM-DD_descriptive_topic/`
+
+範例：
+```
+CHANGELOG/reviews/
+└── 2025-08-25_constitutional_alignment/
+    ├── PRINCIPLE_AUDIT_REPORT_20250825.md
+    ├── PRINCIPLE_MIGRATION_GUIDE_20250825.md
+    └── PRINCIPLE_CONSTITUTIONAL_AMENDMENTS.md
+```
+
+### 2. 決策目錄（`CHANGELOG/decisions/`）
+
+用於：
+- 架構決策記錄（ADRs）
+- 設計決策
+- 技術選擇
+- 流程變更
+
+命名慣例：`YYYY-MM-DD_decision_topic.md` 或 `ADR_NNN_topic.md`
+
+### 3. 改進目錄（`CHANGELOG/improvements/`）
+
+用於：
+- 增強提案
+- 功能請求
+- 流程改進
+- 優化建議
+
+工作流程：PROPOSED → APPROVED → IMPLEMENTED
+
+### 4. 問題目錄（`CHANGELOG/issues/`）
+
+用於：
+- 錯誤報告
+- 不一致性
+- 違反原則
+- 技術債務項目
+
+工作流程：OPEN → IN_PROGRESS → RESOLVED
+
+### 5. 發布目錄（`CHANGELOG/releases/`）
+
+用於：
+- 版本發布說明
+- 變更摘要
+- 破壞性變更
+- 遷移要求
+
+## 實施要求
+
+### 1. 檔案創建
+
+創建任何審查或修改文檔時：
+
+```r
+# 正確：放在適當的 CHANGELOG 子目錄中
+create_file("CHANGELOG/reviews/2025-08-25_topic/REVIEW.md")
+
+# 錯誤：絕不放在根目錄
+# create_file("PRINCIPLE_REVIEW.md")  # 錯誤！
+```
+
+### 2. 現有檔案遷移
+
+如果根目錄中存在審查文檔：
+
+```bash
+# 移動到適當的 CHANGELOG 位置
+mkdir -p CHANGELOG/reviews/YYYY-MM-DD_topic/
+mv PRINCIPLE_*.md CHANGELOG/reviews/YYYY-MM-DD_topic/
+mv CHAPTER_*.md CHANGELOG/reviews/YYYY-MM-DD_topic/
+```
+
+### 3. 文檔標準
+
+每個 CHANGELOG 條目應包括：
+
+```markdown
+# 文檔標題
+
+## 日期
+YYYY-MM-DD
+
+## 作者
+[姓名或系統]
+
+## 摘要
+變更或審查的簡要描述
+
+## 詳情
+全面的文檔
+
+## 影響
+- 受影響的原則
+- 需要的遷移
+- 破壞性變更
+
+## 狀態
+[PROPOSED | IN_PROGRESS | COMPLETED | ARCHIVED]
+```
+
+## 理由
+
+### 為什麼 CHANGELOG 組織很重要
+
+1. **整潔的根目錄**：保持原則根目錄專注於活躍原則
+2. **歷史記錄**：提供系統演化的清晰時間線
+3. **可追溯性**：使查找變更發生的時間和原因變得容易
+4. **專業標準**：遵循變更管理的行業最佳實踐
+5. **審計合規**：支持監管和合規要求
+
+### 結構化組織的好處
+
+1. **可發現性**：容易找到相關文檔
+2. **上下文保存**：相關文檔保持在一起
+3. **工作流管理**：清晰的改進和問題狀態追蹤
+4. **版本控制**：更好的 Git 歷史和差異追蹤
+5. **團隊協作**：對文檔放置有明確的期望
+
+## 與其他原則的關係
+
+- **MP012（變更追蹤）**：此規則實施 MP012 的 CHANGELOG 要求
+- **DEV_R035（代碼合規追蹤）**：代碼合規問題的補充追蹤
+- **MP007（文檔組織）**：與整體文檔結構保持一致
+- **MP013（成文法類比）**：提供「立法歷史」存檔
+- **R002（原則文檔）**：將文檔要求擴展到變更
+
+## 合規檢查清單
+
+- [ ] CHANGELOG 目錄存在且包含所有必需的子目錄
+- [ ] 根目錄中沒有審查文檔
+- [ ] 所有新審查都放在 CHANGELOG/reviews/ 下的日期資料夾中
+- [ ] 通過適當的工作流資料夾追蹤問題
+- [ ] 改進遵循 PROPOSED → APPROVED → IMPLEMENTED 流程
+- [ ] 在 CHANGELOG/releases/ 中維護發布說明
+- [ ] 存檔目錄用於過時材料
+- [ ] 團隊已接受 CHANGELOG 要求培訓
+
+## 範例
+
+### 範例 1：原則審計
+
+```bash
+# 創建新的原則審計
+mkdir -p CHANGELOG/reviews/2025-08-25_quarterly_audit/
+touch CHANGELOG/reviews/2025-08-25_quarterly_audit/AUDIT_REPORT.md
+touch CHANGELOG/reviews/2025-08-25_quarterly_audit/RECOMMENDATIONS.md
+touch CHANGELOG/reviews/2025-08-25_quarterly_audit/ACTION_ITEMS.md
+```
+
+### 範例 2：問題追蹤
+
+```bash
+# 創建新問題
+echo "# 問題：規則 R050 和 R075 衝突" > \
+  CHANGELOG/issues/OPEN/ISSUE_007_rule_conflict.md
+
+# 移至進行中
+mv CHANGELOG/issues/OPEN/ISSUE_007_rule_conflict.md \
+   CHANGELOG/issues/IN_PROGRESS/ISSUE_007_rule_conflict.md
+
+# 標記為已解決
+mv CHANGELOG/issues/IN_PROGRESS/ISSUE_007_rule_conflict.md \
+   CHANGELOG/issues/RESOLVED/ISSUE_007_rule_conflict.md
+```
+
+### 範例 3：改進提案
+
+```bash
+# 提出改進
+cat > CHANGELOG/improvements/PROPOSED/automated_validation.md << EOF
+# 自動化原則驗證系統
+## 提議日期：2025-08-25
+## 作者：系統架構師
+## 描述：實施原則合規的自動檢查
+EOF
+
+# 批准後
+mv CHANGELOG/improvements/PROPOSED/automated_validation.md \
+   CHANGELOG/improvements/APPROVED/automated_validation.md
+
+# 實施後
+mv CHANGELOG/improvements/APPROVED/automated_validation.md \
+   CHANGELOG/improvements/IMPLEMENTED/automated_validation.md
+```
+
+## 執行
+
+此規則是強制性的且不可協商。任何在根目錄中發現的審查或修改文檔應立即移動到適當的 CHANGELOG 子目錄。可能會實施自動檢查來強制執行此結構。
+
+## 結論
+
+CHANGELOG 目錄作為所有系統變更、審查和演化的權威記錄。通過維護嚴格的組織並禁止在根目錄中放置審查文檔，我們確保了一個整潔、專業和可審計的原則管理系統，支持長期維護和協作。

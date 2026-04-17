@@ -1,0 +1,390 @@
+---
+title: "DEV_P017: 資料框欄位存取模式原則"
+subtitle: "存取資料框欄位應優先使用`[[\"column_name\"]]`記號而非`$column_name`語法，以提高穩健性、動態欄位名稱相容性和防禦性程式設計實務"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P017"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article: 
+  number: 17
+  title: "資料框欄位存取模式原則"
+related_to:
+  - "MP047: 函數式程式設計原則"
+  - "MP060: 簡約原則"
+  - "DEV_P013: 錯誤處理模式"
+  - "DEV_P009: 例外作為規則"
+  - "DEV_P004: 點記號屬性存取"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十七條：資料框欄位存取模式原則 {#overview}
+
+**開發方法法第十七條（資料框欄位存取模式原則）**
+
+存取資料框欄位應優先使用`[["column_name"]]`記號而非`$column_name`語法，以提高穩健性、動態欄位名稱相容性和防禦性程式設計實務。
+
+:::{.callout-important}
+## 核心原則
+建立資料框欄位存取的標準化方法，優先使用雙括號記號（`df[["column_name"]]`）而非美元符號記號（`df$column_name`），提供更一致的行為和更好的錯誤處理。
+:::
+
+# 第一項：實施基礎 {#implementation-rationale}
+
+## 第一款：雙括號記號優勢 {#double-bracket-advantages}
+
+**雙括號記號的益處：**
+
+1. **非標準名稱的穩健性**：雙括號記號能更可靠地處理包含空格、特殊字元或保留字的欄位名稱
+2. **動態欄位存取**：啟用變數欄位名稱和程式化欄位選擇
+3. **一致的錯誤處理**：當欄位不存在時提供更統一的行為
+4. **防禦性程式設計**：與使用`column_name %in% names(df)`的欄位存在驗證良好配合
+5. **類型安全**：減少`$`記號可能發生的意外部分匹配問題
+
+**存取模式比較：**
+
+| 記號類型 | 語法 | 動態支援 | 錯誤處理 | 特殊字元 |
+|----------|------|----------|----------|----------|
+| 雙括號 | `df[["column"]]` | ✅ 完全支援 | ✅ 一致 | ✅ 完全支援 |
+| 美元符號 | `df$column` | ❌ 不支援 | ⚠️ 不一致 | ❌ 有限支援 |
+
+# 第二項：基本欄位存取模式 {#basic-column-access}
+
+## 第一款：標準存取語法 {#standard-access-syntax}
+
+**正確的欄位存取實施：**
+
+```r
+# 正確：使用雙括號記號
+customer_name <- customers[["full_name"]]
+
+# 避免：使用美元記號
+customer_name <- customers$full_name
+```
+
+## 第二款：動態欄位名稱處理 {#dynamic-column-names}
+
+**動態存取實施：**
+
+```r
+# 正確：使用變數的動態欄位存取
+field_name <- "total_sales"
+value <- sales_data[[field_name]]
+
+# 正確：從函數回傳的欄位名稱
+id_field <- get_id_field_name(data_type)
+ids <- data[[id_field]]
+
+# 錯誤：無法使用$記號
+field_name <- "total_sales"
+value <- sales_data$field_name  # 這會尋找字面的"field_name"欄位
+```
+
+# 第三項：欄位存在性檢查 {#column-existence-checking}
+
+## 第一款：安全存取模式 {#safe-access-patterns}
+
+**帶驗證的存取實施：**
+
+```r
+# 正確：安全欄位存取模式
+if (field %in% names(dat)) {
+  value <- dat[[field]]
+} else {
+  # 處理遺失欄位的情況
+  value <- default_value
+}
+
+# 正確：在函數中使用預設值
+safeValue <- function(data, field, default = NA) {
+  if (is.null(data) || !is.data.frame(data) || 
+      nrow(data) == 0 || !field %in% names(data)) {
+    return(default)
+  }
+  value <- data[[field]][1]
+  if (is.null(value) || is.na(value)) {
+    return(default)
+  }
+  return(value)
+}
+```
+
+## 第二款：防禦性程式設計模式 {#defensive-programming-patterns}
+
+**完整的驗證實施：**
+
+```r
+# 客戶指標安全擷取函數
+get_customer_metric <- function(customer_data, metric_name, default_value = NA) {
+  # 驗證輸入
+  if (is.null(customer_data) || !is.data.frame(customer_data) || nrow(customer_data) == 0) {
+    return(default_value)
+  }
+  
+  # 檢查指標是否存在於資料中
+  if (!metric_name %in% names(customer_data)) {
+    warning(paste("指標", metric_name, "在客戶資料中未找到"))
+    return(default_value)
+  }
+  
+  # 使用雙括號記號取得值
+  value <- customer_data[[metric_name]][1]  # 僅第一列
+  
+  # 處理NA/NULL
+  if (is.null(value) || is.na(value)) {
+    return(default_value)
+  }
+  
+  return(value)
+}
+```
+
+# 第四項：反模式識別 {#anti-patterns}
+
+## 第一款：混合存取風格 {#mixed-access-styles}
+
+**風格不一致問題：**
+
+```r
+# 錯誤：不一致的風格混合$和[[]]
+customer_name <- customers$name
+customer_email <- customers[["email_address"]]
+purchase_total <- customers$total
+
+# 正確：使用[[]]的一致風格
+customer_name <- customers[["name"]]
+customer_email <- customers[["email_address"]]
+purchase_total <- customers[["total"]]
+```
+
+## 第二款：存取不存在的欄位 {#accessing-nonexistent-columns}
+
+**缺乏驗證問題：**
+
+```r
+# 錯誤：存取前無驗證
+value <- data$column_that_might_not_exist  # 可能回傳NULL或錯誤
+
+# 正確：先驗證存在性
+if ("column_that_might_not_exist" %in% names(data)) {
+  value <- data[["column_that_might_not_exist"]]
+} else {
+  # 處理遺失的情況
+}
+```
+
+## 第三款：欄位名稱與函數名稱衝突 {#column-function-name-conflicts}
+
+**命名衝突問題：**
+
+```r
+# 有問題：當欄位名稱是函數名稱時，$可能模糊
+data$round  # 這是data$round還是資料環境中的round()函數？
+
+# 清楚：明確顯示存取欄位的意圖
+data[["round"]]
+```
+
+# 第五項：完整實施範例 {#complete-implementation-examples}
+
+## 第一款：客戶指標顯示模組 {#customer-metrics-display-module}
+
+**使用範例實施：**
+
+```r
+# 客戶指標顯示函數
+display_customer_metrics <- function(customer_id, conn) {
+  # 取得客戶資料
+  customer <- get_customer_data(customer_id, conn)
+  
+  # 使用雙括號模式安全擷取指標
+  cust_name <- get_customer_metric(customer, "customer_name", "未知")
+  total_orders <- get_customer_metric(customer, "total_orders", 0)
+  avg_order_value <- get_customer_metric(customer, "average_order", 0)
+  
+  # 使用值
+  tagList(
+    h3(paste("客戶：", cust_name)),
+    p(paste("總訂單數：", total_orders)),
+    p(paste("平均訂單價值：", sprintf("$%.2f", avg_order_value)))
+  )
+}
+```
+
+## 第二款：Shiny模組與一致欄位存取 {#shiny-module-consistent-access}
+
+**模組實施：**
+
+```r
+# UI函數
+customerMetricsUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    selectInput(ns("customer_select"), "選擇客戶：", NULL),
+    selectInput(ns("metric_field"), "選擇指標：", 
+                c("購買頻率", "最近度", "貨幣價值", "客戶年齡")),
+    plotlyOutput(ns("metric_plot"))
+  )
+}
+
+# 具有一致欄位存取的伺服器函數
+customerMetricsServer <- function(id, customer_data) {
+  moduleServer(id, function(input, output, session) {
+    
+    # 欄位名稱對應
+    field_mapping <- reactive({
+      c(
+        "購買頻率" = "f_value",
+        "最近度" = "r_value",
+        "貨幣價值" = "m_value",
+        "客戶年齡" = "customer_age_days"
+      )
+    })
+    
+    # 取得當前欄位名稱
+    current_field <- reactive({
+      req(input$metric_field)
+      field_mapping()[[input$metric_field]]
+    })
+    
+    # 使用雙括號記號建立圖表
+    output$metric_plot <- renderPlotly({
+      req(customer_data(), current_field())
+      
+      # 取得資料和當前欄位
+      dat <- customer_data()
+      field <- current_field()
+      
+      # 驗證欄位存在於資料中
+      if (!field %in% names(dat)) {
+        return(plotly_empty() %>% 
+                 add_annotations(text = "選擇的指標不可用", showarrow = FALSE))
+      }
+      
+      # 使用雙括號記號進行欄位存取
+      plot_ly(dat, x = ~customer_id, y = as.formula(paste0("~", field)), type = "bar") %>%
+        layout(title = input$metric_field,
+               xaxis = list(title = "客戶ID"),
+               yaxis = list(title = input$metric_field))
+    })
+  })
+}
+```
+
+# 第六項：特殊情境處理 {#special-case-handling}
+
+## 第一款：與Plotly和ggplot的配合 {#plotly-ggplot-integration}
+
+**繪圖套件語法：**
+
+```r
+# 正確：對於plotly/ggplot，使用公式記號（波浪號），工作方式不同
+plot_ly(df, x = ~x, y = ~y, type = "scatter")
+
+# 也正確：對於data.table語法，您可以使用特定的data.table語法
+dt[, sum(value), by = group]
+```
+
+## 第二款：巢狀資料存取模式 {#nested-data-access-patterns}
+
+**複雜資料結構處理：**
+
+```r
+# 處理巢狀清單中的資料框
+access_nested_column <- function(nested_data, list_key, column_name, default = NA) {
+  # 驗證清單鍵存在
+  if (!list_key %in% names(nested_data)) {
+    return(default)
+  }
+  
+  # 取得資料框
+  df <- nested_data[[list_key]]
+  
+  # 驗證是資料框且欄位存在
+  if (!is.data.frame(df) || !column_name %in% names(df)) {
+    return(default)
+  }
+  
+  # 使用雙括號記號存取
+  return(df[[column_name]])
+}
+```
+
+# 第七項：效能與最佳實務 {#performance-best-practices}
+
+## 第一款：效能考量 {#performance-considerations}
+
+**效能最佳化模式：**
+
+```r
+# 對於大型資料集的重複存取，快取欄位檢查
+create_column_accessor <- function(data) {
+  available_columns <- names(data)
+  
+  function(column_name, default = NA) {
+    if (column_name %in% available_columns) {
+      return(data[[column_name]])
+    } else {
+      return(default)
+    }
+  }
+}
+
+# 使用範例
+accessor <- create_column_accessor(large_dataset)
+values <- c(
+  accessor("column1"),
+  accessor("column2"),
+  accessor("column3")
+)
+```
+
+## 第二款：類型安全檢查 {#type-safety-checks}
+
+**類型驗證模式：**
+
+```r
+# 帶類型檢查的安全存取
+safe_numeric_access <- function(data, column_name, default = 0) {
+  if (!column_name %in% names(data)) {
+    return(default)
+  }
+  
+  value <- data[[column_name]]
+  
+  # 確保是數值
+  if (is.numeric(value)) {
+    return(value)
+  } else {
+    warning(paste("欄位", column_name, "不是數值類型"))
+    return(default)
+  }
+}
+```
+
+# 第八項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **建基於 MP047（函數式程式設計原則）**：透過一致的存取模式支援函數式方法
+2. **補充 MP060（簡約原則）**：透過標準化存取模式減少複雜性
+3. **增強 DEV_P013（錯誤處理模式）**：提供更可預測的錯誤行為
+4. **支援 DEV_P009（例外作為規則）**：建立例外情況的一致處理
+5. **延伸 DEV_P004（點記號屬性存取）**：為資料框存取提供替代模式
+
+---
+
+*基於：開發方法法第十七條*  
+*相關連結：[MP047 函數式程式設計原則](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd), [DEV_P013 錯誤處理模式](DEV_P013_error_handling_patterns.qmd)*

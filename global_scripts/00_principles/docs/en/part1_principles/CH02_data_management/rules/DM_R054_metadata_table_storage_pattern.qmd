@@ -1,0 +1,197 @@
+---
+title: "DM_R054: Metadata Table Storage Pattern"
+subtitle: "Metadata and lookup tables stored in app_data, not ETL 6-layer flow"
+chapter: "CH02"
+category: "rule"
+number: "DM_R054"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 54"
+parent_principle: "MP064"
+related_to:
+  - "DM_R045": "Database File Naming Standard"
+  - "DM_R052": "Cross-Platform Product Identification"
+  - "DM_R004": "Data Storage Organization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R054: Metadata Table Storage Pattern {#overview}
+
+Metadata and lookup tables must be stored directly in `app_data.duckdb`, bypassing the 6-layer ETL flow (raw → staged → transformed → processed → cleansed → app).
+
+## Rule Statement
+
+**Metadata tables (reference data, lookup tables, mapping tables) MUST be written directly to `app_data.duckdb`, NOT through the 6-layer ETL pipeline.**
+
+## Rationale {#rationale}
+
+### Two Types of Data
+
+| Type | Description | Storage Pattern |
+|------|-------------|-----------------|
+| **Transaction Data** | Orders, sales, events, logs | 6-Layer ETL flow |
+| **Metadata** | Lookups, mappings, configs | Direct to app_data |
+
+### Why Metadata Skips 6-Layer?
+
+1. **No Transformation Needed**: Metadata is already in final form
+2. **Static Nature**: Changes rarely, no incremental processing
+3. **Immediate Availability**: App needs it at startup
+4. **No Business Logic**: Just reference data, no calculation
+5. **Cross-Platform Scope**: Used by all platforms, not platform-specific
+
+### 6-Layer ETL is for Transaction Data
+
+```
+Transaction Data Flow:
+raw_data (0IM) → staged_data (1ST) → transformed_data (2TR)
+    ↓
+processed_data (3PR) → cleansed_data (4CL) → app_data (5NM)
+
+Metadata Flow:
+source → app_data (direct)
+```
+
+## Table Classification {#classification}
+
+### Metadata Tables (→ app_data)
+
+| Table | Purpose |
+|-------|---------|
+| `df_product_mapping` | Cross-platform product ID mapping |
+| `df_product_line` | Product line definitions |
+| `df_category_hierarchy` | Category tree structure |
+| `df_customer_labels` | Customer segment labels |
+| `df_variable_metadata` | Display names for UI |
+| `df_platform` | Platform IDs and names |
+| `df_config_*` | Application configuration |
+
+### Transaction Tables (→ 6-Layer ETL)
+
+| Table | Purpose |
+|-------|---------|
+| `df_cbz_orders` | Cyberbiz orders |
+| `df_eby_sales` | eBay sales transactions |
+| `df_amz_orders` | Amazon orders |
+| `df_customer_rfm` | Calculated RFM scores |
+| `df_daily_summary` | Aggregated daily metrics |
+
+## Implementation Pattern {#implementation}
+
+### Metadata ETL Script
+
+```r
+#' @file all_ETL_product_mapping_0IM___MAMBA.R
+#' @description
+#'   Following: DM_R054 (Metadata Table Storage Pattern)
+#'   Metadata tables write directly to app_data.duckdb
+
+# 1. INITIALIZE
+autoinit()
+
+# 2. MAIN - Read from source
+df_product_mapping <- read_source_data()
+
+# 3. Write directly to app_data (NOT raw_data)
+# Following DM_R054: Metadata skips 6-layer ETL
+app_con <- dbConnect(duckdb::duckdb(),
+  file.path(g_project_root, "data/app_data/app_data.duckdb"))
+
+DBI::dbWriteTable(
+  app_con,
+  "df_product_mapping",
+  df_product_mapping,
+  overwrite = TRUE
+)
+
+# 4. DEINITIALIZE
+autodeinit()
+```
+
+### Key Differences from Transaction ETL
+
+| Aspect | Transaction ETL | Metadata ETL |
+|--------|-----------------|--------------|
+| **Target DB** | raw_data.duckdb (0IM) | app_data.duckdb |
+| **Phases** | 0IM → 1ST → 2TR | Single phase |
+| **Script Count** | 3+ scripts per data type | 1 script |
+| **Naming** | `{platform}_ETL_{type}_0IM.R` | `all_ETL_{type}_0IM.R` |
+
+## Directory Structure {#structure}
+
+```
+update_scripts/ETL/
+├── cbz/                    # Platform-specific transaction ETL
+│   ├── cbz_ETL_orders_0IM.R
+│   ├── cbz_ETL_orders_1ST.R
+│   └── cbz_ETL_orders_2TR.R
+├── eby/
+│   └── ...
+├── all/                    # Cross-platform & metadata ETL
+│   ├── all_ETL_product_mapping_0IM___MAMBA.R   # Metadata
+│   ├── all_ETL_item_profile_0IM.R              # Metadata source
+│   └── all_ETL_summary_0IM.R                   # Metadata
+└── ...
+```
+
+## Validation Checklist {#checklist}
+
+When creating an ETL script, ask:
+
+1. **Is this transaction data?** (orders, sales, events)
+   - YES → Use 6-Layer ETL (raw → staged → transformed)
+   - NO → Continue to question 2
+
+2. **Is this metadata/lookup data?** (mappings, labels, configs)
+   - YES → Write directly to `app_data.duckdb`
+   - NO → Evaluate case-by-case
+
+3. **Does the app need this at startup?**
+   - YES → Likely metadata, use `app_data.duckdb`
+   - NO → Likely derived data, use DRV pattern
+
+## Code Comment Pattern {#comments}
+
+```r
+# Following DM_R054: Metadata Table Storage Pattern
+# This is a lookup/mapping table, writing directly to app_data
+DBI::dbWriteTable(app_con, "df_product_mapping", df, overwrite = TRUE)
+```
+
+## Relationship to Other Principles {#relationships}
+
+| Principle | Relationship |
+|-----------|--------------|
+| **DM_R045** | Defines `app_data.duckdb` naming; DM_R054 defines what goes there |
+| **DM_R052** | Product mapping uses DM_R054 pattern |
+| **DM_R004** | Defines data directories; DM_R054 extends to database selection |
+| **MP064** | ETL-DRV separation; DM_R054 clarifies metadata is ETL with special target |
+
+## Anti-Patterns {#anti-patterns}
+
+### Wrong: Metadata Through 6-Layer
+
+```r
+# WRONG: Metadata doesn't need 6-layer
+# all_ETL_product_mapping_0IM.R → raw_data
+# all_ETL_product_mapping_1ST.R → staged_data  # Unnecessary!
+# all_ETL_product_mapping_2TR.R → transformed_data  # Unnecessary!
+```
+
+### Wrong: Transaction Data to app_data
+
+```r
+# WRONG: Transaction data must go through 6-layer
+DBI::dbWriteTable(app_con, "df_cbz_orders", orders)  # Should be raw_data!
+```
+
+## Conclusion
+
+DM_R054 establishes a clear distinction between transaction data (which flows through 6-layer ETL) and metadata (which writes directly to app_data). This simplifies the architecture by avoiding unnecessary intermediate steps for static reference data while maintaining the full ETL pipeline for complex transaction processing.

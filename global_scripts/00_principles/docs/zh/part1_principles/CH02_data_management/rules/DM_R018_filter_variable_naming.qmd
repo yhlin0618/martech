@@ -1,0 +1,121 @@
+---
+title: "DM_R018: 過濾變數命名慣例"
+subtitle: "所有用於過濾資料的變數必須加上 _filter 後綴，以清楚表明其作為過濾參數而非實體識別碼的目的"
+chapter: "CH02"
+category: "rule"
+number: "DM_R018"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 18
+  title: "過濾變數命名慣例"
+related_to:
+  - "MP68: 語言作為索引"
+  - "R51: 小寫變數命名"
+  - "R53: 多重選擇分隔符"
+  - "R117: 動態組合 ID 模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十八條：過濾變數命名慣例 {#overview}
+
+**資料管理法第十八條（過濾變數命名慣例）**
+
+所有用於過濾資料的變數必須加上 `_filter` 後綴，以清楚表明其作為過濾參數而非實體識別碼的目的。
+
+:::{.callout-important}
+## 規則定義
+所有用於過濾資料的變數必須加上 `_filter` 後綴，以清楚表明其作為過濾參數而非實體識別碼的目的。
+:::
+
+# 第一項：問題陳述 {#problem-statement}
+
+多維度資料分析需要跨平台的一致變數命名慣例，特別是用於過濾資料的識別碼。沒有標準化命名，實體識別碼和過濾參數之間的區別變得模糊，導致混淆和錯誤。
+
+# 第二項：關鍵要點 {#key-points}
+
+## 第一款：一致後綴 {#consistent-suffix}
+
+所有用於過濾資料集的變數必須以 `_filter` 後綴結尾。
+
+## 第二款：過濾變數範例 {#filter-variable-examples}
+
+- `product_line_id_filter`：產品線類別的過濾器
+- `platform_id_filter`：平台的過濾器
+- `date_range_filter`：日期範圍的過濾器
+- `customer_segment_filter`：客戶區段的過濾器
+
+## 第三款：實體 ID vs. 過濾 ID {#entity-vs-filter}
+
+- `product_line_id`：識別特定產品線
+- `product_line_id_filter`：用於按產品線過濾資料的參數
+
+## 第四款：結果中的列名 {#column-names-in-results}
+
+- 當過濾變數儲存在結果資料集中時，它們必須保持 `_filter` 後綴
+- 範例：DNA 分析結果中的 `platform_id_filter` 列代表過濾參數，而不是實體 ID
+
+# 第三項：理由 {#justification}
+
+1. **目的清晰**：`_filter` 後綴立即清楚地表明變數用於過濾而非識別。
+
+2. **錯誤預防**：區分 ID 列（固有屬性）和過濾參數（分析約束）。
+
+3. **多維度一致分析**：為依賴過濾資料子集的 DNA 檔案提供清晰定義。
+
+4. **架構一致性**：在資料庫表和資料框中強制執行一致的列命名。
+
+# 第四項：實施範例 {#implementation-examples}
+
+## 第一款：SQL 查詢 {#sql-queries}
+
+```sql
+SELECT *
+FROM customer_dna
+WHERE platform_id_filter = 'amz'
+  AND product_line_id_filter = 'jewelry';
+```
+
+## 第二款：R 代碼 {#r-code}
+
+```r
+df_filtered <- df_sales %>%
+  filter(
+    platform_id_filter == "amz",
+    product_line_id_filter == "jewelry"
+  )
+```
+
+## 第三款：函數參數 {#function-parameters}
+
+```r
+analyze_dna <- function(data, platform_id_filter = "all", product_line_id_filter = "all") {
+  filtered_data <- data %>%
+    filter(
+      if (platform_id_filter != "all") platform_id == platform_id_filter else TRUE,
+      if (product_line_id_filter != "all") product_line_id == product_line_id_filter else TRUE
+    )
+  # 分析代碼...
+}
+```
+
+# 第五項：相關原則和規則 {#related-principles}
+
+- **MP68：語言作為索引** - 變數名稱作為其目的的索引
+- **R51：小寫變數命名** - 過濾變數遵循小寫命名慣例
+- **R53：多重選擇分隔符** - 當過濾變數接受多個值時，使用適當的分隔符
+- **R117：動態組合 ID 模式** - 過濾變數可以與實體 ID 組合以進行唯一識別
+
+---
+
+*基於：資料管理法第十八條*  
+*相關連結：[MP68 語言作為索引](../../CH00_fundamental_principles/meta_principles/MP068_language_as_index.qmd), [R117 動態組合 ID 模式](DM_R015_dynamic_combined_id_pattern.qmd)*

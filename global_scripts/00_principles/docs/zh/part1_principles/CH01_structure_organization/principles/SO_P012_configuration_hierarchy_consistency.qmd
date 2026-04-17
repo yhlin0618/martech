@@ -1,0 +1,393 @@
+---
+title: "SO_P012: 配置層級一致性原則"
+subtitle: "維持配置檔案中概念層級的一致性與領域分離"
+chapter: "CH01"
+category: "principle"
+number: "SO_P012"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "結構組織法"
+article-number: "第十二條"
+related_to:
+  - "CH00.MP041: 類型相依操作"
+  - "CH00.MP031: 初始化優先"
+  - "SO_P010: 配置驅動客製化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**結構組織法第十二條（配置層級一致性原則）**
+
+配置層級應在每個巢狀層級內維持一致的概念層級，設定應按領域而非按元件組織，並透過合理的預設值減少明確配置的需求。
+
+:::{.callout-important}
+## 核心原則
+配置結構的每個層級應代表一致的概念層級，領域分離優於元件混合，慣例優於配置。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：認知一致性 {#cognitive-coherence}
+
+配置層級的每個層次應代表一致的概念層級：
+- 避免在同一層級混合不同概念
+- 保持清晰的心智模型
+- 減少理解和維護的認知負擔
+
+## 第二款：領域分離原則 {#domain-separation}
+
+不同領域的設定應該分離：
+1. **UI 顯示設定**：標籤、樣式、佈局
+2. **功能設定**：業務邏輯、計算規則
+3. **資料連接設定**：資料源、查詢參數
+
+## 第三款：慣例優於配置 {#convention-over-configuration}
+
+- 根據名稱和上下文推斷合理預設值
+- 只為非標準設定要求明確配置
+- 減少樣板配置代碼
+
+# 第二項：組織模式 {#organization-patterns}
+
+## 第一款：水平領域分離 {#horizontal-separation}
+
+按領域優先組織，元件次之：
+
+```yaml
+# 水平分離：領域 -> 元件
+ui:
+  component_a:
+    label: "元件 A"
+    icon: "chart"
+  component_b:
+    label: "元件 B"
+    icon: "table"
+    
+data:
+  component_a:
+    source: "table_a"
+    filters: ["active"]
+  component_b:
+    source: "table_b"
+    filters: ["recent"]
+    
+functionality:
+  component_a:
+    calculation: "sum"
+    aggregation: "daily"
+  component_b:
+    calculation: "average"
+    aggregation: "monthly"
+```
+
+## 第二款：垂直元件分離 {#vertical-separation}
+
+按元件優先組織，領域次之：
+
+```yaml
+# 垂直分離：元件 -> 領域
+components:
+  component_a:
+    ui:
+      label: "元件 A"
+      icon: "chart"
+    data:
+      source: "table_a"
+      filters: ["active"]
+    functionality:
+      calculation: "sum"
+      aggregation: "daily"
+      
+  component_b:
+    ui:
+      label: "元件 B"
+      icon: "table"
+    data:
+      source: "table_b"
+      filters: ["recent"]
+    functionality:
+      calculation: "average"
+      aggregation: "monthly"
+```
+
+## 第三款：選擇指南 {#selection-guide}
+
+| 情況 | 推薦模式 | 原因 |
+|------|---------|------|
+| 多元件共享設定 | 水平分離 | 易於管理共同設定 |
+| 元件高度獨立 | 垂直分離 | 更好的封裝性 |
+| UI 為主的應用 | 水平分離 | UI 設定集中管理 |
+| 功能複雜的應用 | 垂直分離 | 功能邏輯內聚 |
+
+# 第三項：預設值應用 {#default-application}
+
+## 第一款：命名慣例推斷 {#naming-inference}
+
+```yaml
+# 基於命名的預設值
+components:
+  # microCustomer 自動推斷：
+  # - 標籤: "Customer"
+  # - 圖標: "user"
+  # - 資料表: "customers"
+  microCustomer:
+    # 只需配置非標準部分
+    special_filter: "vip_only"
+    
+  # 需要明確配置的非標準元件
+  specialAnalysis:
+    ui:
+      label: "特殊分析工具"  # 覆蓋預設 "Special Analysis"
+      icon: "microscope"     # 無法從名稱推斷
+    data:
+      source: "complex_view"  # 非標準資料源
+```
+
+## 第二款：預設值層級 {#default-hierarchy}
+
+```r
+# 預設值應用層級
+get_component_config <- function(component_name, config) {
+  # 1. 系統預設值
+  defaults <- list(
+    ui = list(
+      label = humanize(component_name),
+      icon = infer_icon(component_name),
+      visible = TRUE
+    ),
+    data = list(
+      source = infer_table(component_name),
+      cache = TRUE
+    )
+  )
+  
+  # 2. 全域配置覆蓋
+  if (!is.null(config$global)) {
+    defaults <- merge_configs(defaults, config$global)
+  }
+  
+  # 3. 元件特定配置覆蓋
+  if (!is.null(config$components[[component_name]])) {
+    defaults <- merge_configs(defaults, config$components[[component_name]])
+  }
+  
+  defaults
+}
+```
+
+# 第四項：配置模式驗證 {#schema-validation}
+
+## 第一款：模式定義 {#schema-definition}
+
+```yaml
+# 配置模式定義
+schema:
+  type: object
+  properties:
+    ui:
+      type: object
+      properties:
+        label:
+          type: string
+          description: "顯示標籤"
+        icon:
+          type: string
+          enum: ["chart", "table", "user", "settings"]
+    data:
+      type: object
+      properties:
+        source:
+          type: string
+          required: true
+        filters:
+          type: array
+          items:
+            type: string
+  required: ["data"]  # 資料設定為必要
+```
+
+## 第二款：驗證實作 {#validation-implementation}
+
+```r
+# 配置驗證函數
+validate_config <- function(config, schema) {
+  errors <- list()
+  
+  # 檢查必要欄位
+  for (field in schema$required) {
+    if (is.null(config[[field]])) {
+      errors <- append(errors, 
+        paste("缺少必要欄位:", field))
+    }
+  }
+  
+  # 檢查類型一致性
+  for (field in names(config)) {
+    if (!is.null(schema$properties[[field]])) {
+      expected_type <- schema$properties[[field]]$type
+      actual_type <- class(config[[field]])[1]
+      
+      if (!check_type_match(actual_type, expected_type)) {
+        errors <- append(errors,
+          paste("類型不匹配:", field, 
+                "期望", expected_type, 
+                "實際", actual_type))
+      }
+    }
+  }
+  
+  if (length(errors) > 0) {
+    stop(paste("配置驗證失敗:\n", 
+               paste(errors, collapse = "\n")))
+  }
+  
+  TRUE
+}
+```
+
+# 第五項：反模式識別 {#anti-patterns}
+
+## 第一款：混合層級 {#mixed-levels}
+
+**❌ 錯誤：同層級混合不同概念**
+```yaml
+components:
+  micro:
+    display: "Customer Analysis"  # UI 設定
+    customer_profile: "db_table"  # 資料設定
+    color: "blue"                 # UI 設定
+    query: "SELECT * FROM..."     # 資料設定
+```
+
+**✅ 正確：清晰的概念分離**
+```yaml
+components:
+  micro:
+    ui:
+      display: "Customer Analysis"
+      color: "blue"
+    data:
+      table: "customer_profile"
+      query: "SELECT * FROM..."
+```
+
+## 第二款：過度配置 {#over-configuration}
+
+**❌ 錯誤：配置可推斷的預設值**
+```yaml
+components:
+  microCustomer:
+    ui:
+      label: "Customer"      # 可從名稱推斷
+      icon: "user"          # 可從名稱推斷
+      visible: true         # 預設值
+    data:
+      source: "customers"   # 可從名稱推斷
+      cache: true          # 預設值
+```
+
+**✅ 正確：只配置非標準設定**
+```yaml
+components:
+  microCustomer:
+    data:
+      additional_filters: ["vip_only"]  # 非標準設定
+```
+
+# 第六項：最佳實踐 {#best-practices}
+
+## 第一款：漸進式細節 {#progressive-detail}
+
+```yaml
+# 從必要設定開始，逐步添加細節
+# 層級 1：最小配置
+components:
+  micro:
+    source: "customers"
+
+# 層級 2：添加常用設定
+components:
+  micro:
+    source: "customers"
+    filters: ["active"]
+
+# 層級 3：完整配置
+components:
+  micro:
+    data:
+      source: "customers"
+      filters: ["active"]
+      cache_duration: 3600
+    ui:
+      custom_label: "VIP 客戶"
+    functionality:
+      special_calculation: "weighted_average"
+```
+
+## 第二款：功能可發現性 {#feature-discoverability}
+
+配置結構應清楚表明可配置的內容：
+
+```yaml
+# 清晰的配置選項
+components:
+  available_components:
+    - microCustomer
+    - microProduct
+    - macroTrend
+    
+  # 每個元件的可配置選項明確
+  microCustomer:
+    configurable:
+      ui: ["label", "icon", "color_scheme"]
+      data: ["source", "filters", "refresh_rate"]
+      functionality: ["calculations", "aggregations"]
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 配置層級一致性檢查清單
+
+**結構設計**：
+- [ ] 選擇水平或垂直分離模式
+- [ ] 保持所選模式的一致性
+- [ ] 每個層級概念清晰
+- [ ] 領域分離明確
+
+**預設值管理**：
+- [ ] 基於命名的預設值定義
+- [ ] 預設值層級清晰
+- [ ] 只配置非標準設定
+- [ ] 文件說明預設行為
+
+**驗證機制**：
+- [ ] 配置模式定義
+- [ ] 驗證函數實作
+- [ ] 錯誤訊息清晰
+- [ ] 類型檢查完整
+
+**可維護性**：
+- [ ] 配置結構直觀
+- [ ] 功能可發現性高
+- [ ] 文件完整
+- [ ] 範例充分
+:::
+
+# 結論 {#conclusion}
+
+配置層級一致性原則確保配置檔案結構清晰、易於理解和維護。通過保持概念層級的一致性、適當的領域分離，以及合理的預設值應用，可以創建既靈活又簡潔的配置系統。記住，好的配置設計應該讓常見情況簡單，同時保持複雜情況的可能性。
+
+---
+
+*基於：結構組織法第十二條*  
+*相關：[MP041 類型相依操作](../../CH00_fundamental_principles/03_development_methodology/MP041_type_dependent_operations.qmd)、[SO_P010 配置驅動客製化](SO_P010_config_driven_customization.qmd)*

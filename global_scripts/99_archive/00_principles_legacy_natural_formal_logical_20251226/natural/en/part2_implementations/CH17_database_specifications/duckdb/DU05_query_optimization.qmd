@@ -1,0 +1,660 @@
+---
+title: "DU05: DuckDB Query Optimization"
+subtitle: "Performance Tuning and Query Optimization Techniques"
+author: "MAMBA Framework"
+date: "2025-08-28"
+categories: [duckdb, performance, optimization]
+---
+
+# DuckDB Query Optimization
+
+## Overview
+
+DuckDB's columnar storage and vectorized execution engine provide excellent performance for analytical queries. This guide covers optimization techniques specific to the MAMBA framework's use cases.
+
+## Understanding Query Execution
+
+### Query Plan Analysis
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `analyze_query()`
+**Purpose**: Analyze query execution plans with timing
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+plan <- analyze_query(con, "SELECT * FROM orders")
+```
+
+### Query Profiling
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `profile_query()`
+**Purpose**: Profile query execution with detailed operator timings
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+profile <- profile_query(con, "SELECT * FROM orders")
+```
+
+## Index Optimization
+
+### Creating Indexes
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `manage_indexes()`
+**Purpose**: Create and manage database indexes
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+indexes <- manage_indexes(con, "orders", c("customer_id", "order_date"))
+```
+
+### Index Usage Analysis
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `check_index_usage()`
+**Purpose**: Analyze if query uses indexes effectively
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+index_usage <- check_index_usage(con, "SELECT * FROM orders WHERE customer_id = 123")
+```
+
+## Join Optimization
+
+### Join Order Optimization
+
+```r
+# R: Optimize join order
+optimize_joins <- function(con) {
+  # DuckDB automatically optimizes join order, but we can help
+  
+  # Collect statistics
+  dbExecute(con, "PRAGMA enable_optimizer=true")
+  dbExecute(con, "ANALYZE")  # Update table statistics
+  
+  # Example: Put smaller tables first in joins
+  good_query <- "
+    SELECT *
+    FROM small_dimension_table s
+    JOIN large_fact_table l ON s.id = l.dimension_id
+    WHERE s.category = 'A'
+  "
+  
+  # Use join hints when necessary
+  hinted_query <- "
+    SELECT /*+ USE_NL(s, l) */ *
+    FROM small_table s
+    JOIN large_table l ON s.id = l.id
+  "
+}
+```
+
+### Join Strategy Selection
+
+```r
+# R: Choose appropriate join strategies
+demonstrate_join_strategies <- function(con) {
+  # Hash join (default for equi-joins)
+  hash_join <- "
+    SELECT *
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.customer_id
+  "
+  
+  # Nested loop join (for small tables or indexed lookups)
+  nested_loop <- "
+    SELECT *
+    FROM orders o
+    WHERE EXISTS (
+      SELECT 1 FROM customers c 
+      WHERE c.customer_id = o.customer_id 
+        AND c.country = 'USA'
+    )
+  "
+  
+  # Merge join (for pre-sorted data)
+  merge_join <- "
+    SELECT *
+    FROM (SELECT * FROM orders ORDER BY customer_id) o
+    JOIN (SELECT * FROM customers ORDER BY customer_id) c
+      ON o.customer_id = c.customer_id
+  "
+  
+  # Analyze each strategy
+  strategies <- list(
+    hash = analyze_query(con, hash_join),
+    nested_loop = analyze_query(con, nested_loop),
+    merge = analyze_query(con, merge_join)
+  )
+  
+  return(strategies)
+}
+```
+
+## Aggregation Optimization
+
+### Efficient Grouping
+
+```r
+# R: Optimize GROUP BY operations
+optimize_aggregations <- function(con) {
+  # Use appropriate aggregation functions
+  efficient_query <- "
+    SELECT 
+      customer_id,
+      COUNT(*) as order_count,
+      SUM(amount) as total_amount,
+      AVG(amount) as avg_amount,
+      MIN(order_date) as first_order,
+      MAX(order_date) as last_order,
+      -- Use ARBITRARY for non-grouped columns
+      ARBITRARY(customer_name) as customer_name
+    FROM orders
+    JOIN customers USING (customer_id)
+    GROUP BY customer_id
+  "
+  
+  # Pre-aggregate for better performance
+  dbExecute(con, "
+    CREATE TABLE daily_aggregates AS
+    SELECT 
+      DATE_TRUNC('day', order_date) as date,
+      customer_id,
+      COUNT(*) as orders,
+      SUM(amount) as revenue
+    FROM orders
+    GROUP BY 1, 2
+  ")
+  
+  # Use materialized CTEs for complex aggregations
+  complex_aggregation <- "
+    WITH MATERIALIZED customer_stats AS (
+      SELECT 
+        customer_id,
+        COUNT(*) as total_orders,
+        SUM(amount) as lifetime_value
+      FROM orders
+      GROUP BY customer_id
+    )
+    SELECT 
+      cs.*,
+      o.recent_orders
+    FROM customer_stats cs
+    JOIN (
+      SELECT customer_id, COUNT(*) as recent_orders
+      FROM orders
+      WHERE order_date >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY customer_id
+    ) o USING (customer_id)
+  "
+}
+```
+
+### Window Function Optimization
+
+```r
+# R: Optimize window functions
+optimize_window_functions <- function(con) {
+  # Efficient window function usage
+  window_query <- "
+    SELECT 
+      *,
+      -- Use single window definition
+      ROW_NUMBER() OVER w as rn,
+      RANK() OVER w as rnk,
+      SUM(amount) OVER w as running_total,
+      LAG(amount, 1) OVER w as prev_amount
+    FROM orders
+    WINDOW w AS (
+      PARTITION BY customer_id 
+      ORDER BY order_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    )
+  "
+  
+  # Avoid multiple sorts with proper window ordering
+  multi_window <- "
+    SELECT 
+      customer_id,
+      order_date,
+      amount,
+      -- These use the same partition and order
+      SUM(amount) OVER (PARTITION BY customer_id ORDER BY order_date) as cumsum,
+      AVG(amount) OVER (PARTITION BY customer_id ORDER BY order_date) as cumavg,
+      -- Different partition needs separate window
+      PERCENT_RANK() OVER (PARTITION BY DATE_TRUNC('month', order_date) ORDER BY amount) as monthly_rank
+    FROM orders
+  "
+  
+  return(dbGetQuery(con, window_query))
+}
+```
+
+## Filter Optimization
+
+### Predicate Pushdown
+
+```r
+# R: Ensure filters are pushed down
+optimize_filters <- function(con) {
+  # Good: Filter before join
+  good_query <- "
+    SELECT *
+    FROM (
+      SELECT * FROM orders 
+      WHERE order_date >= '2024-01-01'
+    ) o
+    JOIN customers c ON o.customer_id = c.customer_id
+    WHERE c.country = 'USA'
+  "
+  
+  # Better: Let DuckDB optimize
+  better_query <- "
+    SELECT *
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.customer_id
+    WHERE o.order_date >= '2024-01-01'
+      AND c.country = 'USA'
+  "
+  
+  # Use column statistics for better optimization
+  dbExecute(con, "ANALYZE orders(order_date)")
+  dbExecute(con, "ANALYZE customers(country)")
+}
+```
+
+### Efficient Date Filtering
+
+```r
+# R: Optimize date range queries
+optimize_date_queries <- function(con) {
+  # Use date functions efficiently
+  efficient_date_query <- "
+    SELECT *
+    FROM orders
+    WHERE order_date >= CURRENT_DATE - INTERVAL '30 days'
+      AND order_date < CURRENT_DATE
+  "
+  
+  # Avoid functions on columns (prevents index use)
+  # Bad: WHERE DATE_TRUNC('month', order_date) = '2024-01-01'
+  # Good:
+  good_month_filter <- "
+    SELECT *
+    FROM orders
+    WHERE order_date >= '2024-01-01'
+      AND order_date < '2024-02-01'
+  "
+  
+  # Use partitioning for large date ranges
+  dbExecute(con, "
+    CREATE TABLE orders_partitioned (
+      LIKE orders
+    ) PARTITION BY (year(order_date), month(order_date))
+  ")
+}
+```
+
+## Memory Optimization
+
+### Memory Configuration
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `configure_memory_settings()`
+**Purpose**: Configure DuckDB memory settings for optimal performance
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+memory_usage <- configure_memory_settings(con, memory_percentage = 0.8)
+```
+
+### Memory-Efficient Queries
+
+```r
+# R: Write memory-efficient queries
+memory_efficient_queries <- function(con) {
+  # Use LIMIT for exploration
+  exploration_query <- "
+    SELECT *
+    FROM large_table
+    LIMIT 1000
+  "
+  
+  # Process in chunks for large results
+  chunk_process <- function(table, chunk_size = 100000) {
+    offset <- 0
+    repeat {
+      chunk <- dbGetQuery(con, sprintf("
+        SELECT *
+        FROM %s
+        LIMIT %d OFFSET %d
+      ", table, chunk_size, offset))
+      
+      if (nrow(chunk) == 0) break
+      
+      # Process chunk
+      process_chunk(chunk)
+      
+      offset <- offset + chunk_size
+      
+      # Free memory periodically
+      if (offset %% (chunk_size * 10) == 0) {
+        gc()
+      }
+    }
+  }
+}
+```
+
+## Parallel Execution
+
+### Enable Parallelism
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `configure_parallelism()`
+**Purpose**: Configure parallel execution settings
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+settings <- configure_parallelism(con)
+```
+
+### Parallel-Friendly Queries
+
+```r
+# R: Write queries that parallelize well
+parallel_friendly_queries <- function(con) {
+  # Aggregations parallelize well
+  parallel_agg <- "
+    SELECT 
+      product_id,
+      COUNT(*) as sales_count,
+      SUM(quantity) as total_quantity,
+      SUM(amount) as total_revenue
+    FROM sales
+    GROUP BY product_id
+  "
+  
+  # Joins with good selectivity
+  parallel_join <- "
+    SELECT *
+    FROM fact_sales f
+    JOIN dim_product p ON f.product_id = p.product_id
+    JOIN dim_customer c ON f.customer_id = c.customer_id
+    WHERE f.sale_date >= '2024-01-01'
+  "
+  
+  # Parallel table scans
+  parallel_scan <- "
+    SELECT COUNT(DISTINCT customer_id) as unique_customers,
+           COUNT(*) as total_orders,
+           SUM(amount) as total_revenue
+    FROM orders
+    WHERE status = 'completed'
+  "
+}
+```
+
+## Caching and Materialization
+
+### Result Caching
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `create_query_cache()`
+**Purpose**: Create a query result caching mechanism
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+cached_query <- create_query_cache(con)
+result <- cached_query("SELECT * FROM orders", cache_duration_minutes = 30)
+```
+
+### Materialized Views
+
+```r
+# R: Create and manage materialized views
+manage_materialized_views <- function(con) {
+  # Create materialized view (as table in DuckDB)
+  dbExecute(con, "
+    CREATE TABLE mv_customer_summary AS
+    SELECT 
+      c.customer_id,
+      c.customer_name,
+      COUNT(DISTINCT o.order_id) as total_orders,
+      SUM(o.amount) as lifetime_value,
+      MIN(o.order_date) as first_order_date,
+      MAX(o.order_date) as last_order_date,
+      AVG(o.amount) as avg_order_value
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    GROUP BY c.customer_id, c.customer_name
+  ")
+  
+  # Refresh function
+  refresh_materialized_view <- function(view_name) {
+    dbExecute(con, sprintf("DROP TABLE IF EXISTS %s_new", view_name))
+    dbExecute(con, sprintf("CREATE TABLE %s_new AS %s", 
+                          view_name, 
+                          get_view_definition(view_name)))
+    dbExecute(con, sprintf("ALTER TABLE %s RENAME TO %s_old", 
+                          view_name, view_name))
+    dbExecute(con, sprintf("ALTER TABLE %s_new RENAME TO %s", 
+                          view_name, view_name))
+    dbExecute(con, sprintf("DROP TABLE %s_old", view_name))
+  }
+  
+  # Schedule refresh
+  schedule_refresh <- function(view_name, interval_hours = 24) {
+    # Implementation depends on scheduling system
+    # Could use cron, task scheduler, or R package like taskscheduleR
+  }
+}
+```
+
+## Query Rewriting Techniques
+
+### Common Table Expressions (CTEs)
+
+```r
+# R: Use CTEs effectively
+optimize_with_ctes <- function(con) {
+  # Materialized CTEs for reused subqueries
+  materialized_cte <- "
+    WITH MATERIALIZED active_customers AS (
+      SELECT customer_id
+      FROM customers
+      WHERE status = 'active'
+        AND created_date >= '2023-01-01'
+    ),
+    recent_orders AS (
+      SELECT *
+      FROM orders
+      WHERE order_date >= CURRENT_DATE - INTERVAL '90 days'
+    )
+    SELECT 
+      ac.customer_id,
+      COUNT(ro.order_id) as recent_order_count,
+      SUM(ro.amount) as recent_revenue
+    FROM active_customers ac
+    LEFT JOIN recent_orders ro ON ac.customer_id = ro.customer_id
+    GROUP BY ac.customer_id
+  "
+  
+  # Non-materialized CTEs for simple filters
+  simple_cte <- "
+    WITH date_range AS (
+      SELECT 
+        '2024-01-01'::DATE as start_date,
+        '2024-12-31'::DATE as end_date
+    )
+    SELECT *
+    FROM orders, date_range
+    WHERE order_date BETWEEN start_date AND end_date
+  "
+}
+```
+
+### Subquery Optimization
+
+```r
+# R: Optimize subqueries
+optimize_subqueries <- function(con) {
+  # Convert correlated subquery to join
+  # Bad: Correlated subquery
+  bad_query <- "
+    SELECT 
+      o.*,
+      (SELECT customer_name 
+       FROM customers c 
+       WHERE c.customer_id = o.customer_id) as customer_name
+    FROM orders o
+  "
+  
+  # Good: Join
+  good_query <- "
+    SELECT 
+      o.*,
+      c.customer_name
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.customer_id
+  "
+  
+  # Use EXISTS for existence checks
+  exists_query <- "
+    SELECT *
+    FROM customers c
+    WHERE EXISTS (
+      SELECT 1
+      FROM orders o
+      WHERE o.customer_id = c.customer_id
+        AND o.amount > 1000
+    )
+  "
+  
+  # Use IN for small lists, JOIN for large ones
+  in_query <- "
+    SELECT *
+    FROM orders
+    WHERE customer_id IN (
+      SELECT customer_id
+      FROM vip_customers
+      WHERE tier = 'gold'
+    )
+  "
+}
+```
+
+## Monitoring and Diagnostics
+
+### Query Performance Dashboard
+
+```r
+# R: Create performance monitoring dashboard
+create_performance_dashboard <- function(con) {
+  # Collect query statistics
+  query_stats <- dbGetQuery(con, "
+    SELECT 
+      query,
+      COUNT(*) as execution_count,
+      AVG(execution_time) as avg_time_ms,
+      MAX(execution_time) as max_time_ms,
+      SUM(rows_returned) as total_rows
+    FROM query_log
+    GROUP BY query
+    ORDER BY avg_time_ms DESC
+    LIMIT 20
+  ")
+  
+  # Identify slow queries
+  slow_queries <- dbGetQuery(con, "
+    SELECT *
+    FROM query_log
+    WHERE execution_time > 1000  -- queries over 1 second
+    ORDER BY execution_time DESC
+    LIMIT 10
+  ")
+  
+  # Resource usage
+  resource_usage <- dbGetQuery(con, "
+    SELECT 
+      DATE_TRUNC('hour', timestamp) as hour,
+      AVG(memory_usage) as avg_memory,
+      MAX(memory_usage) as peak_memory,
+      AVG(cpu_usage) as avg_cpu
+    FROM system_metrics
+    GROUP BY hour
+    ORDER BY hour DESC
+    LIMIT 24
+  ")
+  
+  list(
+    query_stats = query_stats,
+    slow_queries = slow_queries,
+    resource_usage = resource_usage
+  )
+}
+```
+
+## Optimization Checklist
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `optimization_checklist()`
+**Purpose**: Comprehensive query optimization analysis
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+checks <- optimization_checklist(con, "SELECT * FROM large_table")
+```
+
+## Best Practices Summary
+
+1. **Always ANALYZE** tables after bulk loads
+2. **Use EXPLAIN ANALYZE** to understand query plans
+3. **Create appropriate indexes** for frequent queries
+4. **Leverage columnar storage** - select only needed columns
+5. **Use CTEs** to improve readability and sometimes performance
+6. **Configure memory** appropriately for your workload
+7. **Enable parallelism** for large analytical queries
+8. **Partition large tables** by date or other dimensions
+9. **Cache or materialize** expensive calculations
+10. **Monitor and profile** queries regularly
+
+## Related Documentation
+
+- [DuckDB Performance Guide](https://duckdb.org/docs/guides/performance/)
+- [Connection Management](DU02_connection_management.qmd)
+- [Memory Management](memory_management.qmd)
+- [MAMBA ETL Pipelines](../CH11_etl_pipelines/)

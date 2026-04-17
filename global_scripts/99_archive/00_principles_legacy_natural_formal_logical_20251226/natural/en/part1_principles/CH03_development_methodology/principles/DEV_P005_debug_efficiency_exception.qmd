@@ -1,0 +1,275 @@
+---
+title: "DEV_P005: Debug Efficiency Exception Principle"
+subtitle: "Controlled exceptions to file organization for debugging efficiency"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P005"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article: "Article 5"
+derives_from:
+  - "DEV_P001: Debug Principles"
+  - "CH00.MP017: Separation of Concerns"
+influences:
+  - "SO_R021: One Function One File"
+  - "UI_R001: UI-Server-Defaults Triple"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Article 5 (Debug Efficiency Exception Principle)**
+
+This article establishes controlled exceptions to the One Function One File rule for specific cases where debugging efficiency requires tightly coupled components to be co-located.
+
+:::{.callout-important}
+## Core Principle
+While R021 (One Function One File) remains a fundamental organization principle, debugging efficiency may occasionally warrant limited, well-documented exceptions for tightly coupled components that are frequently debugged together.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Debugging Challenges {#debugging-challenges}
+
+During active development and debugging phases, certain components have such tight coupling that maintaining them in separate files can significantly impede debugging efficiency.
+
+## Subsection 2: Exception Criteria {#exception-criteria}
+
+This principle establishes controlled exceptions to R021 for specific cases where:
+
+1. Components have inherent cohesion that benefits from co-location
+2. Debug cycles frequently require examining multiple components together
+3. The overhead of navigating multiple files introduces measurable debugging friction
+
+# Section 2: Permitted Exception Cases {#permitted-exceptions}
+
+## Subsection 1: UI-Server-Defaults Triple {#ui-server-defaults}
+
+For debugging Shiny modules, the UI-server-defaults triple may be consolidated into a single file. This exception applies specifically to R001 (UI-Server-Defaults Triple) implementation.
+
+## Subsection 2: Test Functions {#test-functions}
+
+Test functions for a specific module may be grouped in a single file. This is limited to functions used exclusively for testing.
+
+## Subsection 3: Rapid Prototyping {#rapid-prototyping}
+
+During initial prototyping phases before code stabilization. Must be refactored to comply with R021 once the design stabilizes.
+
+# Section 3: Required Documentation {#documentation}
+
+## Subsection 1: Documentation Header {#doc-header}
+
+Any file implementing this exception must include:
+
+```r
+#' @principle P015 Debug Efficiency Exception
+#' @r21_exception This file contains multiple functions as an exception to R21
+#' @justification <clear explanation of why the exception is necessary>
+#' @refactor_plan <timeline or condition for eventual refactoring to R021 compliance>
+```
+
+## Subsection 2: Documentation Requirements {#doc-requirements}
+
+- Clear justification for the exception
+- Explicit timeline or condition for refactoring
+- Comprehensive documentation for each function
+- Section headers to separate functions
+
+# Section 4: Implementation Structure {#implementation}
+
+## Subsection 1: File Naming {#file-naming}
+
+Files must be named to indicate their exceptional status:
+- `module_name_triple.R` for UI-server-defaults
+- `module_name_tests.R` for grouped test functions
+- `module_name_prototype.R` for prototyping phases
+
+## Subsection 2: Organization {#organization}
+
+When implementing this exception:
+- Group related functions sequentially
+- Use clear section headers to separate functions
+- Maintain comprehensive documentation for each function
+
+## Subsection 3: Example Implementation {#example-implementation}
+
+```r
+#' @principle P015 Debug Efficiency Exception
+#' @r21_exception This file contains the UI-server-defaults triple for customer_profile module
+#' @justification These components are frequently debugged together during UI adjustments
+#' @refactor_plan To be refactored upon stabilization of the module (est. Q2 2025)
+
+#' Customer Profile UI Function
+#'
+#' @param id Module ID
+#' @return UI elements for customer profile
+#'
+customer_profileUI <- function(id) {
+  ns <- NS(id)
+  # UI implementation
+}
+
+#' Customer Profile Server Function
+#'
+#' @param id Module ID
+#' @param customer_data Reactive customer data
+#' @return Server logic for customer profile
+#'
+customer_profile <- function(id, customer_data) {
+  moduleServer(id, function(input, output, session) {
+    # Server implementation
+  })
+}
+
+#' Customer Profile Defaults
+#'
+#' @return Default values for customer profile
+#'
+customer_profile_defaults <- function() {
+  list(
+    # Default values
+  )
+}
+```
+
+# Section 5: Limitations and Constraints {#limitations}
+
+## Subsection 1: Scope Limitation {#scope}
+
+This exception must not be used as justification for broader violations of R021.
+
+## Subsection 2: Refactoring Requirement {#refactoring}
+
+Code using this exception should include a clear plan for eventual refactoring to R021 compliance.
+
+## Subsection 3: Documentation Mandate {#doc-mandate}
+
+All exceptions must be thoroughly documented with clear justification.
+
+## Subsection 4: File Size Limit {#size-limit}
+
+Files using this exception should still remain reasonably sized (< 300 lines).
+
+## Subsection 5: Function Count Limit {#count-limit}
+
+Maximum of 3-5 closely related functions per file.
+
+# Section 6: Implementation Examples {#examples}
+
+## Subsection 1: UI-Server-Defaults Triple {#triple-example}
+
+For a sales dashboard component:
+
+```r
+# sales_dashboard_triple.R
+
+#' @principle P015 Debug Efficiency Exception
+#' @r21_exception This file contains the UI-server-defaults triple for sales_dashboard
+#' @justification Active UI development requires frequent adjustment of all three components
+#' @refactor_plan Will refactor after design sign-off (est. May 2025)
+
+# UI function implementation
+sales_dashboardUI <- function(id) { 
+  # Implementation
+}
+
+# Server function implementation
+sales_dashboard <- function(id, data) { 
+  # Implementation
+}
+
+# Defaults function implementation
+sales_dashboard_defaults <- function() { 
+  # Implementation
+}
+```
+
+## Subsection 2: Test Functions {#test-example}
+
+For customer segmentation testing:
+
+```r
+# customer_segmentation_tests.R
+
+#' @principle P015 Debug Efficiency Exception
+#' @r21_exception This file contains multiple test functions for customer segmentation
+#' @justification These tests are run and modified together during algorithm refinement
+#' @refactor_plan Will be refactored after algorithm stabilization
+
+# Test function implementations
+test_customer_kmeans <- function() { 
+  # Implementation
+}
+
+test_customer_hierarchical <- function() { 
+  # Implementation
+}
+
+test_segmentation_validation <- function() { 
+  # Implementation
+}
+```
+
+# Section 7: Benefits {#benefits}
+
+1. **Enhanced Debugging**: Reduces context switching during intensive debugging sessions
+2. **Improved Productivity**: Enables faster iteration cycles during active development
+3. **Practical Balance**: Acknowledges real-world development constraints while maintaining structure
+4. **Controlled Exceptions**: Provides a formal framework for necessary exceptions
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Debug Efficiency Exception Checklist
+
+When implementing a debug efficiency exception:
+
+**Justification:**
+- [ ] Clear need for exception documented
+- [ ] Components are tightly coupled
+- [ ] Debugging friction is measurable
+- [ ] Exception case is permitted
+
+**Documentation:**
+- [ ] @principle annotation included
+- [ ] @r21_exception documented
+- [ ] @justification provided
+- [ ] @refactor_plan specified
+
+**Implementation:**
+- [ ] File naming indicates exception
+- [ ] Functions grouped logically
+- [ ] Section headers present
+- [ ] Each function documented
+
+**Constraints:**
+- [ ] File size < 300 lines
+- [ ] Function count ≤ 5
+- [ ] Refactoring timeline set
+- [ ] Scope limited appropriately
+
+**Review:**
+- [ ] Exception justified and temporary
+- [ ] Documentation complete
+- [ ] Code quality maintained
+- [ ] Refactoring plan realistic
+:::
+
+# Conclusion {#conclusion}
+
+The Debug Efficiency Exception Principle establishes a balanced approach that respects the fundamental organization provided by R021 (One Function One File) while acknowledging practical debugging requirements. By providing a formal framework for limited exceptions, this principle ensures that necessary deviations from R021 are controlled, documented, and temporary, ultimately supporting both code quality and developer productivity.
+
+---
+
+*Based on: Development Methodology Law Article 5*  
+*Derives from: [DEV_P001 Debug Principles](DEV_P001_debug_principles.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*  
+*Influences: [SO_R021 One Function One File], [UI_R001 UI-Server-Defaults Triple]*

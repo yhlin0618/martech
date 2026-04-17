@@ -1,0 +1,1200 @@
+---
+id: "ETL002"
+title: "Customer View Filtering Pipeline"
+type: "etl-operations"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture - 7-Layer"
+  - "DF000": "Data Pipeline Architecture"
+implements:
+  - "D02": "Customer View Filtering Derivation"
+relates_to:
+  - "MP0052": "Unidirectional Data Flow"
+  - "R091": "Universal Data Access"
+  - "R092": "Universal DBI Approach"
+---
+
+# ETL02: Customer View Filtering Pipeline
+
+## Core Purpose
+
+ETL02 implements a **complete end-to-end pipeline** for Customer View Filtering, transforming raw sales transaction data into comprehensive filtered customer views with condition grids that enable micro-components to access personalized data based on specific filter combinations.
+
+## Pipeline Overview
+
+```mermaid
+graph TD
+    A[External Sales Data] --> B[raw_data.duckdb]
+    B --> C[staged_data.duckdb] 
+    C --> D[transformed_data.duckdb]
+    D --> E[cleansed_data.duckdb]
+    E --> F[processed_data.duckdb]
+    F --> G[app_data.duckdb]
+    
+    B -.-> B1["Import & Preserve<br/>• Raw sales transactions<br/>• Platform identification<br/>• Source metadata"]
+    C -.-> C1["Stage & Standardize<br/>• UTF-8 encoding<br/>• File format validation<br/>• Basic structure check"]
+    D -.-> D1["Transform Schema<br/>• Column standardization<br/>• Type conversion<br/>• Product line joining"]
+    E -.-> E1["Cleanse Quality<br/>• Remove duplicates<br/>• Handle missing values<br/>• Validate transactions"]
+    F -.-> F1["Process Filtering<br/>• Condition grid generation<br/>• Filter application<br/>• Customer aggregation"]
+    G -.-> G1["Prepare Views<br/>• Filtered customer views<br/>• Component-ready data<br/>• Performance optimization"]
+```
+
+**Input**: Raw sales transaction files (CSV, Excel, JSON)  
+**Output**: Complete filtered customer views in `app_data.duckdb`
+
+## ETL02 Configuration
+
+### Standard Configuration Structure
+
+```r
+etl02_config <- list(
+  etl_name = "customer_view_filtering",
+  etl_version = "1.0",
+  
+  # Source configuration
+  source = list(
+    type = "csv",
+    path = "data/amazon_sales.csv",
+    platform_id = "amazon",
+    encoding = "UTF-8",
+    has_header = TRUE,
+    date_format = "%Y-%m-%d %H:%M:%S"
+  ),
+  
+  # Staging configuration
+  staging = list(
+    encoding_target = "UTF-8",
+    line_endings = "LF",
+    validation_required = TRUE,
+    preserve_raw_structure = TRUE
+  ),
+  
+  # Transformation configuration
+  transformation = list(
+    # Column mapping from source to standard names
+    column_mapping = list(
+      "customer_id" = "ship_postal_code",      # Use postal code as customer identifier
+      "payment_time" = "time",                 # Transaction timestamp
+      "lineproduct_price" = "product_price",         # Transaction amount
+      "product_id" = "asin",                   # Product identifier
+      "transaction_id" = "order_id",           # Transaction identifier
+      "state" = "ship_state",                  # Geographic location
+      "source" = "platform"                    # Sales channel
+    ),
+    
+    # Type conversions
+    type_conversions = list(
+      "customer_id" = "character",             # Will convert to integer factor later
+      "payment_time" = "datetime",
+      "lineproduct_price" = "numeric",
+      "product_id" = "character",
+      "transaction_id" = "character",
+      "state" = "character",
+      "source" = "character"
+    ),
+    
+    # Platform identification
+    platform_assignment = list(
+      "platform_id" = "amazon"                # Add platform identifier
+    ),
+    
+    # Product line integration
+    product_line_join = list(
+      enabled = TRUE,
+      dictionary_table = "df_product_profile_dictionary",
+      join_key = "asin",
+      target_column = "product_line_id"
+    )
+  ),
+  
+  # Cleansing configuration
+  cleansing = list(
+    # Duplicate handling
+    remove_duplicates = TRUE,
+    duplicate_keys = c("customer_id", "payment_time", "product_id"),
+    
+    # Missing value handling
+    handle_missing_values = TRUE,
+    required_fields = c("customer_id", "payment_time", "lineproduct_price"),
+    
+    # Data validation
+    validation_rules = list(
+      min_transaction_amount = 0.01,
+      valid_date_range = list(
+        start_date = "2020-01-01",
+        end_date = Sys.Date()
+      )
+    )
+  ),
+  
+  # Processing configuration - condition grid generation and filtering
+  processing = list(
+    # Grid component configuration
+    grid_components = list(
+      time_condition = c("now", "m1year", "m1quarter", "m1month"),
+      product_line_id_filter = c(0, 1, 2, 3),  # 0 = all products
+      state_filter = c("ALL", "CA", "NY", "TX", "FL"),
+      source_filter = c("amazon")
+    ),
+    
+    # Filter application strategy
+    filter_strategy = "virtual_views",  # virtual_views | materialized | hybrid
+    
+    # Customer aggregation metrics
+    customer_metrics = list(
+      include_rfm = TRUE,
+      include_transaction_count = TRUE,
+      include_date_ranges = TRUE,
+      include_product_metrics = TRUE,
+      include_nes_classification = TRUE
+    ),
+    
+    # Performance optimization
+    optimization = list(
+      create_indexes = TRUE,
+      use_partitioning = FALSE,
+      materialized_views = c()  # Views to materialize for performance
+    )
+  ),
+  
+  # Application data preparation
+  application = list(
+    target_tables = c(
+      "filtered_sales_views",
+      "filtered_customer_views", 
+      "condition_grid_metadata"
+    ),
+    
+    # View naming convention
+    view_naming = list(
+      sales_prefix = "df_sales_",
+      customer_prefix = "df_sales_by_customer_",
+      separator = "_"
+    ),
+    
+    # Component integration
+    component_ready = TRUE,
+    caching_strategy = "query_based"
+  ),
+  
+  # Execution settings
+  execution = list(
+    parallel_processing = FALSE,
+    chunk_size = 5000,
+    memory_limit = "4GB",
+    timeout_minutes = 60
+  )
+)
+```
+
+## ETL02 Implementation
+
+### Layer 1: Raw Data Import
+
+```r
+#' ETL02 Layer 1: Import raw sales data for filtering pipeline
+#' 
+#' Imports external sales data while preserving source characteristics
+#' and preparing for condition-based filtering
+#'
+etl02_import_raw_data <- function(config) {
+  
+  # Connect to raw data database
+  raw_conn <- dbConnect_from_list("raw_data")
+  
+  tryCatch({
+    
+    # Import source data
+    imported_data <- switch(config$source$type,
+      "csv" = {
+        readr::read_csv(
+          config$source$path, 
+          locale = locale(encoding = config$source$encoding),
+          col_types = cols(.default = "c")  # Import as character for flexibility
+        )
+      },
+      "excel" = {
+        readxl::read_excel(config$source$path)
+      },
+      "json" = {
+        jsonlite::fromJSON(config$source$path, flatten = TRUE)
+      }
+    )
+    
+    # Add ETL metadata
+    imported_data <- imported_data %>%
+      dplyr::mutate(
+        etl_import_timestamp = Sys.time(),
+        etl_source_path = config$source$path,
+        etl_platform_id = config$source$platform_id,
+        etl_source_type = config$source$type,
+        etl_pipeline = "etl02_customer_filtering"
+      )
+    
+    # Generate table name with timestamp
+    table_name <- paste0(
+      "raw_", 
+      config$source$platform_id, 
+      "_sales_", 
+      format(Sys.Date(), "%Y%m%d")
+    )
+    
+    # Write to raw data layer
+    DBI::dbWriteTable(
+      raw_conn, 
+      table_name, 
+      imported_data, 
+      overwrite = TRUE, 
+      append = FALSE
+    )
+    
+    # Return import results
+    import_result <- list(
+      success = TRUE,
+      table_name = table_name,
+      row_count = nrow(imported_data),
+      column_count = ncol(imported_data),
+      import_timestamp = Sys.time(),
+      platform_id = config$source$platform_id
+    )
+    
+    message("ETL02 Layer 1 completed: Imported ", nrow(imported_data), " rows to ", table_name)
+    
+    return(import_result)
+    
+  }, finally = {
+    DBI::dbDisconnect(raw_conn)
+  })
+}
+```
+
+### Layer 2: Staging Operations
+
+```r
+#' ETL02 Layer 2: Stage data with file-level preprocessing
+#' 
+#' Applies file-level preprocessing without modifying content values
+#'
+etl02_stage_data <- function(config, raw_table_name) {
+  
+  # Connect to databases
+  raw_conn <- dbConnect_from_list("raw_data")
+  staged_conn <- dbConnect_from_list("staged_data")
+  
+  tryCatch({
+    
+    # Read raw data
+    raw_data <- tbl2(raw_conn, raw_table_name) %>% collect()
+    
+    # Apply staging transformations
+    staged_data <- raw_data
+    
+    # Validate encoding if required
+    encoding_validated <- TRUE
+    if (config$staging$validation_required) {
+      # Check for encoding issues
+      text_columns <- raw_data %>% 
+        select_if(is.character) %>% 
+        names()
+      
+      for (col in text_columns) {
+        if (any(grepl("[^\x01-\x7F]", raw_data[[col]], na.rm = TRUE))) {
+          message("Non-ASCII characters detected in column: ", col)
+        }
+      }
+    }
+    
+    # Add staging metadata
+    staged_data <- staged_data %>%
+      dplyr::mutate(
+        etl_staged_timestamp = Sys.time(),
+        etl_encoding_validated = encoding_validated,
+        etl_staging_layer = "layer_2"
+      )
+    
+    # Generate staged table name
+    staged_table_name <- paste0("staged_", gsub("^raw_", "", raw_table_name))
+    
+    # Write to staged data layer
+    DBI::dbWriteTable(
+      staged_conn, 
+      staged_table_name, 
+      staged_data, 
+      overwrite = TRUE, 
+      append = FALSE
+    )
+    
+    # Return staging results
+    staging_result <- list(
+      success = TRUE,
+      source_table = raw_table_name,
+      target_table = staged_table_name,
+      row_count = nrow(staged_data),
+      encoding_validated = encoding_validated,
+      staging_timestamp = Sys.time()
+    )
+    
+    message("ETL02 Layer 2 completed: Staged ", nrow(staged_data), " rows to ", staged_table_name)
+    
+    return(staging_result)
+    
+  }, finally = {
+    DBI::dbDisconnect(raw_conn)
+    DBI::dbDisconnect(staged_conn)
+  })
+}
+```
+
+### Layer 3: Schema Transformation
+
+```r
+#' ETL02 Layer 3: Transform schema and add product line information
+#' 
+#' Standardizes column names, converts types, and joins with product data
+#'
+etl02_transform_schema <- function(config, staged_table_name) {
+  
+  # Connect to databases
+  staged_conn <- dbConnect_from_list("staged_data")
+  transformed_conn <- dbConnect_from_list("transformed_data")
+  processed_conn <- dbConnect_from_list("processed_data")  # For product dictionary
+  
+  tryCatch({
+    
+    # Read staged data
+    staged_data <- tbl2(staged_conn, staged_table_name) %>% collect()
+    
+    # Apply column mapping
+    column_mapping <- config$transformation$column_mapping
+    
+    # Rename columns according to mapping
+    transformed_data <- staged_data
+    for (target_col in names(column_mapping)) {
+      source_col <- column_mapping[[target_col]]
+      if (source_col %in% names(staged_data)) {
+        transformed_data <- transformed_data %>%
+          dplyr::rename(!!target_col := !!source_col)
+      }
+    }
+    
+    # Apply type conversions
+    type_conversions <- config$transformation$type_conversions
+    for (col_name in names(type_conversions)) {
+      target_type <- type_conversions[[col_name]]
+      
+      if (col_name %in% names(transformed_data)) {
+        transformed_data <- switch(target_type,
+          "character" = transformed_data %>% 
+            mutate(!!col_name := as.character(.data[[col_name]])),
+          "numeric" = transformed_data %>% 
+            mutate(!!col_name := as.numeric(.data[[col_name]])),
+          "datetime" = transformed_data %>% 
+            mutate(!!col_name := lubridate::ymd_hms(.data[[col_name]])),
+          "integer" = transformed_data %>% 
+            mutate(!!col_name := as.integer(.data[[col_name]])),
+          transformed_data  # Default: no conversion
+        )
+      }
+    }
+    
+    # Add platform identification
+    if (!is.null(config$transformation$platform_assignment)) {
+      for (col_name in names(config$transformation$platform_assignment)) {
+        col_value <- config$transformation$platform_assignment[[col_name]]
+        transformed_data <- transformed_data %>%
+          dplyr::mutate(!!col_name := col_value)
+      }
+    }
+    
+    # Create customer_id from identifier column if needed
+    if ("customer_id" %in% names(transformed_data)) {
+      transformed_data <- transformed_data %>%
+        mutate(customer_id = as.integer(as.factor(customer_id)))
+    }
+    
+    # Join with product line dictionary if enabled
+    if (config$transformation$product_line_join$enabled) {
+      
+      # Load product line dictionary
+      product_dict <- tbl2(processed_conn, 
+                          config$transformation$product_line_join$dictionary_table) %>% 
+        collect()
+      
+      # Perform left join
+      join_key <- config$transformation$product_line_join$join_key
+      
+      transformed_data <- transformed_data %>%
+        left_join(
+          product_dict %>% 
+            select(all_of(join_key), product_line_id),
+          by = join_key
+        ) %>%
+        # Handle missing product line IDs
+        mutate(product_line_id = ifelse(is.na(product_line_id), 0, product_line_id))
+    }
+    
+    # Add transformation metadata
+    transformed_data <- transformed_data %>%
+      dplyr::mutate(
+        etl_transformed_timestamp = Sys.time(),
+        etl_schema_version = "v1.0",
+        etl_transformation_layer = "layer_3"
+      )
+    
+    # Generate transformed table name
+    transformed_table_name <- paste0("transformed_", gsub("^staged_", "", staged_table_name))
+    
+    # Write to transformed data layer
+    DBI::dbWriteTable(
+      transformed_conn, 
+      transformed_table_name, 
+      transformed_data, 
+      overwrite = TRUE, 
+      append = FALSE
+    )
+    
+    # Return transformation results
+    transformation_result <- list(
+      success = TRUE,
+      source_table = staged_table_name,
+      target_table = transformed_table_name,
+      row_count = nrow(transformed_data),
+      column_count = ncol(transformed_data),
+      schema_validated = TRUE,
+      transformation_timestamp = Sys.time()
+    )
+    
+    message("ETL02 Layer 3 completed: Transformed ", nrow(transformed_data), " rows to ", transformed_table_name)
+    
+    return(transformation_result)
+    
+  }, finally = {
+    DBI::dbDisconnect(staged_conn)
+    DBI::dbDisconnect(transformed_conn)
+    DBI::dbDisconnect(processed_conn)
+  })
+}
+```
+
+### Layer 4: Data Cleansing
+
+```r
+#' ETL02 Layer 4: Cleanse data for quality assurance
+#' 
+#' Removes duplicates, handles missing values, and validates data quality
+#'
+etl02_cleanse_data <- function(config, transformed_table_name) {
+  
+  # Connect to databases
+  transformed_conn <- dbConnect_from_list("transformed_data")
+  cleansed_conn <- dbConnect_from_list("cleansed_data")
+  
+  tryCatch({
+    
+    # Read transformed data
+    transformed_data <- tbl2(transformed_conn, transformed_table_name) %>% collect()
+    
+    initial_row_count <- nrow(transformed_data)
+    cleansed_data <- transformed_data
+    
+    # Remove duplicates if enabled
+    if (config$cleansing$remove_duplicates) {
+      duplicate_keys <- config$cleansing$duplicate_keys
+      
+      if (all(duplicate_keys %in% names(cleansed_data))) {
+        cleansed_data <- cleansed_data %>%
+          distinct(across(all_of(duplicate_keys)), .keep_all = TRUE)
+        
+        duplicates_removed <- initial_row_count - nrow(cleansed_data)
+        message("Removed ", duplicates_removed, " duplicate records")
+      }
+    }
+    
+    # Handle missing values if enabled
+    if (config$cleansing$handle_missing_values) {
+      required_fields <- config$cleansing$required_fields
+      
+      # Remove rows with missing required fields
+      for (field in required_fields) {
+        if (field %in% names(cleansed_data)) {
+          before_count <- nrow(cleansed_data)
+          cleansed_data <- cleansed_data %>%
+            filter(!is.na(.data[[field]]))
+          after_count <- nrow(cleansed_data)
+          
+          if (before_count != after_count) {
+            message("Removed ", before_count - after_count, " rows with missing ", field)
+          }
+        }
+      }
+    }
+    
+    # Apply validation rules
+    validation_rules <- config$cleansing$validation_rules
+    
+    # Validate minimum transaction amount
+    if ("min_transaction_amount" %in% names(validation_rules) && 
+        "lineproduct_price" %in% names(cleansed_data)) {
+      
+      min_amount <- validation_rules$min_transaction_amount
+      before_count <- nrow(cleansed_data)
+      
+      cleansed_data <- cleansed_data %>%
+        filter(lineproduct_price >= min_amount)
+      
+      after_count <- nrow(cleansed_data)
+      if (before_count != after_count) {
+        message("Removed ", before_count - after_count, " rows below minimum amount")
+      }
+    }
+    
+    # Validate date range
+    if ("valid_date_range" %in% names(validation_rules) && 
+        "payment_time" %in% names(cleansed_data)) {
+      
+      date_range <- validation_rules$valid_date_range
+      start_date <- as.Date(date_range$start_date)
+      end_date <- as.Date(date_range$end_date)
+      
+      before_count <- nrow(cleansed_data)
+      
+      cleansed_data <- cleansed_data %>%
+        filter(
+          as.Date(payment_time) >= start_date,
+          as.Date(payment_time) <= end_date
+        )
+      
+      after_count <- nrow(cleansed_data)
+      if (before_count != after_count) {
+        message("Removed ", before_count - after_count, " rows outside date range")
+      }
+    }
+    
+    # Calculate data quality score
+    final_row_count <- nrow(cleansed_data)
+    quality_score <- final_row_count / initial_row_count
+    
+    # Add cleansing metadata
+    cleansed_data <- cleansed_data %>%
+      dplyr::mutate(
+        etl_cleansed_timestamp = Sys.time(),
+        etl_quality_score = quality_score,
+        etl_cleansing_layer = "layer_4"
+      )
+    
+    # Generate cleansed table name
+    cleansed_table_name <- paste0("cleansed_", gsub("^transformed_", "", transformed_table_name))
+    
+    # Write to cleansed data layer
+    DBI::dbWriteTable(
+      cleansed_conn, 
+      cleansed_table_name, 
+      cleansed_data, 
+      overwrite = TRUE, 
+      append = FALSE
+    )
+    
+    # Return cleansing results
+    cleansing_result <- list(
+      success = TRUE,
+      source_table = transformed_table_name,
+      target_table = cleansed_table_name,
+      initial_row_count = initial_row_count,
+      final_row_count = final_row_count,
+      quality_score = quality_score,
+      cleansing_timestamp = Sys.time()
+    )
+    
+    message("ETL02 Layer 4 completed: Cleansed ", final_row_count, " rows (quality score: ", 
+            round(quality_score, 3), ") to ", cleansed_table_name)
+    
+    return(cleansing_result)
+    
+  }, finally = {
+    DBI::dbDisconnect(transformed_conn)
+    DBI::dbDisconnect(cleansed_conn)
+  })
+}
+```
+
+### Layer 5: Processing - Condition Grid and Filtering
+
+```r
+#' ETL02 Layer 5: Process data with condition grid generation and filtering
+#' 
+#' Creates condition grids and applies filters to generate customer views
+#'
+etl02_process_filtering <- function(config, cleansed_table_name) {
+  
+  # Connect to databases
+  cleansed_conn <- dbConnect_from_list("cleansed_data")
+  processed_conn <- dbConnect_from_list("processed_data")
+  
+  tryCatch({
+    
+    # Read cleansed data
+    cleansed_data <- tbl2(cleansed_conn, cleansed_table_name) %>% collect()
+    
+    # Generate condition grid
+    grid_components <- config$processing$grid_components
+    condition_grid <- expand.grid(
+      time_condition = grid_components$time_condition,
+      product_line_id_filter = grid_components$product_line_id_filter,
+      state_filter = grid_components$state_filter,
+      source_filter = grid_components$source_filter,
+      stringsAsFactors = FALSE
+    )
+    
+    message("Generated condition grid with ", nrow(condition_grid), " combinations")
+    
+    # Calculate time thresholds
+    time_now <- max(cleansed_data$payment_time, na.rm = TRUE)
+    time_thresholds <- list(
+      "now" = as.POSIXct("1900-01-01"),  # No time restriction
+      "m1year" = time_now - lubridate::years(1),
+      "m1quarter" = time_now - lubridate::months(3),
+      "m1month" = time_now - lubridate::months(1)
+    )
+    
+    # Store condition grid metadata
+    condition_grid_metadata <- condition_grid %>%
+      mutate(
+        grid_id = row_number(),
+        created_timestamp = Sys.time(),
+        etl_pipeline = "etl02_customer_filtering"
+      )
+    
+    # Write condition grid metadata
+    DBI::dbWriteTable(
+      processed_conn, 
+      "condition_grid_metadata", 
+      condition_grid_metadata, 
+      overwrite = TRUE, 
+      append = FALSE
+    )
+    
+    # Process each condition combination
+    filtered_views_created <- 0
+    
+    for (i in 1:nrow(condition_grid)) {
+      condition <- condition_grid[i, ]
+      
+      # Apply filters based on condition
+      filtered_data <- cleansed_data
+      
+      # Apply time filter
+      time_condition <- condition$time_condition
+      if (time_condition != "now") {
+        time_threshold <- time_thresholds[[time_condition]]
+        if (!is.null(time_threshold)) {
+          filtered_data <- filtered_data %>%
+            filter(payment_time >= time_threshold)
+        }
+      }
+      
+      # Apply product line filter
+      if (condition$product_line_id_filter != 0) {
+        filtered_data <- filtered_data %>%
+          filter(product_line_id == condition$product_line_id_filter)
+      }
+      
+      # Apply state filter
+      if (condition$state_filter != "ALL") {
+        filtered_data <- filtered_data %>%
+          filter(state == condition$state_filter)
+      }
+      
+      # Apply source filter
+      filtered_data <- filtered_data %>%
+        filter(source == condition$source_filter)
+      
+      # Add filter condition columns
+      filtered_data <- filtered_data %>%
+        mutate(
+          filter_time_condition = condition$time_condition,
+          filter_product_line_id = condition$product_line_id_filter,
+          filter_state = condition$state_filter,
+          filter_source = condition$source_filter,
+          filter_grid_id = i
+        )
+      
+      # Skip empty results
+      if (nrow(filtered_data) == 0) {
+        next
+      }
+      
+      # Generate view names
+      view_suffix <- paste(
+        condition$source_filter,
+        condition$time_condition,
+        condition$product_line_id_filter,
+        condition$state_filter,
+        sep = "_"
+      )
+      
+      sales_view_name <- paste0(config$application$view_naming$sales_prefix, view_suffix)
+      customer_view_name <- paste0(config$application$view_naming$customer_prefix, view_suffix)
+      
+      # Create customer-aggregated view
+      customer_data <- filtered_data %>%
+        group_by(customer_id) %>%
+        summarise(
+          # Core customer metrics
+          transaction_count = n(),
+          total_spent = sum(lineproduct_price, na.rm = TRUE),
+          average_order_value = mean(lineproduct_price, na.rm = TRUE),
+          first_purchase_date = min(payment_time, na.rm = TRUE),
+          last_purchase_date = max(payment_time, na.rm = TRUE),
+          
+          # RFM metrics
+          m_value = total_spent,
+          f_value = transaction_count,
+          r_value = as.numeric(difftime(time_now, last_purchase_date, units = "days")),
+          
+          # Product metrics (if enabled)
+          product_count = if(config$processing$customer_metrics$include_product_metrics) {
+            n_distinct(product_id, na.rm = TRUE)
+          } else { NA_integer_ },
+          
+          # Preserve filter conditions
+          filter_time_condition = first(filter_time_condition),
+          filter_product_line_id = first(filter_product_line_id),
+          filter_state = first(filter_state),
+          filter_source = first(filter_source),
+          filter_grid_id = first(filter_grid_id),
+          
+          .groups = "drop"
+        ) %>%
+        # Calculate additional metrics
+        mutate(
+          # Inter-purchase time
+          ipt_days = as.numeric(difftime(last_purchase_date, first_purchase_date, units = "days")),
+          
+          # NES classification (if enabled)
+          nes_status = if(config$processing$customer_metrics$include_nes_classification) {
+            case_when(
+              transaction_count == 1 & first_purchase_date > (time_now - lubridate::days(30)) ~ "N",
+              last_purchase_date > (time_now - lubridate::days(60)) ~ "E0",
+              last_purchase_date > (time_now - lubridate::days(180)) ~ "S1",
+              last_purchase_date > (time_now - lubridate::days(365)) ~ "S2",
+              TRUE ~ "S3"
+            )
+          } else { NA_character_ }
+        )
+      
+      # Write filtered sales data
+      DBI::dbWriteTable(
+        processed_conn, 
+        sales_view_name, 
+        filtered_data, 
+        overwrite = TRUE, 
+        append = FALSE
+      )
+      
+      # Write customer aggregated data
+      DBI::dbWriteTable(
+        processed_conn, 
+        customer_view_name, 
+        customer_data, 
+        overwrite = TRUE, 
+        append = FALSE
+      )
+      
+      filtered_views_created <- filtered_views_created + 1
+    }
+    
+    # Return processing results
+    processing_result <- list(
+      success = TRUE,
+      source_table = cleansed_table_name,
+      condition_combinations = nrow(condition_grid),
+      filtered_views_created = filtered_views_created,
+      condition_grid_table = "condition_grid_metadata",
+      processing_timestamp = Sys.time()
+    )
+    
+    message("ETL02 Layer 5 completed: Created ", filtered_views_created, " filtered views from ", 
+            nrow(condition_grid), " conditions")
+    
+    return(processing_result)
+    
+  }, finally = {
+    DBI::dbDisconnect(cleansed_conn)
+    DBI::dbDisconnect(processed_conn)
+  })
+}
+```
+
+### Layer 6: Application Data Preparation
+
+```r
+#' ETL02 Layer 6: Prepare application-ready data
+#' 
+#' Optimizes filtered views for component consumption
+#'
+etl02_prepare_app_data <- function(config, processing_result) {
+  
+  # Connect to databases
+  processed_conn <- dbConnect_from_list("processed_data")
+  app_conn <- dbConnect_from_list("app_data")
+  
+  tryCatch({
+    
+    # Read condition grid metadata
+    condition_grid <- tbl2(processed_conn, "condition_grid_metadata") %>% collect()
+    
+    # Create unified filtered sales view
+    all_sales_data <- data.frame()
+    all_customer_data <- data.frame()
+    
+    for (i in 1:nrow(condition_grid)) {
+      condition <- condition_grid[i, ]
+      
+      # Generate view names
+      view_suffix <- paste(
+        condition$source_filter,
+        condition$time_condition,
+        condition$product_line_id_filter,
+        condition$state_filter,
+        sep = "_"
+      )
+      
+      sales_view_name <- paste0(config$application$view_naming$sales_prefix, view_suffix)
+      customer_view_name <- paste0(config$application$view_naming$customer_prefix, view_suffix)
+      
+      # Check if views exist
+      if (DBI::dbExistsTable(processed_conn, sales_view_name)) {
+        sales_data <- tbl2(processed_conn, sales_view_name) %>% collect()
+        all_sales_data <- bind_rows(all_sales_data, sales_data)
+      }
+      
+      if (DBI::dbExistsTable(processed_conn, customer_view_name)) {
+        customer_data <- tbl2(processed_conn, customer_view_name) %>% collect()
+        all_customer_data <- bind_rows(all_customer_data, customer_data)
+      }
+    }
+    
+    # Add application metadata
+    all_sales_data <- all_sales_data %>%
+      mutate(
+        etl_app_prepared_timestamp = Sys.time(),
+        etl_application_layer = "layer_6"
+      )
+    
+    all_customer_data <- all_customer_data %>%
+      mutate(
+        etl_app_prepared_timestamp = Sys.time(),
+        etl_application_layer = "layer_6"
+      )
+    
+    # Write to application data layer
+    target_tables <- config$application$target_tables
+    
+    # Filtered sales views
+    if ("filtered_sales_views" %in% target_tables) {
+      DBI::dbWriteTable(
+        app_conn, 
+        "filtered_sales_views", 
+        all_sales_data, 
+        overwrite = TRUE, 
+        append = FALSE
+      )
+    }
+    
+    # Filtered customer views
+    if ("filtered_customer_views" %in% target_tables) {
+      DBI::dbWriteTable(
+        app_conn, 
+        "filtered_customer_views", 
+        all_customer_data, 
+        overwrite = TRUE, 
+        append = FALSE
+      )
+    }
+    
+    # Condition grid metadata
+    if ("condition_grid_metadata" %in% target_tables) {
+      DBI::dbWriteTable(
+        app_conn, 
+        "condition_grid_metadata", 
+        condition_grid, 
+        overwrite = TRUE, 
+        append = FALSE
+      )
+    }
+    
+    # Create indexes for performance if enabled
+    if (config$processing$optimization$create_indexes) {
+      
+      # Create indexes on filter columns
+      filter_columns <- c(
+        "filter_time_condition", 
+        "filter_product_line_id", 
+        "filter_state", 
+        "filter_source"
+      )
+      
+      for (col in filter_columns) {
+        tryCatch({
+          DBI::dbExecute(
+            app_conn, 
+            paste0("CREATE INDEX IF NOT EXISTS idx_filtered_sales_", col, 
+                  " ON filtered_sales_views(", col, ")")
+          )
+          
+          DBI::dbExecute(
+            app_conn, 
+            paste0("CREATE INDEX IF NOT EXISTS idx_filtered_customer_", col, 
+                  " ON filtered_customer_views(", col, ")")
+          )
+        }, error = function(e) {
+          message("Index creation warning for ", col, ": ", e$message)
+        })
+      }
+    }
+    
+    # Return application preparation results
+    app_result <- list(
+      success = TRUE,
+      target_tables = target_tables,
+      sales_rows = nrow(all_sales_data),
+      customer_rows = nrow(all_customer_data),
+      condition_combinations = nrow(condition_grid),
+      indexes_created = config$processing$optimization$create_indexes,
+      app_preparation_timestamp = Sys.time()
+    )
+    
+    message("ETL02 Layer 6 completed: Prepared ", length(target_tables), " application tables")
+    
+    return(app_result)
+    
+  }, finally = {
+    DBI::dbDisconnect(processed_conn)
+    DBI::dbDisconnect(app_conn)
+  })
+}
+```
+
+## ETL02 Complete Pipeline Executor
+
+```r
+#' Execute complete ETL02 Customer View Filtering pipeline
+#' 
+#' Runs the full end-to-end pipeline from raw data to application-ready filtered views
+#'
+execute_etl02_complete <- function(config) {
+  
+  etl_start_time <- Sys.time()
+  execution_log <- list()
+  
+  message("Starting ETL02: Customer View Filtering Pipeline")
+  
+  tryCatch({
+    
+    # Layer 1: Import raw data
+    message("ETL02 Layer 1: Importing raw data...")
+    import_result <- etl02_import_raw_data(config)
+    execution_log$import <- import_result
+    
+    if (!import_result$success) {
+      stop("ETL02 Layer 1 failed: ", import_result$error)
+    }
+    
+    # Layer 2: Stage data
+    message("ETL02 Layer 2: Staging data...")
+    staging_result <- etl02_stage_data(config, import_result$table_name)
+    execution_log$staging <- staging_result
+    
+    if (!staging_result$success) {
+      stop("ETL02 Layer 2 failed: ", staging_result$error)
+    }
+    
+    # Layer 3: Transform schema
+    message("ETL02 Layer 3: Transforming schema...")
+    transformation_result <- etl02_transform_schema(config, staging_result$target_table)
+    execution_log$transformation <- transformation_result
+    
+    if (!transformation_result$success) {
+      stop("ETL02 Layer 3 failed: ", transformation_result$error)
+    }
+    
+    # Layer 4: Cleanse data
+    message("ETL02 Layer 4: Cleansing data...")
+    cleansing_result <- etl02_cleanse_data(config, transformation_result$target_table)
+    execution_log$cleansing <- cleansing_result
+    
+    if (!cleansing_result$success) {
+      stop("ETL02 Layer 4 failed: ", cleansing_result$error)
+    }
+    
+    # Layer 5: Process filtering
+    message("ETL02 Layer 5: Processing filtering and condition grids...")
+    processing_result <- etl02_process_filtering(config, cleansing_result$target_table)
+    execution_log$processing <- processing_result
+    
+    if (!processing_result$success) {
+      stop("ETL02 Layer 5 failed: ", processing_result$error)
+    }
+    
+    # Layer 6: Prepare application data
+    message("ETL02 Layer 6: Preparing application data...")
+    app_result <- etl02_prepare_app_data(config, processing_result)
+    execution_log$application <- app_result
+    
+    if (!app_result$success) {
+      stop("ETL02 Layer 6 failed: ", app_result$error)
+    }
+    
+    # Calculate total execution time
+    etl_end_time <- Sys.time()
+    total_execution_time <- as.numeric(difftime(etl_end_time, etl_start_time, units = "mins"))
+    
+    # Create success result
+    etl_result <- list(
+      success = TRUE,
+      etl_name = "etl02_customer_view_filtering",
+      execution_log = execution_log,
+      total_execution_time_mins = total_execution_time,
+      start_time = etl_start_time,
+      end_time = etl_end_time,
+      output_tables = config$application$target_tables,
+      condition_combinations = processing_result$condition_combinations,
+      filtered_views_created = processing_result$filtered_views_created
+    )
+    
+    message("ETL02 completed successfully: ", 
+            round(total_execution_time, 2), " minutes, ",
+            processing_result$filtered_views_created, " filtered views created")
+    
+    return(etl_result)
+    
+  }, error = function(e) {
+    
+    etl_end_time <- Sys.time()
+    total_execution_time <- as.numeric(difftime(etl_end_time, etl_start_time, units = "mins"))
+    
+    error_result <- list(
+      success = FALSE,
+      etl_name = "etl02_customer_view_filtering",
+      execution_log = execution_log,
+      error_message = e$message,
+      total_execution_time_mins = total_execution_time,
+      start_time = etl_start_time,
+      end_time = etl_end_time
+    )
+    
+    message("ETL02 failed: ", e$message)
+    
+    return(error_result)
+  })
+}
+```
+
+## Usage Example
+
+```r
+# Configure ETL02 for Amazon sales data
+etl02_amazon_config <- list(
+  etl_name = "customer_view_filtering_amazon",
+  etl_version = "1.0",
+  
+  source = list(
+    type = "csv",
+    path = "data/amazon_sales_2024.csv",
+    platform_id = "amazon",
+    encoding = "UTF-8",
+    has_header = TRUE
+  ),
+  
+  # Standard configuration sections...
+  # (Use the complete configuration structure shown above)
+)
+
+# Execute the complete pipeline
+result <- execute_etl02_complete(etl02_amazon_config)
+
+# Check results
+if (result$success) {
+  message("ETL02 completed successfully!")
+  message("Created ", result$filtered_views_created, " filtered views")
+  message("Execution time: ", round(result$total_execution_time_mins, 2), " minutes")
+} else {
+  message("ETL02 failed: ", result$error_message)
+}
+```
+
+## Component Integration
+
+```r
+# Example: Access filtered customer data in a micro-component
+get_filtered_customer_data <- function(source_filter, time_condition, 
+                                      product_line_filter, state_filter) {
+  
+  app_conn <- dbConnect_from_list("app_data")
+  
+  tryCatch({
+    
+    filtered_data <- tbl2(app_conn, "filtered_customer_views") %>%
+      filter(
+        filter_source == source_filter,
+        filter_time_condition == time_condition,
+        filter_product_line_id == product_line_filter,
+        filter_state == state_filter
+      ) %>%
+      collect()
+    
+    return(filtered_data)
+    
+  }, finally = {
+    DBI::dbDisconnect(app_conn)
+  })
+}
+
+# Usage in Shiny component
+customer_data <- get_filtered_customer_data(
+  source_filter = "amazon",
+  time_condition = "m1quarter",
+  product_line_filter = 1,
+  state_filter = "CA"
+)
+```
+
+## Integration with D02 Business Logic
+
+ETL02 provides the data processing infrastructure that D02 business derivations can reference:
+
+```r
+# In D02 business logic - OLD approach (duplicated processing):
+# df_filtered_sales <- raw_sales_data %>%
+#   filter(time >= time_threshold) %>%
+#   filter(product_line_id == target_product_line) %>%
+#   group_by(customer_id) %>%
+#   summarise(...)
+
+# NEW approach (reference ETL02):
+filtering_result <- execute_etl02_complete(etl02_config)
+
+if (filtering_result$success) {
+  # Access pre-processed filtered data
+  filtered_customer_data <- get_filtered_customer_data(
+    source_filter = input$source,
+    time_condition = input$time_horizon,
+    product_line_filter = input$product_line,
+    state_filter = input$region
+  )
+  
+  # Apply business analysis and interpretation
+  business_insights <- analyze_customer_segments(filtered_customer_data)
+  
+  # Generate business recommendations
+  recommendations <- generate_filtering_recommendations(business_insights)
+}
+```
+
+## Conclusion
+
+ETL02 provides a comprehensive Customer View Filtering pipeline that transforms raw sales data into filtered customer views through a complete six-layer architecture. By implementing condition grids and systematic filtering, it enables micro-components to access precisely filtered customer data without duplicating processing logic.
+
+The pipeline handles the complete data journey from external sources to application-ready filtered views, maintaining data quality, performance optimization, and comprehensive monitoring throughout the process.

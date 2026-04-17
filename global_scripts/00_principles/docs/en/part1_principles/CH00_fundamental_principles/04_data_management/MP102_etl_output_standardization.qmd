@@ -1,0 +1,423 @@
+---
+id: "MP102"
+title: "ETL Output Standardization Principle"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2026-02-11"
+author: "Claude"
+status: "active"
+version: "1.1"
+weight: 102
+related_to:
+  - "MP064": "ETL-Derivation Separation Principle"
+  - "MP092": "Platform ID Standard"
+  - "MP094": "Platform API Architecture"
+  - "MP059": "Unidirectional Data Flow"
+  - "MP149": "Data Transaction Integrity Principle"
+  - "DM_R027": "ETL Schema Validation Rule"
+implements:
+  - "SCHEMA": "Schema registry pattern"
+  - "VALIDATION": "Output validation framework"
+---
+
+# MP102: ETL Output Standardization Principle
+
+## Core Statement
+
+**All ETL pipelines must produce standardized outputs following a core schema with documented platform-specific extensions**: Each ETL script outputs a consistent set of core tables, enabling downstream processes to work reliably across all platforms while preserving platform-specific data through extension fields.
+
+## Architectural Definition
+
+### Three-Layer Schema Architecture
+
+ETL outputs follow a **three-layer schema pattern**:
+
+1. **Core Schema Layer**
+   - Universal fields present across all platforms
+   - Standardized naming conventions
+   - Common data types and formats
+   - Required for downstream processing
+
+2. **Platform Extension Layer**
+   - Platform-specific fields preserved from source
+   - Documented in schema registry
+   - Prefixed with platform_id (e.g., `cbz_`, `eby_`)
+   - Optional for downstream processing
+
+3. **Metadata Layer**
+   - ETL processing metadata
+   - Import timestamps and sources
+   - Platform IDs and versions
+   - Data quality indicators
+
+## Standard ETL Output Tables
+
+### Required Core Tables
+
+Every platform ETL must output these standardized tables:
+
+```yaml
+core_tables:
+  sales:
+    table_name: "df_{platform}_sales___raw"
+    core_fields:
+      - order_id: VARCHAR        # Universal order identifier
+      - customer_id: VARCHAR     # Customer identifier
+      - order_date: VARCHAR      # Order date (to be parsed)
+      - product_id: VARCHAR      # Product identifier
+      - quantity: INTEGER        # Quantity sold
+      - unit_price: NUMERIC      # Price per unit
+      - total_amount: NUMERIC    # Total transaction amount
+      - platform_id: VARCHAR(3) # Three-letter platform_id
+      - import_timestamp: TIMESTAMP
+      - import_source: VARCHAR
+    
+  customers:
+    table_name: "df_{platform}_customers___raw"
+    core_fields:
+      - customer_id: VARCHAR     # Primary identifier
+      - customer_email: VARCHAR  # Email address
+      - customer_name: VARCHAR   # Display name
+      - registration_date: VARCHAR
+      - platform_id: VARCHAR(3)
+      - import_timestamp: TIMESTAMP
+  
+  products:
+    table_name: "df_{platform}_products___raw"
+    core_fields:
+      - product_id: VARCHAR      # Primary identifier
+      - product_name: VARCHAR    # Product name
+      - category: VARCHAR        # Product category
+      - sku: VARCHAR            # Stock keeping unit
+      - platform_id: VARCHAR(3)
+      - import_timestamp: TIMESTAMP
+  
+  reviews:
+    table_name: "df_{platform}_reviews___raw"
+    core_fields:
+      - review_id: VARCHAR       # Primary identifier
+      - product_id: VARCHAR      # Product being reviewed
+      - customer_id: VARCHAR     # Reviewer
+      - rating: NUMERIC         # Rating score
+      - review_date: VARCHAR    # Date of review
+      - review_text: TEXT       # Review content
+      - platform_id: VARCHAR(3)
+      - import_timestamp: TIMESTAMP
+```
+
+### Platform-Specific Extensions
+
+Platform-specific fields are preserved but clearly marked:
+
+```yaml
+platform_extensions:
+  cbz_sales:
+    extends: "sales"
+    additional_fields:
+      - cbz_shop_id: VARCHAR      # Cyberbiz shop identifier
+      - cbz_payment_id: VARCHAR   # Payment transaction ID
+      - cbz_member_level: VARCHAR # Member tier
+      - cbz_utm_source: VARCHAR   # Marketing attribution
+      - cbz_coupon_code: VARCHAR  # Applied coupon
+  
+  eby_sales:
+    extends: "sales"
+    additional_fields:
+      - eby_item_id: VARCHAR      # eBay item number
+      - eby_buyer_username: VARCHAR
+      - eby_transaction_id: VARCHAR
+      - eby_listing_type: VARCHAR # Auction/Buy It Now
+      - eby_feedback_score: INTEGER
+  
+  amz_sales:
+    extends: "sales"
+    additional_fields:
+      - amz_asin: VARCHAR         # Amazon Standard ID
+      - amz_marketplace_id: VARCHAR
+      - amz_fulfillment_channel: VARCHAR
+      - amz_order_status: VARCHAR
+      - amz_prime_member: BOOLEAN
+```
+
+## Schema Registry Implementation
+
+### Registry Structure
+
+```yaml
+# Location: 00_principles/docs/en/part2_implementations/CH10_database_specifications/etl_schemas/
+
+registry:
+  version: "1.0"
+  last_updated: "2025-08-28"
+  
+  platforms:
+    cbz:
+      name: "Cyberbiz"
+      etl_scripts:
+        - "cbz_ETL01_0IM.R"
+        - "cbz_ETL01_1ST.R"
+        - "cbz_ETL01_2TR.R"
+      outputs:
+        - table: "df_cbz_sales___raw"
+          conforms_to: "sales"
+          extensions: ["cbz_sales"]
+        - table: "df_cbz_customers___raw"
+          conforms_to: "customers"
+          extensions: ["cbz_customers"]
+        - table: "df_cbz_orders___raw"
+          conforms_to: null  # Platform-specific table
+          description: "Order header data specific to Cyberbiz"
+    
+    eby:
+      name: "eBay"
+      etl_scripts:
+        - "eby_ETL_sales_0IM.R"
+        - "eby_ETL_sales_1ST.R" 
+        - "eby_ETL_sales_2TR.R"
+        - "eby_ETL_customers_0IM.R"
+        - "eby_ETL_customers_1ST.R"
+        - "eby_ETL_customers_2TR.R"
+      outputs:
+        - table: "df_eby_sales___raw"
+          conforms_to: "sales"
+          extensions: ["eby_sales"]
+        - table: "df_eby_customers___raw" 
+          conforms_to: "customers"
+          extensions: ["eby_customers"]
+```
+
+## Field Mapping Documentation
+
+### Mapping Strategy
+
+Each ETL script must document field mappings:
+
+```r
+# In ETL script header:
+# FIELD MAPPING:
+# Core Schema -> Source Field
+# order_id -> order.id (API) or "訂單編號" (CSV)
+# customer_id -> customer.id or member.id
+# product_id -> item.sku or product.code
+# [Platform Extensions]
+# cbz_shop_id -> shop.id (Cyberbiz-specific)
+# cbz_utm_source -> order.utm_source (Marketing data)
+```
+
+## Validation Framework
+
+### ETL Output Validation
+
+```r
+# Function: validate_etl_output
+# Location: global_scripts/05_etl_utils/fn_validate_etl_output.R
+
+validate_etl_output <- function(con, platform_id, table_name) {
+  # Load schema registry
+  schema <- load_etl_schema(platform_id, table_name)
+  
+  # Check core fields exist
+  actual_fields <- dbListFields(con, table_name)
+  missing_core <- setdiff(schema$core_fields, actual_fields)
+  
+  if (length(missing_core) > 0) {
+    stop(sprintf("ETL validation failed for %s: Missing core fields: %s",
+                 table_name, paste(missing_core, collapse = ", ")))
+  }
+  
+  # Validate data types
+  table_info <- dbGetQuery(con, sprintf("PRAGMA table_info(%s)", table_name))
+  for (field in schema$core_fields) {
+    expected_type <- schema$field_types[[field]]
+    actual_type <- table_info$type[table_info$name == field]
+    
+    if (!compatible_types(expected_type, actual_type)) {
+      warning(sprintf("Type mismatch for %s.%s: expected %s, got %s",
+                      table_name, field, expected_type, actual_type))
+    }
+  }
+  
+  # Check for undocumented fields
+  documented_fields <- c(schema$core_fields, schema$extension_fields)
+  undocumented <- setdiff(actual_fields, documented_fields)
+  
+  if (length(undocumented) > 0) {
+    message(sprintf("Undocumented fields in %s: %s",
+                    table_name, paste(undocumented, collapse = ", ")))
+  }
+  
+  return(TRUE)
+}
+```
+
+### 0IM Completeness Gate (Mandatory)
+
+For **external-source 0IM imports** (Excel/CSV/API/Google Sheets), output standardization is not complete until **source-to-local completeness is proven**.
+
+Required checks in the same 0IM run:
+
+1. **Source Discovery Completeness**
+   - Enumerate all source units (files/tabs/API pages) before import.
+   - Persist expected source unit list in memory and/or audit artifact.
+
+2. **Per-Source Import Status**
+   - Record `IMPORTED / EMPTY / SKIPPED / FAILED` for each source unit.
+   - Include error reason for non-imported units.
+   - Any unexpected `FAILED` must fail the 0IM run.
+
+3. **Row-Level Reconciliation**
+   - For imported source units, reconcile `source_rows` vs `written_rows`.
+   - Total rows written must equal sum of successfully imported source rows.
+
+4. **Critical Key Reconciliation**
+   - For critical natural keys (for example `ASIN`, `order_id`, `sku`):
+   - Verify source distinct keys are fully represented in local table after write.
+   - Mismatch is a hard failure in production runs.
+
+5. **Audit Artifact Output**
+   - Emit a machine-readable report (CSV) with per-source import status and reconciliation fields.
+   - This artifact is required for issue triage and reproducibility.
+
+6. **Transactional Commit / Rollback**
+   - Run write + reconciliation inside a database transaction boundary.
+   - Commit only when all completeness checks pass.
+   - Roll back on any failed source unit or reconciliation mismatch.
+
+Hard-fail conditions:
+- Missing required source units.
+- Any source unit with import failure.
+- Row reconciliation mismatch.
+- Critical key reconciliation mismatch.
+
+This gate complements schema validation (DM_R027): schema compliance alone is insufficient if data coverage is incomplete.
+
+## Implementation Patterns
+
+### Compliant ETL Implementation
+
+```r
+# cbz_ETL01_0IM.R - Following MP102
+cbz_etl01_import <- function() {
+  # Import raw data
+  raw_data <- fetch_from_api()
+  
+  # Map to core schema
+  df_sales <- raw_data %>%
+    mutate(
+      # Core fields (required)
+      order_id = as.character(id),
+      customer_id = as.character(member_id),
+      order_date = as.character(created_at),
+      product_id = as.character(sku),
+      quantity = as.integer(qty),
+      unit_price = as.numeric(price),
+      total_amount = as.numeric(total),
+      platform_id = "cbz",
+      import_timestamp = Sys.time(),
+      import_source = "API",
+      
+      # Platform extensions (preserved)
+      cbz_shop_id = shop_id,
+      cbz_payment_id = payment_transaction_id,
+      cbz_member_level = member_tier,
+      cbz_utm_source = utm_source,
+      cbz_coupon_code = coupon_used
+    )
+  
+  # Validate output against schema
+  validate_etl_output(con, "cbz", "df_cbz_sales___raw")
+  
+  # Write standardized output
+  dbWriteTable(con, "df_cbz_sales___raw", df_sales, overwrite = TRUE)
+}
+```
+
+### Cross-Platform Consumption
+
+```r
+# Derivation consuming standardized ETL outputs
+d01_multi_platform_analysis <- function() {
+  platforms <- c("cbz", "eby", "amz")
+  
+  # Core fields are guaranteed to exist
+  all_sales <- map_dfr(platforms, function(platform) {
+    tbl2(con, sprintf("df_%s_sales___raw", platform)) %>%
+      select(
+        # Use only core fields for cross-platform analysis
+        order_id, customer_id, order_date,
+        product_id, quantity, total_amount,
+        platform_id
+      ) %>%
+      collect()
+  })
+  
+  # Unified analysis across all platforms
+  platform_comparison <- all_sales %>%
+    group_by(platform_id) %>%
+    summarize(
+      total_orders = n(),
+      total_revenue = sum(total_amount, na.rm = TRUE),
+      avg_order_value = mean(total_amount, na.rm = TRUE)
+    )
+  
+  return(platform_comparison)
+}
+```
+
+## Migration Guidelines
+
+### Converting Existing ETLs
+
+1. **Audit Current Outputs**
+   ```r
+   # List all tables created by ETL
+   tables <- dbListTables(con)
+   etl_tables <- tables[grepl("^df_.*_raw$", tables)]
+   ```
+
+2. **Map to Core Schema**
+   ```r
+   # Document field mappings
+   # Create schema conformance report
+   ```
+
+3. **Add Missing Core Fields**
+   ```r
+   # Ensure all core fields are present
+   # Add metadata fields if missing
+   ```
+
+4. **Prefix Platform-Specific Fields**
+   ```r
+   # Rename: payment_method -> cbz_payment_method
+   # Preserve: All platform-specific data
+   ```
+
+## Benefits
+
+1. **Interoperability**: Downstream processes work across all platforms
+2. **Maintainability**: Clear separation of core vs platform-specific
+3. **Discoverability**: Schema registry documents all outputs
+4. **Flexibility**: Platform extensions preserve unique data
+5. **Validation**: Automated checking ensures compliance
+6. **Evolution**: Core schema can evolve with versioning
+
+## Compliance Requirements
+
+1. **All ETL scripts** must output core schema tables
+2. **Platform extensions** must use platform_id prefix
+3. **Schema registry** must be updated for new fields
+4. **Validation** must pass before data is written
+5. **Documentation** must include field mappings
+
+## Relationship to Other Principles
+
+- **MP064**: Maintains ETL-Derivation separation
+- **MP092**: Uses three-letter platform_ids
+- **MP094**: Complements platform API architecture
+- **MP059**: Ensures unidirectional data flow
+
+## Conclusion
+
+The ETL Output Standardization Principle ensures that all platform ETL pipelines produce compatible, well-documented outputs while preserving platform-specific richness. This enables robust cross-platform analytics while maintaining the flexibility to handle unique platform features.

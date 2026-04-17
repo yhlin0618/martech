@@ -1,0 +1,171 @@
+---
+title: "DEV_R039: Side-Effect-Free Function Files"
+subtitle: "Function files (fn_*.R) must only define functions; source() must be safe"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R039"
+date-created: "2026-01-08"
+date-modified: "2026-01-08"
+author: "Claude"
+type: "rule"
+law: "Development Methodology"
+article-number: "Rule 39"
+parent_principle: "MP047"
+related_to:
+  - "MP047": "Functional Programming"
+  - "SO_R007": "One Function One File"
+  - "DEV_R002": "Functional Encapsulation"
+  - "DM_R056": "Mode-Specific Database Path Loading"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DEV_R039: Side-Effect-Free Function Files {#overview}
+
+Function files (`fn_*.R`) must only contain function definitions. Executing `source()` on
+a function file must be **safe** with no side effects.
+
+## Rule Statement
+
+**A function file (`fn_*.R`) may only contain:**
+
+1. Function definitions (`function_name <- function(...) { ... }`)
+2. Roxygen2 documentation comments (`#' @param`, `#' @return`, etc.)
+3. Regular comments
+4. Constants used exclusively within the defined functions
+
+**A function file must NOT contain:**
+
+1. `library()` or `require()` calls at top level
+2. Database connections
+3. File I/O operations
+4. `print()`, `message()`, or `cat()` output
+5. Global variable assignments
+6. Any executable code outside of function bodies
+
+## Rationale {#rationale}
+
+1. **Deployment Safety**: Files sourced during initialization should not fail due to missing
+   resources in the deployment environment (e.g., Posit Connect lacking local databases).
+
+2. **Predictable Behavior**: `source("fn_*.R")` should be idempotent and have no observable
+   effect until functions are explicitly called.
+
+3. **Testability**: Functions can be loaded and tested in isolation without triggering
+   unintended operations.
+
+4. **Separation of Concerns**: Function definition is separate from function execution.
+
+## What Are Side Effects? {#side-effects}
+
+Side effects are operations that occur **immediately when the file is sourced**, rather than
+when a function is called:
+
+| Side Effect | Example | Problem |
+|-------------|---------|---------|
+| Package loading | `library(DBI)` | May fail if package not installed |
+| Database connection | `con <- dbConnect(...)` | Fails if DB doesn't exist |
+| File I/O | `data <- read.csv(...)` | Fails if file doesn't exist |
+| Console output | `print("Loading...")` | Clutters output during bulk sourcing |
+| Global assignment | `MY_VAR <<- value` | Pollutes global environment |
+
+## Correct Pattern {#correct-pattern}
+
+```r
+#' Check Staged Database Tables
+#'
+#' @param db_path Path to staged_data.duckdb
+#' @param verbose Whether to print table information
+#' @return Invisible list of tables found
+#' @export
+check_staged_db <- function(db_path = "data/local_data/staged_data.duckdb",
+                            verbose = TRUE,
+                            stop_on_missing = FALSE) {
+  # Package check inside function
+
+if (!requireNamespace("DBI", quietly = TRUE)) {
+    stop("DBI package is required")
+  }
+
+  # Resource check before access
+  if (!file.exists(db_path)) {
+    if (stop_on_missing) stop("Database not found: ", db_path)
+    if (verbose) message("Database not found: ", db_path)
+    return(invisible(NULL))
+  }
+
+  # Connection with cleanup guarantee
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  tables <- DBI::dbListTables(con)
+  if (verbose) {
+    cat("Tables in staged_data.duckdb:\n")
+    print(tables)
+  }
+
+  invisible(list(tables = tables))
+}
+```
+
+## Incorrect Pattern {#incorrect-pattern}
+
+```r
+# BAD: Side effects at top level
+library(DBI)
+library(duckdb)
+
+# BAD: Immediate execution
+con <- dbConnect(duckdb::duckdb(), "data/local_data/staged_data.duckdb")
+
+# BAD: Immediate output
+tables <- dbListTables(con)
+cat("Tables found:\n")
+print(tables)
+
+# BAD: Cleanup that runs immediately
+dbDisconnect(con)
+```
+
+## File Type Guidelines {#file-types}
+
+| Prefix | Type | Side Effects Allowed? |
+|--------|------|----------------------|
+| `fn_` | Function file | **NO** - Pure definitions only |
+| `sc_` | Script file | YES - Designed for execution |
+| `app.R` | Shiny app | YES - Entry point |
+| `test_` | Test file | YES - Test execution |
+
+## Exception: Script Files {#exceptions}
+
+Files prefixed with `sc_` (script) are **designed** to have side effects:
+
+```r
+# sc_run_analysis.R - Script file, side effects expected
+source("fn_check_staged.R")  # Load function
+check_staged_db()             # Execute function
+```
+
+## Discovery Context {#discovery}
+
+This rule was established after discovering that `fn_check_staged.R` contained top-level
+database connection code. When sourced during Posit Connect deployment initialization,
+the file attempted to connect to `data/local_data/staged_data.duckdb`, which does not
+exist in the deployment environment, causing application startup failure.
+
+**Reference**: Issue #142 - `issue_142_connect_startup_db_missing.md`
+
+## Checklist {#checklist}
+
+When creating or reviewing `fn_*.R` files:
+
+- [ ] No `library()` or `require()` at top level
+- [ ] No database connections outside functions
+- [ ] No file read/write outside functions
+- [ ] No `print()`/`message()`/`cat()` at top level
+- [ ] No global variable assignments (`<<-` or `assign(..., envir = .GlobalEnv)`)
+- [ ] `source("fn_*.R")` produces no console output
+- [ ] `source("fn_*.R")` does not fail even if resources are unavailable

@@ -1,0 +1,245 @@
+---
+title: "DM_R006: 通用 DBI 方法規則"
+subtitle: "精準行銷應用程式中的所有資料存取必須使用一致的資料庫介面 (DBI) 模式，通過資料庫連接物件（真實或模擬）使用標準化查詢方法獨占存取資料，確保無論實際資料來源如何都有一致的資料流"
+chapter: "CH02"
+category: "rule"
+number: "DM_R006"
+date-created: "2025-04-10"
+date-modified: "2025-12-25"
+revision_history:
+  - date: 2025-12-25
+    version: "1.1"
+    changes: "釐清讀取必須用 tbl2，避免 raw SQL 讀取"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 6
+  title: "通用 DBI 方法規則"
+implements:
+  - "MP016: 模組化"
+  - "MP017: 關注分離"
+  - "MP052: 單向資料流"
+related_to:
+  - "R076: 模組資料連接規則"
+  - "R091: 通用資料存取模式"
+  - "P076: 錯誤處理模式"
+  - "P077: 性能優化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第六條：通用 DBI 方法規則 {#overview}
+
+**資料管理法第六條（通用 DBI 方法規則）**
+
+此規則標準化應用程式如何存取資料。
+
+:::{.callout-important}
+## 核心需求
+精準行銷應用程式中的所有資料存取必須使用一致的資料庫介面 (DBI) 模式，通過資料庫連接物件（真實或模擬）使用標準化查詢方法獨占存取資料，確保無論實際資料來源如何都有一致的資料流。
+資料庫讀取必須使用 `tbl2()`（`dplyr::tbl()` 的擴充），避免以 SQL 字串直接查詢。
+:::
+
+# 第一項：模式描述 {#pattern-description}
+
+通用 DBI 方法通過強制使用以資料庫為中心的存取模式來標準化應用程式如何存取資料。這在資料儲存和應用程式邏輯之間創建了清晰的分離，提高了可測試性，並允許在開發、測試和生產環境之間無縫轉換。
+
+## 第一款：中央連接管理 {#central-connection-management}
+
+應用程式必須通過中央工廠建立資料庫連接：
+
+```r
+# 在 app.R 中
+app_db_conn <- initialize_app_db_connection()
+
+# 伺服器函數使用連接
+server <- function(input, output, session) {
+  # 使連接對所有模組可用
+  moduleServer("module1", function(input, output, session) {
+    # 模組使用連接  
+  }, app_db_conn)
+}
+```
+
+## 第二款：一致的存取模式 {#consistent-access-patterns}
+
+無論資料來自真實資料庫還是模擬資料，所有資料檢索必須使用相同的模式。讀取必須直接使用 `tbl2()`，或使用內部呼叫 `tbl2()` 的封裝函式：
+
+```r
+# 在模組伺服器函數內
+getData <- reactive({
+  req(app_data_connection)
+  
+  # 使用任何連接類型的 universal_data_accessor
+  universal_data_accessor(
+    app_data_connection, 
+    "customer_profile"
+  )
+})
+```
+
+## 第三款：環境適應性 {#environment-adaptability}
+
+應用程式必須在不更改程式碼的情況下適應不同的環境：
+
+- **生產環境**：使用真實資料庫連接
+- **開發環境**：可以使用帶有範例資料的模擬連接
+- **測試環境**：使用確定性模擬資料
+
+## 第四款：介面標準化 {#interface-standardization}
+
+所有資料庫存取必須遵循標準 DBI 模式：
+
+- 使用 `tbl2()` 進行資料檢索（讀取）
+- 使用 `dbWriteTable()` 和 `dbExecute()` 進行資料修改
+- 使用 `dbListTables()` 進行綱要內省
+
+# 第二項：實施 {#implementation}
+
+## 第一款：連接工廠 {#connection-factory}
+
+使用提供的連接工廠創建資料庫連接：
+
+```r
+# 生產連接
+conn <- db_connection_factory("production")
+
+# 帶有模擬資料的開發連接
+conn <- db_connection_factory("development", 
+                             mock_data_list = test_data)
+```
+
+## 第二款：通用資料存取器 {#universal-data-accessor}
+
+使用 `tbl2()` 進行所有資料檢索：
+
+```r
+customer_data <- tbl2(conn, "customer_profile") %>% collect()
+```
+
+## 第三款：用於測試的模擬 DBI {#mock-dbi-testing}
+
+使用模擬 DBI 連接進行測試：
+
+```r
+# 創建測試資料
+test_data <- list(
+  customer_profile = data.frame(...),
+  dna_by_customer = data.frame(...)
+)
+
+# 創建模擬連接
+mock_conn <- list_to_mock_dbi(test_data)
+
+# 使用模擬連接執行測試
+test_result <- test_module(mock_conn)
+```
+
+# 第三項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **一致性**：整個應用程式中統一的資料存取模式
+2. **可測試性**：更容易使用模擬資料進行測試
+3. **關注分離**：資料儲存與應用程式邏輯解耦
+4. **性能**：資料庫操作可以集中優化
+5. **可擴展性**：從開發到生產的輕鬆轉換路徑
+6. **可維護性**：集中化資料存取簡化更新
+
+# 第四項：程式碼範例 {#code-example}
+
+實施通用 DBI 方法的範例應用程式結構：
+
+```r
+# app.R
+library(shiny)
+library(dplyr)
+
+# 1. 來源所需工具
+source("scripts/global_scripts/00_principles/02_db_utils/fn_db_connection_factory.R")
+source("scripts/global_scripts/00_principles/02_db_utils/fn_universal_data_accessor.R")
+
+# 2. 初始化資料庫連接
+app_db_conn <- initialize_app_db_connection()
+
+# 3. UI 定義
+ui <- fluidPage(
+  titlePanel("通用 DBI 方法範例"),
+  sidebarLayout(
+    sidebarPanel(
+      # 客戶模組 UI
+      microCustomerFilterUI("customer_module")
+    ),
+    mainPanel(
+      # 客戶顯示 UI
+      microCustomerUI("customer_module"),
+      # 除錯資訊
+      verbatimTextOutput("connection_info")
+    )
+  )
+)
+
+# 4. 伺服器函數
+server <- function(input, output, session) {
+  # 使用資料庫連接初始化模組
+  filtered_data <- microCustomerServer("customer_module", app_db_conn)
+  
+  # 顯示連接資訊
+  output$connection_info <- renderPrint({
+    get_connection_info(app_db_conn)
+  })
+}
+
+# 5. 執行應用程式
+shinyApp(ui, server)
+```
+
+# 第五項：測試方法 {#testing-approach}
+
+使用通用 DBI 方法時，測試應該：
+
+1. 使用確定性測試資料創建模擬連接
+2. 將這些連接傳遞給元件和模組
+3. 基於已知輸入驗證輸出
+4. 測試正常和錯誤條件
+
+測試範例：
+
+```r
+test_that("客戶模組顯示正確資料", {
+  # 使用測試資料創建模擬連接
+  mock_conn <- list_to_mock_dbi(list(
+    customer_profile = data.frame(
+      customer_id = 1:3,
+      buyer_name = c("測試 1", "測試 2", "測試 3")
+    ),
+    dna_by_customer = data.frame(
+      customer_id = 1:2,
+      r_value = c(5, 10)
+    )
+  ))
+  
+  # 測試模組
+  testServer(microCustomerServer, args = list(app_data_connection = mock_conn), {
+    # 驗證正確初始化
+    expect_equal(length(valid_customer_ids()), 2)
+    
+    # 模擬使用者互動
+    session$setInputs(customer_filter = "1")
+    
+    # 驗證結果
+    expect_equal(filtered_data()$customer_id, 1)
+  })
+})
+```
+
+---
+
+*基於：資料管理法第六條*  
+*相關連結：[R076 模組資料連接規則](../../CH03_development_methodology/rules/DEV_R022_module_data_connection.qmd), [R091 通用資料存取模式](./DM_R002_universal_data_access.qmd)*

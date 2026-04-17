@@ -1,0 +1,191 @@
+---
+title: "DEV_R016: Evolution Over Replacement"
+subtitle: "When enhancing or modifying functionality, create new functions alongside existing working ones rather than replacing or modifying them directly"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 16
+  title: "Evolution Over Replacement Rules"
+related_to:
+  - "MP042: Runnable-First Development"
+  - "MP038: Incremental Single-Feature Release"
+  - "MP037: Comment Only for Temporary or Uncertain"
+  - "SO_R007: One Function One File"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 16: Evolution Over Replacement Rules {#overview}
+
+**Development Methodology Law Article 16 (Evolution Over Replacement Rules)**
+
+This rule establishes the standard for enhancing functionality through parallel implementation rather than direct replacement.
+
+:::{.callout-important}
+## Core Rule
+When enhancing or modifying functionality, create new functions alongside existing working ones rather than replacing or modifying them directly. This allows for seamless fallback to working code while new implementations are tested.
+:::
+
+# Section 1: Background {#background}
+
+This rule acknowledges that existing, working code has proven value that should be preserved during enhancement. By creating new implementations as separate functions:
+
+1. The original functionality remains intact and available
+2. Enhancements can be tested independently without risk to core functionality
+3. Rollback paths are inherently built into the system
+4. Progressive adoption of new functionality becomes possible
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Parallel Implementation Pattern with Numerical Suffixes {#parallel-implementation}
+
+```r
+# Original function remains untouched
+process_data1 <- function(params) {
+  # Proven, working implementation
+  result <- compute_result(params)
+  return(result)
+}
+
+# New enhanced version as a separate function
+process_data2 <- function(params) {
+  # New implementation with improvements
+  enhanced_result <- compute_better_result(params)
+  return(enhanced_result)
+}
+
+# Usage with feature flag for controlled adoption
+process_data <- function(data, version = 1) {
+  if (version == 2 && is_version2_stable()) {
+    return(process_data2(data))
+  } else {
+    return(process_data1(data))  # Safe fallback
+  }
+}
+```
+
+## Subsection 2: Numerical Suffix Evolution Pattern {#numerical-suffix}
+
+```r
+# Original implementation
+get_customer_data1 <- function(customer_id) {
+  # Original implementation
+}
+
+# Enhanced implementation
+get_customer_data2 <- function(customer_id) {
+  # Improved implementation with better performance
+}
+
+# Further enhanced implementation
+get_customer_data3 <- function(customer_id) {
+  # Implementation with additional features and optimizations
+}
+
+# Current recommended implementation (forwards to latest stable version)
+get_customer_data <- function(customer_id) {
+  return(get_customer_data1(customer_id))  # Change to 2 or 3 when stable
+}
+```
+
+## Subsection 3: Graduated Adoption Strategy {#graduated-adoption}
+
+```r
+# Configuration parameter defines adoption level
+adoption_level <- config$features$new_algorithm_level  # 0-3
+
+# Functions implementing different adoption levels
+calculate_result <- function(data, level = adoption_level) {
+  if (level == 0) {
+    return(original_algorithm(data))  # Completely proven
+  } else if (level == 1) {
+    return(enhanced_preprocessing(data) |> original_algorithm())  # Partial adoption
+  } else if (level == 2) {
+    return(enhanced_algorithm(data))  # Full adoption, closely monitored
+  } else {
+    return(experimental_algorithm(data))  # Bleeding edge for testing
+  }
+}
+```
+
+# Section 3: Anti-Patterns {#anti-patterns}
+
+## Subsection 1: Direct Modification of Working Functions {#direct-modification}
+
+Avoid:
+```r
+# Bad: Directly modifying a working function
+process_orders <- function(orders) {
+  # Original working code modified with new code
+  # If new code fails, everything fails
+}
+```
+
+## Subsection 2: Incomplete Feature Flags {#incomplete-flags}
+
+Avoid:
+```r
+# Bad: Partial feature flag that doesn't cover all changes
+if (USE_NEW_ALGORITHM) {
+  result <- new_algorithm()  # Protected by flag
+} else {
+  result <- old_algorithm()  # Protected by flag
+}
+# Bad: These changes are always applied regardless of flag
+post_process(result)  # Modified with new code, not protected by flag
+```
+
+## Subsection 3: Lack of Version Documentation {#lack-of-documentation}
+
+Avoid:
+```r
+# Bad: No version indication or documentation
+process_data_enhanced <- function() {
+  # Is this 2? 3? What changed? Not clear from name or docs
+}
+
+# Bad: Ambiguous naming without clear versioning
+process_data_new <- function() {
+  # "New" relative to what? Will be confusing when newer versions come
+}
+
+# Good: Clear numerical suffixes
+process_data2 <- function() {
+  # Clearly the second version of this function
+}
+```
+
+# Section 4: Practical Application {#practical-application}
+
+This rule is particularly valuable:
+
+1. When refactoring performance-critical code
+2. When implementing algorithm improvements
+3. During major feature enhancements
+4. When fixing complex bugs that might introduce new issues
+
+# Section 5: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Failure Safety**: Immediate fallback to working code is always possible
+2. **A/B Testing**: Different implementations can be compared and evaluated
+3. **Progressive Adoption**: New functionality can be rolled out gradually
+4. **Preserves Working Code**: Known good implementations remain untouched
+5. **Developer Confidence**: Lower pressure when creating enhancements
+
+---
+
+*Based on: Development Methodology Law Article 16*  
+*Related to: [MP042 Runnable-First Development](../../CH00_fundamental_principles/meta_principles/MP042_runnable_first.qmd), [SO_R007 One Function One File](../../CH01_structure_organization/rules/SO_R007_one_function_one_file.qmd)*

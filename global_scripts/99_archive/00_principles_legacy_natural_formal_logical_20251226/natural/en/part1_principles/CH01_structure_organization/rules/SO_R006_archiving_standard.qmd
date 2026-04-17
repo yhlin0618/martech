@@ -1,0 +1,499 @@
+---
+title: "SO_R006: Archiving Standard Rule"
+subtitle: "Consistent approach to managing deprecated and superseded resources"
+chapter: "CH01"
+category: "rule"
+number: "SO_R006"
+date-created: "2025-04-04"
+date-modified: "2025-08-28"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law Implementation Rules"
+article: "Article 6"
+implements:
+  - "CH00.MP005: Instance vs. Principle"
+related_to:
+  - "CH00.MP007: Documentation Organization"
+  - "SO_R003: Module Naming Convention"
+  - "SO_R022: Temporary File Handling Rule"
+  - "MP034: Archive Immutability Principle"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure & Organization Law Implementation Rules Article 6 (Archiving Standard Rule)**
+
+This article establishes standards for archiving deprecated or superseded resources, ensuring consistent management with proper metadata and explanatory notes.
+
+:::{.callout-important}
+## Core Rule
+All archived content must be stored following proper archiving patterns with metadata and explanatory notes, using:
+1. **Full archive directory** for fully deprecated resources
+2. **In-place archive** for evolutionary changes
+3. **Temporary work archive** for completed test files, migration plans, debug scripts, and superseded versions that maintain historical value
+:::
+
+# Section 1: Archive Approaches {#approaches}
+
+## Subsection 1: Archive Directory Approach {#archive-dir}
+
+第一項：完全棄用資源 (Fully deprecated resources)
+
+For completely deprecated resources that should be removed from active use:
+
+```
+/update_scripts/global_scripts/99_archive/
+```
+
+This is the standard location for fully archived content that should no longer be used.
+
+## Subsection 2: In-Place Archive Approach {#in-place}
+
+第一項：演化性變更 (Evolutionary changes)
+
+For evolutionary changes where the previous version should remain accessible:
+
+```
+filename.ext.archive_description
+```
+
+Where:
+- `filename.ext` is the original filename with extension
+- `archive_description` is a brief descriptor (e.g., "pre_optimization", "R0076")
+- The new implementation takes the original filename
+
+第二項：實例範例 (Practical examples)
+
+```
+microCustomer.R.archive_pre_optimization
+microCustomer_test.R.archive
+```
+
+# Section 2: Archive Metadata Requirements {#metadata}
+
+## Subsection 1: Required Metadata Fields {#required-fields}
+
+第一項：必要的後設資料 (Required metadata)
+
+When archiving any resource, add the following metadata:
+
+1. **Archived Status Indicator**: Append "[ARCHIVED]" to the title
+2. **Type Change**: Change type to "archived_[original_type]"
+3. **Archive Date**: Add "date_archived" field
+4. **Archive Reason**: Add "archived_reason" field
+5. **Related Resources**: Add references to replacements
+
+第二項：後設資料範例 (Metadata example)
+
+```yaml
+---
+id: "R0010"
+title: "Database Table Naming and Creation Rule [ARCHIVED]"
+type: "archived_rule"
+date_created: "2025-04-02"
+date_archived: "2025-04-10"
+author: "Claude"
+archived_reason: "Functionality split between R0023 and R0031"
+implements:
+  - "P0002": "Data Integrity"
+related_to:
+  - "R0023": "Object Naming Convention"
+  - "R0031": "Data Frame Creation Strategy"
+---
+```
+
+## Subsection 2: Archive Content Structure {#content-structure}
+
+第一項：內容結構要求 (Content structure requirements)
+
+Archived files shall maintain this structure:
+
+1. **Archive Notice**: Explanation at the top including:
+   - Archived status
+   - Archive reason
+   - Replacement resources
+   - Current guidance location
+
+2. **Separation Line**: Horizontal rule (`---`)
+
+3. **Original Content**: Preserved below separation line
+
+第二項：結構範例 (Structure example)
+
+```markdown
+# Resource Name [ARCHIVED]
+
+This resource has been archived. Its functionality has been replaced by Resource X and Resource Y.
+
+Please refer to these resources for current guidance.
+
+For historical reference, the original content is preserved below.
+
+---
+
+# Original Resource Name
+
+[Original content...]
+```
+
+# Section 3: Temporary Work Archiving {#temporary-work}
+
+## Subsection 1: When to Archive Temporary Work {#when-archive-temp}
+
+第一項：歸檔時機判斷 (When to archive temporary work)
+
+Archive temporary work files to maintain historical context while keeping the working directory clean:
+
+1. **Test Validation Files**: One-time test files created for validation
+   - Archive after successful validation completion
+   - Include test results in archive metadata
+   
+2. **Migration Plans**: Completed reorganization and migration documents
+   - Archive after successful implementation
+   - Preserve for audit trail and future reference
+   
+3. **Debug Scripts**: Temporary scripts used during debugging
+   - Archive if they reveal important system insights
+   - Document the issue they helped resolve
+   
+4. **Superseded Versions**: Old versions replaced by new implementations
+   - Archive with clear version indication
+   - Maintain evolution history
+
+## Subsection 2: Temporary Work Archive Structure {#temp-archive-structure}
+
+第一項：歸檔結構 (Archive structure for temporary work)
+
+```
+archive/
+├── temp_work_YYYYMMDD/          # Dated temporary work archives
+│   ├── test_validation/         # Test files with results
+│   │   ├── test_file.R
+│   │   └── test_results.md
+│   ├── migration_completed/     # Completed migration documents
+│   │   ├── REORGANIZATION_PLAN.md
+│   │   └── migration_log.txt
+│   ├── debug_sessions/          # Debug scripts and findings
+│   │   ├── debug_script.R
+│   │   └── issue_resolution.md
+│   └── README.md               # Context and metadata
+```
+
+第二項：命名慣例 (Naming conventions)
+
+```
+# Test files
+test_[purpose]_YYYYMMDD.R.archive
+
+# Migration documents  
+[PROJECT]_MIGRATION_YYYYMMDD.md.archive
+
+# Debug scripts
+debug_[issue]_YYYYMMDD.R.archive
+
+# Reorganization plans
+REORGANIZATION_[scope]_YYYYMMDD.md.archive
+```
+
+## Subsection 3: Archive Timing Guidelines {#archive-timing}
+
+第一項：立即歸檔 (Immediate archiving)
+
+Archive immediately after purpose completion:
+- Test files after validation success
+- Migration plans after implementation
+- Debug scripts after issue resolution
+- Temporary analysis files after insights extracted
+
+第二項：批次歸檔 (Batch archiving)
+
+Perform regular cleanup sweeps:
+- Weekly: Review and archive completed temporary work
+- Monthly: Consolidate related archives
+- Quarterly: Review archive organization
+
+# Section 4: Archive Types and Naming {#types}
+
+## Subsection 1: Full Archive Naming {#full-archive}
+
+第一項：規則歸檔 (Archived rules)
+
+```
+R[number]_[name]_archived.md
+```
+
+Example: `R0010_database_table_naming_archived.md`
+
+第二項：原則歸檔 (Archived principles)
+
+```
+P[number]_[name]_archived.md
+```
+
+Example: `P0005_old_naming_principles_archived.md`
+
+第三項：元原則歸檔 (Archived meta-principles)
+
+```
+MP[number]_[name]_archived.md
+```
+
+Example: `MP0005_old_instance_vs_principle_archived.md`
+
+第四項：模組歸檔 (Archived modules)
+
+```
+M[number]_[name]_archived/
+```
+
+For modules (directories), archive the entire directory structure.
+
+## Subsection 2: In-Place Archive Naming {#in-place-naming}
+
+第一項：程式碼檔案 (Code files)
+
+```
+filename.ext.archive_description
+```
+
+Examples:
+```
+microCustomer.R.archive_pre_optimization
+microCustomer_test.R.archive_R076
+app_config.yaml.archive_v1
+```
+
+The original filename is used for the new implementation to maintain references.
+
+# Section 5: Implementation Process {#implementation}
+
+## Subsection 1: Choosing Archive Method {#choosing}
+
+第一項：完全歸檔時機 (When to fully archive)
+
+Use Full Archive (99_archive) when:
+- Content is completely deprecated
+- Fully replaced by different approach
+- References should be eliminated
+
+第二項：就地歸檔時機 (When to archive in-place)
+
+Use In-Place Archive when:
+- Content represents evolutionary step
+- Useful to maintain both versions
+- File location references shouldn't change
+
+## Subsection 2: Full Archiving Process {#full-process}
+
+第一項：歸檔步驟 (Archiving steps)
+
+1. Use M05_renaming module for reference handling:
+
+```r
+# Load the module
+source("00_principles/M05_renaming/M05_fn_rename.R")
+
+# Prepare archive path
+original_path <- "00_principles/R0010_database_table_naming.md"
+archive_path <- "99_archive/R0010_database_table_naming_archived.md"
+
+# Move to archive with reference updates
+M05_renaming$move_to_archive(
+  original_path, 
+  archive_path, 
+  "Functionality split between R0023 and R0031"
+)
+```
+
+2. Update metadata and content structure
+3. Create record documenting the archive
+
+## Subsection 3: In-Place Archiving Process {#in-place-process}
+
+第一項：就地歸檔步驟 (In-place archiving steps)
+
+1. Rename original to archive pattern:
+```bash
+mv microCustomer.R microCustomer.R.archive_pre_optimization
+```
+
+2. Rename new implementation to original:
+```bash
+mv microCustomer_optimized.R microCustomer.R
+```
+
+3. Document archive information in comment header
+
+## Subsection 4: Temporary Work Archiving Process {#temp-work-process}
+
+第一項：臨時工作歸檔步驟 (Temporary work archiving steps)
+
+1. Identify completed temporary work:
+```bash
+# Find test files
+find . -name "test_*.R" -o -name "*_test.R" | grep -v "tests/"
+
+# Find migration documents
+find . -name "*MIGRATION*.md" -o -name "*REORGANIZATION*.md"
+
+# Find debug scripts
+find . -name "debug_*.R" -o -name "*_debug.R"
+```
+
+2. Create dated archive directory:
+```bash
+# Create archive directory with current date
+mkdir -p archive/temp_work_$(date +%Y%m%d)
+```
+
+3. Move files with metadata documentation:
+```bash
+# Move test files with documentation
+mkdir -p archive/temp_work_$(date +%Y%m%d)/test_validation
+mv test_duckdb_connection.R archive/temp_work_$(date +%Y%m%d)/test_validation/
+echo "Test completed successfully on $(date)
+Purpose: Validate DuckDB connection handling
+Result: All tests passed
+Related PR: #123" > archive/temp_work_$(date +%Y%m%d)/test_validation/README.md
+```
+
+4. Create archive manifest:
+```bash
+cat > archive/temp_work_$(date +%Y%m%d)/README.md << EOF
+# Temporary Work Archive - $(date +%Y-%m-%d)
+
+## Contents
+- test_validation/: One-time test files for validation
+- migration_completed/: Completed migration and reorganization documents
+- debug_sessions/: Debug scripts and issue resolutions
+
+## Archive Reason
+Regular cleanup of completed temporary work files that have served their purpose
+but maintain historical value for audit trail and future reference.
+
+## Created by: $(whoami)
+## Date: $(date)
+EOF
+```
+
+# Section 6: Finding and Managing Archives {#management}
+
+## Subsection 1: Locating Archived Content {#locating}
+
+第一項：搜尋歸檔內容 (Finding archived content)
+
+When looking for archived content:
+
+1. **Fully archived**: Check `/update_scripts/global_scripts/99_archive/`
+2. **In-place archives**: Look for `.archive_` suffix in file's directory
+3. **Use prefixes**: R, P, MP, M to locate specific types
+
+## Subsection 2: Archive Announcement {#announcement}
+
+第一項：歸檔公告 (Archive announcement)
+
+When archiving a resource, create a record documenting:
+
+1. Resource that was archived
+2. Reason for archiving
+3. Resources that replace it
+4. Impact of the archiving
+
+# Section 7: Benefits and Compliance {#benefits}
+
+## Subsection 1: Primary Benefits {#primary-benefits}
+
+第一項：主要效益 (Primary benefits)
+
+1. **Flexibility**: Different methods based on situation
+2. **Traceability**: Clear links between archived and replacements
+3. **History Preservation**: Retains historical information
+4. **Clear Status**: Obviously indicates archived content
+5. **Continuity**: Smooth evolutionary changes with in-place archives
+
+## Subsection 2: Principle Compliance {#compliance}
+
+第一項：原則實施 (Principle implementation)
+
+This rule implements MP005 (Instance vs. Principle) by:
+1. Establishing clear separation between active and archived principles
+2. Providing dedicated approaches for archived content
+
+Relates to MP007 (Documentation Organization) by:
+1. Defining consistent approach to organizing archived documentation
+2. Ensuring proper metadata for archived resources
+
+Complements M05 (Renaming Module) by:
+1. Defining standards for automated archiving processes
+2. Providing clear guidelines for reference updates
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Archiving Checklist
+
+**Archive Method Selection:**
+- [ ] Determined if full archive, in-place, or temporary work archive
+- [ ] Identified replacement resources or completion status
+- [ ] Checked for active references
+
+**Temporary Work Archiving:**
+- [ ] Identified completed test files
+- [ ] Located finished migration documents
+- [ ] Found resolved debug scripts
+- [ ] Collected superseded versions
+
+**Metadata Requirements:**
+- [ ] Added [ARCHIVED] to title (for principles/rules)
+- [ ] Changed type to archived_[type]
+- [ ] Added date_archived field
+- [ ] Added archived_reason field
+- [ ] Listed replacement resources or completion status
+
+**Content Structure:**
+- [ ] Added archive notice at top
+- [ ] Included separation line
+- [ ] Preserved original content
+- [ ] Updated all references
+- [ ] Created README in archive directory
+
+**Process Steps:**
+- [ ] Used appropriate archive method
+- [ ] Updated metadata correctly
+- [ ] Created archive announcement or manifest
+- [ ] Verified no broken references
+- [ ] Applied date stamps to archive directories
+
+**Quality Checks:**
+- [ ] Archive location correct
+- [ ] Naming convention followed
+- [ ] Documentation complete
+- [ ] Historical context preserved
+- [ ] Working directory cleaned
+:::
+
+# Conclusion {#conclusion}
+
+The Archiving Standard Rule ensures that all archived content is handled consistently, properly documented, and stored appropriately. By following these guidelines, we maintain a clean, organized system while preserving historical information for reference. 
+
+The three-pronged approach—full archiving for deprecated resources, in-place archiving for evolutionary changes, and temporary work archiving for completed tasks—provides comprehensive coverage for different archiving needs. This ensures that:
+
+1. **Working directories remain clean**: Completed temporary work is moved to archives promptly
+2. **Historical context is preserved**: Test results, migration plans, and debug insights are retained
+3. **Evolution is traceable**: The development history remains accessible for future reference
+4. **Compliance is maintained**: Audit trails and documentation requirements are met
+
+By distinguishing between truly temporary files (covered by SO_R022) that should be deleted and temporary work with historical value that should be archived, we maintain both a clean workspace and a complete project history.
+
+---
+
+*Based on: Structure & Organization Law Implementation Rules Article 6*  
+*Implements: [MP005 Instance vs. Principle](../../CH00_fundamental_principles/MP005_instance_vs_principle.qmd)*  
+*Related to: [MP007 Documentation Organization](../../CH00_fundamental_principles/MP007_documentation_organization.qmd), [SO_R003 Module Naming Convention](SO_R003_module_naming_convention.qmd)*

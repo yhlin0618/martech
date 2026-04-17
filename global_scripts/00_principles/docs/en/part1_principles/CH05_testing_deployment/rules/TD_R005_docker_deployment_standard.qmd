@@ -1,0 +1,84 @@
+---
+title: "R049: Docker Deployment Standard"
+subtitle: "Technical requirements and standards for Docker containerization"
+author: "Claude"
+date: "2025-04-08"
+date-modified: "2025-08-25"
+categories: [rule, deployment, docker, containerization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Rule Statement
+
+All production deployments SHALL use Docker containers to ensure consistency, portability, and reproducibility across environments.
+
+## Technical Requirements
+
+1. **Dockerfile Standards**: Every deployable application must have a Dockerfile
+2. **Base Image Selection**: Use official base images from Docker Hub
+3. **Multi-stage Builds**: Implement multi-stage builds to minimize image size
+4. **Environment Variables**: All configuration must be externalized via environment variables
+5. **Health Checks**: Containers must define HEALTHCHECK instructions
+
+## Implementation Standards
+
+### Required Docker Components
+
+```dockerfile
+# Dockerfile template
+FROM r-base:4.3.0
+WORKDIR /app
+COPY . .
+RUN R -e "source('renv/activate.R'); renv::restore()"
+EXPOSE 3838
+CMD ["R", "-e", "shiny::runApp('app.R', port=3838, host='0.0.0.0')"]
+```
+
+### Docker Compose Configuration
+
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3838:3838"
+    environment:
+      - DB_HOST=${DB_HOST}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+```
+
+## Examples
+
+```r
+# Example code to be added
+```
+
+## Related Principles
+
+- **MP048**: Universal Initialization - Docker ensures consistent initialization
+- **MP082**: Replicability Principle - Containers guarantee replicable environments
+- **P008**: Deployment Patterns - Docker is the standard deployment pattern
+
+## Benefits
+
+1. **Benefit 1**: [To be added]
+2. **Benefit 2**: [To be added]
+3. **Benefit 3**: [To be added]
+
+## Implementation Checklist
+
+- [ ] Checklist item 1
+- [ ] Checklist item 2
+- [ ] Checklist item 3
+
+## Conclusion
+
+[Conclusion to be added]

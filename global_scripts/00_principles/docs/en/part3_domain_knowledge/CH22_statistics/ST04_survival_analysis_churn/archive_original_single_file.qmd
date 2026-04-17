@@ -1,0 +1,784 @@
+---
+title: "ST04: Customer Churn Modeling — From Survival Analysis to BTYD"
+subtitle: "A framework comparison for non-contractual churn with latent death events"
+chapter: "CH21"
+category: "statistics"
+number: "ST04"
+date-created: "2026-03-02"
+date-modified: "2026-03-02"
+author: "Claude"
+type: "domain_knowledge"
+law: "Statistics"
+article-number: "Knowledge Article 4"
+related_to:
+  - "fn_analysis_dna.R"
+  - "fn_D01_02_core.R"
+  - "ST01_univariate_poisson_regression"
+  - "ST03_missing_data_logistic_regression"
+context:
+  issue: "GitHub Issue #211 — D_RACING nrec_prob NA analysis"
+  problem: "Current binary nrec approach loses time information, requires arbitrary 3-month cutoff, and produces NA for 8/10 product lines"
+  evolution: "Logistic Regression → ST03 Model Degradation → GLMM → Survival Analysis → BTYD (this article)"
+  model_current: "nrec ~ f_label + cai (logistic regression, binary outcome)"
+  model_proposed: "BG/NBD or Pareto/NBD — Buy-Till-You-Die with latent churn"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Knowledge Article 4: Customer Churn Modeling — From Survival Analysis to BTYD {#overview}
+
+## Section 1: Why Rethink Churn? {#motivation}
+
+### 1.1 Problems with the Current Binary Approach
+
+The current `fn_analysis_dna.R` churn model uses logistic regression on a binary outcome:
+
+$$
+\text{nrec} = \begin{cases} 1 & \text{if last purchase} > 3 \text{ months ago (churned)} \\ 0 & \text{otherwise (retained)} \end{cases}
+$$
+
+This has several fundamental problems:
+
+1. **Arbitrary cutoff**: The 3-month threshold is fixed across all product lines, but a customer who buys racing parts quarterly is not "churned" at 3 months
+2. **Information loss**: A customer who last bought 91 days ago and one who last bought 2 years ago both get `nrec = 1`
+3. **Tautology risk**: Recency-based predictors (r_value, nes_status) are near-identical to the outcome — see ST03 §2.3
+4. **Missing data cascade**: The model requires `cai` which 99.7% of customers lack, producing all-NA for 8/10 product lines
+5. **No temporal dynamics**: The model cannot express "this customer is early-stage at risk" vs. "this customer is long gone"
+
+### 1.2 The Core Insight: Churn is Latent
+
+The key conceptual question is: **Can we observe when a customer churns?**
+
+In **contractual** settings (subscriptions, SaaS), yes — the customer explicitly cancels. But in **non-contractual** settings like e-commerce (our case), the answer is **no**. A customer who hasn't purchased in 6 months might be:
+
+- Genuinely gone (churned), or
+- Just in a long gap between purchases (will return)
+
+**We can never directly observe the churn event.** This is the central constraint that determines which modeling framework is appropriate.
+
+### 1.3 Connection to Existing DNA Metrics
+
+The temporal perspective is not new to our pipeline — several existing metrics are already informal survival/process quantities:
+
+| Existing Metric | Process Interpretation |
+|----------------|----------------------|
+| `ipt_mean` | Estimated mean inter-purchase time ($\hat{E}[T]$) |
+| `nes_ratio = gap / ipt_mean` | Crude standardized residual — how many "expected lifetimes" has this gap lasted? |
+| NES classification (N/E/S) | Informal discretization of "alive" status |
+| D04 Poisson rate $\hat{\lambda}_j$ | Purchase frequency (events per unit time) |
+
+What we need is a framework that **formalizes** these informal quantities while properly handling the latent nature of churn.
+
+## Section 2: Framework Comparison {#comparison}
+
+We considered four progressively more appropriate frameworks. This section documents the reasoning chain.
+
+### 2.1 Classical Survival Analysis
+
+**Formulation**: Model the time until a single terminal event (churn), potentially with covariates and random effects.
+
+$$
+h(t \mid \mathbf{X}, u_j, v_k) = h_0(t) \cdot \exp\left(\boldsymbol{\gamma}' \mathbf{X} + u_j + v_k\right)
+$$
+
+Where $u_j$ = customer frailty, $v_k$ = product line frailty.
+
+**Strengths**:
+
+- Well-established machinery (Cox, Weibull, cure rate models)
+- Natural handling of right-censoring
+- Random effects can capture customer $\times$ product_line heterogeneity (analogous to IRT: person $\theta$ $\times$ item $\beta$)
+
+**Fatal flaw**: Treats churn as a **single, observable terminal event**. But in non-contractual settings, churn is never directly observed. We can only observe the gap growing — we never know the exact moment the customer "died."
+
+**Verdict**: Inappropriate as the primary framework. However, the concepts of censoring, hazard functions, and frailty terms remain valuable and are absorbed into BTYD's theoretical foundation.
+
+### 2.2 Renewal Process
+
+**Formulation**: Model each inter-purchase gap as an independent draw from the same distribution (IID renewal).
+
+$$
+T_1, T_2, \ldots \stackrel{\text{iid}}{\sim} F(\cdot; \boldsymbol{\theta}_j)
+$$
+
+Where $F$ is the inter-arrival time distribution (e.g., Exponential, Weibull) and $\boldsymbol{\theta}_j$ captures customer-specific parameters.
+
+**Strengths**:
+
+- Naturally handles multiple purchases per customer
+- The renewal function $M(t) = E[N(t)]$ connects directly to expected purchase count
+- Can model duration dependence (increasing/decreasing hazard of returning)
+
+**Fatal flaw**: Assumes the customer is **always alive** and will always eventually return. There is no mechanism for permanent departure. A customer who stops purchasing is modeled as simply having a very long gap — but they are always "in the system."
+
+**Verdict**: Missing the death process entirely. The correct answer requires **superimposing a death process on top of the renewal process** — which is exactly what BTYD does.
+
+### 2.3 Recurrent Event Models (AG / PWP)
+
+**Formulation**: Extensions of Cox regression for multiple events per subject.
+
+- **Andersen-Gill (AG)**: Treats each event independently with a common baseline hazard
+- **Prentice-Williams-Peterson (PWP)**: Conditions on event number (stratum per gap)
+
+$$
+h_i(t \mid \mathcal{H}_t) = h_{0i}(t) \cdot \exp(\boldsymbol{\beta}' \mathbf{X}(t))
+$$
+
+**Strengths**:
+
+- Handles multiple events per customer correctly
+- PWP can model event-dependent baseline hazards (e.g., 2nd purchase gap differs from 5th)
+- Can incorporate a terminal event (death stops the process)
+
+**Critical limitation**: If we include a "terminal event" (churn), it must be **directly observed** — i.e., we need to know which customers have definitely churned. In non-contractual settings, this is exactly what we don't know. We can only observe that the gap keeps growing.
+
+**Verdict**: Mathematically elegant but requires observable churn, which we don't have.
+
+### 2.4 BTYD (Buy-Till-You-Die) — The Recommended Framework
+
+**Formulation**: A customer has two independent latent processes:
+
+1. **While alive**, they purchase according to a Poisson process with rate $\lambda_j$
+2. **At some unobserved point**, they "die" (churn) with rate $\mu_j$, and purchases stop forever
+
+$$
+\begin{aligned}
+N_j(t) &\sim \text{Poisson}(\lambda_j t) \quad &\text{while alive} \\
+\text{Lifetime}_j &\sim \text{Exp}(\mu_j) \quad &\text{death process (latent)}
+\end{aligned}
+$$
+
+Population heterogeneity:
+$$
+\lambda_j \sim \text{Gamma}(r, \alpha), \quad \mu_j \sim \text{Beta}(a, b)
+$$
+
+**Why this is the right framework**:
+
+| Property | BTYD | Others |
+|----------|------|--------|
+| Churn is latent (never observed) | **Yes** | No (require observed terminal event) |
+| Multiple purchases per customer | **Yes** | Only recurrent event models |
+| Heterogeneity in purchase rate | **Yes** (Gamma mixing) | Only with frailty terms |
+| Heterogeneity in churn propensity | **Yes** (Beta mixing) | Not directly |
+| Key output: $P(\text{alive} \mid \text{data})$ | **Yes** | Cannot produce this without observing churn |
+| Closed-form likelihood | **Yes** (BG/NBD, Pareto/NBD) | Cox: partial likelihood only |
+| Minimal data requirements | **4 summary statistics** | Full transaction history |
+
+### 2.5 Summary Comparison Table
+
+| Framework | Event Definition | "Death" (Churn) | Multiple Purchases | Core Problem |
+|-----------|-----------------|-----------------|-------------------|-------------|
+| Classical Survival | Single terminal event | Must be observed | No | Customers have multiple purchases; churn is unobservable |
+| Renewal Process | IID gaps, no death | No death mechanism | Yes | Cannot model permanent churn |
+| Recurrent Event (AG/PWP) | Multiple events + terminal | Must be observed | Yes | Churn is NEVER directly observed in non-contractual settings |
+| **BTYD** | Churn is latent | **Latent** (estimated) | Yes | **← This matches our situation** |
+
+The progression is clear: each framework addresses one more limitation than the previous, and BTYD is the first to handle all four requirements simultaneously.
+
+## Section 3: The BTYD Framework {#btyd}
+
+### 3.1 Model Variants
+
+Three main BTYD models exist, in order of complexity:
+
+#### BG/NBD (Fader, Hardie & Lee, 2005)
+
+The simplest and most widely used. Assumes:
+
+- **Transaction process**: While alive, customer $j$ purchases at rate $\lambda_j$, where $\lambda_j \sim \text{Gamma}(r, \alpha)$
+- **Dropout process**: After any purchase, customer $j$ "dies" with probability $p_j$, where $p_j \sim \text{Beta}(a, b)$
+
+The likelihood for a customer with $x$ repeat purchases, recency $t_x$, and observation period $T$:
+
+$$
+L(r, \alpha, a, b \mid x, t_x, T) = \frac{\Gamma(r+x)}{\Gamma(r)} \cdot \frac{\alpha^r}{(\alpha + T)^{r+x}} \cdot \delta + \frac{a}{b+x-1} \cdot \frac{\alpha^r}{(\alpha + t_x)^{r+x}}
+$$
+
+where $\delta$ accounts for the probability the customer is still alive.
+
+Key output — **P(alive)**:
+
+$$
+P(\text{alive} \mid x, t_x, T, r, \alpha, a, b) = \frac{1}{1 + \frac{a}{b+x-1} \cdot \left(\frac{\alpha + T}{\alpha + t_x}\right)^{r+x}}
+$$
+
+#### Pareto/NBD (Schmittlein, Morrison & Colombo, 1987)
+
+The original BTYD model. Like BG/NBD but:
+
+- Dropout follows a **continuous-time** Exponential process (rate $\mu_j$) rather than discrete per-transaction
+- $\mu_j \sim \text{Gamma}(s, \beta)$
+- More theoretically appealing but computationally heavier
+
+#### Pareto/GGG (Platzer & Reutterer, 2016)
+
+Extends Pareto/NBD by replacing the Exponential inter-purchase times with a **Gamma** distribution (Erlang generalization), allowing for regularity in purchase timing. Adds a shape parameter $k$:
+
+- $k > 1$: Regular purchasing (more clock-like)
+- $k = 1$: Random (Poisson, reduces to Pareto/NBD)
+- $k < 1$: Bursty purchasing
+
+### 3.2 Sufficient Statistics
+
+A remarkable property of BTYD models: the **entire transaction history** of a customer can be summarized by just 4 numbers:
+
+| Statistic | Symbol | Definition | Already Available? |
+|-----------|--------|-----------|-------------------|
+| Repeat purchases | $x$ | Number of purchases after the first | `times - 1` in fn_analysis_dna.R |
+| Recency | $t_x$ | Time of last purchase (from first purchase) | Derivable from `payment_time` |
+| Observation period | $T$ | Time since first purchase to `time_now` | Derivable from `payment_time` |
+| Average transaction value | $m_x$ | Mean spend per transaction | `m_value` in fn_analysis_dna.R |
+
+**All four are already computed** (or trivially derivable) in the current DNA pipeline. No new data collection is needed.
+
+#### 3.2.1 What Does "Sufficient" Mean Here?
+
+A statistic $S(\mathbf{D})$ is **sufficient** for parameters $\boldsymbol{\theta}$ if, once you know $S(\mathbf{D})$, the remaining data carry no additional information about $\boldsymbol{\theta}$. Formally, the conditional distribution of the full data $\mathbf{D}$ given $S(\mathbf{D})$ does not depend on $\boldsymbol{\theta}$.
+
+In our context: a customer's full transaction history is $\mathbf{D} = \{t_1, t_2, \ldots, t_x\}$ — the timestamps of every repeat purchase. The claim is that the triple $(x, t_x, T)$ is sufficient for the individual-level parameters $(\lambda, p)$. In other words, **the intermediate purchase times $t_1, \ldots, t_{x-1}$ are irrelevant** for inference about the customer's purchase rate and churn probability.
+
+#### 3.2.2 Proof via Fisher–Neyman Factorization
+
+**Theorem (Fisher–Neyman):** A statistic $S(\mathbf{D})$ is sufficient for $\boldsymbol{\theta}$ if and only if the likelihood can be factored as:
+
+$$
+L(\boldsymbol{\theta} \mid \mathbf{D}) = g(S(\mathbf{D}), \boldsymbol{\theta}) \cdot h(\mathbf{D})
+$$
+
+where $g$ depends on the data only through $S$, and $h$ does not depend on $\boldsymbol{\theta}$.
+
+**Proof for BG/NBD.** Consider a single customer with purchase rate $\lambda$ and per-transaction dropout probability $p$. The full data is $\mathbf{D} = (t_1, \ldots, t_x, T)$: the times of $x$ repeat purchases within observation window $[0, T]$, where $T$ is measured from first purchase.
+
+The customer is in exactly one of two states:
+
+**(A) Alive at time $T$:** Survived all $x$ dropout checks and the Poisson process ran for the full interval $[0, T]$.
+
+$$
+L_A(\lambda, p \mid \mathbf{D}) = \underbrace{\lambda^x \, e^{-\lambda T}}_{\text{Poisson process on } [0,T]} \;\cdot\; \underbrace{(1-p)^x}_{\text{survived } x \text{ dropout checks}}
+$$
+
+**(B) Died after the $x$-th purchase at time $t_x$:** Survived $x{-}1$ checks, failed on the $x$-th, and the Poisson process only ran until $t_x$.
+
+$$
+L_B(\lambda, p \mid \mathbf{D}) = \underbrace{\lambda^x \, e^{-\lambda t_x}}_{\text{Poisson process on } [0,t_x]} \;\cdot\; \underbrace{(1-p)^{x-1} \cdot p}_{\text{survived } x{-}1, \text{ died at } x\text{-th}}
+$$
+
+(Note: $L_B$ applies only when $x \geq 1$.)
+
+Since the true state is unobserved, the total individual likelihood is the mixture:
+
+$$
+L(\lambda, p \mid \mathbf{D}) = L_A + L_B = \lambda^x \left[(1-p)^x \, e^{-\lambda T} \;+\; \mathbf{1}_{x \geq 1} \cdot (1-p)^{x-1} \, p \, e^{-\lambda t_x}\right]
+$$
+
+**The critical observation:** this expression depends on $\mathbf{D} = (t_1, \ldots, t_x, T)$ **only through $(x, t_x, T)$**. The intermediate times $t_1, \ldots, t_{x-1}$ appear nowhere in the likelihood.
+
+Setting $S(\mathbf{D}) = (x, t_x, T)$, we have:
+
+$$
+L(\lambda, p \mid \mathbf{D}) = \underbrace{g\big((x, t_x, T),\; \lambda, p\big)}_{\text{the expression above}} \;\cdot\; \underbrace{1}_{h(\mathbf{D})}
+$$
+
+By the Fisher–Neyman factorization theorem, $(x, t_x, T)$ is sufficient for $(\lambda, p)$. $\blacksquare$
+
+#### 3.2.3 Why Each Component Matters (and Why $t_1, \ldots, t_{x-1}$ Don't)
+
+The sufficiency result has a clean intuitive explanation for each statistic:
+
+| Statistic | Role in Likelihood | Intuition |
+|-----------|-------------------|-----------|
+| $x$ (count) | Appears as $\lambda^x$ and $(1{-}p)^x$ | Determines both the purchase rate estimate and the number of "survival tests" passed |
+| $t_x$ (recency) | Appears in $e^{-\lambda t_x}$ in $L_B$ | The "last known alive" time — if the customer died, the Poisson clock stopped here |
+| $T$ (observation period) | Appears in $e^{-\lambda T}$ in $L_A$ | If the customer is alive, the Poisson clock ran this long |
+
+And the intermediate times $t_1, \ldots, t_{x-1}$ are irrelevant because of two independent facts:
+
+1. **Poisson order-statistic property:** For a Poisson process with rate $\lambda$ on $[0, T]$, conditional on $N = x$ events, the event times are distributed as the order statistics of $x$ iid $\text{Uniform}(0, T)$ draws. This conditional distribution does not involve $\lambda$ — so the specific positions carry no information about the rate.
+
+2. **Dropout process structure:** The BG/NBD dropout check is a Bernoulli trial after each transaction, with the same probability $p$ every time. The only relevant information is (a) how many checks were passed ($x$) and (b) whether the customer died after the last one (which involves $t_x$). The *timing* of intermediate purchases does not affect the dropout probability.
+
+#### 3.2.4 Analogy to Classical Statistics
+
+This result is a direct generalization of well-known sufficiency results:
+
+| Classical Setting | Sufficient Statistic | BG/NBD Analogue |
+|-------------------|---------------------|-----------------|
+| $n$ draws from Exponential($\lambda$) | $\sum X_i$ (sum) and $n$ (count) | $T$ (total observation time) and $x$ (count) |
+| $n$ Bernoulli($p$) trials | $\sum X_i$ (successes) | $x$ (dropout checks survived) |
+| Poisson($\lambda T$) count | $x$ (count) | $x$ (repeat purchase count) |
+
+The BG/NBD simply combines these: the Poisson process component gives sufficiency of $(x, T)$, and the dropout component adds $t_x$ (because the death time, if it occurred, is at $t_x$).
+
+#### 3.2.5 Practical Implication
+
+This is not just a theoretical nicety — it has a profound practical consequence:
+
+> **You do not need transaction-level data to fit the model.**
+
+Once you compute $(x_j, t_{x,j}, T_j)$ for each customer $j$, the original transaction log can be discarded (for BG/NBD estimation purposes). This means:
+
+- **Storage**: A customer summary table with 3 columns replaces potentially millions of transaction rows
+- **Privacy**: Individual purchase timestamps need not be retained
+- **Computation**: The BG/NBD likelihood (§3.1) is a simple closed-form expression evaluated on 3 numbers per customer — no iteration over transaction histories
+
+In our pipeline, `analysis_btyd()` in `fn_analysis_btyd.R` constructs $(x, t_x, T)$ from `df_sales_by_customer_by_date` and passes them to CLVTools, which then estimates $(r, \alpha, a, b)$ at the population level and computes per-customer P(alive) — all without re-accessing the raw transaction log after the initial summary.
+
+#### 3.2.6 Derivation: Why the Poisson Process Density is $\lambda^x e^{-\lambda T}$
+
+In §3.2.2 we used the fact that the Poisson process generates a density of $\lambda^x e^{-\lambda T}$ for the full event times $(t_1, \ldots, t_x)$ in $[0, T]$. This is different from the more familiar Poisson **count** probability $P(N = x) = e^{-\lambda T} (\lambda T)^x / x!$. Where does the $T^x / x!$ go?
+
+**Setup.** A Poisson process with rate $\lambda$ is equivalently characterized by its inter-arrival times being iid $\text{Exp}(\lambda)$:
+
+$$
+\tau_1 = t_1, \quad \tau_2 = t_2 - t_1, \quad \ldots, \quad \tau_x = t_x - t_{x-1}
+$$
+
+Each $\tau_i \sim \text{Exp}(\lambda)$ has density $\lambda e^{-\lambda \tau_i}$. Additionally, after the last event at $t_x$, we observe no event until $T$:
+
+$$
+P(\tau_{x+1} > T - t_x) = e^{-\lambda(T - t_x)}
+$$
+
+**Derivation.** Multiply all terms:
+
+$$
+\begin{aligned}
+f(t_1, \ldots, t_x \mid \lambda, T)
+  &= \prod_{i=1}^{x} \lambda \, e^{-\lambda \tau_i} \;\times\; e^{-\lambda(T - t_x)} \\[6pt]
+  &= \lambda^x \cdot \exp\!\Bigl(-\lambda \underbrace{(\tau_1 + \cdots + \tau_x)}_{= \, t_x}\Bigr) \cdot \exp\!\bigl(-\lambda(T - t_x)\bigr) \\[6pt]
+  &= \lambda^x \cdot e^{-\lambda \, t_x} \cdot e^{-\lambda(T - t_x)} \\[6pt]
+  &= \lambda^x \cdot e^{-\lambda T}
+\end{aligned}
+$$
+
+The inter-arrival times telescope: $\tau_1 + \cdots + \tau_x = t_x$, then $t_x + (T - t_x) = T$. The specific values of $t_1, \ldots, t_{x-1}$ cancel entirely — they contribute to the sum, but only through the total.
+
+**Recovering the count probability.** Integrating the process density over all possible ordered configurations recovers the Poisson PMF:
+
+$$
+\int_{0 < t_1 < \cdots < t_x < T} \lambda^x \, e^{-\lambda T} \; dt_1 \cdots dt_x
+= \lambda^x \, e^{-\lambda T} \cdot \frac{T^x}{x!}
+= P(N(T) = x)
+$$
+
+The factor $T^x / x!$ is the volume of the ordered simplex $\{0 < t_1 < \cdots < t_x < T\}$. When the specific event times are **known**, there is no integration over the simplex, and this factor vanishes.
+
+#### 3.2.7 How `analysis_btyd()` Computes the Statistics
+
+In our implementation (`fn_analysis_btyd.R`), we do not manually compute $(x, t_x, T)$. Instead:
+
+```
+df_sales_by_customer_by_date (transaction-level data)
+      │
+      ▼  prepare (customer_id, date, price)
+      │
+      ▼  CLVTools::clvdata()
+(x_j, t_{x,j}, T_j) per customer           ← sufficient statistics
+      │
+      ├──▶ CLVTools::bgnbd()                ← MLE: estimate (r̂, α̂, â, b̂)
+      │         │
+      │         ▼
+      └──▶ predict()                        ← closed-form P(alive) per customer
+                │
+                ▼
+       nrec_prob = 1 - P(alive)
+```
+
+**Key details:**
+
+- **Observation end ($T$ reference point):** CLVTools sets `observation_end = max(date)` across all transactions in the dataset. Each customer's $T_j = (\text{max\_date} - \text{first\_purchase}_j) \;/\; \text{time\_unit}$. This is bounded by the data, not by `Sys.time()`.
+
+- **MLE estimation:** `bgnbd()` maximizes the joint log-likelihood $\sum_j \log L(r, \alpha, a, b \mid x_j, t_{x,j}, T_j)$ using numerical optimization (`optimx`). The per-customer likelihood $L$ is the marginal form from §3.1 (integrated over $\lambda$ and $p$ using Gamma and Beta priors).
+
+- **P(alive) computation:** `predict()` plugs each $(x_j, t_{x,j}, T_j)$ into the closed-form formula:
+
+$$
+P(\text{alive}_j) = \frac{1}{1 + \dfrac{\hat{a}}{\hat{b} + x_j} \cdot \delta_j}, \qquad
+\delta_j = \left(\frac{\hat{\alpha} + T_j}{\hat{\alpha} + t_{x,j}}\right)^{\hat{r} + x_j} - 1
+$$
+
+- **Graceful degradation:** Every step is wrapped in `tryCatch()`. If CLVTools fails at any point (too few customers, non-convergence, etc.), the function returns `data_by_customer` unchanged with the original `nrec_prob`.
+
+### 3.3 Connection to D04 Poisson
+
+The D04 Poisson analysis (see ST01) already estimates customer purchase rates:
+
+$$
+\hat{\lambda}_j^{\text{D04}} \approx \frac{x_j}{T_j}
+$$
+
+This is precisely the **individual purchase rate** in BTYD. The critical addition BTYD makes is the **death process** — D04 Poisson implicitly assumes all customers are alive, which is why high-gap customers get an anomalously low $\lambda$ rather than being recognized as potentially dead.
+
+```
+D04 Poisson:  λ_j only  →  "Customer buys slowly"  (confounds low λ with death)
+BTYD:         λ_j + μ_j  →  "Customer buys at rate λ but has P(dead)=0.73"
+```
+
+### 3.4 The P(alive) Score
+
+The central output of BTYD — replacing `nrec_prob`:
+
+$$
+\text{churn\_risk}_{j} = 1 - P(\text{alive} \mid x_j, t_{x,j}, T_j)
+$$
+
+Properties:
+
+- **Continuous** ∈ [0, 1] — no arbitrary threshold needed
+- **Monotone in gap**: as the current gap grows, P(alive) decreases smoothly
+- **Modulated by history**: a customer with many past purchases at regular intervals has higher P(alive) at the same gap than a one-time buyer
+- **No tautology**: the model uses the full transaction pattern, not a single recency measure
+
+### 3.5 Mapping to RSV Risk Levels
+
+Replace the current binary `nrec` → `nrec_prob` pipeline with:
+
+```
+churn_risk = 1 - P(alive)
+  └→ > 0.7  → R = High
+  └→ 0.3~0.7 → R = Mid
+  └→ < 0.3  → R = Low
+```
+
+The thresholds can remain the same as the current RSV system, but the score is now based on a proper latent-death model rather than logistic regression on a binary cutoff.
+
+### 3.6 Dynamic Risk Without Retraining
+
+A key advantage: `churn_risk` **updates over time without refitting the model**, because P(alive) is a function of the current gap $(T - t_x)$:
+
+```
+Customer A, last purchased 30 days ago:
+  P(alive | x=5, t_x=350, T=380) = 0.92  →  churn_risk = 0.08  →  R = Low
+
+Same customer, 60 days later (now 90 days since purchase):
+  P(alive | x=5, t_x=350, T=440) = 0.65  →  churn_risk = 0.35  →  R = Mid
+
+Same customer, another 90 days (180 days since purchase):
+  P(alive | x=5, t_x=350, T=530) = 0.22  →  churn_risk = 0.78  →  R = High
+```
+
+The risk increases naturally as the gap grows, without needing to re-run the model. Only the model parameters $(r, \alpha, a, b)$ need periodic refitting.
+
+## Section 4: What Replaces What {#integration}
+
+### 4.1 Component Mapping
+
+| Current Component | BTYD Replacement | Status |
+|-------------------|-----------------|--------|
+| `nrec` (binary churn label) | Not needed — churn is latent | **Eliminated** |
+| `nrec_prob` (logistic regression) | `1 - P(alive)` from BTYD | **Replaced** |
+| `nes_ratio` (gap / ipt_mean) | Model-implied standardized gap | Can coexist as heuristic |
+| D04 Poisson $\hat{\lambda}$ | $= \hat{\lambda}_j$ in BTYD (shared component) | **Complementary** |
+| `ipt_mean` | $E[T \mid \lambda_j] = 1/\hat{\lambda}_j$ | **Subsumed** |
+| `cai` (Coefficient of Arrival Irregularity) | Pareto/GGG shape parameter $k$ | **Generalized** |
+
+### 4.2 Output for App
+
+The BTYD model produces, for each customer:
+
+1. **`churn_risk`** ∈ [0,1] — replaces `nrec_prob` in RSV classification
+2. **`expected_purchases_next_period`** — $E[N(t) \mid \text{alive}] \cdot P(\text{alive})$
+3. **`expected_spend_next_period`** — combining frequency and monetary models (Gamma-Gamma)
+4. **`clv`** — Customer Lifetime Value with proper discounting and death probability
+
+### 4.3 Advantages Over Current `nrec_prob`
+
+| Aspect | Current (`nrec_prob`) | Proposed (`churn_risk`) |
+|--------|----------------------|------------------------|
+| Cutoff dependency | Fixed 3-month binary | None — latent death model |
+| One-time buyers | NA (no CAI) | Naturally handled (high uncertainty in P(alive)) |
+| Product line effect | Per-slice model (small n, most fail) | Global model with per-PL parameters possible |
+| Customer effect | None | $\lambda_j, \mu_j$ capture individual pattern |
+| Time information | Discarded (binary) | Fully utilized (x, $t_x$, T) |
+| Horizon | Backward-looking ("did they churn?") | Forward-looking ("will they purchase again?") |
+| Data required | f_label + cai (99.7% NA) | x, $t_x$, T, $m_x$ (100% available) |
+
+## Section 5: Beyond Parametric BTYD — Limitations and Extensions {#extensions}
+
+### 5.1 The Parametric Limitation
+
+BTYD is an elegant framework, but it is fundamentally **parametric**:
+
+- **Purchase process**: Poisson (memoryless inter-arrival times)
+- **Dropout process**: Geometric (BG/NBD) or Exponential (Pareto/NBD)
+- **Heterogeneity**: Gamma and Beta mixing distributions
+
+These assumptions imply:
+
+1. **Poisson purchases**: No regularity or burstiness in timing. A customer who buys every 30 days ± 2 is modeled the same as one who buys randomly. Pareto/GGG partially addresses this with the Gamma inter-arrival extension.
+
+2. **Memoryless dropout**: The probability of churning doesn't depend on how long you've been a customer. A 5-year loyal customer has the same per-period churn probability as a 1-month customer (given the same $\mu_j$). This may not hold if loyalty builds over time.
+
+3. **Independence**: Purchase and dropout processes are independent conditional on $(\lambda_j, \mu_j)$. But in reality, dissatisfaction (low $\lambda$) may cause churn (high $\mu$) — these could be correlated.
+
+4. **Gamma/Beta heterogeneity**: These are convenience choices for conjugacy (closed-form likelihood). The true population distribution of $\lambda$ and $\mu$ may be multimodal or have heavier tails.
+
+### 5.2 Potential Extensions
+
+#### Semi-parametric BTYD
+
+Replace the parametric mixing distributions with flexible alternatives:
+
+- **Dirichlet Process Mixtures** for $(\lambda, \mu)$ — non-parametric heterogeneity
+- **Neural network encoders** for individual parameters — $(\hat{\lambda}_j, \hat{\mu}_j) = f_\theta(\mathbf{X}_j)$
+- **Bayesian Nonparametric extensions** (Abe, 2009)
+
+#### Time-varying parameters
+
+Allow purchase rate and churn probability to evolve:
+
+$$
+\lambda_j(t) = \lambda_{j,0} \cdot g(t; \boldsymbol{\phi}_j)
+$$
+
+Where $g(\cdot)$ captures seasonality, lifecycle effects, or trend.
+
+#### Covariate-enriched BTYD
+
+Incorporate customer features into the BTYD parameters:
+
+$$
+\log(\lambda_j) = \mathbf{X}_j' \boldsymbol{\beta}_\lambda, \quad \text{logit}(p_j) = \mathbf{X}_j' \boldsymbol{\beta}_p
+$$
+
+The `CLVTools` R package supports this via extended Pareto/NBD and BG/NBD models.
+
+#### Deep Learning approaches
+
+- **RNN/Transformer-based** models that learn the purchase process non-parametrically from raw transaction sequences
+- Trade-off: better fit but lose interpretability and closed-form P(alive)
+
+### 5.3 Recommended Progression
+
+| Phase | Model | Complexity | When |
+|-------|-------|-----------|------|
+| Phase 1 | **BG/NBD** (standard) | Low | Immediate — replace nrec_prob |
+| Phase 2 | **Pareto/GGG** (regularity) | Medium | When Phase 1 validated, to capture CAI-like information |
+| Phase 3 | **Covariate-enriched Pareto/NBD** | Medium-High | When customer features improve predictions |
+| Phase 4 | **Semi-parametric / Deep** | High | Research/experiment only — after parametric ceiling established |
+
+Phase 1 alone already resolves all five problems identified in §1.1. Subsequent phases improve fit at the cost of complexity, and should be motivated by empirical evidence of parametric misfit.
+
+## Section 6: Implementation Plan {#implementation}
+
+### 6.1 Phase 1: BG/NBD with Gamma-Gamma Monetary (Recommended Start)
+
+```r
+library(BTYD)       # Classic implementation
+# or
+library(CLVTools)   # Modern, maintained, supports covariates
+
+# Step 1: Prepare customer-by-sufficient-statistic (CBS) matrix
+#   For each customer: x (repeat purchases), t.x (recency), T.cal (observation)
+cbs <- dc.MakeRFMFromTransactions(
+  transactions = dt_all_products,
+  customer_id_col = "customer_id",
+  date_col = "payment_time",
+  sales_col = "amount",
+  observation_end = time_now
+)
+
+# Step 2: Fit BG/NBD
+bgf <- BTYD::bgnbd.EstimateParameters(cbs)
+# Returns: r, alpha, a, b
+
+# Step 3: Compute P(alive) for each customer
+cbs$p_alive <- BTYD::bgnbd.PAlive(bgf, cbs$x, cbs$t.x, cbs$T.cal)
+
+# Step 4: Churn risk = 1 - P(alive)
+cbs$churn_risk <- 1 - cbs$p_alive
+
+# Step 5: Expected purchases in next period
+cbs$expected_purchases_next_90d <- BTYD::bgnbd.ConditionalExpectedTransactions(
+  bgf, T.star = 90, cbs$x, cbs$t.x, cbs$T.cal
+)
+
+# Step 6: Gamma-Gamma for monetary value
+ggf <- BTYD::spend.EstimateParameters(cbs$m.x, cbs$x)
+cbs$expected_spend <- BTYD::spend.expected.value(ggf, cbs$m.x, cbs$x)
+
+# Step 7: Write to app_data.duckdb (replaces nrec_prob column)
+```
+
+### 6.2 Phase 2: Pareto/GGG for Purchase Regularity
+
+```r
+library(BTYDplus)
+
+# Pareto/GGG captures the CAI information that current model can't use
+# k > 1: regular purchaser, k = 1: random, k < 1: bursty
+pggg <- BTYDplus::pggg.EstimateParameters(cbs)
+cbs$p_alive_pggg <- BTYDplus::pggg.PAlive(pggg, cbs$x, cbs$t.x, cbs$T.cal)
+```
+
+### 6.3 Phase 3: Covariate-Enriched with CLVTools
+
+```r
+library(CLVTools)
+
+# CLVTools allows covariates on both lambda and mu
+clv_data <- clvdata(
+  data.transactions = transactions_df,
+  date.format = "ymd",
+  time.unit = "day",
+  estimation.split = time_now - months(6),
+  name.id = "customer_id",
+  name.date = "payment_time",
+  name.price = "amount"
+)
+
+# Add static covariates (e.g., product_line, registration_channel)
+clv_data <- SetStaticCovariates(
+  clv_data,
+  data.cov.life = cov_churn,     # covariates for dropout
+  data.cov.trans = cov_purchase,  # covariates for purchase
+  names.cov.life = c("product_line_id", "registration_channel"),
+  names.cov.trans = c("product_line_id", "avg_basket_size"),
+  name.id = "customer_id"
+)
+
+model <- pnbd(clv_data)
+summary(model)
+predict(model, prediction.end = time_now + 90)
+```
+
+### 6.4 DRV Integration
+
+Following DEV_R038 (Core Function + Platform Wrapper Pattern):
+
+| File | Purpose |
+|------|---------|
+| `update_scripts/DRV/all/fn_D01_09_core.R` | BTYD core functions |
+| `update_scripts/DRV/all/all_D01_09.R` | Five-section wrapper |
+
+Dependency markers (MP140):
+
+```r
+#####
+# DERIVATION: D01_09 BTYD Churn Model
+# GROUP: D01 (Customer DNA Analysis)
+# CONSUMES: app_data.df_dna_by_customer (or df_sales_by_customer_by_date)
+# PRODUCES: app_data.df_btyd_churn
+# DEPENDS_ON_DRV: D01_05 (df_dna_by_customer must exist)
+# PRINCIPLE: UX_P002, MP064, DEV_R038
+#####
+```
+
+Output table `df_btyd_churn` schema:
+
+| Column | Source | Description |
+|--------|--------|------------|
+| customer_id | key | Customer identifier |
+| platform_id | key | Platform |
+| x | computed | Repeat purchase count |
+| t_x | computed | Recency (days from first to last purchase) |
+| T_cal | computed | Observation period (days from first purchase to now) |
+| p_alive | BG/NBD | Probability customer is still alive |
+| churn_risk | 1 - p_alive | Churn risk score (replaces nrec_prob) |
+| expected_purchases_90d | BG/NBD | Expected purchases in next 90 days |
+| expected_spend_90d | Gamma-Gamma | Expected spend in next 90 days |
+| clv | combined | Customer lifetime value estimate |
+
+## Section 7: Practical Considerations {#practical}
+
+### 7.1 Computational Cost
+
+| Model | Estimated Time (18K customers) | Package |
+|-------|-------------------------------|---------|
+| BG/NBD | ~5 seconds | `BTYD` |
+| Pareto/NBD | ~30 seconds | `BTYD` |
+| Pareto/GGG | ~2-5 minutes | `BTYDplus` |
+| Covariate Pareto/NBD | ~5-10 minutes | `CLVTools` |
+
+All acceptable for DRV pipeline (offline computation).
+
+### 7.2 Minimum Data Requirements
+
+Unlike the current model (needs 10+ complete cases with `cai`), BTYD needs:
+
+- **At least 1 purchase** — one-time buyers contribute as $(x=0, t_x=0, T=\text{observation period})$
+- **No special variables** beyond `customer_id`, `payment_time`, `amount`
+- **All 18,221 customers can participate** (vs. current 56 with complete CAI)
+
+### 7.3 Handling the "all" Product Line
+
+The current system includes a synthetic "all" product line that aggregates across lines:
+
+- **Option A**: Fit one global BG/NBD on all transactions (ignoring product line) → use for "all" filter
+- **Option B**: Fit separate models per product line → aggregate P(alive) for "all" using max or weighted average
+- **Recommended**: Option A for simplicity. The global model captures the overall churn pattern. Per-product-line models (Phase 3 with covariates) can refine later.
+
+### 7.4 Model Validation
+
+Recommended validation approach (Fader, Hardie & Shang, 2010):
+
+1. **Holdout split**: Estimate model on first 70% of observation period, validate on remaining 30%
+2. **Frequency calibration**: Plot actual vs. predicted purchase counts in holdout by P(alive) decile
+3. **Tracking plot**: Compare cumulative actual vs. predicted repeat transactions over time
+4. **Individual-level**: Correlation between predicted and actual purchases in holdout
+
+### 7.5 Updating Frequency
+
+Model parameters $(r, \alpha, a, b)$ should be re-estimated:
+
+- **Weekly to monthly** in DRV pipeline — as new transactions arrive
+- The P(alive) scores update automatically between re-estimations (see §3.6)
+
+## Section 8: Gap-Time Survival as a Complement {#gap-time}
+
+While BTYD is the recommended primary framework, the gap-time survival model discussed earlier remains valuable as a **diagnostic and complementary tool**.
+
+### 8.1 When Survival Analysis Adds Value
+
+- **Duration dependence**: Weibull shape parameter $\alpha$ reveals whether purchase hazard increases or decreases with gap length — this is invisible to BTYD (which assumes Poisson)
+- **Covariate effects on timing**: How does spend amount affect the next gap? Survival regression with time-varying covariates answers this directly
+- **Crossed frailty diagnostics**: The variance components $\sigma^2_u$ (customer) and $\sigma^2_v$ (product line) quantify heterogeneity sources
+
+### 8.2 The IRT Analogy (Preserved)
+
+The crossed frailty structure maps directly to a **1PL IRT model**:
+
+| Psychometric Concept | Survival Churn Model |
+|---------------------|---------------------|
+| Person $j$ | Customer $j$ |
+| Item $k$ | Product Line $k$ |
+| Ability $\theta_j$ | Return propensity $u_j$ |
+| Difficulty $\beta_k$ | Retention difficulty $v_k$ |
+| Discrimination $a$ | Weibull shape $\alpha$ |
+
+This analogy is useful for communicating the model structure to psychometrically-oriented team members.
+
+## Section 9: References {#references}
+
+### BTYD Foundation
+
+- Schmittlein, D. C., Morrison, D. G., & Colombo, R. (1987). "Counting Your Customers: Who Are They and What Will They Do Next?" *Management Science*, 33(1), 1-24. [Original Pareto/NBD]
+- Fader, P. S., Hardie, B. G. S., & Lee, K. L. (2005). "'Counting Your Customers' the Easy Way: An Alternative to the Pareto/NBD Model." *Marketing Science*, 24(2), 275-284. [BG/NBD]
+- Fader, P. S., Hardie, B. G. S., & Lee, K. L. (2005). "RFM and CLV: Using Iso-Value Curves for Customer Base Analysis." *Journal of Marketing Research*, 42(4), 415-430.
+- Fader, P. S., & Hardie, B. G. S. (2010). "Customer-Base Valuation in a Contractual Setting: The Perils of Ignoring Heterogeneity." *Marketing Science*, 29(1), 85-98.
+- Fader, P. S., Hardie, B. G. S., & Shang, J. (2010). "'Customer-Base Analysis in a Discrete-Time Noncontractual Setting." *Marketing Science*, 29(6), 1086-1108. [Validation methodology]
+
+### BTYD Extensions
+
+- Platzer, M., & Reutterer, T. (2016). "Ticking Away the Moments: Timing Regularity Helps to Better Predict Customer Activity." *Marketing Science*, 35(5), 779-799. [Pareto/GGG]
+- Abe, M. (2009). "'Counting Your Customers' One by One: A Hierarchical Bayes Extension to the Pareto/NBD Model." *Marketing Science*, 28(3), 541-553. [Bayesian nonparametric]
+- Batislam, E. P., Denizel, M., & Filiztekin, A. (2007). "Empirical Validation and Comparison of Models for Customer Base Analysis." *International Journal of Research in Marketing*, 24(3), 201-209.
+
+### R Packages
+
+- `BTYD` — Classic BG/NBD and Pareto/NBD implementation (Dziurzynski et al.)
+- `CLVTools` — Modern, maintained; supports covariates and multiple model types (Bachmann et al.)
+- `BTYDplus` — Pareto/GGG and other extensions (Platzer)
+
+### Survival Analysis (Complementary)
+
+- Cox, D. R. (1972). "Regression Models and Life-Tables." *JRSS-B*, 34(2), 187-220.
+- Therneau, T. M., & Grambsch, P. M. (2000). *Modeling Survival Data: Extending the Cox Model.* Springer.
+- Vaupel, J. W., Manton, K. G., & Stallard, E. (1979). "The Impact of Heterogeneity in Individual Frailty on the Dynamics of Mortality." *Demography*, 16(3), 439-454.
+- Berkson, J., & Gage, R. P. (1952). "Survival Curve for Cancer Patients Following Treatment." *JASA*, 47(259), 501-515. [Cure rate models]

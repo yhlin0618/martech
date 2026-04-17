@@ -1,0 +1,102 @@
+/* 
+ * NSQL Grammar in Extended Backus-Naur Form (EBNF)
+ * Implements MP24: Natural SQL Language
+ * Version: 1.0.0
+ * Date: 2025-04-04
+ */
+
+/* Top-level NSQL statement */
+NSQLStatement ::= TransformStatement | ArrowStatement | NaturalLanguageStatement
+
+/* Transform-To Pattern */
+TransformStatement ::= 'transform' Source 'to' Target 'as' Operations [GroupClause] [FilterClause] [OrderClause] [LimitClause]
+
+Source ::= Identifier
+Target ::= Identifier
+Operations ::= Operation {',' Operation}
+Operation ::= Expression ['as' Alias]
+Alias ::= Identifier
+
+GroupClause ::= ('grouped by' | 'group by') Dimensions
+Dimensions ::= Dimension {',' Dimension}
+Dimension ::= Expression
+
+FilterClause ::= 'where' Conditions
+Conditions ::= Condition {LogicalOperator Condition}
+Condition ::= Expression ComparisonOperator Expression
+          | Expression 'in' '[' ValueList ']'
+          | Expression 'is' ['not'] 'null'
+          | 'not' Condition
+
+OrderClause ::= ('ordered by' | 'order by') SortItems
+SortItems ::= SortItem {',' SortItem}
+SortItem ::= Expression ['asc' | 'desc']
+
+LimitClause ::= 'limit' Number
+
+/* Arrow-Operator Pattern */
+ArrowStatement ::= Source {'->' PipelineOperation}
+
+PipelineOperation ::= 'filter' '(' Conditions ')'
+                  | 'group' '(' Dimensions ')'
+                  | 'aggregate' '(' NamedExpressions ')'
+                  | 'select' '(' Expressions ')'
+                  | 'sort' '(' SortSpecifications ')'
+                  | Identifier '(' [Parameters] ')'
+
+NamedExpressions ::= NamedExpression {',' NamedExpression}
+NamedExpression ::= Identifier '=' Expression
+
+Expressions ::= Expression {',' Expression}
+
+SortSpecifications ::= SortSpecification {',' SortSpecification}
+SortSpecification ::= Expression [',' 'direction' '=' ('asc' | 'desc')]
+
+Parameters ::= Parameter {',' Parameter}
+Parameter ::= [Identifier '='] Expression
+
+/* Natural Language Patterns */
+NaturalLanguageStatement ::= ImperativeQuery | CalculationQuery | ComparativeQuery | RankingQuery
+
+ImperativeQuery ::= 'show' Expression 'by' Expression
+CalculationQuery ::= 'calculate' Expression 'for' Expression
+ComparativeQuery ::= 'compare' Expression ('vs' | 'versus') Expression 'by' Expression
+RankingQuery ::= 'find' ['top'] Number Expression 'by' Expression
+
+/* Expression Components */
+Expression ::= Term {AdditiveOperator Term}
+Term ::= Factor {MultiplicativeOperator Factor}
+Factor ::= Primary | UnaryOperator Factor
+Primary ::= Literal | Identifier | FunctionCall | '(' Expression ')'
+
+FunctionCall ::= Identifier '(' [Arguments] ')'
+Arguments ::= Expression {',' Expression}
+
+/* Basic Elements */
+Identifier ::= SimpleName | QualifiedName
+SimpleName ::= Letter {Letter | Digit | '_'}
+QualifiedName ::= SimpleName {'.' SimpleName}
+Literal ::= StringLiteral | NumberLiteral | BooleanLiteral | DateLiteral
+StringLiteral ::= '"' {Character} '"' | "'" {Character} "'"
+NumberLiteral ::= ['-'] Digit {Digit} ['.' Digit {Digit}]
+BooleanLiteral ::= 'true' | 'false'
+DateLiteral ::= 'date' '(' StringLiteral ')'
+
+/* Operators */
+LogicalOperator ::= 'and' | 'or'
+ComparisonOperator ::= '=' | '!=' | '>' | '>=' | '<' | '<='
+AdditiveOperator ::= '+' | '-'
+MultiplicativeOperator ::= '*' | '/' | '%'
+UnaryOperator ::= '-' | 'not'
+
+/* Lexical Elements */
+Letter ::= 'A' | 'B' | ... | 'Z' | 'a' | 'b' | ... | 'z'
+Digit ::= '0' | '1' | ... | '9'
+ValueList ::= Value {',' Value}
+Value ::= Literal
+Character ::= /* any valid character except closing quote */
+Number ::= Digit {Digit}
+
+/* Comments and Whitespace (not part of grammar but for implementation reference) */
+Comment ::= '#' {Character} EndOfLine
+Whitespace ::= ' ' | '\t' | '\n' | '\r'

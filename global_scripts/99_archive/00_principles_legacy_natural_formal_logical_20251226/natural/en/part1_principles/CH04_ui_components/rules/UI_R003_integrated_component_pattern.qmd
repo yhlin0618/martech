@@ -1,0 +1,749 @@
+---
+title: "UI_R003: Integrated Component Pattern Rule"
+subtitle: "Structured implementation pattern for resilient, well-tested Shiny components"
+chapter: "CH04"
+category: "rule"
+number: "UI_R003"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI Components Law Implementation Rules"
+article: "Article 3"
+implements:
+  - "SO_P004: App Construction Principles"
+  - "CH00.MP017: Separation of Concerns"
+derives_from:
+  - "CH00.MP016: Modularity Principle"
+  - "CH00.MP018: Don't Repeat Yourself"
+related_to:
+  - "SO_P007: App Bottom-Up Construction"
+  - "SO_R005: App YAML Configuration"
+  - "SO_R009: Package Consistency Naming"
+  - "TD_P002: Dual Testing Approach"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**UI Components Law Implementation Rules Article 3 (Integrated Component Pattern Rule)**
+
+This article establishes a structured implementation pattern for Shiny components, requiring main component files, functional tests, and production tests to create resilient components with clean separation of concerns.
+
+:::{.callout-important}
+## Core Rule
+Every Shiny component must follow a structured pattern with:
+1. A main component file integrating UI, server, and defaults in a single source
+2. Functional test files verifying behavior with synthetic data
+3. Production test files validating behavior with real data connections
+:::
+
+# Section 1: Component Structure Requirements {#structure}
+
+## Subsection 1: File Organization {#file-org}
+
+第一項：組件目錄結構 (Component directory structure)
+
+Components shall be organized into dedicated folders with specific file structure:
+
+```
+10_rshinyapp_components/[section]/[componentName]/
+├── [componentName].R               # Main component file
+├── [componentName]_test.R          # Functional test with synthetic data
+├── [componentName]_production_test.R # Production test with real data
+├── README.md                       # Component documentation
+└── TEST.md                         # Test documentation
+```
+
+Where:
+- **[section]**: Major app section (e.g., "micro", "macro", "target")
+- **[componentName]**: Specific component name (e.g., "microCustomer", "microDNADistribution")
+
+第二項：實際範例 (Practical example)
+
+```
+10_rshinyapp_components/micro/microDNADistribution/
+├── microDNADistribution.R
+├── microDNADistribution_test.R
+├── microDNADistribution_production_test.R
+├── README.md
+└── TEST.md
+```
+
+This folder-based organization:
+- Improves component encapsulation
+- Makes relationships between files explicit
+- Reduces directory clutter
+- Simplifies management of related files
+- Enables comprehensive testing
+- Follows TD_P002: Dual Testing Approach Principle
+
+## Subsection 2: Main Component File Requirements {#main-file}
+
+第一項：必要元素 (Required elements)
+
+The main component file must include:
+
+1. **Component Function**: Primary function returning UI and server functions
+2. **UI Function**: Nested function defining visual elements
+3. **Server Function**: Nested function providing business logic
+4. **Defaults**: Default values integrated within server function
+
+第二項：標準結構 (Standard structure)
+
+```r
+#' Component Name
+#'
+#' Component description and purpose
+#'
+#' @param id The module ID
+#' @return A list containing UI and server functions
+#' @export
+componentName <- function(id) {
+  ns <- NS(id)
+  
+  # Return the component parts
+  list(
+    # UI function (input edge node)
+    ui = componentNameUI(ns),
+    
+    # Server function (internal component logic)
+    server = componentNameServer
+  )
+}
+
+#' Component UI Function
+#'
+#' @param ns The namespace function
+#' @return The UI elements
+componentNameUI <- function(ns) {
+  # UI definition
+  tagList(
+    # UI elements...
+  )
+}
+
+#' Component Server Function
+#'
+#' @param id The module ID
+#' @param app_data_connection The data connection
+#' @param config Configuration parameters (optional)
+#' @param session The Shiny session object
+#' @return A list of reactive values for testing/composition
+componentNameServer <- function(id,
+                               app_data_connection = NULL,
+                               config = NULL,
+                               session = getDefaultReactiveDomain()) {
+  moduleServer(id, function(input, output, session) {
+    # Component state reactive values
+    
+    # Default values (integrated within the server)
+    default_values <- list(
+      output1 = "Default value 1",
+      output2 = "Default value 2"
+    )
+    
+    # Process data with fallbacks to defaults
+    
+    # Return reactive values for testing/composition
+    list(
+      reactive_value1 = reactive_value1,
+      reactive_value2 = reactive_value2
+    )
+  })
+}
+```
+
+# Section 2: Testing Requirements {#testing}
+
+## Subsection 1: Functional Test Requirements {#functional-test}
+
+第一項：測試特性 (Test characteristics)
+
+Functional test files must:
+
+1. **Be self-contained**: Include all necessary dependencies
+2. **Use synthetic data**: Test with controlled mock data
+3. **Test all features**: Verify all component functionality
+4. **Validate outputs**: Assert output correctness
+5. **Include UI testing**: Test UI element behavior
+
+第二項：功能測試結構 (Functional test structure)
+
+```r
+#' Functional Test for Component
+#'
+#' Self-contained test environment with synthetic data
+
+# Required libraries
+library(shiny)
+library(plotly)
+library(dplyr)
+
+# Source the component file
+source("componentName.R")
+
+# Create synthetic test data
+test_data <- list(
+  data_frame1 = data.frame(...),
+  data_frame2 = data.frame(...)
+)
+
+# Create test UI
+ui <- fluidPage(
+  h1("Component Test Environment"),
+  
+  # Test controls
+  selectInput("test_option", "Test Option", 
+              choices = c("Option 1", "Option 2")),
+  
+  # Include component UI
+  componentName("test_component")$ui()
+)
+
+# Create test server
+server <- function(input, output, session) {
+  # Initialize component with synthetic data
+  component_instance <- componentName("test_component")$server(
+    id = "test_component",
+    app_data_connection = test_data,
+    config = list(
+      parameter1 = "value1",
+      parameter2 = "value2"
+    )
+  )
+  
+  # Add test observers to validate behavior
+  observe({
+    output_value <- component_instance$reactive_value1()
+    print(paste("Output value:", output_value))
+  })
+}
+
+# Run the test app
+shinyApp(ui, server)
+```
+
+## Subsection 2: Production Test Requirements {#production-test}
+
+第一項：生產測試特性 (Production test characteristics)
+
+Production test files must:
+
+1. **Connect to real data**: Use actual database connections
+2. **Test in realistic context**: Simulate real-world usage
+3. **Include error handling**: Test behavior with missing/bad data
+4. **Monitor performance**: Measure data loading and processing time
+5. **Provide diagnostic tools**: Include debugging tools for production issues
+
+第二項：生產測試結構 (Production test structure)
+
+```r
+#' Production Test for Component
+#'
+#' Realistic test environment with actual data connections
+
+# Required libraries
+library(shiny)
+library(bs4Dash)
+library(DBI)
+library(dplyr)
+
+# Source component and utilities
+source("componentName.R")
+source("path/to/db_utils.R")
+
+# Create production-like UI with bs4Dash
+ui <- bs4DashPage(
+  header = bs4DashNavbar(
+    title = "Production Test Environment"
+  ),
+  sidebar = bs4DashSidebar(
+    bs4SidebarMenu(
+      bs4SidebarMenuItem(
+        text = "Component Test",
+        tabName = "component_test",
+        icon = icon("vial")
+      ),
+      bs4SidebarMenuItem(
+        text = "Performance",
+        tabName = "performance",
+        icon = icon("gauge-high")
+      )
+    )
+  ),
+  body = bs4DashBody(
+    bs4TabItems(
+      bs4TabItem(
+        tabName = "component_test",
+        fluidRow(
+          column(
+            width = 12,
+            bs4Card(
+              title = "Component Under Test",
+              width = 12,
+              status = "primary",
+              solidHeader = TRUE,
+              componentName("prod_component")$ui()
+            )
+          )
+        )
+      ),
+      bs4TabItem(
+        tabName = "performance",
+        # Performance metrics UI
+      )
+    )
+  )
+)
+
+# Server with real data connections
+server <- function(input, output, session) {
+  # Connect to actual database
+  db_connection <- tryCatch({
+    connect_to_database()
+  }, error = function(e) {
+    showNotification(paste("Database connection error:", e$message), 
+                     type = "error")
+    return(NULL)
+  })
+  
+  # Initialize component with real data
+  component_instance <- componentName("prod_component")$server(
+    id = "prod_component",
+    app_data_connection = db_connection,
+    config = reactive({
+      list(
+        parameter1 = input$parameter1,
+        parameter2 = input$parameter2
+      )
+    })
+  )
+  
+  # Clean up when session ends
+  session$onSessionEnded(function() {
+    if (!is.null(db_connection)) {
+      try(dbDisconnect(db_connection))
+    }
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# Section 3: Documentation Requirements {#documentation}
+
+## Subsection 1: README Documentation {#readme}
+
+第一項：README 內容要求 (README content requirements)
+
+Each component folder shall include README.md providing:
+
+1. **Component Purpose**: Clear explanation of functionality
+2. **Usage Instructions**: Integration and usage guidelines
+3. **Parameter Reference**: Detailed parameter explanations
+4. **Data Requirements**: Expected data structures and formats
+5. **Dependencies**: Required libraries and components
+6. **Example Code**: Basic usage examples
+
+第二項：README 範例 (README example)
+
+```markdown
+# Component Name
+
+## Purpose
+Brief description of what this component does and why it exists.
+
+## Usage
+```r
+# Basic usage
+source("componentName.R")
+ui <- componentName("my_component")$ui()
+server <- function(input, output, session) {
+  componentName("my_component")$server(
+    id = "my_component",
+    app_data_connection = data_connection
+  )
+}
+```
+
+## Parameters
+- `id`: Module namespace ID
+- `app_data_connection`: Data source (reactive or static)
+- `config`: Configuration options (optional)
+
+## Data Requirements
+Expected data structure:
+- Column1: Description
+- Column2: Description
+
+## Dependencies
+- shiny
+- bs4Dash
+- dplyr
+```
+
+## Subsection 2: TEST Documentation {#test-doc}
+
+第一項：TEST.md 內容要求 (TEST.md content requirements)
+
+Each component folder shall include TEST.md providing:
+
+1. **Test Overview**: Description of test approach
+2. **Functional Tests**: Details of synthetic data tests
+3. **Production Tests**: Details of real-data tests
+4. **Test Coverage**: What aspects are tested
+5. **Test Data**: Description of test data structure
+
+# Section 4: Usage Patterns {#usage}
+
+## Subsection 1: Basic Usage {#basic-usage}
+
+第一項：標準使用模式 (Standard usage pattern)
+
+```r
+# In app.R or other component files:
+
+# Include the component
+source("path/to/componentName.R")
+
+# In the UI
+ui <- fluidPage(
+  componentName("my_component")$ui()
+)
+
+# In the server
+server <- function(input, output, session) {
+  componentName("my_component")$server(
+    id = "my_component",
+    app_data_connection = my_data_connection,
+    config = list(
+      parameter1 = "value1",
+      parameter2 = "value2"
+    )
+  )
+}
+```
+
+## Subsection 2: Advanced Patterns {#advanced-patterns}
+
+第一項：反應式配置 (Reactive configuration)
+
+```r
+# Create reactive configuration
+component_config <- reactive({
+  list(
+    parameter1 = input$parameter1,
+    parameter2 = input$parameter2
+  )
+})
+
+# Initialize component with reactive config
+component_instance <- componentName("my_component")$server(
+  id = "my_component",
+  app_data_connection = my_data_connection,
+  config = component_config  # Pass reactive function directly
+)
+```
+
+第二項：組件組合 (Component composition)
+
+```r
+# Initialize parent component
+parent_component <- parentComponent("parent")$server(
+  id = "parent",
+  app_data_connection = my_data_connection
+)
+
+# Initialize child using parent's reactive output
+child_component <- childComponent("child")$server(
+  id = "child",
+  app_data_connection = parent_component$processed_data,
+  config = list(...)
+)
+```
+
+第三項：命名空間模式 (Namespacing pattern)
+
+Following explicit namespace principles for maintainability:
+
+```r
+# In component UI function
+ui <- shiny::tagList(
+  bs4Dash::bs4Card(
+    title = "Component Title",
+    status = "primary",
+    solidHeader = TRUE,
+    width = 12,
+    plotly::plotlyOutput(ns("plot"))
+  )
+)
+
+# In server function
+output$plot <- plotly::renderPlotly({
+  plotly::plot_ly(data, x = ~x, y = ~y, 
+                   type = "scatter", mode = "lines+markers")
+})
+```
+
+# Section 5: Complete Implementation Example {#example}
+
+## Subsection 1: microDNADistribution Component {#dna-example}
+
+第一項：組件目錄結構 (Component directory)
+
+```
+microDNADistribution/
+├── microDNADistribution.R
+├── microDNADistribution_test.R
+├── microDNADistribution_production_test.R
+├── README.md
+└── TEST.md
+```
+
+第二項：主組件檔案 (Main component file)
+
+```r
+# microDNADistribution.R
+
+#' Customer DNA Distribution Visualization Component
+#'
+#' Visualizes customer DNA distributions (M, R, F, IPT, NES)
+#' @param id The module ID
+#' @return A list containing UI and server functions
+#' @export
+microDNADistribution <- function(id) {
+  ns <- NS(id)
+  
+  list(
+    ui = microDNADistributionUI(ns),
+    server = microDNADistributionServer
+  )
+}
+
+#' DNA Distribution UI function
+#' @param ns The namespace function
+#' @return The UI elements
+microDNADistributionUI <- function(ns) {
+  tagList(
+    fluidRow(
+      column(
+        width = 12,
+        bs4Card(
+          title = "DNA Distribution Analysis",
+          status = "primary",
+          solidHeader = TRUE,
+          width = 12,
+          
+          # Distribution plots
+          fluidRow(
+            column(6, plotlyOutput(ns("m_distribution"))),
+            column(6, plotlyOutput(ns("r_distribution")))
+          ),
+          fluidRow(
+            column(6, plotlyOutput(ns("f_distribution"))),
+            column(6, plotlyOutput(ns("ipt_distribution")))
+          ),
+          
+          # Summary table
+          DTOutput(ns("summary_table"))
+        )
+      )
+    )
+  )
+}
+
+#' DNA Distribution Server function
+#' @param id The module ID
+#' @param app_data_connection The data connection
+#' @param config Configuration parameters
+#' @param session The Shiny session object
+#' @return A list of reactive values
+microDNADistributionServer <- function(id,
+                                     app_data_connection = NULL,
+                                     config = NULL,
+                                     session = getDefaultReactiveDomain()) {
+  moduleServer(id, function(input, output, session) {
+    
+    # Default values
+    defaults <- list(
+      bins = 30,
+      color = "steelblue",
+      show_density = TRUE
+    )
+    
+    # Merge config with defaults
+    options <- reactive({
+      if (is.null(config)) {
+        defaults
+      } else if (is.reactive(config)) {
+        modifyList(defaults, config())
+      } else {
+        modifyList(defaults, config)
+      }
+    })
+    
+    # Process data
+    dna_data <- reactive({
+      req(app_data_connection)
+      
+      if (is.reactive(app_data_connection)) {
+        app_data_connection()
+      } else {
+        app_data_connection
+      }
+    })
+    
+    # Create distribution plots
+    output$m_distribution <- renderPlotly({
+      plot_ly(x = ~dna_data()$M, 
+              type = "histogram",
+              nbinsx = options()$bins,
+              marker = list(color = options()$color)) %>%
+        layout(title = "Monetary Distribution",
+               xaxis = list(title = "Monetary Value"),
+               yaxis = list(title = "Count"))
+    })
+    
+    output$r_distribution <- renderPlotly({
+      plot_ly(x = ~dna_data()$R,
+              type = "histogram",
+              nbinsx = options()$bins,
+              marker = list(color = options()$color)) %>%
+        layout(title = "Recency Distribution",
+               xaxis = list(title = "Days Since Last Purchase"),
+               yaxis = list(title = "Count"))
+    })
+    
+    output$f_distribution <- renderPlotly({
+      plot_ly(x = ~dna_data()$F,
+              type = "histogram",
+              nbinsx = options()$bins,
+              marker = list(color = options()$color)) %>%
+        layout(title = "Frequency Distribution",
+               xaxis = list(title = "Purchase Frequency"),
+               yaxis = list(title = "Count"))
+    })
+    
+    output$ipt_distribution <- renderPlotly({
+      plot_ly(x = ~dna_data()$IPT_mean,
+              type = "histogram",
+              nbinsx = options()$bins,
+              marker = list(color = options()$color)) %>%
+        layout(title = "Inter-Purchase Time Distribution",
+               xaxis = list(title = "Average Days Between Purchases"),
+               yaxis = list(title = "Count"))
+    })
+    
+    # Summary statistics table
+    output$summary_table <- renderDT({
+      summary_stats <- dna_data() %>%
+        summarise(
+          Metric = c("Monetary", "Recency", "Frequency", "IPT"),
+          Mean = c(mean(M), mean(R), mean(F), mean(IPT_mean)),
+          Median = c(median(M), median(R), median(F), median(IPT_mean)),
+          SD = c(sd(M), sd(R), sd(F), sd(IPT_mean)),
+          Min = c(min(M), min(R), min(F), min(IPT_mean)),
+          Max = c(max(M), max(R), max(F), max(IPT_mean))
+        )
+      
+      datatable(summary_stats,
+                options = list(pageLength = 4,
+                               dom = 't',
+                               ordering = FALSE))
+    })
+    
+    # Return reactive values
+    list(
+      dna_data = dna_data,
+      options = options
+    )
+  })
+}
+```
+
+# Section 6: Benefits and Compliance {#benefits}
+
+## Subsection 1: Integrated Component Benefits {#integrated-benefits}
+
+第一項：開發優勢 (Development benefits)
+
+1. **Unified Component File**: Single source keeps related code together
+2. **Comprehensive Testing**: Both functional and production tests ensure robustness
+3. **Clear Documentation**: README and TEST.md provide complete documentation
+4. **Real World Validation**: Production tests validate behavior with actual data
+5. **Performance Assessment**: Production tests allow performance measurement
+6. **Simplified Maintenance**: Clear structure makes updating easier
+7. **Better Developer Experience**: Integrated approach reduces context switching
+8. **Enhanced Discoverability**: Standardized structure aids navigation
+
+## Subsection 2: Principle Compliance {#compliance}
+
+第一項：原則實施 (Principle implementation)
+
+This rule implements multiple principles:
+
+1. **SO_P004 (App Construction Principles)**: Specific implementation pattern for components
+2. **MP016 (Modularity Principle)**: Creates modular components with clear boundaries
+3. **MP017 (Separation of Concerns)**: Separates UI, logic, and defaults
+4. **MP018 (Don't Repeat Yourself)**: Centralizes component implementation
+5. **SO_P007 (App Bottom-Up Construction)**: Enables isolated testing before integration
+6. **TD_P002 (Dual Testing Approach)**: Provides both functional and production tests
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Integrated Component Checklist
+
+**File Structure:**
+- [ ] Component folder created
+- [ ] Main component file (.R)
+- [ ] Functional test file (_test.R)
+- [ ] Production test file (_production_test.R)
+- [ ] README.md documentation
+- [ ] TEST.md documentation
+
+**Main Component:**
+- [ ] Component function returning list
+- [ ] UI function with namespace
+- [ ] Server function with moduleServer
+- [ ] Default values integrated
+- [ ] Reactive values returned
+
+**Functional Test:**
+- [ ] Self-contained with dependencies
+- [ ] Synthetic test data created
+- [ ] Component initialized correctly
+- [ ] Behavior validation included
+- [ ] UI elements tested
+
+**Production Test:**
+- [ ] Real data connection established
+- [ ] Error handling implemented
+- [ ] Performance monitoring included
+- [ ] Diagnostic tools provided
+- [ ] Session cleanup handled
+
+**Documentation:**
+- [ ] Component purpose explained
+- [ ] Usage examples provided
+- [ ] Parameters documented
+- [ ] Dependencies listed
+- [ ] Test coverage described
+:::
+
+# Conclusion {#conclusion}
+
+The Integrated Component Pattern Rule provides a comprehensive approach to developing, testing, and documenting Shiny components. By combining UI, server, and defaults in a single well-structured file, while adding comprehensive testing through both functional and production test files, this pattern ensures components are robust, thoroughly tested, and properly documented. This approach creates reliable components that work effectively in both development and production environments.
+
+---
+
+*Based on: UI Components Law Implementation Rules Article 3*  
+*Implements: [SO_P004 App Construction Principles](../../CH01_structure_organization/principles/SO_P004_app_construction.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*  
+*Related to: [TD_P002 Dual Testing Approach](../../CH05_testing_deployment/principles/TD_P002_dual_testing_approach.qmd), [SO_R005 App YAML Configuration](../../CH01_structure_organization/rules/SO_R005_app_yaml_configuration.qmd)*

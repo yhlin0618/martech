@@ -1,0 +1,932 @@
+---
+id: "ETL_COMPANY_IMPL"
+title: "Company-Specific ETL Implementation Guide"
+type: "implementation"
+category: "etl_pipelines"
+date_created: "2025-08-28"
+date_modified: "2025-08-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+implements:
+  - "MP104": "ETL Data Flow Separation Principle"
+  - "DM_R028": "ETL Data Type Separation Rule"
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+---
+
+# Company-Specific ETL Implementation Guide
+
+## Overview
+
+This guide provides practical implementation patterns for company-specific ETL pipelines, particularly for MAMBA's eBay SQL Server setup and similar custom database connections.
+
+## MAMBA eBay Implementation
+
+### Context
+
+MAMBA has their own eBay data infrastructure that differs from standard eBay platform APIs:
+
+```yaml
+mamba_infrastructure:
+  database:
+    type: "Microsoft SQL Server"
+    host: "125.227.84.85"
+    port: 1433
+    database: "ebay_mamba_db"
+    
+  access_method:
+    type: "SSH Tunnel"
+    ssh_host: "220.128.138.146"
+    ssh_port: 22
+    local_port: 1433
+    
+  data_characteristics:
+    - "Custom SKU mappings"
+    - "Negotiated commission rates"
+    - "Territory-specific filtering"
+    - "MAMBA product categories"
+```
+
+### Complete Pipeline Implementation
+
+#### 1. Import Phase: eby_ETL_sales_0IM___MAMBA.R
+
+```r
+# ==============================================================================
+# MAMBA-SPECIFIC EBAY SALES IMPORT (0IM)
+# Connects to MAMBA's eBay SQL Server via SSH tunnel
+# Server: 125.227.84.85 via 220.128.138.146
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. INITIALIZE
+# ------------------------------------------------------------------------------
+script_success <- FALSE
+test_passed <- FALSE
+main_error <- NULL
+
+# Source initialization
+source("scripts/global_scripts/22_initializations/sc_initialization.R")
+
+# Load SSH and database utilities
+source("scripts/global_scripts/02_db_utils/fn_establish_ssh_tunnel.R")
+source("scripts/global_scripts/02_db_utils/fn_sql_server_connect.R")
+
+# Database connections
+raw_data <- dbConnectDuckdb(db_path_list$raw_data)
+
+# ------------------------------------------------------------------------------
+# 2. MAIN
+# ------------------------------------------------------------------------------
+main_execution <- function() {
+  tryCatch({
+    
+    # Establish SSH tunnel to MAMBA's infrastructure
+    ssh_tunnel <- establish_ssh_tunnel(
+      ssh_host = "220.128.138.146",
+      ssh_port = 22,
+      ssh_user = Sys.getenv("MAMBA_SSH_USER"),
+      ssh_key = Sys.getenv("MAMBA_SSH_KEY_PATH"),
+      local_port = 1433,
+      remote_host = "125.227.84.85",
+      remote_port = 1433
+    )
+    
+    # Connect to MAMBA's SQL Server
+    mamba_con <- dbConnect(
+      odbc::odbc(),
+      Driver = "ODBC Driver 17 for SQL Server",
+      Server = "localhost,1433",
+      Database = "ebay_mamba_db",
+      UID = Sys.getenv("MAMBA_DB_USER"),
+      PWD = Sys.getenv("MAMBA_DB_PASSWORD"),
+      TrustServerCertificate = "yes"
+    )
+    
+    # MAMBA-specific SQL query with custom fields
+    sales_query <- "
+      SELECT 
+        transaction_id,
+        order_id,
+        customer_email,
+        product_sku,
+        mamba_sku,           -- MAMBA's internal SKU
+        mamba_category,      -- MAMBA's categorization
+        sale_date,
+        sale_amount_usd,
+        commission_rate,     -- MAMBA's negotiated rate
+        territory_code,      -- MAMBA's territory mapping
+        sync_timestamp
+      FROM dbo.mamba_ebay_transactions
+      WHERE sync_date >= DATEADD(day, -7, GETDATE())
+        AND mamba_status = 'ACTIVE'
+        AND territory_code IN ('TW', 'HK', 'SG')  -- MAMBA territories
+      ORDER BY transaction_id
+    "
+    
+    message("Fetching MAMBA eBay sales data...")
+    sales_data <- dbGetQuery(mamba_con, sales_query)
+    
+    # Apply MAMBA-specific transformations
+    processed_sales <- sales_data %>%
+      # Convert MAMBA SKU to standard format
+      mutate(
+        platform_code = "eby",
+        company_code = "MAMBA",
+        standard_sku = map_mamba_sku_to_standard(mamba_sku),
+        effective_commission = calculate_mamba_commission(
+          sale_amount_usd, 
+          commission_rate, 
+          territory_code
+        ),
+        import_timestamp = Sys.time()
+      ) %>%
+      # Ensure UTF-8 encoding
+      mutate(across(where(is.character), ~ enc2utf8(.)))
+    
+    # Validate data structure
+    required_cols <- c("transaction_id", "order_id", "customer_email", 
+                      "product_sku", "sale_date", "sale_amount_usd")
+    missing_cols <- setdiff(required_cols, names(processed_sales))
+    if (length(missing_cols) > 0) {
+      stop(sprintf("Missing required columns: %s", 
+                  paste(missing_cols, collapse = ", ")))
+    }
+    
+    # Write to MAMBA-specific raw table
+    dbWriteTable(raw_data, "df_eby_sales___raw___MAMBA", 
+                processed_sales, overwrite = TRUE)
+    
+    # Clean up connections
+    dbDisconnect(mamba_con)
+    close_ssh_tunnel(ssh_tunnel)
+    
+    message(sprintf("✅ Imported %d MAMBA eBay sales records", 
+                   nrow(processed_sales)))
+    
+    script_success <<- TRUE
+    return(TRUE)
+    
+  }, error = function(e) {
+    main_error <<- e$message
+    stop(sprintf("MAMBA eBay import failed: %s", e$message))
+  })
+}
+
+# Helper function: Map MAMBA SKU to standard
+map_mamba_sku_to_standard <- function(mamba_sku) {
+  # Load MAMBA SKU mapping table
+  mapping <- read_csv("config/companies/MAMBA/sku_mapping.csv")
+  
+  # Perform mapping
+  mapped_sku <- mapping$standard_sku[match(mamba_sku, mapping$mamba_sku)]
+  
+  # Return original if no mapping found
+  ifelse(is.na(mapped_sku), mamba_sku, mapped_sku)
+}
+
+# Helper function: Calculate MAMBA commission
+calculate_mamba_commission <- function(amount, rate, territory) {
+  # MAMBA has special commission rules by territory
+  territory_multiplier <- case_when(
+    territory == "TW" ~ 1.0,
+    territory == "HK" ~ 0.95,
+    territory == "SG" ~ 0.90,
+    TRUE ~ 1.0
+  )
+  
+  amount * rate * territory_multiplier
+}
+
+# ------------------------------------------------------------------------------
+# 3. TEST
+# ------------------------------------------------------------------------------
+test_execution <- function() {
+  tryCatch({
+    
+    # Test SSH tunnel connection
+    test_ssh <- test_ssh_connection("220.128.138.146", 22)
+    if (!test_ssh) stop("SSH connection test failed")
+    
+    # Test database reachability (without actual connection)
+    test_db <- test_port_open("125.227.84.85", 1433)
+    if (!test_db) warning("Database port test failed - may be behind firewall")
+    
+    # Test environment variables
+    required_env <- c("MAMBA_SSH_USER", "MAMBA_SSH_KEY_PATH", 
+                     "MAMBA_DB_USER", "MAMBA_DB_PASSWORD")
+    missing_env <- required_env[!nzchar(Sys.getenv(required_env))]
+    if (length(missing_env) > 0) {
+      stop(sprintf("Missing environment variables: %s", 
+                  paste(missing_env, collapse = ", ")))
+    }
+    
+    # Test SKU mapping file exists
+    if (!file.exists("config/companies/MAMBA/sku_mapping.csv")) {
+      warning("SKU mapping file not found - using identity mapping")
+    }
+    
+    test_passed <<- TRUE
+    return(TRUE)
+    
+  }, error = function(e) {
+    warning(sprintf("Test failed: %s", e$message))
+    return(FALSE)
+  })
+}
+
+# ------------------------------------------------------------------------------
+# 4. RESULT
+# ------------------------------------------------------------------------------
+# Execute test
+test_result <- test_execution()
+
+# Execute main if test passes
+if (test_result) {
+  main_result <- main_execution()
+}
+
+# Final status
+if (test_passed && script_success) {
+  message("✅ MAMBA eBay sales import (0IM) completed successfully")
+} else {
+  stop("❌ MAMBA eBay sales import (0IM) failed")
+}
+
+# Clean up connections
+dbDisconnect(raw_data)
+```
+
+#### 2. Staging Phase: eby_ETL_sales_1ST___MAMBA.R
+
+```r
+# ==============================================================================
+# MAMBA-SPECIFIC EBAY SALES STAGING (1ST)
+# Applies MAMBA business rules and data cleaning
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. INITIALIZE
+# ------------------------------------------------------------------------------
+script_success <- FALSE
+test_passed <- FALSE
+main_error <- NULL
+
+source("scripts/global_scripts/22_initializations/sc_initialization.R")
+
+# Database connections
+raw_data <- dbConnectDuckdb(db_path_list$raw_data)
+staged_data <- dbConnectDuckdb(db_path_list$staged_data)
+
+# ------------------------------------------------------------------------------
+# 2. MAIN
+# ------------------------------------------------------------------------------
+main_execution <- function() {
+  tryCatch({
+    
+    # Read MAMBA raw data
+    sales_raw <- tbl2(raw_data, "df_eby_sales___raw___MAMBA") %>%
+      collect()
+    
+    message(sprintf("Staging %d MAMBA eBay sales records...", nrow(sales_raw)))
+    
+    # Apply MAMBA-specific staging rules
+    sales_staged <- sales_raw %>%
+      # Clean and standardize data
+      mutate(
+        # Standardize date formats
+        sale_date = as.Date(sale_date),
+        
+        # Clean customer emails (MAMBA format)
+        customer_email = str_to_lower(trimws(customer_email)),
+        customer_email = str_replace_all(customer_email, 
+                                        "@mamba\\.com\\.tw$", 
+                                        "@mamba.tw"),
+        
+        # Validate and clean amounts
+        sale_amount_usd = as.numeric(sale_amount_usd),
+        sale_amount_usd = ifelse(sale_amount_usd < 0, 0, sale_amount_usd),
+        
+        # Apply MAMBA product categorization
+        product_category = categorize_mamba_products(product_sku, mamba_category),
+        
+        # Add MAMBA-specific flags
+        is_wholesale = sale_amount_usd > 1000,  # MAMBA wholesale threshold
+        is_priority_territory = territory_code %in% c("TW", "HK"),
+        
+        # Add staging metadata
+        staged_timestamp = Sys.time(),
+        staging_version = "1.0"
+      ) %>%
+      # Remove duplicates based on MAMBA business rules
+      group_by(transaction_id) %>%
+      arrange(desc(sync_timestamp)) %>%
+      slice(1) %>%
+      ungroup() %>%
+      # Filter out test transactions (MAMBA-specific pattern)
+      filter(!str_detect(customer_email, "^test|^demo|@mamba-test\\."))
+    
+    # Validate staging output
+    validation_result <- validate_mamba_staging(sales_staged)
+    if (!validation_result$valid) {
+      stop(sprintf("Staging validation failed: %s", validation_result$message))
+    }
+    
+    # Write to staged table
+    dbWriteTable(staged_data, "df_eby_sales___staged___MAMBA",
+                sales_staged, overwrite = TRUE)
+    
+    message(sprintf("✅ Staged %d MAMBA eBay sales records", 
+                   nrow(sales_staged)))
+    
+    script_success <<- TRUE
+    return(TRUE)
+    
+  }, error = function(e) {
+    main_error <<- e$message
+    stop(sprintf("MAMBA eBay staging failed: %s", e$message))
+  })
+}
+
+# Helper function: MAMBA product categorization
+categorize_mamba_products <- function(sku, mamba_category) {
+  case_when(
+    str_detect(sku, "^MB-ELEC") ~ "Electronics",
+    str_detect(sku, "^MB-FASH") ~ "Fashion",
+    str_detect(sku, "^MB-HOME") ~ "Home & Garden",
+    str_detect(mamba_category, "電子|3C") ~ "Electronics",
+    str_detect(mamba_category, "服飾|衣") ~ "Fashion",
+    TRUE ~ "Other"
+  )
+}
+
+# Helper function: Validate MAMBA staging
+validate_mamba_staging <- function(data) {
+  # Check for required columns
+  required <- c("transaction_id", "customer_email", "sale_amount_usd", 
+               "product_category", "is_wholesale")
+  
+  if (!all(required %in% names(data))) {
+    return(list(valid = FALSE, 
+               message = "Missing required columns"))
+  }
+  
+  # Check for data quality
+  if (any(is.na(data$transaction_id))) {
+    return(list(valid = FALSE, 
+               message = "NULL transaction IDs found"))
+  }
+  
+  if (any(data$sale_amount_usd < 0, na.rm = TRUE)) {
+    return(list(valid = FALSE, 
+               message = "Negative sale amounts found"))
+  }
+  
+  return(list(valid = TRUE, message = "Validation passed"))
+}
+
+# ------------------------------------------------------------------------------
+# 3. TEST
+# ------------------------------------------------------------------------------
+test_execution <- function() {
+  tryCatch({
+    
+    # Test raw data table exists
+    raw_tables <- dbListTables(raw_data)
+    if (!"df_eby_sales___raw___MAMBA" %in% raw_tables) {
+      stop("Raw data table not found - run 0IM first")
+    }
+    
+    # Test staging database connection
+    test_write <- dbWriteTable(staged_data, "test_table", 
+                              data.frame(test = 1), overwrite = TRUE)
+    dbRemoveTable(staged_data, "test_table")
+    
+    test_passed <<- TRUE
+    return(TRUE)
+    
+  }, error = function(e) {
+    warning(sprintf("Test failed: %s", e$message))
+    return(FALSE)
+  })
+}
+
+# ------------------------------------------------------------------------------
+# 4. RESULT
+# ------------------------------------------------------------------------------
+test_result <- test_execution()
+
+if (test_result) {
+  main_result <- main_execution()
+}
+
+if (test_passed && script_success) {
+  message("✅ MAMBA eBay sales staging (1ST) completed successfully")
+} else {
+  stop("❌ MAMBA eBay sales staging (1ST) failed")
+}
+
+dbDisconnect(raw_data)
+dbDisconnect(staged_data)
+```
+
+#### 3. Transform Phase: eby_ETL_sales_2TR___MAMBA.R
+
+```r
+# ==============================================================================
+# MAMBA-SPECIFIC EBAY SALES TRANSFORM (2TR)
+# Final transformations and business logic application
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. INITIALIZE
+# ------------------------------------------------------------------------------
+script_success <- FALSE
+test_passed <- FALSE
+main_error <- NULL
+
+source("scripts/global_scripts/22_initializations/sc_initialization.R")
+
+# Load transformation utilities
+source("scripts/global_scripts/05_etl_utils/all/transform/fn_transform_sales.R")
+
+# Database connections
+staged_data <- dbConnectDuckdb(db_path_list$staged_data)
+transformed_data <- dbConnectDuckdb(db_path_list$transformed_data)
+
+# ------------------------------------------------------------------------------
+# 2. MAIN
+# ------------------------------------------------------------------------------
+main_execution <- function() {
+  tryCatch({
+    
+    # Read staged data
+    sales_staged <- tbl2(staged_data, "df_eby_sales___staged___MAMBA") %>%
+      collect()
+    
+    message(sprintf("Transforming %d MAMBA eBay sales records...", 
+                   nrow(sales_staged)))
+    
+    # Apply MAMBA-specific transformations
+    sales_transformed <- sales_staged %>%
+      # Calculate MAMBA metrics
+      mutate(
+        # Revenue calculations with MAMBA rules
+        gross_revenue = sale_amount_usd,
+        net_revenue = sale_amount_usd * (1 - effective_commission),
+        
+        # MAMBA loyalty program calculations
+        loyalty_points = calculate_mamba_loyalty_points(
+          sale_amount_usd, 
+          is_wholesale,
+          is_priority_territory
+        ),
+        
+        # Time-based features for MAMBA analytics
+        sale_year = year(sale_date),
+        sale_month = month(sale_date),
+        sale_quarter = quarter(sale_date),
+        sale_week = week(sale_date),
+        sale_dayofweek = wday(sale_date, label = TRUE),
+        
+        # MAMBA customer segmentation
+        customer_segment = segment_mamba_customers(
+          customer_email,
+          is_wholesale,
+          territory_code
+        ),
+        
+        # Product performance metrics
+        product_tier = classify_product_tier(
+          product_sku,
+          product_category,
+          sale_amount_usd
+        )
+      ) %>%
+      # Aggregate at transaction level with MAMBA rules
+      group_by(transaction_id) %>%
+      mutate(
+        items_in_transaction = n(),
+        transaction_total = sum(sale_amount_usd)
+      ) %>%
+      ungroup() %>%
+      # Add final transformation metadata
+      mutate(
+        platform_code = "eby",
+        company_code = "MAMBA",
+        transformed_timestamp = Sys.time(),
+        etl_version = "1.0"
+      ) %>%
+      # Select and order final columns
+      select(
+        # IDs
+        transaction_id, order_id, customer_email,
+        
+        # Product info
+        product_sku, standard_sku, mamba_sku,
+        product_category, product_tier,
+        
+        # Sales metrics
+        sale_date, sale_year, sale_month, sale_quarter,
+        sale_week, sale_dayofweek,
+        gross_revenue, net_revenue, effective_commission,
+        
+        # MAMBA-specific
+        territory_code, customer_segment, loyalty_points,
+        is_wholesale, is_priority_territory,
+        
+        # Metadata
+        platform_code, company_code,
+        import_timestamp, staged_timestamp, transformed_timestamp,
+        etl_version
+      )
+    
+    # Final validation
+    validation_result <- validate_transformation_output(
+      sales_transformed,
+      expected_platform = "eby",
+      expected_company = "MAMBA"
+    )
+    
+    if (!validation_result$valid) {
+      stop(sprintf("Transformation validation failed: %s", 
+                  validation_result$message))
+    }
+    
+    # Write to transformed table
+    dbWriteTable(transformed_data, "df_eby_sales___transformed___MAMBA",
+                sales_transformed, overwrite = TRUE)
+    
+    # Create summary statistics for monitoring
+    summary_stats <- sales_transformed %>%
+      summarise(
+        total_records = n(),
+        total_revenue = sum(gross_revenue, na.rm = TRUE),
+        unique_customers = n_distinct(customer_email),
+        unique_products = n_distinct(product_sku),
+        date_range = sprintf("%s to %s", 
+                           min(sale_date), max(sale_date))
+      )
+    
+    message("Transformation Summary:")
+    print(summary_stats)
+    
+    message(sprintf("✅ Transformed %d MAMBA eBay sales records", 
+                   nrow(sales_transformed)))
+    
+    script_success <<- TRUE
+    return(TRUE)
+    
+  }, error = function(e) {
+    main_error <<- e$message
+    stop(sprintf("MAMBA eBay transformation failed: %s", e$message))
+  })
+}
+
+# Helper: Calculate MAMBA loyalty points
+calculate_mamba_loyalty_points <- function(amount, is_wholesale, is_priority) {
+  base_points <- floor(amount / 10)  # 1 point per $10
+  
+  # Apply multipliers
+  points <- base_points
+  if (is_wholesale) points <- points * 1.5
+  if (is_priority) points <- points * 1.2
+  
+  return(as.integer(points))
+}
+
+# Helper: Segment MAMBA customers
+segment_mamba_customers <- function(email, is_wholesale, territory) {
+  case_when(
+    is_wholesale & territory == "TW" ~ "Premium Wholesale TW",
+    is_wholesale & territory == "HK" ~ "Premium Wholesale HK",
+    is_wholesale ~ "Standard Wholesale",
+    territory %in% c("TW", "HK") ~ "Priority Retail",
+    TRUE ~ "Standard Retail"
+  )
+}
+
+# Helper: Classify product tiers
+classify_product_tier <- function(sku, category, amount) {
+  case_when(
+    amount > 500 ~ "Premium",
+    amount > 100 & category == "Electronics" ~ "Mid-Tier",
+    amount > 50 ~ "Standard",
+    TRUE ~ "Entry"
+  )
+}
+
+# Helper: Validate transformation output
+validate_transformation_output <- function(data, expected_platform, expected_company) {
+  # Check all required columns exist
+  required_cols <- c("transaction_id", "platform_code", "company_code",
+                    "gross_revenue", "net_revenue", "transformed_timestamp")
+  
+  missing <- setdiff(required_cols, names(data))
+  if (length(missing) > 0) {
+    return(list(valid = FALSE, 
+               message = sprintf("Missing columns: %s", 
+                               paste(missing, collapse = ", "))))
+  }
+  
+  # Verify platform and company codes
+  if (!all(data$platform_code == expected_platform)) {
+    return(list(valid = FALSE, message = "Invalid platform_ids"))
+  }
+  
+  if (!all(data$company_code == expected_company)) {
+    return(list(valid = FALSE, message = "Invalid company codes"))
+  }
+  
+  return(list(valid = TRUE, message = "Validation passed"))
+}
+
+# ------------------------------------------------------------------------------
+# 3. TEST
+# ------------------------------------------------------------------------------
+test_execution <- function() {
+  tryCatch({
+    
+    # Test staged data exists
+    staged_tables <- dbListTables(staged_data)
+    if (!"df_eby_sales___staged___MAMBA" %in% staged_tables) {
+      stop("Staged data not found - run 1ST first")
+    }
+    
+    # Test we can read staged data
+    test_read <- tbl2(staged_data, "df_eby_sales___staged___MAMBA") %>%
+      head(1) %>%
+      collect()
+    
+    if (nrow(test_read) == 0) {
+      warning("Staged table is empty")
+    }
+    
+    test_passed <<- TRUE
+    return(TRUE)
+    
+  }, error = function(e) {
+    warning(sprintf("Test failed: %s", e$message))
+    return(FALSE)
+  })
+}
+
+# ------------------------------------------------------------------------------
+# 4. RESULT
+# ------------------------------------------------------------------------------
+test_result <- test_execution()
+
+if (test_result) {
+  main_result <- main_execution()
+}
+
+if (test_passed && script_success) {
+  message("✅ MAMBA eBay sales transformation (2TR) completed successfully")
+} else {
+  stop("❌ MAMBA eBay sales transformation (2TR) failed")
+}
+
+dbDisconnect(staged_data)
+dbDisconnect(transformed_data)
+```
+
+## Configuration Files
+
+### config/companies/MAMBA/database_config.yaml
+
+```yaml
+# MAMBA eBay Database Configuration
+mamba_ebay:
+  connection:
+    type: "sql_server"
+    
+    ssh_tunnel:
+      enabled: true
+      host: "220.128.138.146"
+      port: 22
+      user: "${MAMBA_SSH_USER}"
+      key_path: "${MAMBA_SSH_KEY_PATH}"
+      
+    database:
+      host: "125.227.84.85"
+      port: 1433
+      database: "ebay_mamba_db"
+      driver: "ODBC Driver 17 for SQL Server"
+      user: "${MAMBA_DB_USER}"
+      password: "${MAMBA_DB_PASSWORD}"
+      
+  tables:
+    transactions: "dbo.mamba_ebay_transactions"
+    customers: "dbo.mamba_ebay_customers"
+    products: "dbo.mamba_ebay_products"
+    
+  refresh_schedule:
+    frequency: "daily"
+    time: "02:00"
+    timezone: "Asia/Taipei"
+```
+
+### config/companies/MAMBA/sku_mapping.csv
+
+```csv
+mamba_sku,standard_sku,product_line,category
+MB-ELEC-001,SKU-E-001,Electronics,Accessories
+MB-ELEC-002,SKU-E-002,Electronics,Gadgets
+MB-FASH-001,SKU-F-001,Fashion,Clothing
+MB-FASH-002,SKU-F-002,Fashion,Shoes
+MB-HOME-001,SKU-H-001,Home,Furniture
+MB-HOME-002,SKU-H-002,Home,Decor
+```
+
+## Migration from Generic to Company-Specific
+
+### Step 1: Identify Custom Logic
+
+```r
+# Audit script for identifying company-specific logic
+identify_custom_etl_logic <- function(script_path) {
+  content <- readLines(script_path)
+  
+  # Patterns indicating custom implementation
+  custom_indicators <- list(
+    ssh_tunnel = any(grepl("ssh_tunnel|SSH", content)),
+    custom_server = any(grepl("125\\.227|220\\.128", content)),
+    company_tables = any(grepl("mamba_|company_", content)),
+    custom_logic = any(grepl("MAMBA|company_specific", content))
+  )
+  
+  if (any(unlist(custom_indicators))) {
+    return(list(
+      is_custom = TRUE,
+      indicators = names(custom_indicators)[unlist(custom_indicators)],
+      suggested_name = add_company_suffix(basename(script_path), "MAMBA")
+    ))
+  }
+  
+  return(list(is_custom = FALSE))
+}
+
+add_company_suffix <- function(filename, company) {
+  sub("\\.R$", sprintf("___%s.R", company), filename)
+}
+```
+
+### Step 2: Migrate Scripts
+
+```r
+# Migration script
+migrate_to_company_specific <- function(old_script, company_code) {
+  # Read old script
+  old_content <- readLines(old_script)
+  
+  # Update script header
+  new_header <- c(
+    sprintf("# %s-SPECIFIC IMPLEMENTATION", company_code),
+    sprintf("# Migrated from: %s", basename(old_script)),
+    sprintf("# Migration date: %s", Sys.Date()),
+    ""
+  )
+  
+  # Update function names
+  old_content <- gsub("(^[a-z_]+)\\(", 
+                     sprintf("\\1_%s(", company_code), 
+                     old_content)
+  
+  # Create new filename
+  new_filename <- add_company_suffix(basename(old_script), company_code)
+  new_path <- file.path(dirname(old_script), new_filename)
+  
+  # Write new script
+  writeLines(c(new_header, old_content), new_path)
+  
+  message(sprintf("Migrated: %s → %s", basename(old_script), new_filename))
+  
+  return(new_path)
+}
+```
+
+## Testing Company-Specific ETLs
+
+### Unit Tests
+
+```r
+# Test file: tests/test_mamba_etl.R
+
+test_that("MAMBA ETL naming follows DM_R037", {
+  scripts <- c(
+    "eby_ETL_sales_0IM___MAMBA.R",
+    "eby_ETL_sales_1ST___MAMBA.R",
+    "eby_ETL_sales_2TR___MAMBA.R"
+  )
+  
+  for (script in scripts) {
+    result <- validate_company_specific_etl_naming(script)
+    expect_equal(result$company, "MAMBA")
+    expect_equal(result$type, "company_specific")
+  }
+})
+
+test_that("MAMBA SSH tunnel connection works", {
+  skip_if_not(ping_host("220.128.138.146"), 
+             "MAMBA SSH server not reachable")
+  
+  tunnel <- establish_ssh_tunnel(
+    ssh_host = "220.128.138.146",
+    ssh_port = 22,
+    ssh_user = Sys.getenv("MAMBA_SSH_USER"),
+    ssh_key = Sys.getenv("MAMBA_SSH_KEY_PATH"),
+    local_port = 1433,
+    remote_host = "125.227.84.85",
+    remote_port = 1433
+  )
+  
+  expect_true(is_tunnel_active(tunnel))
+  close_ssh_tunnel(tunnel)
+})
+
+test_that("MAMBA data transformations preserve integrity", {
+  # Create test data
+  test_data <- data.frame(
+    transaction_id = 1:10,
+    mamba_sku = paste0("MB-TEST-", 1:10),
+    sale_amount_usd = runif(10, 10, 1000),
+    territory_code = sample(c("TW", "HK", "SG"), 10, replace = TRUE)
+  )
+  
+  # Apply MAMBA transformations
+  result <- test_data %>%
+    mutate(
+      loyalty_points = calculate_mamba_loyalty_points(
+        sale_amount_usd,
+        sale_amount_usd > 500,
+        territory_code %in% c("TW", "HK")
+      )
+    )
+  
+  expect_true(all(result$loyalty_points >= 0))
+  expect_equal(nrow(result), nrow(test_data))
+})
+```
+
+## Monitoring and Maintenance
+
+### Health Checks
+
+```r
+# Health check for MAMBA ETL pipeline
+check_mamba_etl_health <- function() {
+  health_status <- list()
+  
+  # Check SSH connectivity
+  health_status$ssh <- tryCatch({
+    test_ssh_connection("220.128.138.146", 22)
+  }, error = function(e) FALSE)
+  
+  # Check database tables exist
+  health_status$tables <- tryCatch({
+    con <- get_mamba_connection()
+    tables <- dbListTables(con)
+    dbDisconnect(con)
+    all(c("df_eby_sales___raw___MAMBA",
+         "df_eby_sales___staged___MAMBA",
+         "df_eby_sales___transformed___MAMBA") %in% tables)
+  }, error = function(e) FALSE)
+  
+  # Check data freshness
+  health_status$data_fresh <- tryCatch({
+    con <- get_mamba_connection()
+    latest <- dbGetQuery(con, 
+      "SELECT MAX(transformed_timestamp) as latest 
+       FROM df_eby_sales___transformed___MAMBA")[1,1]
+    dbDisconnect(con)
+    
+    difftime(Sys.time(), latest, units = "hours") < 24
+  }, error = function(e) FALSE)
+  
+  # Generate report
+  report <- data.frame(
+    check = names(health_status),
+    status = unlist(health_status),
+    timestamp = Sys.time()
+  )
+  
+  return(report)
+}
+```
+
+## Best Practices
+
+1. **Always use triple underscores** (`___`) for company separation
+2. **Keep company code consistent** across all related scripts
+3. **Document custom logic** thoroughly in script headers
+4. **Maintain separate configuration files** for each company
+5. **Test SSH tunnels** before attempting database connections
+6. **Use environment variables** for sensitive credentials
+7. **Implement health checks** for custom infrastructure
+8. **Version control company-specific mappings** (like SKU mappings)
+9. **Monitor data freshness** for company-specific pipelines
+10. **Create fallback mechanisms** for connection failures
+
+## Conclusion
+
+Company-specific ETL implementations allow organizations like MAMBA to maintain their custom data infrastructure while following standardized naming and structural patterns. The triple underscore pattern clearly distinguishes these implementations from generic platform ETLs, enabling better maintenance, debugging, and scalability.

@@ -1,0 +1,337 @@
+---
+title: "MP074: Package Consistency Naming"
+subtitle: "Naming conventions must follow external package standards rather than internal conventions"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP074"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "meta-principle"
+law: "Fundamental Principles Law"
+article: 
+  number: 74
+  title: "Package Consistency Naming"
+implements:
+  - "CH00.MP019: Package Consistency Principle"
+related_to:
+  - "UI_R001: UI-Server-Defaults N-tuple Rule"
+  - "SO_P004: App Bottom-Up Construction"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 74: Package Consistency Naming {#overview}
+
+**Fundamental Principles Law Article 74 (Package Consistency Naming)**
+
+When working with external packages, function names and file names must follow the naming conventions of those packages rather than our internal standards. Files must be named after the primary function they contain to maintain consistency between code and file organization.
+
+:::{.callout-important}
+## Core Principle
+External package conventions take precedence over internal naming standards to maintain ecosystem consistency and reduce cognitive load when switching between different programming contexts.
+:::
+
+# Section 1: Function Naming Requirements {#function-naming}
+
+## Subsection 1: Shiny Module Functions {#shiny-modules}
+
+All Shiny module functions must follow Shiny's camelCase convention with appropriate suffixes:
+
+```r
+# UI components must use camelCase with UI suffix
+moduleNameUI <- function(id) { ... }
+
+# Server components must use camelCase with Server suffix
+moduleNameServer <- function(id, ...) { ... }
+
+# Default components must use camelCase with Defaults suffix
+moduleNameDefaults <- function() { ... }
+```
+
+**Examples:**
+- `microCustomerUI`
+- `dataExplorerServer`
+- `rfmAnalysisDefaults`
+
+## Subsection 2: Database Interface Functions {#dbi-functions}
+
+Database functions must follow DBI conventions with the `db` prefix:
+
+```r
+# Primary functions use dbVerb format
+dbConnect <- function(drv, ...) { ... }
+dbGetQuery <- function(conn, statement, ...) { ... }
+
+# Custom functions maintain the db prefix
+dbFetchAllCustomers <- function(conn = NULL) { ... }
+dbSaveTransaction <- function(conn, transaction_data) { ... }
+```
+
+## Subsection 3: ggplot2 Extensions {#ggplot2-extensions}
+
+Functions that extend ggplot2 should follow its naming pattern:
+
+```r
+# Geoms use snake_case with geom_ prefix
+geom_custom_point <- function(mapping = NULL, ...) { ... }
+
+# Stats use snake_case with stat_ prefix
+stat_custom_summary <- function(mapping = NULL, ...) { ... }
+
+# Scales use snake_case with scale_ prefix
+scale_color_custom <- function(...) { ... }
+```
+
+## Subsection 4: dplyr Extensions {#dplyr-extensions}
+
+Functions that extend dplyr should follow its verb-first snake_case pattern:
+
+```r
+# Data manipulation verbs
+filter_by_segment <- function(data, segment) { ... }
+summarize_by_group <- function(data, ...) { ... }
+```
+
+# Section 2: File Naming Requirements {#file-naming}
+
+File names must match the primary function they contain:
+
+```
+# Function: microCustomerUI()
+microCustomerUI.R
+
+# Function: dbFetchAllCustomers()
+dbFetchAllCustomers.R
+
+# Function: geom_custom_point()
+geom_custom_point.R
+```
+
+# Section 3: Directory Organization {#directory-organization}
+
+## Subsection 1: Shiny Components {#shiny-organization}
+
+Follow the folder-based organization defined in UI_R001, with component function names determining folder structure:
+
+```
+10_rshinyapp_components/
+├── micro/
+│   ├── microCustomer/
+│   │   ├── microCustomerUI.R
+│   │   ├── microCustomerServer.R
+│   │   └── microCustomerDefaults.R
+│   └── microTransactions/
+│       ├── microTransactionsUI.R
+│       ├── microTransactionsServer.R
+│       └── microTransactionsDefaults.R
+└── macro/
+    └── macroOverview/
+        ├── macroOverviewUI.R
+        ├── macroOverviewServer.R
+        └── macroOverviewDefaults.R
+```
+
+## Subsection 2: Database Functions {#database-organization}
+
+Group related database functions in meaningful directories:
+
+```
+03_database/
+├── core/
+│   ├── dbConnect.R
+│   ├── dbDisconnect.R
+│   └── dbGetQuery.R
+├── customers/
+│   ├── dbFetchAllCustomers.R
+│   └── dbSaveCustomer.R
+└── transactions/
+    ├── dbGetTransactions.R
+    └── dbSaveTransaction.R
+```
+
+# Section 4: Implementation Examples {#examples}
+
+## Subsection 1: Shiny Module N-tuple {#shiny-example}
+
+```r
+# File: microCustomerUI.R
+#' Micro Customer UI Component
+#'
+#' @param id The module ID
+#' @export
+microCustomerUI <- function(id) {
+  ns <- NS(id)
+  
+  card(
+    card_header("Customer Profile"),
+    card_body(
+      selectInput(ns("customer_id"), "Select Customer", choices = NULL),
+      valueBox(
+        title = "Customer Value",
+        value = textOutput(ns("customer_value"))
+      )
+    )
+  )
+}
+
+# File: microCustomerServer.R
+#' Micro Customer Server Component
+#'
+#' @param id The module ID
+#' @param data_source The data source
+#' @export
+microCustomerServer <- function(id, data_source = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # Server logic...
+  })
+}
+
+# File: microCustomerDefaults.R
+#' Default Values for Micro Customer Component
+#'
+#' @return Named list of default values
+#' @export
+microCustomerDefaults <- function() {
+  list(
+    customer_value = "$0.00"
+  )
+}
+```
+
+## Subsection 2: Database Functions {#database-example}
+
+```r
+# File: dbFetchAllCustomers.R
+#' Fetch All Customers from Database
+#'
+#' @param conn Database connection
+#' @return Dataframe with customers
+#' @export
+dbFetchAllCustomers <- function(conn = NULL) {
+  # Use local connection if none provided
+  if (is.null(conn)) {
+    conn <- getDefaultConnection()
+  }
+  
+  # Execute query with proper error handling
+  query <- "SELECT * FROM customers WHERE active = 1 ORDER BY created_at DESC"
+  result <- dbGetQuery(conn, query)
+  
+  return(result)
+}
+```
+
+## Subsection 3: ggplot2 Extension {#ggplot2-example}
+
+```r
+# File: geom_customer_segments.R
+#' Custom Geom for Customer Segment Visualization
+#'
+#' @inheritParams ggplot2::geom_point
+#' @export
+geom_customer_segments <- function(mapping = NULL, data = NULL, stat = "identity",
+                                   position = "identity", ...) {
+  ggplot2::layer(
+    geom = GeomCustomerSegments,
+    mapping = mapping,
+    data = data,
+    stat = stat,
+    position = position,
+    params = list(...)
+  )
+}
+
+# ggproto object definition
+GeomCustomerSegments <- ggplot2::ggproto("GeomCustomerSegments", ggplot2::GeomPoint,
+  # Custom drawing function...
+)
+```
+
+# Section 5: Common Errors and Solutions {#errors-solutions}
+
+## Subsection 1: Inconsistent Naming Between Function and File {#naming-inconsistency}
+
+**❌ Problem**: Function name doesn't match file name, making it difficult to locate function definitions.
+
+```r
+# File: customer_ui.R
+microCustomerUI <- function(id) { ... }
+```
+
+**✅ Solution**: Rename the file to match the function name:
+
+```r
+# File: microCustomerUI.R
+microCustomerUI <- function(id) { ... }
+```
+
+## Subsection 2: Mixing Naming Conventions {#mixed-conventions}
+
+**❌ Problem**: Inconsistent naming conventions across related functions.
+
+```r
+# Inconsistent naming
+micro_customer_ui <- function(id) { ... }  # snake_case
+microCustomerServer <- function(id) { ... }  # camelCase
+```
+
+**✅ Solution**: Consistently follow package conventions:
+
+```r
+# Consistent Shiny convention
+microCustomerUI <- function(id) { ... }  # camelCase with UI suffix
+microCustomerServer <- function(id) { ... }  # camelCase with Server suffix
+```
+
+## Subsection 3: Inconsistent Directory Structure {#directory-inconsistency}
+
+**❌ Problem**: Different organization patterns for similar components.
+
+**✅ Solution**: Follow consistent directory patterns for each type of function:
+
+```
+# Consistent structure for all Shiny components
+component_name/
+├── componentNameUI.R
+├── componentNameServer.R
+└── componentNameDefaults.R
+```
+
+# Section 6: Benefits {#benefits}
+
+1. **Predictable Code Navigation**: Developers can easily locate function definitions by file name
+2. **Reduced Cognitive Load**: Consistent naming reduces context switching between different conventions
+3. **Improved Interoperability**: Code follows the conventions of the ecosystems it integrates with
+4. **Simplified Development**: IDE autocomplete and function lookup work more effectively
+5. **Cleaner API Boundaries**: Clear distinction between functions from different ecosystems
+6. **Better Maintainability**: Standardized naming patterns make code more accessible to new developers
+7. **Easier Package Development**: Follows R package standards for potential future extraction
+
+# Section 7: Relationship to Other Principles {#relationships}
+
+## Subsection 1: Relation to UI_R001 (UI-Server-Defaults N-tuple Rule) {#ui-r001-relation}
+
+UI_R001 defines how Shiny components should be organized as n-tuples of UI, server, and defaults files. This principle (MP074) complements UI_R001 by specifying the naming patterns for functions and files within that organizational structure.
+
+## Subsection 2: Relation to MP019 (Package Consistency Principle) {#mp019-relation}
+
+This principle directly implements MP019 by providing specific requirements and examples for following package conventions in function and file naming.
+
+## Subsection 3: Relation to SO_P004 (App Bottom-Up Construction) {#so-p004-relation}
+
+Consistent naming patterns support bottom-up construction by making components more self-contained and reusable.
+
+# Conclusion {#conclusion}
+
+The Package Consistency Naming principle ensures that our codebase maintains consistent naming patterns that align with the external packages and ecosystems we integrate with. By following package-specific conventions for function naming and ensuring files are named after their primary functions, we create a more navigable, maintainable, and interoperable codebase.
+
+---
+
+*Based on: Fundamental Principles Law Article 74*  
+*Related to: [MP019 Package Consistency](../../03_development_methodology/MP019_package_consistency.qmd), [UI_R001 UI-Server-Defaults N-tuple Rule](../../../CH04_ui_components/rules/UI_R001_ui_server_defaults_ntuple.qmd)*

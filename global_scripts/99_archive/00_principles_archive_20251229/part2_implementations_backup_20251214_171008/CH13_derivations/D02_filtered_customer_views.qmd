@@ -1,0 +1,325 @@
+---
+title: "D02: Customer View Filtering Derivation"
+subtitle: "Creating filtered customer views based on multiple filter condition combinations"
+chapter: "CH12"
+category: "derivation"
+number: "D02"
+date-created: "2025-05-19"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "derivation"
+law: "Derivation Workflows"
+article-number: "Derivation 2"
+related_to:
+  - "D01_dna_analysis"
+  - "R039_derivation_platform_independence"
+  - "R040_derivation_implementation_naming"
+  - "R116_enhanced_data_access_tbl2"
+  - "MP027_integrated_natural_sql_language"
+  - "MP058_global_parameter_organization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Derivation 2: Customer View Filtering {#overview}
+
+This derivation extends D01 (DNA Analysis) to create filtered customer views based on multiple filter condition combinations. It transforms sales data into filtered views that can be accessed by micro-components to display personalized content for specific filter combinations.
+
+## Section 1: Premise and Key Concepts {#premise}
+
+### Subsection 1: Prerequisites {#prerequisites}
+
+- D01 has been completed, creating processed sales data and basic customer DNA profiles
+- Different filter combinations will determine what data is visible to micro-components
+- Filter conditions include time periods, product lines, geographic areas, and data sources
+
+### Subsection 2: Filter Dimensions {#filter-dimensions}
+
+The filtering system is built on four key dimensions:
+
+1. **Time Condition**:
+   - `now`: All historical data (no time restriction)
+   - `m1year`: Data from the past year to present
+   - `m1quarter`: Data from the past quarter to present
+   - `m1month`: Data from the past month to present
+
+2. **Product Line**:
+   - `0`: Special value representing all products
+   - `1, 2, 3, ...`: Specific product line identifiers
+
+3. **Geographic Region**:
+   - `ALL`: Special value representing all geographic regions
+   - `CA, NY, TX, ...`: Standard state/province codes
+
+4. **Data Source**:
+   - Platform-specific distribution channels (e.g., `amazon`, `ebay`, `retail`)
+
+### Subsection 3: Condition Grid Concept {#condition-grid}
+
+The system generates a comprehensive grid of all possible filter combinations using a Cartesian product. Components are defined in configuration files and expanded at runtime.
+
+## Section 2: Create Filtered Schema (D02_00) {#create-schema}
+
+Create a dedicated schema to store filtered views:
+
+```nsql
+CREATE SCHEMA processed_data.filtered
+```
+
+## Section 3: Create Condition Grid (D02_01) {#create-grid}
+
+### Subsection 1: Grid Component Definition {#grid-definition}
+
+Grid components are defined in the parameters file and processed by a configuration script:
+
+```r
+# In app_data/parameters/list_grid_components.R
+grid_components <- list(
+  time_condition = c("now", "m1year", "m1quarter", "m1month"),
+  product_line_id_filter = c(0, 1, 2, 3, ...), # 0 = all products
+  state_filter = c("ALL", "CA", "NY", "TX", ...),
+  source_filter = c("amazon", "ebay", "retail", ...)
+)
+
+# In global_scripts/22_initializations/sc_grid_components.R
+source("app_data/parameters/list_grid_components.R")
+condition_grids <- get_condition_grid(grid_components)
+```
+
+### Subsection 2: Time Condition Definitions {#time-conditions}
+
+```r
+time_now <- max(processed_data.df_{source}_sales$time)
+
+time_conditions <- list(
+  "m1year" = time_now %m+% years(-1),
+  "m1quarter" = time_now %m+% months(-3),
+  "m1month" = time_now %m+% months(-1),
+  "now" = -Inf  # "now" represents no time restriction
+)
+```
+
+### Subsection 3: Abstract Grid Generation {#abstract-grid}
+
+```nsql
+# Abstract definition of grid components
+DEFINE grid_components AS {
+  time_condition: [
+    "now", "m1year", "m1quarter", "m1month", 
+    "m2year", "ytd", "custom", ...
+  ],
+  product_line_id_filter: [0, 1, 2, 3, ...],
+  state_filter: ["ALL", "CA", "NY", "TX", ...],
+  source_filter: ["amazon", "ebay", "retail", ...]
+}
+
+# Generate the full cartesian product
+FUNCTION generate_condition_grid(components) {
+  RETURN CARTESIAN_PRODUCT(components)
+}
+
+condition_grid <- generate_condition_grid(grid_components)
+```
+
+## Section 4: Grid Implementation Details {#grid-details}
+
+### Subsection 1: Structure and Purpose {#grid-structure}
+
+The condition grid:
+- Creates a Cartesian product of all possible filter value combinations
+- Serves as a configuration map for pre-computing filtered datasets
+- Ensures all micro-components can access appropriately filtered data
+- Provides a consistent filtering mechanism across the application
+
+### Subsection 2: Example Grid Generation {#grid-example}
+
+```r
+# Using the helper function from sc_grid_components.R
+subset_condition_grid <- get_filtered_condition_grid(
+  time_values = c("now", "m1quarter"),
+  product_values = c(0, 1, 2),
+  state_values = c("ALL", "CA", "NY"),
+  source_values = c("amazon", "ebay")
+)
+
+# This creates 2 × 3 × 3 × 2 = 36 filter combinations
+print(nrow(subset_condition_grid))
+# [1] 36
+```
+
+## Section 5: Create Filtered Sales Views (D02_02) {#filtered-sales}
+
+### Subsection 1: View Creation Process {#view-creation}
+
+```nsql
+FOR EACH condition IN condition_grids:
+  FILTER processed_data.df_{source}_sales BY condition
+  TRANSFORM TO cbind(filtered_sales, condition) 
+  STORE AS VIRTUAL processed_data.filtered.df_sales
+```
+
+### Subsection 2: Filter Implementation by Type {#filter-types}
+
+#### Time Condition Filtering {#time-filter}
+
+```nsql
+FILTER sales_data BY
+  CASE 
+    WHEN time_condition == "now" THEN TRUE  # All data 
+    WHEN time_condition == "m1year" THEN 
+      transaction_date >= (time_now %m+% years(-1))
+    WHEN time_condition == "m1quarter" THEN 
+      transaction_date >= (time_now %m+% months(-3))
+    WHEN time_condition == "m1month" THEN 
+      transaction_date >= (time_now %m+% months(-1))
+  END
+```
+
+#### Product Line Filtering {#product-filter}
+
+```nsql
+FILTER sales_data BY
+  CASE
+    WHEN product_line_id_filter == 0 THEN TRUE  # All products
+    ELSE product_line_id == product_line_id_filter
+  END
+```
+
+#### Geographic Filtering {#geo-filter}
+
+```nsql
+FILTER sales_data BY
+  CASE
+    WHEN state_filter == "ALL" THEN TRUE  # All states
+    ELSE state == state_filter
+  END
+```
+
+### Subsection 3: Virtual View Implementation {#virtual-views}
+
+Views are implemented as virtual database objects to save storage and ensure currency:
+
+```sql
+CREATE VIEW processed_data.filtered.df_sales_amazon_now_all_ca AS
+SELECT 
+  s.*,
+  'amazon' AS source_filter,
+  'now' AS time_condition,
+  0 AS product_line_id_filter,
+  'CA' AS state_filter
+FROM 
+  processed_data.df_sales s
+WHERE 
+  s.source = 'amazon' AND
+  s.state = 'CA';
+```
+
+### Subsection 4: Naming Convention {#naming}
+
+Views follow a naming convention:
+```
+processed_data.filtered.df_sales_{source}_{time}_{product}_{state}
+```
+
+Examples:
+- `df_sales_amazon_now_0_all`: Amazon sales, all time, all products, all states
+- `df_sales_retail_m1year_1_ca`: Retail sales, past year, product 1, California
+
+## Section 6: Create Customer-Centric Views (D02_03) {#customer-views}
+
+### Subsection 1: Transformation Process {#customer-transform}
+
+```nsql
+FOR EACH condition IN condition_grids:
+  TRANSFORM processed_data.filtered.df_sales 
+  TO VIRTUAL processed_data.filtered.df_sales_by_customer
+```
+
+### Subsection 2: Customer Aggregation {#customer-aggregation}
+
+The customer-centric views apply these transformations:
+
+1. **Group by Customer ID**: Collapse all transactions for each customer
+2. **Calculate Customer Metrics**: Derive key metrics for analytics
+3. **Preserve Filter Conditions**: Maintain all filter dimensions
+
+```sql
+CREATE VIEW processed_data.filtered.df_sales_by_customer_amazon_now_0_all AS
+SELECT 
+  customer_id,
+  COUNT(*) AS transaction_count,
+  MIN(transaction_date) AS first_purchase_date,
+  MAX(transaction_date) AS last_purchase_date,
+  SUM(amount) AS total_spent,
+  AVG(amount) AS average_order_value,
+  'amazon' AS source_filter,
+  'now' AS time_condition,
+  0 AS product_line_id_filter,
+  'ALL' AS state_filter
+FROM 
+  processed_data.filtered.df_sales_amazon_now_0_all
+GROUP BY 
+  customer_id;
+```
+
+### Subsection 3: DNA Integration {#dna-integration}
+
+These views integrate with customer DNA profiles:
+- **M (Monetary)**: Total spent by customer
+- **R (Recency)**: Time since last purchase  
+- **F (Frequency)**: Number of transactions
+- **IPT**: Average inter-purchase time
+- **NES**: New/Existing/Sleeping classification
+
+### Subsection 4: Component Access Pattern {#access-pattern}
+
+```r
+# Example component data access
+customer_data <- tbl2(conn, "processed_data.filtered.df_sales_by_customer") %>%
+  filter(
+    source_filter == input$source,
+    time_condition == input$time_horizon,
+    product_line_id_filter == as.integer(input$product_line),
+    state_filter == input$region
+  ) %>%
+  collect()
+```
+
+## Section 7: Implementation Guidelines {#guidelines}
+
+### Subsection 1: Configuration Management {#config-mgmt}
+
+- Store grid components in `app_data/parameters/list_grid_components.R`
+- Use `22_initializations/sc_grid_components.R` for grid generation
+- Allow runtime filtering of the full grid for testing
+
+### Subsection 2: View Creation Best Practices {#view-practices}
+
+- Use virtual views to minimize storage overhead
+- Follow consistent naming conventions
+- Include all filter dimensions as columns
+- Implement special case handling for "all" values (0, ALL, now)
+
+### Subsection 3: Performance Optimization {#performance}
+
+- Create indexes on filter dimensions in base tables
+- Consider materializing frequently accessed views
+- Use query result caching where appropriate
+- Follow platform naming conventions
+
+## Section 8: Success Criteria {#success}
+
+1. All condition combinations have corresponding filtered views
+2. Filtered views maintain necessary columns from original sales data
+3. Customer-centric views properly aggregate at customer level
+4. Filter conditions are stored alongside data for reference
+5. Views can be efficiently queried by micro-components
+
+---
+
+*This derivation enables dynamic, multi-dimensional customer data filtering, providing the foundation for personalized analytics and targeted marketing campaigns across all platforms and product lines.*

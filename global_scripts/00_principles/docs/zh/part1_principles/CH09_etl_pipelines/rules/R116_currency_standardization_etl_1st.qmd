@@ -1,0 +1,393 @@
+---
+id: "R116"
+title: "ETL 1ST 階段貨幣標準化規則"
+type: "rule"
+category: "etl_pipelines"
+date_created: "2025-11-12"
+date_modified: "2025-11-12"
+author: "principle-product-manager"
+status: "active"
+version: "1.0"
+weight: 116
+implements:
+  - "MP029": "禁止假資料原則"
+  - "MP102": "標準化原則"
+  - "MP108": "基礎 ETL 流程分離"
+related_to:
+  - "DM_R037": "公司特定 ETL 命名規則"
+  - "MP064": "ETL-衍生分離原則"
+---
+
+# R116: ETL 1ST 階段貨幣標準化規則
+
+## 規則聲明
+
+**所有貨幣數據必須在 ETL 1ST (標準化) 階段轉換為單一標準貨幣 (USD)，並保留原始幣別與匯率元資料以確保可審計性。**
+
+## 核心要求
+
+### 1. 何時需要貨幣標準化
+
+**強制性要求** 適用於所有包含貨幣值的數據集：
+
+```yaml
+requires_currency_standardization:
+  mixed_currency_sources:
+    description: "資料包含不同貨幣的價格 (USD, EUR, TWD 等)"
+    example: "包含國際定價的 Google Sheets 產品目錄"
+    violation: "比較 TWD 1000 vs USD 1000 會產生假的/誤導性比較"
+
+  cross_platform_analysis:
+    description: "結合來自多個平台且使用不同貨幣的資料"
+    example: "Amazon (USD) + eBay (EUR) + Cyberbiz (TWD)"
+    violation: "匯總混合貨幣產生無意義的總和"
+
+  time_series_analysis:
+    description: "歷史資料中貨幣值隨時間改變"
+    example: "2020-2024 年產品價格隨匯率波動"
+    violation: "比較未標準化的歷史價格會扭曲趨勢"
+```
+
+### 2. 實作位置
+
+**關鍵**: 貨幣轉換必須發生在 ETL 1ST 階段，不可在 DRV 或 UI 層：
+
+```yaml
+etl_stage_responsibilities:
+  etl_0im_import:
+    responsibility: "原樣匯入原始資料，無轉換"
+    currency_handling: "匯入原始貨幣值不變"
+
+  etl_1st_standardization:  # ⭐ 貨幣轉換發生在這裡
+    responsibility: "將所有資料標準化為統一格式"
+    currency_handling: |
+      - 將所有貨幣欄位轉換為 USD
+      - 新增元資料欄位: original_currency, conversion_rate, conversion_date
+      - 使用 fn_convert_currency_to_usd() 工具函數
+      - 記錄匯率來源 (ECB, FRED 等)
+
+  etl_2tr_transformation:
+    responsibility: "業務邏輯轉換"
+    currency_handling: "所有貨幣已標準化，無需轉換"
+
+  drv_derivation:
+    responsibility: "JOIN、彙總、計算衍生指標"
+    currency_handling: "使用標準化的 USD 值進行計算"
+```
+
+### 3. 轉換元資料要求
+
+**強制性**: 保留完整的轉換審計軌跡：
+
+```yaml
+required_metadata_columns:
+  original_price:
+    type: "DOUBLE"
+    description: "轉換前的原始價格值"
+    example: "1299.00"
+
+  original_currency:
+    type: "VARCHAR(3)"
+    description: "ISO 4217 貨幣代碼 (USD, EUR, TWD 等)"
+    example: "TWD"
+
+  price_usd:
+    type: "DOUBLE"
+    description: "轉換後的 USD 價格 (標準貨幣)"
+    example: "41.58"
+    calculation: "original_price * conversion_rate"
+
+  conversion_rate:
+    type: "DOUBLE"
+    description: "用於轉換的匯率 (轉為 USD)"
+    example: "0.0320"
+    source: "ECB/FRED/自訂 API"
+
+  conversion_date:
+    type: "DATE"
+    description: "使用的匯率日期"
+    example: "2025-11-12"
+    note: "應與 ETL 執行日期或歷史匯率日期一致"
+```
+
+## 原理說明
+
+### 1. 憲法依據 (MP029 - 禁止假資料)
+
+混合貨幣而不標準化違反 MP029，會產生**人工比較**：
+
+```r
+# ❌ 違反: 比較混合貨幣產生假比較
+product_prices <- data.frame(
+  product_id = c("A001", "A002", "A003"),
+  price = c(1000, 1000, 1000),        # 數字看起來相同
+  currency = c("TWD", "USD", "EUR")   # 但代表截然不同的價值!
+)
+
+# TWD 1000 ≈ USD 32
+# USD 1000 ≈ USD 1000
+# EUR 1000 ≈ USD 1080
+# 將這些視為相等會產生假資料
+
+# ✅ 正確: 在 ETL 1ST 標準化為 USD
+product_prices_standardized <- data.frame(
+  product_id = c("A001", "A002", "A003"),
+  original_price = c(1000, 1000, 1000),
+  original_currency = c("TWD", "USD", "EUR"),
+  price_usd = c(32.00, 1000.00, 1080.00),  # 真實的比較值
+  conversion_rate = c(0.0320, 1.0000, 1.0800),
+  conversion_date = rep("2025-11-12", 3)
+)
+```
+
+### 2. MP108 對齊 (1ST = 標準化)
+
+ETL 1ST 階段專門負責標準化任務：
+
+```yaml
+mp108_standardization_tasks:
+  data_types:
+    - "將所有日期轉換為 ISO 8601 格式"
+    - "標準化文字編碼為 UTF-8"
+    - "正規化布林值為 TRUE/FALSE"
+
+  dimensions:
+    - "標準化國家代碼為 ISO 3166-1"
+    - "正規化產品類別到分類法"
+
+  measures:
+    - "將所有貨幣轉換為 USD"  # ⭐ 貨幣標準化
+    - "標準化單位 (kg, lb → kg)"
+    - "正規化百分比 (0-100 vs 0-1)"
+```
+
+貨幣標準化是**測量標準化任務**，完全符合 1ST 階段職責。
+
+## 實作指南
+
+### 1. 標準轉換函數
+
+使用集中式工具函數：
+
+```r
+# Function: fn_convert_currency_to_usd
+# Location: scripts/global_scripts/04_utils/fn_convert_currency_to_usd.R
+
+fn_convert_currency_to_usd <- function(
+  data,
+  price_column = "price",
+  currency_column = "currency",
+  rate_source = "ECB",           # "ECB", "FRED", "CUSTOM"
+  rate_date = Sys.Date(),
+  output_columns = c("price_usd", "conversion_rate", "conversion_date")
+) {
+  # 1. 從來源獲取匯率
+  exchange_rates <- fetch_exchange_rates(
+    source = rate_source,
+    date = rate_date,
+    currencies = unique(data[[currency_column]])
+  )
+
+  # 2. 將匯率連接到資料
+  data_with_rates <- data %>%
+    left_join(exchange_rates, by = c({{currency_column}} := "currency"))
+
+  # 3. 轉換價格為 USD
+  result <- data_with_rates %>%
+    mutate(
+      original_price = .data[[price_column]],
+      original_currency = .data[[currency_column]],
+      price_usd = original_price * conversion_rate,
+      conversion_date = rate_date
+    )
+
+  return(result)
+}
+```
+
+### 2. ETL 1ST 實作模式
+
+來自精準行銷 ETL 1ST 的範例：
+
+```r
+# precision_ETL_products_1ST.R
+# 階段: 標準化 (1ST)
+# 目的: 標準化所有產品檔案資料，包括貨幣轉換
+
+precision_products_1st <- function() {
+  # 載入原始匯入資料 (來自 0IM 階段)
+  raw_products <- tbl2(con_raw, "df_precision_products___raw") %>%
+    collect()
+
+  # === 標準化任務 ===
+
+  # 1. 貨幣標準化 (R116) ⭐
+  products_with_usd <- fn_convert_currency_to_usd(
+    data = raw_products,
+    price_column = "price",
+    currency_column = "currency",
+    rate_source = "ECB",
+    rate_date = Sys.Date()
+  )
+
+  # 2. 其他標準化任務
+  standardized_products <- products_with_usd %>%
+    # 國家代碼標準化
+    mutate(country_iso = fn_standardize_country_code(country)) %>%
+    # 日期標準化
+    mutate(date_standardized = as.Date(date)) %>%
+    # 文字編碼標準化
+    mutate(product_title = enc2utf8(product_title))
+
+  # 寫入暫存資料庫
+  dbWriteTable(
+    conn = con_staged,
+    name = "df_precision_products___staged",
+    value = standardized_products,
+    overwrite = TRUE
+  )
+
+  # 記錄完成
+  message(sprintf("✅ R116: 貨幣標準化完成。%d 個產品已轉換為 USD。",
+                 nrow(standardized_products)))
+}
+```
+
+### 3. 驗證模式
+
+始終驗證貨幣轉換結果：
+
+```r
+# Function: validate_currency_conversion
+validate_currency_conversion <- function(data) {
+  # 檢查 1: 所有必需的元資料欄位存在
+  required_cols <- c("original_price", "original_currency", "price_usd",
+                     "conversion_rate", "conversion_date")
+  missing_cols <- setdiff(required_cols, names(data))
+
+  if (length(missing_cols) > 0) {
+    stop(sprintf("違反 R116: 缺少貨幣元資料欄位: %s",
+                paste(missing_cols, collapse = ", ")))
+  }
+
+  # 檢查 2: 所有價格已轉換 (price_usd 無 NA)
+  if (any(is.na(data$price_usd))) {
+    na_count <- sum(is.na(data$price_usd))
+    stop(sprintf("違反 R116: %d 個產品的 price_usd 值為 NA", na_count))
+  }
+
+  # 檢查 3: 轉換率合理 (0.001 到 1000)
+  invalid_rates <- data %>%
+    filter(conversion_rate < 0.001 | conversion_rate > 1000)
+
+  if (nrow(invalid_rates) > 0) {
+    warning(sprintf("R116 警告: %d 個產品有不尋常的轉換率",
+                   nrow(invalid_rates)))
+  }
+
+  # 檢查 4: 驗證轉換計算
+  calculation_errors <- data %>%
+    mutate(
+      calculated_usd = original_price * conversion_rate,
+      diff = abs(price_usd - calculated_usd)
+    ) %>%
+    filter(diff > 0.01)  # 允許 1 分錢的四捨五入差異
+
+  if (nrow(calculation_errors) > 0) {
+    stop(sprintf("違反 R116: %d 個產品的 USD 轉換不正確",
+                nrow(calculation_errors)))
+  }
+
+  message("✅ R116 驗證: 貨幣轉換通過所有檢查")
+  return(TRUE)
+}
+```
+
+## 常見錯誤避免
+
+### ❌ 錯誤 1: 在錯誤的 ETL 階段轉換
+
+```r
+# 錯誤: 在 0IM (匯入階段) 轉換
+precision_products_0im <- function() {
+  raw_data <- read_google_sheets(sheet_id)
+
+  # ❌ 違反 R116: 在 0IM 而非 1ST 進行轉換
+  converted_data <- raw_data %>%
+    mutate(price_usd = price * 0.032)  # 硬編碼匯率!
+
+  write_to_raw_db(converted_data)
+}
+
+# 正確: 在 0IM 原樣匯入，在 1ST 轉換
+precision_products_0im <- function() {
+  raw_data <- read_google_sheets(sheet_id)
+  write_to_raw_db(raw_data)  # ✅ 原樣匯入
+}
+
+precision_products_1st <- function() {
+  raw_data <- read_from_raw_db()
+  converted_data <- fn_convert_currency_to_usd(raw_data)  # ✅ 在 1ST 轉換
+  write_to_staged_db(converted_data)
+}
+```
+
+### ❌ 錯誤 2: 缺少元資料欄位
+
+```r
+# 錯誤: 轉換時未保留原始值
+products_bad <- raw_products %>%
+  mutate(
+    price = price * 0.032  # ❌ 覆蓋原始值，遺失貨幣資訊
+  )
+
+# 正確: 新增欄位，保留原始值
+products_good <- raw_products %>%
+  mutate(
+    original_price = price,
+    original_currency = currency,
+    price_usd = price * conversion_rate,
+    conversion_rate = 0.032,
+    conversion_date = Sys.Date()
+  )
+```
+
+### ❌ 錯誤 3: 硬編碼匯率
+
+```r
+# 錯誤: 硬編碼、不可審計的匯率
+mutate(price_usd = price * 0.032)  # ❌ 什麼貨幣? 什麼日期? 什麼來源?
+
+# 正確: 從權威來源獲取，並記錄元資料
+fn_convert_currency_to_usd(
+  data = products,
+  rate_source = "ECB",
+  rate_date = "2025-11-12"
+)
+```
+
+## 合規檢查清單
+
+- [ ] 貨幣轉換在 ETL 1ST 階段實作 (非 0IM、2TR 或 DRV)
+- [ ] 所有貨幣欄位轉換為 USD
+- [ ] 元資料欄位存在: original_price, original_currency, price_usd
+- [ ] 元資料欄位存在: conversion_rate, conversion_date
+- [ ] 匯率來源已記錄 (ECB, FRED 等)
+- [ ] 轉換驗證函數通過所有檢查
+- [ ] 時間序列資料使用歷史匯率 (如適用)
+- [ ] 生產程式碼中無硬編碼匯率
+- [ ] 使用 fn_convert_currency_to_usd() 工具函數
+- [ ] 資料中保留貨幣欄位以供參考
+
+## 結論
+
+R116 確保所有貨幣資料在 ETL 1ST 階段標準化為單一貨幣 (USD)，防止因貨幣混合而違反 MP029。通過保留原始值和轉換元資料，系統維持完整的可審計性，同時實現準確的跨貨幣分析。
+
+此規則對以下方面至關重要：
+- **準確性**: 防止混合貨幣的無意義比較
+- **合規性**: 滿足 MP029 (禁止假資料) 和 MP108 (ETL 階段分離)
+- **可審計性**: 保留完整的轉換審計軌跡
+- **可維護性**: 在 1ST 階段集中轉換邏輯
+- **可擴展性**: 支援多貨幣、多平台資料來源
+
+**關鍵提醒**: 貨幣標準化是**標準化任務**，屬於 ETL 1ST，而非 DRV 或 UI 層。始終提早轉換，保留原始值，並記錄轉換元資料。

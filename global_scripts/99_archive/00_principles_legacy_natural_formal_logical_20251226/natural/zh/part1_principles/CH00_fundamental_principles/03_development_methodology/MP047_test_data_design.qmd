@@ -1,0 +1,335 @@
+---
+title: "MP051: 測試數據設計元原則 (Test Data Design)"
+subtitle: "測試數據必須代表實際應用程式輸入，不含人工、冗餘或「奇怪」的設置"
+author: "Claude"
+date: "2025-04-08"
+date-modified: "2025-08-16"
+categories: [meta-principle, testing, test-data, quality-assurance]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+測試數據必須代表實際應用程式輸入，不含人工、冗餘或「奇怪」的設置。測試數據應該是類似生產數據的專注子集，以最少的外部元素來測試特定功能。
+
+## 理由
+
+高品質的測試數據對於有效的測試和開發至關重要：
+
+1. **人工或複雜的測試數據**導致：
+   - 測試通過但不反映實際使用
+   - 針對不實際場景的開發
+   - 隨著數據演變增加維護負擔
+   - 難以轉移開發知識
+
+2. **設計良好的測試數據**能夠：
+   - 驗證實際需求的測試
+   - 專注的調試和開發
+   - 更清楚地理解系統行為
+   - 測試和生產之間可轉移的知識
+   - 減少開發人員的認知負擔
+
+## 實施指南
+
+### 測試數據設計原則 {#design-principles}
+
+1. **最小充分性**：測試數據應僅包含測試所需的內容
+   - 僅包括測試功能所需的欄位和記錄
+   - 避免不參與測試的過多欄位
+   - 將數據量限制在所需的範圍內（除非測試量，否則首選 1 條記錄）
+
+2. **生產代表性**：測試數據應反映生產架構
+   - 匹配生產數據類型、範圍和約束
+   - 使用實際的欄位值（正確的名稱、電子郵件格式等）
+   - 在生產中會出現的地方包含適當的空值
+
+3. **專注意圖**：每個測試數據集應有明確的目的
+   - 為不同的測試用例創建單獨的測試數據
+   - 根據預期用途命名測試數據集
+   - 記錄每個測試數據集的目的和特徵
+
+4. **邊界覆蓋**：在專門的測試數據中包含邊緣情況
+   - 為邊界條件創建特定的測試數據
+   - 包括「空但有效」的情況（空字串、零值等）
+   - 包括測試限制的最大值
+   - 這些應該與「快樂路徑」測試數據分開
+
+5. **自我驗證**：測試數據應該能夠驗證
+   - 包括用於比較的預期結果
+   - 使關鍵欄位易於識別
+   - 在適當時為生成的值使用可預測的模式
+
+### 測試數據類型 {#test-data-types}
+
+#### 函數級別 {#function-level}
+
+用於測試單個函數：
+
+```r
+# 好：專注於輸入的最小測試數據
+test_df_customer <- data.frame(
+  customer_id = c(1, 2, 3),
+  name = c("陳愛麗", "史密斯", "王查理"),
+  email = c("alice@example.com", "bob@example.com", "charlie@example.com")
+)
+
+# 好：具有明確關係的相關測試數據
+test_df_orders <- data.frame(
+  order_id = c(101, 102, 103, 104),
+  customer_id = c(1, 1, 2, 3),
+  amount = c(100.50, 200.75, 50.25, 75.00)
+)
+
+# 要測試的函數
+calculate_customer_metrics <- function(customers, orders) {
+  # 函數實施
+}
+
+# 簡單測試
+result <- calculate_customer_metrics(test_df_customer, test_df_orders)
+```
+
+#### 組件級別 {#component-level}
+
+用於測試 UI 組件：
+
+```r
+# 好：實際的組件測試數據
+test_component_data <- list(
+  # 完整的客戶數據
+  df_customer_profile = data.frame(
+    customer_id = 1:5,
+    buyer_name = paste0("客戶 ", 1:5),
+    email = paste0("customer", 1:5, "@example.com"),
+    stringsAsFactors = FALSE
+  ),
+  
+  # 部分 DNA 數據（僅針對某些客戶）
+  df_dna_by_customer = data.frame(
+    customer_id = c(1, 2, 4), # 客戶 3 和 5 缺少數據
+    r_label = c("近期", "一般", "久遠"),
+    r_value = c(5, 15, 45),
+    f_label = c("高", "一般", "低"),
+    f_value = c(12, 5, 2),
+    m_label = c("高", "一般", "低"),
+    m_value = c(1500, 500, 100),
+    stringsAsFactors = FALSE
+  )
+)
+
+# 使用此數據測試組件
+microCustomerServer("test_id", 
+                    test_component_data$df_dna_by_customer,
+                    test_component_data$df_customer_profile)
+```
+
+#### 應用程式級別 {#application-level}
+
+用於測試集成的應用程式功能：
+
+```r
+# 好：用於集成測試的完整測試數據結構
+app_test_data <- list(
+  # 具有完整覆蓋的核心表
+  customers = generate_test_customers(100),
+  products = generate_test_products(50),
+  orders = generate_test_orders(200),
+  
+  # 關係表
+  order_products = generate_test_order_products(500),
+  
+  # 分析數據（故意部分覆蓋）
+  customer_analytics = generate_customer_analytics(70) # 僅 70% 覆蓋
+)
+
+# 使用此數據測試應用程式
+testApp(app_test_data)
+```
+
+### 避免常見陷阱 {#avoiding-pitfalls}
+
+#### 1. 冗餘數據場景 {#redundant-scenarios}
+
+##### 不好：
+```r
+# 不好：在多個地方對相同條件進行冗餘檢查
+if (is.null(df_customer_profile)) {
+  return()
+}
+
+# 同一函數的其他地方
+if (is.null(df_customer_profile) || nrow(df_customer_profile) == 0) {
+  return()
+}
+
+# 又一個地方
+if (is.null(df_customer_profile) || 
+    !is.data.frame(df_customer_profile) || 
+    nrow(df_customer_profile) == 0) {
+  return()
+}
+```
+
+##### 好：
+```r
+# 好：定義驗證函數
+validate_customer_data <- function(df) {
+  is_valid <- !is.null(df) && 
+              is.data.frame(df) && 
+              nrow(df) > 0 &&
+              all(c("customer_id", "name", "email") %in% colnames(df))
+  
+  if (!is_valid) {
+    log_validation_error("無效的客戶數據")
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+
+# 一致地使用它
+if (!validate_customer_data(df_customer_profile)) {
+  return()
+}
+```
+
+#### 2. 人工「特殊情況」{#artificial-cases}
+
+##### 不好：
+```r
+# 不好：不代表實際使用的奇怪特殊條件
+if (input$special_debug_mode && input$weird_test_condition) {
+  # 只在這種人工測試場景中發生的事情
+} else if (input$data_source == "fake_data") {
+  # 載入與生產不匹配的人工測試數據
+}
+```
+
+##### 好：
+```r
+# 好：開發/測試的明確功能標誌
+if (app_config$is_development_mode) {
+  # 載入反映生產結構的開發測試數據
+  data <- load_development_test_data()
+} else {
+  # 載入生產數據
+  data <- load_production_data()
+}
+```
+
+#### 3. 複製粘貼的測試數據與微小變化 {#copy-pasted-data}
+
+##### 不好：
+```r
+# 不好：具有微小變化的重複測試數據
+test_data_for_function_a <- data.frame(
+  id = 1:5,
+  value = c(10, 20, 30, 40, 50),
+  status = c("active", "active", "inactive", "active", "inactive")
+)
+
+test_data_for_function_b <- data.frame(
+  id = 1:5,
+  value = c(10, 20, 35, 40, 55),  # 略有不同的值
+  status = c("active", "active", "inactive", "active", "active") # 一個狀態改變
+)
+```
+
+##### 好：
+```r
+# 好：參數化測試數據生成
+generate_test_data <- function(status_pattern = c("active", "active", "inactive", "active", "inactive"),
+                               value_adjustments = c(0, 0, 0, 0, 0)) {
+  base_values <- c(10, 20, 30, 40, 50)
+  
+  data.frame(
+    id = 1:5,
+    value = base_values + value_adjustments,
+    status = status_pattern
+  )
+}
+
+# 使用適當參數的生成器
+test_data_for_function_a <- generate_test_data()
+test_data_for_function_b <- generate_test_data(
+  status_pattern = c("active", "active", "inactive", "active", "active"),
+  value_adjustments = c(0, 0, 5, 0, 5)
+)
+```
+
+## 測試數據文檔
+
+所有測試數據都應該記錄：
+
+1. **目的**：這個測試數據是做什麼用的？
+2. **覆蓋範圍**：它涵蓋哪些情況？它不涵蓋哪些情況？
+3. **生成方法**：它是如何創建的？（手動、生成、生產子集）
+4. **關係**：不同的數據集如何相互關聯？
+5. **關鍵欄位**：哪些欄位是關鍵標識符？（使用 NSQL 鍵符號）
+
+文檔範例：
+
+```r
+#' 客戶測試數據
+#'
+#' 客戶分析模組的測試數據包含：
+#' - test_df_customer_profile (key = customer_id)：10 個客戶的完整集合
+#' - test_df_dna_by_customer (key = customer_id)：10 個客戶中 7 個的 DNA 分析
+#'
+#' @usage
+#' data <- load_customer_test_data()
+#' customer_profiles <- data$df_customer_profile
+#' customer_dna <- data$df_dna_by_customer
+#'
+#' @coverage
+#' - 所有客戶的完整個人資料
+#' - 70% 客戶的 DNA 分析（ID 1-7）
+#' - 30% 客戶缺少 DNA（ID 8-10）
+#' - 包括一個具有極高值的客戶（ID 7）
+#' - 包括一個具有所有最小值的客戶（ID 1）
+#'
+#' @return 包含測試數據框的列表
+#' @export
+load_customer_test_data <- function() {
+  # 實施
+}
+```
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **擴展 MP0029（無假數據）**：為測試數據設計提供特定指南
+2. **實施 P09（真實環境測試）**：確保測試數據反映真實世界場景
+3. **支持 P16（組件測試）**：使用適當的數據實現有效的組件測試
+4. **補充 MP0048（通用初始化）**：確保測試數據正確初始化
+
+## 驗證清單
+
+要驗證是否符合此元原則，請檢查：
+
+1. 測試數據包含最少充分的欄位和記錄
+2. 測試數據與生產架構和約束匹配
+3. 測試數據有明確、專注的目的
+4. 測試數據包括適當的邊緣情況
+5. 測試數據能夠正確驗證結果
+6. 測試數據有良好的文檔
+7. 沒有創建人工、奇怪或冗餘的場景
+8. 測試數據設計促進維護和重用
+
+## 實施時間表
+
+現有測試數據應根據以下時間表進行審查和重構以符合此元原則：
+
+1. 新測試數據：立即合規
+2. 關鍵組件測試數據：30 天內
+3. 所有其他測試數據：90 天內
+
+應在代碼審查期間驗證合規性並在測試數據本身中記錄。

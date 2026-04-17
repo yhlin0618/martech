@@ -1,0 +1,301 @@
+---
+title: "UI_R004: 混合側邊欄模式規則"
+subtitle: "應用程式側邊欄必須遵循混合模式，結合一致的全域控制項與特定情境的模組控制項。此模式確保主要篩選器在整個應用程式中保持可用，同時仍為特定任務提供專門的控制項"
+chapter: "CH04"
+category: "rule"
+number: "UI_R004"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article: 
+  number: 4
+  title: "混合側邊欄模式規則"
+related_to:
+  - "MP016: 模組化原則"
+  - "MP017: 關注點分離原則"
+  - "SO_P003: 應用程式構建原則"
+  - "UI_R001: UI-Server-Defaults三元組規則"
+  - "MP019: 套件一致性原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第四條：混合側邊欄模式規則 {#overview}
+
+**UI組件法第四條（混合側邊欄模式規則）**
+
+應用程式側邊欄必須遵循混合模式，結合一致的全域控制項與特定情境的模組控制項。此模式確保主要篩選器在整個應用程式中保持可用，同時仍為特定任務提供專門的控制項。
+
+:::{.callout-important}
+## 核心要求
+透過採用混合側邊欄模式，應用程式能在保持一致性的同時提供情境相關的功能，增強使用者體驗並維持介面的組織性。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：雙區段結構 {#two-section-structure}
+
+**結構性要求：**
+
+每個側邊欄必須組織成兩個明確的區段：
+
+1. **全域區段**：在所有模組中保持一致，包含應用程式範圍的篩選器和控制項
+2. **情境區段**：根據活動模組變化，包含模組特定的控制項
+
+這些區段必須透過視覺指示器（水平分隔線和/或間距）清楚分隔。
+
+## 第二款：全域區段要求 {#global-section-requirements}
+
+**全域區段必須：**
+
+1. **維持一致性**：在整個應用程式中出現在相同位置並具有相同的控制項
+2. **包含主要篩選器**：包含最重要的應用程式範圍篩選器
+3. **保留狀態**：在模組間導航時維持篩選器選擇
+4. **出現在最前面**：始終位於側邊欄頂部
+5. **視覺上獨特**：使用樣式來指示其全域性質
+
+**全域控制項範例：**
+- 產品類別選擇
+- 日期範圍篩選器
+- 地理區域選擇
+- 通路選擇（例如：Amazon vs. 官方網站）
+
+## 第三款：情境區段要求 {#contextual-section-requirements}
+
+**情境區段必須：**
+
+1. **特定於模組**：僅顯示與當前模組相關的控制項
+2. **動態變化**：當使用者導航到不同模組時更新
+3. **維持每個模組的狀態**：在返回先前訪問的模組時記住設定
+4. **清楚標示**：包含指示當前模組的標題
+5. **包含模組特定操作**：包含與當前模組相關的操作
+
+# 第二項：轉換要求 {#transition-requirements}
+
+## 第一款：使用者導航行為 {#user-navigation-behavior}
+
+當使用者在模組之間導航時：
+
+1. **平滑轉換**：情境區段的變化應該在視覺上平滑
+2. **全域區段一致性**：全域區段必須保持視覺穩定
+3. **清楚指示**：提供視覺回饋指示模組變化
+4. **狀態保留**：為全域和每個模組情境維持篩選器狀態
+
+## 第二款：實施模式 {#implementation-pattern}
+
+所有混合側邊欄必須遵循 UI-Server-Defaults 三元組規則（UI_R001）實施：
+
+- **UI 組件**：定義具有全域和情境區段的側邊欄布局
+- **Server 組件**：管理狀態並處理篩選器變化
+- **Defaults 組件**：為所有控制項提供預設值
+
+# 第三項：實施範例 {#implementation-examples}
+
+## 第一款：基本混合側邊欄實施 {#basic-hybrid-sidebar}
+
+```r
+# UI 組件
+sidebarHybridUI <- function(id, active_module = "main") {
+  ns <- NS(id)
+  
+  sidebar(
+    # =========================================
+    # 全域區段 - 跨模組一致
+    # =========================================
+    selectInput(
+      inputId = ns("product_category"),
+      label = "商品種類",
+      choices = NULL  # 將由伺服器填充
+    ),
+    
+    selectInput(
+      inputId = ns("channel"),
+      label = "銷售通路",
+      choices = list("Amazon" = "amazon", "官網" = "official")
+    ),
+    
+    # 視覺分隔符
+    tags$hr(style = "border-top: 1px solid #ddd; margin: 15px 0;"),
+    
+    # 模組標籤
+    tags$div(
+      style = "text-align: center; margin-bottom: 10px;",
+      tags$span(
+        class = "badge bg-primary",
+        style = "font-size: 0.9rem;",
+        textOutput(ns("active_module_label"))
+      )
+    ),
+    
+    # =========================================
+    # 情境區段 - 模組特定
+    # =========================================
+    
+    # 主模組控制項
+    conditionalPanel(
+      condition = sprintf("input['%s'] == 'main'", ns("active_module_hidden")),
+      dateRangeInput(
+        inputId = ns("date_range_main"),
+        label = "日期範圍",
+        start = Sys.Date() - 365,
+        end = Sys.Date()
+      )
+    ),
+    
+    # 微觀模組控制項
+    conditionalPanel(
+      condition = sprintf("input['%s'] == 'micro'", ns("active_module_hidden")),
+      textInput(
+        inputId = ns("customer_search"),
+        label = "顧客搜尋",
+        placeholder = "輸入顧客 ID 或名稱"
+      ),
+      sliderInput(
+        inputId = ns("recency_filter"),
+        label = "最近購買 (R)",
+        min = 0,
+        max = 365,
+        value = c(0, 365)
+      )
+    ),
+    
+    # 宏觀模組控制項
+    conditionalPanel(
+      condition = sprintf("input['%s'] == 'macro'", ns("active_module_hidden")),
+      selectInput(
+        inputId = ns("aggregation_level"),
+        label = "資料彙總層級",
+        choices = list(
+          "產品類別" = "product_category",
+          "地區" = "region"
+        )
+      )
+    ),
+    
+    # 隱藏輸入以儲存當前模組
+    tags$div(
+      style = "display: none;",
+      textInput(ns("active_module_hidden"), NULL, value = active_module)
+    ),
+    
+    # 套用篩選器按鈕
+    actionButton(
+      inputId = ns("apply_filters"),
+      label = "套用篩選條件",
+      width = "100%",
+      class = "btn-primary mt-3"
+    )
+  )
+}
+```
+
+## 第二款：具有混合側邊欄的模組導航 {#module-navigation-with-hybrid-sidebar}
+
+```r
+# UI 定義
+ui <- page_sidebar(
+  title = "精準行銷應用程式",
+  sidebar = sidebarHybridUI("sidebar", active_module = "main"),
+  
+  # 具有模組特定內容的導航
+  navset_pill(
+    id = "nav",
+    nav_panel("總覽", ...), # 主模組
+    nav_panel("微觀", ...),  # 微觀模組
+    nav_panel("宏觀", ...)   # 宏觀模組
+  )
+)
+
+# 伺服器邏輯
+server <- function(input, output, session) {
+  # 使用主模組初始化側邊欄
+  filters <- sidebarHybridServer("sidebar", active_module = "main", ...)
+  
+  # 當導航變化時更新側邊欄
+  observeEvent(input$nav, {
+    # 將導航映射到模組
+    active_module <- switch(input$nav,
+      "總覽" = "main",
+      "微觀" = "micro",
+      "宏觀" = "macro",
+      "main" # 預設
+    )
+    
+    # 使用新模組情境替換側邊欄
+    removeUI(selector = "#sidebar-content")
+    insertUI(
+      selector = "#sidebar-placeholder",
+      where = "afterBegin",
+      ui = div(
+        id = "sidebar-content",
+        sidebarHybridUI(paste0("sidebar_", active_module), 
+                        active_module = active_module)
+      )
+    )
+    
+    # 初始化新的側邊欄伺服器
+    new_filters <- sidebarHybridServer(
+      paste0("sidebar_", active_module), 
+      active_module = active_module,
+      ...
+    )
+  })
+}
+```
+
+# 第四項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與模組化原則的關聯（MP016）{#relation-to-modularity}
+
+混合側邊欄模式透過以下方式支援模組化：
+
+1. **封裝模組特定控制項**：每個模組的篩選器都封裝在其情境區段內
+2. **促進組件獨立性**：模組可以定義自己的控制項而不影響其他模組
+3. **啟用組件重用**：該模式可以在不同應用程式中一致地應用
+4. **維持一致性**：相關控制項在邏輯單元中組合在一起
+
+## 第二款：與關注點分離原則的關聯（MP017）{#relation-to-separation-of-concerns}
+
+該模式透過以下方式實施關注點分離：
+
+1. **全域與本地分離**：清楚區分全域篩選器與模組特定篩選器
+2. **視覺劃分**：使用分隔線分離不同的關注點
+3. **邏輯分組**：根據範圍和目的組織控制項
+4. **狀態管理分離**：獨立處理全域和模組特定狀態
+
+## 第三款：與 UI-Server-Defaults 三元組規則的關聯（UI_R001）{#relation-to-triple-rule}
+
+混合側邊欄模式透過以下方式擴展三元組規則：
+
+1. **三元組實施**：要求實施為 UI、伺服器和預設組件
+2. **組件組織**：遵循基於資料夾的組織模式
+3. **預設值處理**：為所有控制項提供預設值
+4. **一致的命名**：遵循 UI_R001 中建立的命名慣例
+
+# 第五項：優點 {#benefits}
+
+## 第一款：使用者體驗優勢 {#user-experience-benefits}
+
+1. **改善的使用者體驗**：使用者始終可以存取重要篩選器，同時在需要時看到情境控制項
+2. **認知效率**：透過僅顯示相關控制項來減少認知負擔
+3. **空間一致性**：創建使用者可以學習的可預測 UI 模式
+4. **視覺組織**：清楚分離全域與情境關注點
+
+## 第二款：技術優勢 {#technical-benefits}
+
+1. **狀態保留**：在切換視圖時維持篩選器設定
+2. **減少混亂**：避免用太多控制項壓倒使用者
+3. **情境相關性**：在正確的時間提供正確的工具
+4. **空間優化**：有效利用有限的側邊欄空間
+
+---
+
+*基於：UI組件法第四條*  
+*相關連結：[MP016 模組化原則](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [UI_R001 UI-Server-Defaults三元組規則](../rules/UI_R001_ui_server_defaults_triple.qmd)*

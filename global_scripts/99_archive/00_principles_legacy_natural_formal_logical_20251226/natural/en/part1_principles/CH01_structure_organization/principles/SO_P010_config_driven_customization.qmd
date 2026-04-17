@@ -1,0 +1,540 @@
+---
+title: "SO_P010: Config-Driven Customization Principle"
+subtitle: "All company-specific content must be derived from configuration, not hardcoded"
+chapter: "CH01"
+category: "principle"
+number: "SO_P010"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Structure & Organization Law"
+article: "Article 10"
+derives_from:
+  - "CH00.MP017: Separation of Concerns"
+  - "CH00.MP011: Sensible Defaults"
+related_to:
+  - "DM_P001: Data Integrity"
+  - "SO_P007: App.R is Global"
+  - "SO_R005: App YAML Configuration"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure & Organization Law Article 10 (Config-Driven Customization Principle)**
+
+This article establishes that in application mode, all company-specific content, options, and behavior must be derived from `app_config` or initialization parameters, never hardcoded in the application code. Any element that varies by company must be configurable without code modification.
+
+:::{.callout-important}
+## Core Principle
+Application code must be company-agnostic. All company-specific elements including UI text, business logic parameters, and feature flags must be externalized to configuration files, enabling the same codebase to serve multiple companies without modification.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Benefits of Configuration-Driven Design {#benefits}
+
+This principle ensures critical architectural benefits:
+
+1. **Reusability**: Application code can be used across different companies without modification
+2. **Maintainability**: Changes to company-specific elements are made in configuration, not code
+3. **Separation of Concerns**: Code handles logic while configuration provides context-specific parameters
+4. **Scalability**: New companies can be onboarded without code changes
+5. **Testability**: Easier to test with different configuration scenarios
+
+## Subsection 2: Problems Avoided {#problems-avoided}
+
+第一項：硬編碼問題 (Hardcoding problems)
+
+Without config-driven customization:
+- Code becomes company-specific and non-reusable
+- Changes require developer intervention
+- Multiple code branches for different companies
+- Testing complexity increases exponentially
+- Deployment becomes error-prone
+
+第二項：維護負擔 (Maintenance burden)
+
+Hardcoded values create:
+- Technical debt accumulation
+- Increased bug surface area
+- Difficult onboarding process
+- Inconsistent implementations
+- Version control conflicts
+
+# Section 2: Configuration Sources Hierarchy {#hierarchy}
+
+## Subsection 1: Priority Order {#priority}
+
+Company-specific content should be sourced from (in order of precedence):
+
+第一項：主要配置來源 (Primary configuration sources)
+
+```r
+# 1. app_config loaded during initialization (highest priority)
+config <- yaml::read_yaml("app_config.yaml")
+company_name <- config$company$name
+
+# 2. Database tables with company-specific parameters
+company_params <- tbl(con, "company_parameters") %>%
+  filter(company_id == current_company) %>%
+  collect()
+
+# 3. User preferences stored in application state
+user_prefs <- reactiveValues(
+  theme = "default",
+  language = "en"
+)
+
+# 4. Environment variables (only for API keys, credentials)
+api_key <- Sys.getenv("COMPANY_API_KEY")
+```
+
+## Subsection 2: Configuration Structure {#structure}
+
+第一項：標準配置結構 (Standard configuration structure)
+
+```yaml
+# app_config.yaml
+company:
+  name: "ACME Corporation"
+  logo: "assets/acme_logo.png"
+  theme:
+    primary_color: "#007bff"
+    secondary_color: "#6c757d"
+  
+  # UI Configuration
+  marketing_channels:
+    "Amazon": "amazon"
+    "Official Website": "website"
+    "Retail Store": "retail"
+  
+  default_channel: "amazon"
+  
+  # Business Logic Configuration
+  discount_thresholds: [100, 500, 1000]
+  discount_rates: [0.05, 0.10, 0.15]
+  
+  # Feature Flags
+  features:
+    advanced_analytics: true
+    ai_recommendations: false
+    export_functionality: true
+```
+
+# Section 3: What Must Be Configurable {#configurable}
+
+## Subsection 1: UI Elements {#ui-elements}
+
+第一項：視覺元素 (Visual elements)
+
+```r
+# Company branding
+ui_header <- dashboardHeader(
+  title = config$company$name,  # Not hardcoded
+  titleWidth = config$ui$header_width
+)
+
+# Theme colors
+tags$style(HTML(sprintf("
+  .main-header .logo {
+    background-color: %s !important;
+  }
+  .btn-primary {
+    background-color: %s !important;
+    border-color: %s !important;
+  }
+", config$company$theme$primary_color,
+   config$company$theme$primary_color,
+   config$company$theme$primary_color)))
+```
+
+第二項：互動元素 (Interactive elements)
+
+```r
+# Dropdown options from config
+selectInput(
+  inputId = "channel",
+  label = translate("Select Channel"),
+  choices = config$company$marketing_channels,  # Config-driven
+  selected = config$company$default_channel
+)
+
+# Radio buttons from config
+radioButtons(
+  inputId = "analysis_type",
+  label = translate("Analysis Type"),
+  choices = config$analysis$available_types,  # Not hardcoded
+  selected = config$analysis$default_type
+)
+```
+
+第三項：導航結構 (Navigation structure)
+
+```r
+# Menu items from configuration
+create_menu <- function(config) {
+  menu_items <- lapply(config$navigation$items, function(item) {
+    if (item$enabled) {  # Feature flag check
+      menuItem(
+        text = translate(item$label),
+        tabName = item$id,
+        icon = icon(item$icon)
+      )
+    }
+  })
+  
+  do.call(sidebarMenu, compact(menu_items))
+}
+```
+
+## Subsection 2: Business Logic {#business-logic}
+
+第一項：計算規則 (Calculation rules)
+
+```r
+# Company-specific calculation rules
+calculate_metrics <- function(data, config) {
+  # Use config-driven thresholds
+  data %>%
+    mutate(
+      risk_level = case_when(
+        value < config$thresholds$low ~ "Low",
+        value < config$thresholds$medium ~ "Medium",
+        value < config$thresholds$high ~ "High",
+        TRUE ~ "Critical"
+      ),
+      discount = calculate_discount(value, config$discount_rules)
+    )
+}
+
+# Discount calculation using config
+calculate_discount <- function(order_value, rules) {
+  applicable_rate <- 0
+  
+  for (i in seq_along(rules$thresholds)) {
+    if (order_value >= rules$thresholds[i]) {
+      applicable_rate <- rules$rates[i]
+    }
+  }
+  
+  return(order_value * applicable_rate)
+}
+```
+
+第二項：驗證規則 (Validation rules)
+
+```r
+# Config-driven validation
+validate_input <- function(value, config) {
+  rules <- config$validation$rules
+  
+  # Check minimum
+  if (!is.null(rules$min) && value < rules$min) {
+    return(list(
+      valid = FALSE,
+      message = sprintf("Value must be at least %s", rules$min)
+    ))
+  }
+  
+  # Check maximum
+  if (!is.null(rules$max) && value > rules$max) {
+    return(list(
+      valid = FALSE,
+      message = sprintf("Value must not exceed %s", rules$max)
+    ))
+  }
+  
+  # Check pattern
+  if (!is.null(rules$pattern) && !grepl(rules$pattern, value)) {
+    return(list(
+      valid = FALSE,
+      message = rules$pattern_message
+    ))
+  }
+  
+  return(list(valid = TRUE))
+}
+```
+
+## Subsection 3: Feature Availability {#features}
+
+第一項：功能旗標 (Feature flags)
+
+```r
+# Conditional feature rendering
+render_features <- function(config) {
+  ui_elements <- list()
+  
+  # Advanced analytics feature
+  if (config$features$advanced_analytics) {
+    ui_elements$analytics <- analyticsModuleUI("analytics")
+  }
+  
+  # AI recommendations feature
+  if (config$features$ai_recommendations) {
+    ui_elements$ai <- aiRecommendationsUI("ai")
+  }
+  
+  # Export functionality
+  if (config$features$export_functionality) {
+    ui_elements$export <- downloadButton(
+      "export_data",
+      translate("Export Data")
+    )
+  }
+  
+  return(ui_elements)
+}
+```
+
+# Section 4: Implementation Patterns {#patterns}
+
+## Subsection 1: Correct Implementation {#correct}
+
+第一項：配置驅動實作 (Config-driven implementation)
+
+```r
+# CORRECT - All company-specific content from config
+create_dashboard <- function(config) {
+  # UI components use config
+  sidebar_items <- lapply(config$sidebar$sections, function(section) {
+    if (section$type == "radio") {
+      prettyRadioButtons(
+        inputId = ns(section$id),
+        label = translate(section$label),
+        choices = section$choices,  # From config
+        selected = section$default   # From config
+      )
+    } else if (section$type == "select") {
+      selectInput(
+        inputId = ns(section$id),
+        label = translate(section$label),
+        choices = section$choices,  # From config
+        selected = section$default   # From config
+      )
+    }
+  })
+  
+  return(sidebar_items)
+}
+```
+
+## Subsection 2: Incorrect Implementation {#incorrect}
+
+第一項：硬編碼錯誤 (Hardcoding errors)
+
+```r
+# INCORRECT - Hardcoded company-specific options
+create_channel_selector <- function() {
+  # Don't hardcode company-specific choices
+  radioButtons(
+    inputId = "channel",
+    label = "Marketing Channel",
+    choices = list(
+      "Amazon" = "amazon",           # Hardcoded!
+      "Official Website" = "website"  # Hardcoded!
+    ),
+    selected = "amazon"  # Hardcoded default!
+  )
+}
+
+# INCORRECT - Hardcoded business logic
+calculate_discount <- function(value) {
+  # Don't hardcode company-specific thresholds
+  if (value > 1000) {      # Hardcoded threshold!
+    return(value * 0.15)   # Hardcoded rate!
+  } else if (value > 500) { # Hardcoded threshold!
+    return(value * 0.10)   # Hardcoded rate!
+  } else {
+    return(value * 0.05)   # Hardcoded rate!
+  }
+}
+```
+
+# Section 5: Exception Handling {#exceptions}
+
+## Subsection 1: Missing Configuration {#missing-config}
+
+第一項：優雅降級 (Graceful degradation)
+
+```r
+# Handle missing configuration gracefully
+get_config_value <- function(config, path, default = NULL) {
+  # Split path into components
+  keys <- strsplit(path, "\\.")[[1]]
+  
+  # Navigate through config
+  value <- config
+  for (key in keys) {
+    if (is.null(value) || !key %in% names(value)) {
+      # Log warning about missing config
+      warning(sprintf(
+        "Configuration missing: %s, using default: %s",
+        path, 
+        deparse(default)
+      ))
+      return(default)
+    }
+    value <- value[[key]]
+  }
+  
+  return(value)
+}
+
+# Usage with fallback
+channels <- get_config_value(
+  config,
+  "company.marketing_channels",
+  default = list("Default" = "default")
+)
+```
+
+第二項：配置驗證 (Configuration validation)
+
+```r
+# Validate configuration on startup
+validate_config <- function(config) {
+  required_fields <- c(
+    "company.name",
+    "company.marketing_channels",
+    "company.default_channel"
+  )
+  
+  missing <- character()
+  
+  for (field in required_fields) {
+    if (is.null(get_config_value(config, field))) {
+      missing <- c(missing, field)
+    }
+  }
+  
+  if (length(missing) > 0) {
+    stop(sprintf(
+      "Required configuration missing: %s\nPlease update app_config.yaml",
+      paste(missing, collapse = ", ")
+    ))
+  }
+  
+  return(TRUE)
+}
+```
+
+# Section 6: Best Practices {#best-practices}
+
+## Subsection 1: Configuration Documentation {#documentation}
+
+```yaml
+# Document configuration structure
+# config_template.yaml
+company:
+  name: string                    # Required: Company display name
+  logo: string                    # Optional: Path to logo file
+  
+  marketing_channels:             # Required: Available channels
+    # Format: "Display Name": "internal_id"
+    # At least one channel required
+  
+  default_channel: string         # Required: Must match a channel ID
+  
+  features:                       # Optional: Feature flags
+    advanced_analytics: boolean   # Default: false
+    ai_recommendations: boolean   # Default: false
+  
+  # Business Rules
+  discount_thresholds: [number]  # Required: Ascending order
+  discount_rates: [number]       # Required: Same length as thresholds
+```
+
+## Subsection 2: Testing Strategies {#testing}
+
+```r
+# Test with multiple configurations
+test_that("app works with different configs", {
+  # Test config 1: Basic company
+  config1 <- list(
+    company = list(
+      name = "Test Company 1",
+      marketing_channels = list("Web" = "web"),
+      default_channel = "web"
+    )
+  )
+  
+  app1 <- create_app(config1)
+  expect_true(validate_app(app1))
+  
+  # Test config 2: Advanced company
+  config2 <- list(
+    company = list(
+      name = "Test Company 2",
+      marketing_channels = list(
+        "Amazon" = "amazon",
+        "eBay" = "ebay",
+        "Website" = "web"
+      ),
+      default_channel = "amazon",
+      features = list(
+        advanced_analytics = TRUE,
+        ai_recommendations = TRUE
+      )
+    )
+  )
+  
+  app2 <- create_app(config2)
+  expect_true(validate_app(app2))
+  expect_true(has_feature(app2, "advanced_analytics"))
+})
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Config-Driven Customization Checklist
+
+**Configuration Structure:**
+- [ ] app_config.yaml contains all company-specific values
+- [ ] Configuration schema is documented
+- [ ] Required vs optional fields are clear
+- [ ] Default values are specified
+
+**UI Elements:**
+- [ ] Company name and branding from config
+- [ ] All dropdown/radio options from config
+- [ ] Menu structure from config
+- [ ] Theme colors from config
+
+**Business Logic:**
+- [ ] Calculation rules from config
+- [ ] Validation thresholds from config
+- [ ] Default values from config
+- [ ] Feature flags control availability
+
+**Code Quality:**
+- [ ] No hardcoded company names
+- [ ] No hardcoded business rules
+- [ ] No hardcoded UI options
+- [ ] Graceful handling of missing config
+
+**Testing:**
+- [ ] Tests use multiple configurations
+- [ ] Missing config handling tested
+- [ ] Feature flags tested
+- [ ] Configuration validation tested
+:::
+
+# Conclusion {#conclusion}
+
+The Config-Driven Customization Principle ensures that applications remain company-agnostic and highly maintainable by externalizing all company-specific elements to configuration files. This approach enables a single codebase to serve multiple companies, simplifies onboarding, and reduces maintenance burden while improving testability and scalability.
+
+---
+
+*Based on: Structure & Organization Law Article 10*  
+*Derives from: [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd), [MP011 Sensible Defaults](../../CH00_fundamental_principles/MP011_sensible_defaults.qmd)*  
+*Related to: [SO_P007 App.R is Global](SO_P007_app_r_is_global.qmd), [SO_R005 App YAML Configuration](../rules/SO_R005_app_yaml_configuration.qmd)*

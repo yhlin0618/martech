@@ -1,0 +1,378 @@
+---
+id: "DM_R042"
+title: "DRV Sequential Numbering Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-01-28"
+date_modified: "2025-01-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 42
+implements:
+  - "MP064": "ETL-Derivation Separation Principle"
+related_to:
+  - "DM_R028": "ETL Data Type Separation Rule"
+  - "DM_R041": "ETL Directory Structure Rule"
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+---
+
+# DM_R042: DRV Sequential Numbering Rule
+
+## Rule Statement
+
+**All DRV (Derivation) files MUST use sequential numbering that matches their internal P-number codes**: The external filename must directly correspond to the internal processing code to ensure clear execution order and prevent sequencing errors.
+
+## Naming Format
+
+### Required Pattern
+
+```
+{platform}_D{group}_{seq}.R
+```
+
+**Components**:
+- `{platform}`: Three-letter platform_id (cbz, amz, eby)
+- `D`: Fixed literal indicating Derivation
+- `{group}`: Two-digit group number (01, 02, etc.)
+- `{seq}`: Two-digit sequence number indicating execution order (03, 04, 05, etc.)
+
+### Examples
+
+```yaml
+valid_patterns:
+  - "cbz_D01_03.R"  # Platform CBZ, Group 01, Sequence 03
+  - "amz_D02_15.R"  # Platform AMZ, Group 02, Sequence 15
+  - "eby_D01_07.R"  # Platform EBY, Group 01, Sequence 07
+  - "cbz_D01_04.R"  # Platform CBZ, Group 01, Sequence 04
+  - "all_D01_99.R"  # Cross-platform, Group 01, Sequence 99
+
+invalid_patterns:
+  - "cbz_DRV01_customer.R"     # ❌ Old pattern with descriptive suffix
+  - "cbz_D1_3.R"               # ❌ Missing zero-padding
+  - "cbz_D01_customer.R"        # ❌ Non-numeric sequence
+  - "cbz_DRV_03.R"             # ❌ Using DRV instead of D
+  - "cbz_D01.R"                # ❌ Missing sequence number
+```
+
+## Internal P-Number Mapping
+
+### Required Comment Structure
+
+Each DRV file MUST contain its P-number identifier on line 2:
+
+```r
+#####
+#P07_D01_03
+# DRV: Customer DNA Analysis (Group 01, Sequence 03)
+```
+
+### Filename-to-P-Number Correspondence
+
+The external filename MUST match the internal P-number:
+
+```yaml
+mapping_requirements:
+  internal_code: "#P07_D01_03"
+  external_file: "cbz_D01_03.R"
+
+  validation:
+    - P07 -> Platform identifier (maps to cbz/amz/eby)
+    - D01 -> Group 01
+    - 03  -> Sequence 03
+
+  result: "cbz_D01_03.R"
+```
+
+## Execution Order Rules
+
+### Sequential Processing
+
+DRV files are executed in strict numerical order within each group:
+
+```yaml
+execution_sequence:
+  group_01:
+    - "cbz_D01_03.R"  # Executes first
+    - "cbz_D01_04.R"  # Executes second
+    - "cbz_D01_05.R"  # Executes third
+    - "cbz_D01_07.R"  # Executes fourth (gap allowed)
+
+  group_02:
+    - "cbz_D02_01.R"  # New group starts at any number
+    - "cbz_D02_05.R"  # Continues sequentially
+```
+
+### Dependency Management
+
+```r
+# In orchestration scripts
+execute_drv_group <- function(platform, group) {
+  # Find all DRV files for this platform and group
+  pattern <- sprintf("%s_D%02d_[0-9]{2}\\.R", platform, group)
+  drv_files <- list.files("DRV", pattern = pattern, full.names = TRUE)
+
+  # Sort by sequence number (already in filename)
+  drv_files <- sort(drv_files)
+
+  # Execute in order
+  for (drv_file in drv_files) {
+    message(sprintf("Executing: %s", basename(drv_file)))
+    source(drv_file)
+  }
+}
+```
+
+## Benefits
+
+### Clear Execution Order
+- Sequence is immediately visible from filename
+- No need to open files to determine order
+- Prevents out-of-sequence execution errors
+
+### Simplified Orchestration
+- Natural sorting works correctly
+- Easy to identify missing sequences
+- Group-based parallelization possible
+
+### Direct Code Mapping
+- External name matches internal identifier
+- Reduces confusion and mapping errors
+- Simplifies debugging and maintenance
+
+### Version Control Benefits
+- Clear diff visibility for sequence changes
+- Easy to track execution order changes
+- Simplified merge conflict resolution
+
+## Migration from Old Pattern
+
+### Step 1: Identify Old Pattern Files
+
+```r
+# Find files using old DRV naming pattern
+old_pattern_files <- list.files(
+  "DRV",
+  pattern = ".*_DRV[0-9]+_.*\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+# Example old patterns to migrate:
+# cbz_DRV01_customer.R -> cbz_D01_03.R
+# cbz_DRV02_sales.R    -> cbz_D01_04.R
+# cbz_DRV03_product.R  -> cbz_D01_05.R
+```
+
+### Step 2: Extract P-Numbers
+
+```r
+# Read P-number from each file
+extract_p_number <- function(file_path) {
+  lines <- readLines(file_path, n = 10)
+  p_number_line <- grep("^#P[0-9]+_D[0-9]+_[0-9]+", lines, value = TRUE)
+
+  if (length(p_number_line) > 0) {
+    # Extract P-number components
+    p_number <- sub("^#", "", p_number_line[1])
+    return(p_number)
+  }
+  return(NULL)
+}
+```
+
+### Step 3: Generate New Names
+
+```r
+# Convert P-number to new filename
+p_number_to_filename <- function(p_number, platform) {
+  # Parse P-number: P07_D01_03
+  parts <- strsplit(p_number, "_")[[1]]
+
+  if (length(parts) == 3) {
+    group <- sub("D", "", parts[2])
+    seq <- parts[3]
+
+    new_name <- sprintf("%s_D%s_%s.R", platform, group, seq)
+    return(new_name)
+  }
+  return(NULL)
+}
+```
+
+### Step 4: Rename Files
+
+```r
+# Rename file to new pattern
+migrate_drv_file <- function(old_path) {
+  # Extract P-number
+  p_number <- extract_p_number(old_path)
+
+  if (!is.null(p_number)) {
+    # Determine platform from old filename
+    filename <- basename(old_path)
+    platform <- substr(filename, 1, 3)
+
+    # Generate new name
+    new_name <- p_number_to_filename(p_number, platform)
+
+    if (!is.null(new_name)) {
+      new_path <- file.path(dirname(old_path), new_name)
+
+      # Rename file
+      file.rename(old_path, new_path)
+      message(sprintf("Migrated: %s -> %s",
+                     basename(old_path), new_name))
+      return(TRUE)
+    }
+  }
+
+  warning(sprintf("Could not migrate: %s (missing P-number)",
+                 basename(old_path)))
+  return(FALSE)
+}
+```
+
+## Validation Functions
+
+### Validate Filename Format
+
+```r
+validate_drv_filename <- function(filename) {
+  # Check pattern: {platform}_D{group}_{seq}.R
+  pattern <- "^([a-z]{3})_D([0-9]{2})_([0-9]{2})\\.R$"
+
+  if (!grepl(pattern, filename)) {
+    stop(sprintf("VIOLATION DM_R042: Invalid DRV filename format: %s",
+                filename))
+  }
+
+  # Extract components
+  matches <- regmatches(filename, regexec(pattern, filename))[[1]]
+
+  return(list(
+    platform = matches[2],
+    group = matches[3],
+    sequence = matches[4]
+  ))
+}
+```
+
+### Validate P-Number Correspondence
+
+```r
+validate_p_number_match <- function(file_path) {
+  filename <- basename(file_path)
+
+  # Get expected components from filename
+  components <- validate_drv_filename(filename)
+
+  # Read P-number from file
+  p_number <- extract_p_number(file_path)
+
+  if (is.null(p_number)) {
+    stop(sprintf("VIOLATION DM_R042: No P-number found in file: %s",
+                filename))
+  }
+
+  # Check if P-number matches filename
+  expected_suffix <- sprintf("D%s_%s",
+                            components$group,
+                            components$sequence)
+
+  if (!grepl(expected_suffix, p_number)) {
+    stop(sprintf(
+      "VIOLATION DM_R042: P-number mismatch in %s\n  Expected: *_D%s_%s\n  Found: %s",
+      filename, components$group, components$sequence, p_number
+    ))
+  }
+
+  message(sprintf("✅ DM_R042: Valid DRV file: %s matches %s",
+                 filename, p_number))
+  return(TRUE)
+}
+```
+
+### Validate Execution Order
+
+```r
+validate_drv_sequence <- function(drv_directory) {
+  # Get all DRV files
+  drv_files <- list.files(drv_directory,
+                         pattern = ".*_D[0-9]{2}_[0-9]{2}\\.R$",
+                         recursive = TRUE)
+
+  # Group by platform and group
+  file_df <- data.frame(
+    file = drv_files,
+    stringsAsFactors = FALSE
+  )
+
+  # Parse filenames
+  file_df <- file_df %>%
+    mutate(
+      platform = substr(file, 1, 3),
+      group = substr(file, 5, 6),
+      sequence = as.integer(substr(file, 8, 9))
+    ) %>%
+    arrange(platform, group, sequence)
+
+  # Check for duplicate sequences
+  duplicates <- file_df %>%
+    group_by(platform, group, sequence) %>%
+    filter(n() > 1)
+
+  if (nrow(duplicates) > 0) {
+    stop(sprintf("VIOLATION DM_R042: Duplicate sequences found:\n%s",
+                paste(duplicates$file, collapse = "\n")))
+  }
+
+  # Report sequence gaps (informational)
+  gaps <- file_df %>%
+    group_by(platform, group) %>%
+    summarize(
+      sequences = list(sequence),
+      gaps = list(setdiff(
+        seq(min(sequence), max(sequence)),
+        sequence
+      ))
+    ) %>%
+    filter(lengths(gaps) > 0)
+
+  if (nrow(gaps) > 0) {
+    message("INFO: Sequence gaps found (this is allowed):")
+    print(gaps)
+  }
+
+  message(sprintf("✅ DM_R042: All %d DRV files have valid sequences",
+                 nrow(file_df)))
+  return(TRUE)
+}
+```
+
+## Implementation Checklist
+
+- [ ] All DRV files follow `{platform}_D{group}_{seq}.R` pattern
+- [ ] No descriptive suffixes in filenames
+- [ ] All files contain matching P-number on line 2
+- [ ] Sequence numbers are zero-padded (01, 02, not 1, 2)
+- [ ] Group numbers are zero-padded
+- [ ] Platform IDs are exactly 3 lowercase letters
+- [ ] Files are in DRV/{platform}/ directory structure
+- [ ] Orchestration scripts use sequential execution
+- [ ] Old pattern files have been migrated
+- [ ] Validation functions pass for all files
+
+## Relationship to Other Rules
+
+### Supersedes
+- Old DRV naming pattern in DM_R028 (`{platform}_DRV{nn}_{purpose}.R`)
+
+### Complements
+- **MP064**: Maintains ETL-Derivation separation
+- **DM_R041**: Follows directory structure requirements
+- **DM_R028**: Aligns with overall ETL/DRV organization
+
+## Conclusion
+
+The DRV Sequential Numbering Rule (DM_R042) establishes a clear, unambiguous naming system for derivation files that directly maps external filenames to internal processing codes. This eliminates execution order confusion, simplifies orchestration, and ensures maintainable data processing pipelines.

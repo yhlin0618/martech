@@ -1,0 +1,245 @@
+---
+title: "DM_R010: 篩選邏輯模式"
+subtitle: "特殊類別的篩選邏輯，特別是『全部』，必須遵循優化效能和代碼清晰度的標準模式，並明確處理特殊 ID 值"
+chapter: "CH02"
+category: "rule"
+number: "DM_R010"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 10
+  title: "篩選邏輯模式規則"
+related_to:
+  - "MP034: 『全部』類別的特殊處理"
+  - "DM_R009: 特殊 ID 約定"
+  - "UI_R008: 預設選擇約定"
+  - "DM_P001: 資料完整性"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十條：篩選邏輯模式規則 {#overview}
+
+**資料管理法第十條（篩選邏輯模式規則）**
+
+此規則建立了處理特殊類別篩選邏輯的標準模式。
+
+:::{.callout-important}
+## 核心規則
+特殊類別的篩選邏輯，特別是『全部』，必須遵循優化效能和代碼清晰度的標準模式，並明確處理特殊 ID 值。
+:::
+
+# 第一項：實施模式 {#implementation-patterns}
+
+## 第一款：篩選跳過模式 {#filter-bypassing}
+
+當選擇「全部」時，完全跳過篩選而不是應用匹配所有內容的篩選器：
+
+```r
+# 基本模式：全部跳過篩選
+filter_data <- function(data, category_id) {
+  if (category_id == "000") {  # 全部類別
+    return(data)  # 返回完整資料集而不篩選
+  } else {
+    return(data[data$category == category_id, ])
+  }
+}
+```
+
+## 第二款：SQL 查詢模式 {#sql-query-pattern}
+
+在 SQL 查詢中，對特殊類別使用評估為 TRUE 的條件子句：
+
+```sql
+-- 模式 1：ALL 的 OR 條件
+SELECT * FROM products 
+WHERE (:category_id = '000' OR category_id = :category_id)
+
+-- 模式 2：多個特殊類別的 CASE 表達式
+SELECT * FROM products 
+WHERE CASE 
+  WHEN :category_id = '000' THEN TRUE  -- 全部類別
+  WHEN :category_id = '999' THEN category_id IS NULL  -- 其他類別
+  ELSE category_id = :category_id  -- 標準類別
+END
+```
+
+## 第三款：多層級篩選模式 {#multi-level-filtering}
+
+對於分層篩選，獨立處理每個層級的「全部」：
+
+```r
+# 具有 ALL 處理的多層級篩選
+filter_products <- function(data, category_id, subcategory_id) {
+  # 從所有資料開始
+  filtered_data <- data
+  
+  # 如果不是全部，應用類別篩選
+  if (category_id != "000") {
+    filtered_data <- filtered_data[filtered_data$category_id == category_id, ]
+  }
+  
+  # 如果不是全部，應用子類別篩選
+  if (subcategory_id != "000") {
+    filtered_data <- filtered_data[filtered_data$subcategory_id == subcategory_id, ]
+  }
+  
+  return(filtered_data)
+}
+```
+
+# 第二項：反應式依賴模式 {#reactive-patterns}
+
+## 第一款：Shiny 反應式優化 {#shiny-reactive}
+
+在 Shiny 中，優化反應式表達式以避免不必要的重新計算：
+
+```r
+# 在 server.R 中
+
+# 只定義一次基礎資料
+all_data <- reactive({
+  load_all_products()
+})
+
+# 第一層級篩選資料
+category_filtered <- reactive({
+  req(input$category_id)
+  
+  # 如果選擇全部，返回基礎資料而不篩選
+  if (input$category_id == "000") {
+    return(all_data())
+  }
+  
+  # 否則按類別篩選
+  all_data()[all_data()$category_id == input$category_id, ]
+})
+
+# 第二層級篩選資料
+fully_filtered <- reactive({
+  req(input$subcategory_id)
+  
+  # 根據類別選擇獲取適當的基礎資料
+  base_data <- category_filtered()
+  
+  # 如果選擇全部子類別，返回類別篩選資料而不進一步篩選
+  if (input$subcategory_id == "000") {
+    return(base_data)
+  }
+  
+  # 否則應用子類別篩選
+  base_data[base_data$subcategory_id == input$subcategory_id, ]
+})
+```
+
+## 第二款：多重值篩選模式 {#multiple-value-filtering}
+
+對於多選輸入，處理特殊情況：
+
+```r
+# 具有 ALL 處理的多選篩選
+filter_by_multiple_categories <- function(data, selected_categories) {
+  # 如果選定類別中有全部，返回所有資料
+  if ("000" %in% selected_categories) {
+    return(data)
+  }
+  
+  # 如果沒有選擇類別，返回空資料集
+  if (length(selected_categories) == 0) {
+    return(data[0, ])
+  }
+  
+  # 多重選擇的標準篩選
+  data[data$category_id %in% selected_categories, ]
+}
+```
+
+# 第三項：效能考量 {#performance}
+
+## 第一款：快取策略 {#caching-strategy}
+
+為常見篩選快取結果，特別是「全部」的完整資料集：
+
+```r
+# 快取實施
+category_cache <- new.env(parent = emptyenv())
+
+get_filtered_data <- function(category_id) {
+  cache_key <- paste("category", category_id, sep = "_")
+  
+  # 檢查結果是否在快取中
+  if (exists(cache_key, envir = category_cache)) {
+    return(get(cache_key, envir = category_cache))
+  }
+  
+  # 不在快取中，計算結果
+  if (category_id == "000") {
+    result <- get_all_data()
+  } else {
+    result <- filter_data_by_category(category_id)
+  }
+  
+  # 儲存在快取中
+  assign(cache_key, result, envir = category_cache)
+  return(result)
+}
+```
+
+## 第二款：大型資料集優化 {#large-dataset-optimization}
+
+對於大型資料集，考慮預先聚合或資料子集：
+
+```r
+# 為常見分組預先聚合資料
+precompute_aggregations <- function() {
+  # 全部類別的聚合（總計摘要）
+  all_summary <- aggregate_all_data()
+  
+  # 每個類別的聚合
+  category_summaries <- lapply(unique(data$category_id), function(cat_id) {
+    aggregate_by_category(cat_id)
+  })
+  
+  # 儲存供以後使用
+  assign("precomputed_aggregations", list(
+    all = all_summary,
+    by_category = setNames(category_summaries, unique(data$category_id))
+  ), envir = .GlobalEnv)
+}
+```
+
+# 第四項：實施檢查清單 {#checklist}
+
+實施篩選邏輯模式時：
+
+1. ☐ 識別所有特殊 ID 值（000、999 等）
+2. ☐ 實施篩選跳過邏輯
+3. ☐ 優化 SQL 查詢模式
+4. ☐ 處理多層級篩選
+5. ☐ 設定反應式依賴
+6. ☐ 實施快取策略
+7. ☐ 測試邊界情況
+8. ☐ 驗證效能
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **提高效能**：避免不必要的資料處理
+2. **代碼清晰**：明確的特殊情況處理
+3. **可維護性**：一致的篩選模式
+4. **可擴展性**：易於添加新的特殊類別
+5. **使用者體驗**：快速回應時間
+
+---
+
+*基於：資料管理法第十條*  
+*相關連結：[MP034 『全部』類別的特殊處理](../../CH00_fundamental_principles/meta_principles/MP034_special_treatment_all.qmd), [DM_R009 特殊 ID 約定](DM_R009_special_id_conventions.qmd)*

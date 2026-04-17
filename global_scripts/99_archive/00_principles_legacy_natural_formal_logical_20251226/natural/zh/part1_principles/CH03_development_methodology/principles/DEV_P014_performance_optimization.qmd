@@ -1,0 +1,498 @@
+---
+title: "DEV_P014: 性能優化原則"
+subtitle: "反應式應用程式必須在三個關鍵層面進行性能優化：資料操作、反應式依賴管理和UI渲染效率。性能考量應貫穿整個開發過程，而非事後添加"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P014"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article: 
+  number: 14
+  title: "性能優化原則"
+related_to:
+  - "MP030: 向量化原則"
+  - "MP047: 函數式程式設計"
+  - "DEV_P012: 反應式資料過濾原則"
+  - "R050: data.table向量化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十四條：性能優化原則 {#overview}
+
+**開發方法法第十四條（性能優化原則）**
+
+反應式應用程式必須在三個關鍵層面進行性能優化：資料操作、反應式依賴管理和UI渲染效率。性能考量應貫穿整個開發過程，而非事後添加。
+
+:::{.callout-important}
+## 核心原則
+系統性地在資料操作、反應式依賴和UI渲染三個維度實施性能優化，確保應用程式在複雜度增長時仍能保持響應性和效率。
+:::
+
+# 第一項：性能優化維度 {#performance-dimensions}
+
+## 第一款：資料操作效率 {#data-operation-efficiency}
+
+**優化策略：**
+- 將重度處理移至資料庫層級
+- 使用向量化操作代替迴圈
+- 為大型資料集實施惰性載入和分頁
+- 快取昂貴的查詢結果
+
+**實施範例：**
+```r
+# 低效率：取得所有資料後在R中過濾
+all_data <- dbGetQuery(conn, "SELECT * FROM sales")
+filtered_data <- all_data[all_data$region == "North" & all_data$amount > 1000, ]
+
+# 高效率：在資料庫層級過濾
+filtered_data <- dbGetQuery(conn, "
+  SELECT * FROM sales 
+  WHERE region = 'North' AND amount > 1000
+")
+```
+
+## 第二款：反應式依賴管理 {#reactive-dependency-management}
+
+**優化策略：**
+- 最小化不必要的反應式依賴
+- 將昂貴計算隔離在獨立的反應式中
+- 使用適當的失效粒度
+- 防止反應式連鎖反應級聯
+
+**依賴隔離範例：**
+```r
+# 低效率：單一反應式包含多重依賴
+data_summary <- reactive({
+  # 任何輸入變更都會重新計算
+  data <- get_data(input$dataset)
+  filtered <- filter_data(data, input$filter_var)
+  processed <- process_data(filtered, input$process_var)
+  return(processed)
+})
+
+# 高效率：隔離的反應式鏈
+base_data <- reactive({
+  req(input$dataset)
+  get_data(input$dataset)
+})
+
+filtered_data <- reactive({
+  req(base_data(), input$filter_var)
+  filter_data(base_data(), input$filter_var)
+})
+
+processed_data <- reactive({
+  req(filtered_data(), input$process_var)
+  process_data(filtered_data(), input$process_var)
+})
+```
+
+## 第三款：UI渲染效率 {#ui-rendering-efficiency}
+
+**優化策略：**
+- 限制反應式UI生成
+- 盡可能使用直接輸出函數
+- 實施高效的列表渲染
+- 最小化DOM更新
+
+**靜態與動態UI範例：**
+```r
+# 低效率：動態生成整個UI
+output$dynamic_ui <- renderUI({
+  # 資料變更時重新生成整個UI結構
+  fluidRow(
+    column(4, selectInput("variable", "變數:", choices = names(data()))),
+    column(8, 
+      h3("結果"),
+      plotOutput("plot"),
+      tableOutput("table")
+    )
+  )
+})
+
+# 高效率：靜態結構配動態內容
+# 在UI中：
+fluidRow(
+  column(4, uiOutput("variable_selector")),
+  column(8, 
+    h3("結果"),
+    plotOutput("plot"),
+    tableOutput("table")
+  )
+)
+
+# 在server中：
+output$variable_selector <- renderUI({
+  selectInput("variable", "變數:", choices = names(data()))
+})
+```
+
+# 第二項：資料處理優化 {#data-processing-optimization}
+
+## 第一款：向量化操作實施 {#vectorized-operations}
+
+**data.table向量化：**
+```r
+# 低效率：逐行處理
+result <- data.frame(id = numeric(nrow(dt)), value = numeric(nrow(dt)))
+for (i in 1:nrow(dt)) {
+  result$id[i] <- dt$id[i]
+  result$value[i] <- calculate_value(dt$x[i], dt$y[i])
+}
+
+# 高效率：data.table向量化計算
+dt[, value := calculate_value(x, y)]
+result <- dt[, .(id, value)]
+```
+
+## 第二款：批次處理策略 {#batch-processing}
+
+**大型資料集批次處理：**
+```r
+# 低效率：一次處理整個大型資料集
+process_large_dataset <- function(data) {
+  # 可能導致記憶體問題的操作
+  result <- complex_operation(data)
+  return(result)
+}
+
+# 高效率：批次處理
+process_large_dataset_in_batches <- function(data, batch_size = 10000) {
+  total_rows <- nrow(data)
+  result_list <- list()
+  
+  for (i in seq(1, total_rows, by = batch_size)) {
+    end_idx <- min(i + batch_size - 1, total_rows)
+    batch <- data[i:end_idx, ]
+    batch_result <- complex_operation(batch)
+    result_list[[length(result_list) + 1]] <- batch_result
+  }
+  
+  # 合併批次結果
+  result <- rbindlist(result_list)
+  return(result)
+}
+```
+
+## 第三款：快取機制實施 {#caching-implementation}
+
+**多層級快取：**
+```r
+# 建立快取機制
+cache_store <- reactiveValues()
+
+# 快取反應式函數
+cached_expensive_operation <- function(inputs, cache_key = NULL, max_age = 300) {
+  # 如果未提供則生成快取鍵值
+  if (is.null(cache_key)) {
+    cache_key <- digest::digest(inputs)
+  }
+  
+  # 建立首先檢查快取的反應式函數
+  reactive({
+    # 檢查是否有快取結果
+    if (!is.null(cache_store[[cache_key]])) {
+      cache_entry <- cache_store[[cache_key]]
+      cache_age <- difftime(Sys.time(), cache_entry$timestamp, units = "secs")
+      
+      # 如果未過期則回傳快取結果
+      if (cache_age < max_age) {
+        return(cache_entry$result)
+      }
+    }
+    
+    # 如果無快取或已過期，則計算結果
+    result <- expensive_operation(inputs)
+    
+    # 存入快取
+    cache_store[[cache_key]] <- list(
+      result = result,
+      timestamp = Sys.time()
+    )
+    
+    return(result)
+  })
+}
+```
+
+# 第三項：反應式優化模式 {#reactive-optimization-patterns}
+
+## 第一款：昂貴計算隔離 {#expensive-calculation-isolation}
+
+**計算隔離實施：**
+```r
+# 低效率：在render函數中嵌入昂貴計算
+output$summary <- renderTable({
+  # 任何輸入變更都會執行這個昂貴計算
+  result <- expensive_calculation(input$var1, input$var2, data())
+  return(result)
+})
+
+# 高效率：將昂貴計算隔離在專用反應式中
+expensive_result <- reactive({
+  # 只在這些特定輸入變更時執行
+  req(input$var1, input$var2, data())
+  expensive_calculation(input$var1, input$var2, data())
+})
+
+output$summary <- renderTable({
+  # 單純渲染預先計算的結果
+  expensive_result()
+})
+```
+
+## 第二款：輸入反應防抖動 {#input-debouncing}
+
+**防抖動實施：**
+```r
+# 低效率：立即反應每次擊鍵
+observe({
+  search_term <- input$search
+  update_results(search_term)
+})
+
+# 高效率：停止輸入後的防抖動反應
+search_debounced <- reactive({
+  input$search
+}) %>% debounce(300)  # 300毫秒延遲
+
+observeEvent(search_debounced(), {
+  if (nchar(search_debounced()) >= 2) {
+    update_results(search_debounced())
+  }
+})
+```
+
+## 第三款：頻繁更新節流 {#frequent-update-throttling}
+
+**節流實施：**
+```r
+# 低效率：反應高頻事件
+observe({
+  # 對於像滑鼠移動這樣的頻繁事件
+  x <- input$mouse_x
+  y <- input$mouse_y
+  update_position(x, y)
+})
+
+# 高效率：節流反應
+# 在server外部定義節流函數
+throttled_update <- throttle(update_position, 100)  # 最多每100毫秒更新一次
+
+observe({
+  x <- input$mouse_x
+  y <- input$mouse_y
+  throttled_update(x, y)
+})
+```
+
+# 第四項：進階優化策略 {#advanced-optimization-strategies}
+
+## 第一款：漸進式載入 {#progressive-loading}
+
+**漸進式載入實施：**
+```r
+# 初始載入時，先顯示關鍵組件
+output$dashboard <- renderUI({
+  tagList(
+    # 立即載入關鍵組件
+    div(id = "summary-stats", 
+      uiOutput("key_metrics")
+    ),
+    
+    # 主要內容後載入次要組件
+    div(id = "detailed-analysis",
+      uiOutput("detailed_components")
+    )
+  )
+})
+
+# 首先載入主要組件
+output$key_metrics <- renderUI({
+  # 快速生成的基本指標
+  # ...
+})
+
+# 延遲載入次要組件
+observe({
+  # 確保關鍵指標已渲染
+  req(output$key_metrics)
+  
+  # 延遲次要組件以優先處理初始載入速度
+  invalidateLater(500)
+  
+  # 現在渲染詳細組件
+  output$detailed_components <- renderUI({
+    # 更複雜的組件
+    # ...
+  })
+})
+```
+
+## 第二款：惰性求值 {#lazy-evaluation}
+
+**惰性求值實施：**
+```r
+# 建立惰性求值包裝器
+create_lazy_value <- function(computation_func) {
+  # 內部狀態
+  value <- NULL
+  computed <- FALSE
+  
+  # 回傳僅在首次呼叫時計算的函數
+  function() {
+    if (!computed) {
+      value <<- computation_func()
+      computed <<- TRUE
+    }
+    return(value)
+  }
+}
+
+# 在模組中的使用
+complexDataServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # 建立惰性計算
+    lazy_summary <- create_lazy_value(function() {
+      # 昂貴的摘要計算
+      calculate_summary(data_source())
+    })
+    
+    lazy_features <- create_lazy_value(function() {
+      # 昂貴的特徵提取
+      extract_features(data_source())
+    })
+    
+    # 僅在需要時計算
+    observeEvent(input$show_summary, {
+      output$summary <- renderTable({
+        lazy_summary()
+      })
+    })
+    
+    observeEvent(input$show_features, {
+      output$features <- renderTable({
+        lazy_features()
+      })
+    })
+  })
+}
+```
+
+# 第五項：性能測量與測試 {#performance-measurement-testing}
+
+## 第一款：分析工具 {#profiling-tools}
+
+**性能分析實施：**
+```r
+# 分析server執行
+shinyOptions(profiler = TRUE)
+profvis::profvis({
+  # 執行app或特定函數
+  shiny::runApp("app")
+})
+
+# 測量執行時間
+benchmark_function <- function(func, ...) {
+  start_time <- Sys.time()
+  result <- func(...)
+  end_time <- Sys.time()
+  execution_time <- difftime(end_time, start_time, units = "secs")
+  list(
+    result = result,
+    execution_time = execution_time
+  )
+}
+```
+
+## 第二款：效能基準 {#performance-benchmarks}
+
+**基準測試實施：**
+```r
+# 比較多種方法
+library(microbenchmark)
+
+microbenchmark(
+  loop_approach = {
+    result <- numeric(length(x))
+    for (i in seq_along(x)) {
+      result[i] <- calculate(x[i])
+    }
+    result
+  },
+  vectorized_approach = {
+    calculate(x)
+  },
+  apply_approach = {
+    sapply(x, calculate)
+  },
+  times = 100
+)
+```
+
+## 第三款：記憶體使用監控 {#memory-monitoring}
+
+**記憶體監控實施：**
+```r
+# 追蹤記憶體
+library(pryr)
+
+# 操作前
+mem_before <- mem_used()
+
+# 執行操作
+result <- expensive_operation()
+
+# 操作後
+mem_after <- mem_used()
+mem_diff <- mem_after - mem_before
+
+cat("使用記憶體:", format(mem_diff, units = "auto"), "\n")
+```
+
+# 第六項：常見反模式 {#common-anti-patterns}
+
+## 第一款：過早優化 {#premature-optimization}
+
+**問題**：在功能完成前就專注於性能  
+**解決方案**：先建立正確性，再基於實際性能資料進行優化
+
+## 第二款：全域反應性 {#global-reactivity}
+
+**問題**：在全域層級建立影響整個應用程式的反應式  
+**解決方案**：將反應性隔離到需要它的組件中
+
+## 第三款：喋喋不休的UI更新 {#chatty-ui-updates}
+
+**問題**：頻繁的小幅UI元素更新  
+**解決方案**：批次更新並使用防抖動/節流技術
+
+## 第四款：反應式連鎖反應 {#reactive-chain-reactions}
+
+**問題**：長鏈反應式依賴導致級聯更新  
+**解決方案**：分解為具有清晰邊界的隔離段落
+
+# 第七項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **建基於 MP030（向量化原則）**：將其擴展到UI和反應式情境
+2. **補充 MP047（函數式程式設計）**：強調純函數以獲得更好的快取和記憶化
+3. **支援 MP052（單向資料流）**：為大型資料優化流程路徑
+4. **增強 DEV_P012（反應式資料過濾原則）**：為過濾操作提供性能模式
+
+---
+
+*基於：開發方法法第十四條*  
+*相關連結：[MP030 向量化原則](../../CH00_fundamental_principles/meta_principles/MP030_vectorization_principle.qmd), [DEV_P012 反應式資料過濾原則](DEV_P012_reactive_data_filtering.qmd)*

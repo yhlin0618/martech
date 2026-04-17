@@ -1,0 +1,197 @@
+---
+
+title: "D02_04: DNA Integration"
+subtitle: "Join filtered customer views with D01 DNA profiles"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_04"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D02_03_customer_views"
+  - "D01_dna_analysis"
+outputs_to:
+  - "app_data.df_customer_complete_{condition_key}"
+implements:
+  - "DM_R051": "Single Task per Derivation Step"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_04: DNA Integration {#overview}
+
+This task integrates the filtered customer aggregation views (from D02_03) with the D01 DNA profiles to create complete customer views for application consumption.
+
+## DNA Integration Pattern (NSQL) {#dna-integration}
+
+```nsql
+# D02_04: Integrate Filtered Views with DNA Profiles [Layer: 5NM]
+INTEGRATE_DNA D02_04:
+  FOR EACH condition IN condition_grids:
+    # Final output to app_data has no suffix
+    view_name: "df_customer_complete_" + condition.condition_key
+
+    # Join filtered customer view (4CL) with DNA data
+    # Output to 5NM app_data (no suffix)
+    CREATE VIEW app_data.{view_name} AS:
+      FROM cleansed_data.filtered.df_sales_by_customer_{condition.condition_key}___cleansed AS fc
+      LEFT JOIN app_data.df_dna_by_customer AS dna
+        ON fc.customer_id = dna.customer_id
+        AND dna.platform_id = PLATFORM_ID_FROM(condition.source_filter)
+
+      SELECT:
+        # From filtered customer view (D02_03)
+        fc.customer_id
+        fc.transaction_count
+        fc.total_spent
+        fc.first_purchase_date
+        fc.last_purchase_date
+        fc.average_order_value
+        fc.distinct_products
+
+        # From DNA profile (D01)
+        dna.r_value, dna.r_label
+        dna.f_value, dna.f_label
+        dna.m_value, dna.m_label
+        dna.nes_status
+        dna.cai, dna.cai_label
+        dna.dna_segment
+        dna.clv
+
+        # Filter conditions
+        fc.source_filter
+        fc.time_condition
+        fc.product_line_id_filter
+        fc.state_filter
+
+    # Layer 5NM: Final output to app_data (no suffix)
+    LOG "Created complete customer view: {view_name}"
+```
+
+**Layer**: 5NM (Normalize) - Per MP144, final app_data output has no suffix.
+
+## DNA Metrics Integration {#dna-metrics}
+
+| DNA Metric | Source | Description |
+|------------|--------|-------------|
+| `r_value`, `r_label` | D01 | Recency score and label |
+| `f_value`, `f_label` | D01 | Frequency score and label |
+| `m_value`, `m_label` | D01 | Monetary score and label |
+| `nes_status` | D01 | New/Existing/Sleeping status |
+| `cai`, `cai_label` | D01 | Customer Activity Index |
+| `dna_segment` | D01 | DNA segment classification |
+| `clv` | D01 | Customer Lifetime Value |
+
+## Platform ID Mapping (NSQL) {#platform-mapping}
+
+```nsql
+# Map source_filter to platform_id for DNA join
+FUNCTION PLATFORM_ID_FROM(source_filter):
+  CASE source_filter
+    WHEN 'amazon' THEN 1
+    WHEN 'ebay' THEN 2
+    WHEN 'retail' THEN 3
+    WHEN 'cbz' THEN 4
+  END
+```
+
+## Output View Schema {#output-schema}
+
+```nsql
+# Complete customer view structure
+SCHEMA df_customer_complete_{condition_key}:
+  COLUMNS:
+    # Customer identification
+    customer_id: VARCHAR NOT NULL PRIMARY KEY
+
+    # From D02_03 (aggregation)
+    transaction_count: INTEGER NOT NULL
+    first_purchase_date: DATE
+    last_purchase_date: DATE
+    total_spent: NUMERIC
+    average_order_value: NUMERIC
+    distinct_products: INTEGER
+
+    # From D01 (DNA)
+    r_value: INTEGER
+    r_label: VARCHAR
+    f_value: INTEGER
+    f_label: VARCHAR
+    m_value: INTEGER
+    m_label: VARCHAR
+    nes_status: VARCHAR
+    cai: NUMERIC
+    cai_label: VARCHAR
+    dna_segment: VARCHAR
+    clv: NUMERIC
+
+    # Filter conditions
+    source_filter: VARCHAR NOT NULL
+    time_condition: VARCHAR NOT NULL
+    product_line_id_filter: INTEGER NOT NULL
+    state_filter: VARCHAR NOT NULL
+
+  TYPE: VIRTUAL VIEW
+```
+
+## Validation (NSQL) {#validation}
+
+```nsql
+# D02_04: Validate DNA Integration
+VALIDATE D02_04:
+  FOR EACH condition IN condition_grids:
+    view_name: "df_customer_complete_" + condition.condition_key
+
+    CHECK view_exists:
+      ASSERT: EXISTS(app_data.{view_name})
+
+    CHECK dna_coverage:
+      # Count customers with DNA profiles
+      dna_count: COUNT(*) FROM app_data.{view_name} WHERE dna_segment IS NOT NULL
+      total_count: COUNT(*) FROM app_data.{view_name}
+      coverage: dna_count / total_count
+      LOG: "DNA coverage for {view_name}: {coverage * 100}%"
+
+    CHECK join_integrity:
+      # Ensure no duplicate customers from join
+      QUERY: "SELECT customer_id, COUNT(*) FROM {view_name} GROUP BY customer_id HAVING COUNT(*) > 1"
+      ASSERT: COUNT(*) = 0
+      MESSAGE: "Each customer_id must be unique after join"
+
+  ON_SUCCESS: LOG "D02_04 completed: all DNA integrations created"
+```
+
+## Data Flow Diagram {#data-flow}
+
+```
+┌─────────────────────────────────────┐     ┌─────────────────────────┐
+│ D02_03 [Layer: 4CL]                 │     │ D01                     │
+│ df_sales_by_customer_*___cleansed   │     │ df_dna_by_customer         │
+│ (cleansed_data)                     │     │ (app_data)              │
+└────────────────┬────────────────────┘     └───────────┬─────────────┘
+                 │                                      │
+                 └───────────────┬──────────────────────┘
+                                 │
+                            LEFT JOIN
+                            ON customer_id
+                            AND platform_id
+                                 │
+                                 ▼
+                 ┌─────────────────────────┐
+                 │ D02_04 [Layer: 5NM]     │
+                 │ df_customer_complete_*  │
+                 │ (app_data, no suffix)   │
+                 └─────────────────────────┘
+```
+
+## Related Documentation
+
+- [D02_03_customer_views.qmd](D02_03_customer_views.qmd) - Customer aggregation (upstream)
+- [D02_05_execution.qmd](D02_05_execution.qmd) - Execution flow
+- [D01_dna_analysis](../D01_dna_analysis/index.qmd) - DNA profile source

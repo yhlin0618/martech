@@ -1,0 +1,218 @@
+# D02 Customer View Filtering - Implementation Rules
+# ===================================================
+# This file defines the binding contract between documentation and code.
+# Each derivation step MUST implement ONLY its documented responsibility.
+#
+# Pattern: "Case Law" companion file per MP005 (Statute Law Analogy)
+# Created: 2026-01-01
+
+derivation_id: D02
+title: "Customer View Filtering"
+description: "Dynamic view layer for multi-dimensional customer filtering based on D01 DNA profiles"
+
+# Step Definitions
+# ================
+# Types:
+#   - conceptual: Describes WHAT to do, not HOW
+#   - concrete: Specifies exact function calls and outputs
+#   - orchestration: Coordinates other steps, no direct computation
+#   - documentation: No implementation script - documentation only
+
+derivation_steps:
+  d02_00:
+    title: "Grid Initialization"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Create filtered schema in processed_data"
+    implementation: "CREATE SCHEMA processed_data.filtered"
+    output_database: "processed_data.duckdb"
+
+  d02_01:
+    title: "Condition Grid"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Generate condition grid from filter dimensions"
+
+    # Implementation Contract
+    must_produce: "condition_grids (cartesian product of filter dimensions)"
+
+    # Filter Dimensions
+    filter_dimensions:
+      time_condition: ["now", "m1year", "m1quarter", "m1month", "m2year", "ytd"]
+      product_line: ["0", "1", "2", "3"]  # 0 = all
+      geographic_region: ["ALL", "CA", "NY", "TX"]
+      data_source: ["amazon", "ebay", "retail", "cbz"]
+
+    output_table: "condition_grids"
+    output_database: "processed_data.duckdb"
+
+  d02_02:
+    title: "Filtered Sales Views"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "Create filtered sales views for each condition combination"
+
+    # Input/Output Specification
+    input_table: "df_{source}_sales___processed"
+    input_database: "processed_data.duckdb"
+    output_pattern: "df_sales_{condition_key}___cleansed"
+    output_database: "cleansed_data.duckdb"
+
+    # Produced tables follow naming convention
+    produces:
+      - "df_sales_{source}_{time}_{product}_{state}___cleansed"
+
+  d02_03:
+    title: "Customer Views"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "Aggregate filtered sales to customer level"
+
+    # Input/Output Specification
+    input_pattern: "df_sales_{condition_key}___cleansed"
+    input_database: "cleansed_data.duckdb"
+    output_pattern: "df_sales_by_customer_{condition_key}___cleansed"
+    output_database: "cleansed_data.duckdb"
+
+    # Aggregation specification
+    group_by: ["customer_id"]
+    aggregations:
+      - "sum(lineproduct_price) as total_spent"
+      - "count(*) as transaction_count"
+      - "min(payment_time) as first_purchase"
+      - "max(payment_time) as last_purchase"
+
+  d02_04:
+    title: "DNA Integration"
+    type: "concrete"
+    layer: "5NM"
+    responsibility: "Join customer views with D01 DNA profiles for app consumption"
+
+    # Input/Output Specification
+    input_tables:
+      - "df_sales_by_customer_{condition_key}___cleansed"
+      - "df_dna_by_customer"  # from D01
+    input_databases:
+      - "cleansed_data.duckdb"
+      - "app_data.duckdb"
+    output_pattern: "df_customer_complete_{condition_key}"
+    output_database: "app_data.duckdb"
+
+    # Join specification
+    join_type: "LEFT JOIN"
+    join_key: "customer_id"
+
+  d02_05:
+    title: "Execution Orchestration"
+    type: "orchestration"
+    layer: "N/A"
+    responsibility: "Run D02_00 through D02_04 in sequence"
+
+    # Critical Constraint
+    constraint: "NO direct computation - only orchestration"
+    pattern: "DM_R044 Five-Part Structure"
+
+    # What orchestration MAY do
+    allowed_operations:
+      - "Source D02 scripts in order"
+      - "Coordinate execution across platforms"
+      - "Log progress and errors"
+      - "Handle partial failures gracefully"
+
+    # What orchestration MUST NOT do
+    prohibited_operations:
+      - "Implement filtering logic directly"
+      - "Create new views not defined in D02_02/D02_03"
+      - "Modify DNA profiles (read-only from D01)"
+
+  d02_06:
+    title: "Module Consumers"
+    type: "documentation"
+    layer: "N/A"
+    responsibility: "Document which UI modules consume D02 outputs"
+    note: "No implementation script - documentation only"
+
+# Enforcement Rules
+# =================
+
+enforcement:
+  rule: "Each D_XX script MUST implement ONLY its documented responsibility"
+  principle_reference: "DRY (Don't Repeat Yourself)"
+
+  violations:
+    - pattern: "Filter logic outside D02_02"
+      severity: "critical"
+      action: "Refactor to D02_02"
+
+    - pattern: "Customer aggregation outside D02_03"
+      severity: "critical"
+      action: "Refactor to D02_03"
+
+    - pattern: "DNA modification in D02"
+      severity: "critical"
+      action: "D02 is read-only for DNA - modifications belong in D01"
+
+    - pattern: "Missing condition_key in view name"
+      severity: "warning"
+      action: "All views must include condition_key per naming convention"
+
+# Platform Scripts
+# ================
+# D02 is platform-agnostic by design - processes all platforms uniformly
+
+platform_implementations:
+  all:
+    d02_00: "update_scripts/DRV/all/all_D02_00.R"
+    d02_01: "update_scripts/DRV/all/all_D02_01.R"
+    d02_02: "update_scripts/DRV/all/all_D02_02.R"
+    d02_03: "update_scripts/DRV/all/all_D02_03.R"
+    d02_04: "update_scripts/DRV/all/all_D02_04.R"
+    d02_05: "update_scripts/DRV/all/all_D02_05.R"
+
+# Related Principles
+# ==================
+
+related_principles:
+  - id: "MP005"
+    title: "Statute Law Analogy"
+    relevance: "This file follows Case Law pattern"
+
+  - id: "MP064"
+    title: "ETL-Derivation Separation"
+    relevance: "Filtering is derivation logic, not ETL"
+
+  - id: "MP144"
+    title: "Unique Identity Principle"
+    relevance: "___cleansed suffix distinguishes intermediate data"
+
+  - id: "DM_R044"
+    title: "Derivation Implementation Standard"
+    relevance: "Five-Part Structure for scripts"
+
+  - id: "R116"
+    title: "Enhanced Data Access (tbl2)"
+    relevance: "Use tbl2() for all database access"
+
+# Dependencies
+# ============
+
+dependencies:
+  prerequisite_derivations:
+    - "D01": "Customer DNA profiles must exist before D02 can integrate"
+
+  prerequisite_etl:
+    - "ETL (all platforms)": "Transformed sales data required"
+
+# View Naming Convention
+# ======================
+
+naming_convention:
+  sales_view: "df_sales_{source}_{time}_{product}_{state}"
+  customer_view: "df_sales_by_customer_{source}_{time}_{product}_{state}"
+  complete_view: "df_customer_complete_{source}_{time}_{product}_{state}"
+
+  examples:
+    - "df_sales_amazon_now_0_all"
+    - "df_sales_ebay_m1quarter_2_ca"
+    - "df_sales_by_customer_cbz_m1month_1_ny"
+    - "df_customer_complete_retail_ytd_3_tx"

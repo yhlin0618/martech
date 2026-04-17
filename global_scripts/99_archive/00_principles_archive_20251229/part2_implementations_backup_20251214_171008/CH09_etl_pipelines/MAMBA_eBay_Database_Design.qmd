@@ -1,0 +1,145 @@
+---
+title: "MAMBA eBay Database Design and JOIN Strategy"
+id: "MAMBA_EBAY_DB"
+type: implementation
+category: etl_pipelines
+platform: ebay
+status: active
+created: 2025-08-29
+---
+
+## Executive Summary
+
+The MAMBA eBay SQL Server database uses an unconventional composite key design that requires special handling in ETL pipelines.
+
+## Database Schema
+
+### BAYORD Table (Orders)
+
+**Primary Key**: `(ORD001, ORD009)`
+- No foreign keys
+- ORD001: 單號 (Order Number) - int
+- ORD009: 賣家EBAY郵件 (Seller eBay Email) - nvarchar
+
+### BAYORE Table (Order Details)
+
+**Primary Key**: `(ORE001, ORE002, ORE013)`
+- ORE001: 單號 (Order Number) - int, NOT NULL
+- ORE002: 流水號 (Line Item Number) - nvarchar
+- ORE013: Unnamed field (stores seller email copy) - nvarchar
+
+**Foreign Key**: 
+```sql
+FOREIGN KEY (ORE001, ORE013) REFERENCES dbo.BAYORD(ORD001, ORD009)
+```
+
+## Critical Design Issues
+
+### 1. Composite Primary Key in BAYORD
+- Order number (ORD001) alone is NOT unique
+- Requires seller email (ORD009) to form unique identifier
+- This is highly unusual and problematic
+
+### 2. Data Duplication
+- ORE013 in BAYORE stores a copy of ORD009 (seller email)
+- This denormalization is necessary for the foreign key relationship
+
+### 3. JOIN Complexity
+- All JOINs must use composite keys
+- String-based keys (email) impact performance
+
+## ETL Implementation Requirements
+
+### 0IM Phase (Import)
+```r
+# Must preserve both key components
+# ORD009 as seller_ebay_email
+# ORE013 as batch_key (contains seller email copy)
+```
+
+### 1ST Phase (Standardization)
+```r
+# BAYORD mapping
+rename(
+  order_id = ORD001,           # Part of composite PK
+  seller_ebay_email = ORD009,  # Part of composite PK
+  batch_key = ORD022           # NOT part of PK (common mistake!)
+)
+
+# BAYORE mapping  
+rename(
+  order_id = ORE001,    # Part of composite PK, FK
+  batch_key = ORE013    # Part of composite PK, FK (contains seller email)
+)
+```
+
+### 2TR Phase (Transformation)
+```r
+# MANDATORY JOIN pattern
+dt_sales <- dt_orders[dt_details,
+  on = .(
+    order_id = order_id,              # ORD001 = ORE001
+    seller_ebay_email = batch_key     # ORD009 = ORE013
+  ),
+  nomatch = 0  # Inner join
+]
+```
+
+## Common Mistakes to Avoid
+
+1. **Wrong**: Assuming ORD001 alone is unique
+2. **Wrong**: Using ORD022 as batch_key for JOIN (it's not part of PK)
+3. **Wrong**: Single-key JOIN on order_id only
+4. **Wrong**: Assuming ORE013 is a batch number (it's actually seller email)
+
+## Data Flow Diagram
+
+```
+BAYORD (PK: ORD001 + ORD009)
+         ↓
+    [ORD001, ORD009]
+         ↓
+BAYORE (FK: ORE001, ORE013 → ORD001, ORD009)
+```
+
+## Validation Queries
+
+```sql
+-- Check primary keys
+SELECT COUNT(*), COUNT(DISTINCT ORD001) 
+FROM BAYORD;  -- These will be different!
+
+-- Verify foreign key relationship
+SELECT * FROM BAYORE
+WHERE NOT EXISTS (
+  SELECT 1 FROM BAYORD 
+  WHERE BAYORD.ORD001 = BAYORE.ORE001
+    AND BAYORD.ORD009 = BAYORE.ORE013
+);
+```
+
+## Business Impact
+
+This design suggests:
+1. Multiple sellers can have the same order number
+2. Order uniqueness depends on seller identity
+3. Historical data migration issues likely exist
+
+## Recommendations
+
+### Short-term (Current Implementation)
+- Always use composite keys for JOINs
+- Document this unusual design prominently
+- Add validation checks for key integrity
+
+### Long-term (Future Redesign)
+- Add surrogate keys (auto-increment IDs)
+- Normalize the seller email storage
+- Migrate to standard order numbering
+
+## Related Principles
+
+- MP064: ETL-Derivation Separation
+- MP104: ETL Data Flow Separation  
+- DM_R040: Structural JOIN Pattern
+- DM_R037: Company-specific ETL Naming

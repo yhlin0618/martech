@@ -1,0 +1,85 @@
+---
+title: "TD_P002: 雙重測試方法原則"
+subtitle: "同時使用功能測試與真實連線測試"
+chapter: "CH05"
+category: "principle"
+number: "TD_P002"
+date-created: "2025-04-16"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "測試部署法"
+article-number:
+  number: 2
+  title: "雙重測試方法原則"
+derives_from:
+  - "CH01.SO_P016: Component-wise Testing"
+  - "CH03.DEV_P002: Authentic Context Testing"
+influences:
+  - "CH03.DEV_P077: Performance Optimization"
+  - "TD_R002: Test App Building"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二條：雙重測試方法原則 {#overview}
+
+**測試部署法第二條（雙重測試方法原則）**
+
+元件與模組必須採用「雙重測試」：
+
+1. **功能測試**：使用可控的合成/樣本資料驗證邏輯
+2. **真實連線測試**：使用實際資料連線驗證整體行為與效能
+
+:::{.callout-important}
+## 核心原則
+功能測試用於快速驗證邏輯與邊界；真實連線測試用於確認實際資料行為與效能。兩者缺一不可。
+:::
+
+# 第一項：為什麼需要雙重測試 {#rationale}
+
+單一測試方式容易產生盲區：
+
+- 僅功能測試：可能忽略整合與效能問題
+- 僅真實測試：難以覆蓋邊界與錯誤情境
+
+雙重測試提供完整覆蓋與快速定位問題。
+
+# 第二項：實施原則 {#implementation}
+
+## 第一款：功能測試（合成資料） {#functional-test}
+
+- 使用可重現的測試資料
+- 覆蓋正常/空值/極端/錯誤情境
+- 以最小測試 app 驗證 UI/Server
+
+```r
+# 以合成資料測試
+mock_data <- data.frame(id = 1:5, value = c(10, 20, 30, NA, 999))
+```
+
+## 第二款：真實連線測試 {#production-like-test}
+
+- 使用真實資料庫或實際 API 連線
+- 檢查效能與完整性
+- 限制範圍，避免干擾生產
+
+```r
+# 使用真實 DBI 連線
+con <- DBI::dbConnect(duckdb::duckdb(), dbdir = "data/app_data/app_data.duckdb")
+```
+
+# 第三項：判定標準 {#criteria}
+
+- 功能測試必須全數通過
+- 真實測試需確認效能與錯誤處理
+- 兩者皆通過才可進入部署
+
+# 結語 {#conclusion}
+
+雙重測試能同時保障正確性與真實環境行為，是部署前不可省略的原則。

@@ -1,0 +1,66 @@
+---
+title: "MP150: Transparency Principle"
+subtitle: "Every operation, data movement, and state change must leave a visible trace"
+category: "Development Methodology"
+type: "Meta-Principle"
+status: "active"
+created: "2026-02-28"
+children:
+  - DM_P007  # Information Flow Transparency (was MP053)
+  - DEV_P022  # Console Output Transparency (was MP106)
+implementations:
+  - UI_R024  # Component Dataflow Logging (rule)
+---
+
+## Summary
+
+Nothing happens silently. Every significant operation in the system must produce observable evidence — whether through console output, log messages, audit trails, or data lineage documentation.
+
+## Rationale
+
+Silent failures are the most expensive bugs. When a UI component fetches data but gets empty results, when an ETL pipeline skips a table, when a derivation produces unexpected values — if there is no trace, debugging becomes guesswork. The Transparency Principle ensures that every layer of the system announces what it is doing.
+
+## Hierarchy
+
+```
+MP150 Transparency Principle (Meta-Principle)
+├── DM_P007 Information Flow Transparency (was MP053)
+│   "Data flow must be visible, traceable, logged, and auditable"
+│   └── Applies to: ETL pipelines, data transformations, derivations
+├── DEV_P022 Console Output Transparency (was MP106)
+│   "No silent execution; progress, status, errors, completion in console"
+│   └── Applies to: All R scripts, initialization, ETL, DRV
+└── UI_R024 Component Dataflow Logging (Rule)
+    "Every UI component logs data source, record count, columns, UI targets"
+    └── Applies to: All Shiny components in 10_rshinyapp_components/
+```
+
+## Core Rule
+
+**FOR ALL significant operations O:**
+If O modifies state, moves data, or renders UI, then O MUST produce an observable trace.
+
+## What Counts as Observable Trace
+
+| Layer | Trace Type | Example |
+|-------|-----------|---------|
+| ETL | Console progress + audit CSV | `[ETL] Imported 5,000 rows from orders` |
+| DRV | Console status + completion | `[D01_05] Computed DNA for 16,785 customers` |
+| UI Component | message() with data summary | `[revenuePulse] Loaded 16785 records \| cols: ...` |
+| Initialization | Status announcements | `APP_MODE initialization finished` |
+| Error | Explicit error with context | `[rsvMatrix] Data load error: column "x" not found` |
+
+## Violations
+
+- Silent execution with no output
+- Data transformations with no lineage documentation
+- Error caught and swallowed without message
+- UI component that silently returns NULL on empty data
+- State change (database write, file creation) without announcement
+
+## Compliance
+
+- Every `tryCatch()` error handler includes `message()` with component name and error details
+- Every data fetch logs record count and column names
+- Every ETL step shows progress indicators
+- Every significant function announces its start and completion

@@ -1,0 +1,281 @@
+---
+title: "SO_R031: 備份檔案管理規則"
+subtitle: "備份檔案保留、命名和自動歸檔的標準"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, backup, archiving, maintenance]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+所有備份檔案必須遵循標準化命名慣例，在原始位置最多保留 7 天，然後自動歸檔到指定的歸檔目錄。歸檔中超過 30 天的備份檔案應進行壓縮。
+
+## 備份保留政策
+
+### 保留時間線
+
+| 階段 | 持續時間 | 位置 | 操作 |
+|------|----------|------|------|
+| 活躍 | 0-7 天 | 原始目錄 | 保持原樣 |
+| 歸檔 | 8-30 天 | CHANGELOG/archive/backups_YYYYMM/ | 移至歸檔 |
+| 壓縮 | 31+ 天 | CHANGELOG/archive/backups_YYYYMM/ | 壓縮為 .tar.gz |
+
+### 自動清理排程
+
+- **每日**：識別專案目錄中超過 7 天的備份檔案
+- **每週**：將識別的檔案移至月度歸檔資料夾
+- **每月**：壓縮超過 30 天的備份歸檔
+
+## 備份命名慣例
+
+### 格式
+
+```
+original_filename.backup_YYYYMMDD_HHMMSS
+```
+
+### 要求
+
+1. **原始檔名**：保留原始檔名（含副檔名）
+2. **備份後綴**：使用 `.backup_` 作為分隔符
+3. **時間戳記**：使用 YYYYMMDD_HHMMSS 格式
+4. **大小寫**：全部小寫
+
+### 範例
+
+```
+# 正確範例
+app.R.backup_20251130_143022
+app_config.yaml.backup_20251130_090000
+fn_calculate_metrics.R.backup_20251128_235959
+
+# 錯誤範例（禁止）
+app.R.backup_drv_20251113_121104        # 備份後綴中有額外描述符
+APP.R.BACKUP_20251130                    # 大寫，缺少時間
+app_backup_20251130.R                    # 備份標記位置錯誤
+app.R.bak                                # 非標準後綴
+```
+
+## 歸檔目錄結構
+
+### 位置
+
+```
+CHANGELOG/archive/backups_YYYYMM/
+```
+
+### 結構
+
+```
+CHANGELOG/
+└── archive/
+    └── backups_202511/
+        ├── app.R.backup_20251101_143022
+        ├── app.R.backup_20251105_091500
+        ├── fn_utils.R.backup_20251108_170000
+        └── README.md                       # 歸檔清單
+```
+
+### 歸檔清單（README.md）
+
+每個月度備份歸檔必須包含 README.md：
+
+```markdown
+# 備份歸檔 - 2025年11月
+
+## 摘要
+- 總檔案數：47
+- 日期範圍：2025-11-01 至 2025-11-30
+- 總大小：2.3 MB
+
+## 檔案分類
+- R 腳本：32
+- YAML 配置：8
+- Markdown 文檔：7
+
+## 重要備份
+- 2025-11-13：重大 DRV 系統遷移
+- 2025-11-15：資料庫架構更新
+
+## 歸檔日期
+2025-12-01
+```
+
+## 自動清理實施
+
+### 每日清理腳本
+
+```bash
+#!/bin/bash
+# daily_backup_cleanup.sh
+# 透過 cron 執行：0 2 * * * /path/to/daily_backup_cleanup.sh
+
+PROJECT_ROOT="/path/to/MAMBA"
+CHANGELOG_DIR="$PROJECT_ROOT/scripts/global_scripts/00_principles/CHANGELOG"
+ARCHIVE_DIR="$CHANGELOG_DIR/archive"
+LOG_FILE="$CHANGELOG_DIR/backup_cleanup.log"
+CURRENT_MONTH=$(date +%Y%m)
+
+# 如果不存在則創建歸檔目錄
+mkdir -p "$ARCHIVE_DIR/backups_$CURRENT_MONTH"
+
+echo "=== 備份清理：$(date) ===" >> "$LOG_FILE"
+
+# 尋找超過 7 天的備份檔案
+find "$PROJECT_ROOT" -name "*.backup_*" -type f -mtime +7 | while read file; do
+    filename=$(basename "$file")
+
+    # 如果已在歸檔中則跳過
+    if [[ "$file" == *"/archive/"* ]]; then
+        continue
+    fi
+
+    echo "歸檔中：$file" >> "$LOG_FILE"
+    mv "$file" "$ARCHIVE_DIR/backups_$CURRENT_MONTH/$filename"
+done
+
+echo "清理完成。" >> "$LOG_FILE"
+```
+
+### 每月壓縮腳本
+
+```bash
+#!/bin/bash
+# monthly_backup_compress.sh
+# 透過 cron 執行：0 3 1 * * /path/to/monthly_backup_compress.sh
+
+ARCHIVE_DIR="/path/to/MAMBA/scripts/global_scripts/00_principles/CHANGELOG/archive"
+LOG_FILE="$ARCHIVE_DIR/../compression.log"
+CURRENT_MONTH=$(date +%Y%m)
+
+echo "=== 每月壓縮：$(date) ===" >> "$LOG_FILE"
+
+# 尋找超過 30 天的備份目錄（非當月或上月）
+for dir in "$ARCHIVE_DIR"/backups_*; do
+    if [ -d "$dir" ]; then
+        dir_month=$(basename "$dir" | sed 's/backups_//')
+
+        # 跳過當月和上月
+        if [ "$dir_month" -ge "$((CURRENT_MONTH - 1))" ]; then
+            continue
+        fi
+
+        # 檢查是否已壓縮
+        if [ -f "$dir.tar.gz" ]; then
+            continue
+        fi
+
+        echo "壓縮中：$dir" >> "$LOG_FILE"
+        tar -czf "$dir.tar.gz" -C "$ARCHIVE_DIR" "$(basename $dir)"
+        rm -rf "$dir"
+        echo "已壓縮：$dir.tar.gz" >> "$LOG_FILE"
+    fi
+done
+
+echo "壓縮完成。" >> "$LOG_FILE"
+```
+
+## 清理日誌
+
+### 日誌格式
+
+```
+=== 備份清理：2025-11-30 02:00:01 ===
+歸檔中：/MAMBA/app.R.backup_20251123_143022
+歸檔中：/MAMBA/fn_utils.R.backup_20251122_091500
+清理完成。
+```
+
+### 日誌位置
+
+```
+CHANGELOG/backup_cleanup.log
+```
+
+## 特殊考量
+
+### 1. 關鍵備份豁免
+
+某些備份可能需要延長保留期：
+
+```yaml
+# backup_exemptions.yaml
+exemptions:
+  - pattern: "*.backup_pre_major_release"
+    retention_days: 90
+  - pattern: "database_schema.*.backup_*"
+    retention_days: 365
+```
+
+### 2. 活躍開發期間的備份
+
+在活躍開發衝刺期間：
+
+- 將每日清理閾值增加到 14 天
+- 創建衝刺特定的歸檔資料夾
+- 記錄任何豁免
+
+### 3. 緊急恢復
+
+緊急備份恢復：
+
+```bash
+# 尋找特定備份
+find /path/to/CHANGELOG/archive -name "*.backup_*" | xargs grep -l "pattern"
+
+# 從歸檔恢復
+cp /path/to/CHANGELOG/archive/backups_202511/file.backup_20251115_120000 ./file
+```
+
+## 理由
+
+### 1. 防止備份累積
+
+沒有積極管理：
+- 備份檔案隨時間倍增
+- 根目錄變得雜亂
+- 舊備份浪費磁碟空間
+
+### 2. 維護有組織的歷史
+
+歸檔策略：
+- 為恢復需求保留備份
+- 按月組織便於導航
+- 壓縮舊歸檔節省空間
+
+### 3. 實現自動化維護
+
+自動化確保：
+- 無需手動操作的一致執行
+- 可預測的清理排程
+- 記錄操作以供審計
+
+## 與其他原則的關係
+
+- **SO_R006（歸檔標準）**：將歸檔概念擴展到備份檔案
+- **SO_R022（臨時檔案處理）**：補充臨時檔案清理
+- **SO_R030（操作文檔位置）**：與文檔放置規則協調
+- **MP012（變更追蹤）**：備份歸檔支援變更歷史
+
+## 實施檢查清單
+
+- [ ] 備份命名慣例已執行（小寫、正確後綴）
+- [ ] 每日清理腳本已安裝並排程
+- [ ] 每月壓縮腳本已安裝並排程
+- [ ] 歸檔目錄結構已創建
+- [ ] 清理日誌已啟用
+- [ ] 豁免配置已記錄（如需要）
+- [ ] 團隊已接受備份命名要求培訓
+- [ ] 恢復程序已記錄並測試
+
+## 結論
+
+備份檔案管理規則建立了處理備份檔案的系統性方法，在保留歷史備份以供恢復的同時防止不受控制的累積。透過標準化命名、定義的保留期限和自動化歸檔，此規則確保備份檔案保持可管理和有組織。7 天活躍保留、月度歸檔和 30 天壓縮時間線在可訪問性需求和儲存效率之間取得平衡。

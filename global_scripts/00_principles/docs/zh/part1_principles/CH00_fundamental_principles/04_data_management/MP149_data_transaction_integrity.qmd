@@ -1,0 +1,121 @@
+---
+id: "MP149"
+title: "Data Transaction Integrity Principle"
+type: "meta-principle"
+category: "data_management"
+date_created: "2026-02-11"
+date_modified: "2026-02-11"
+author: "Codex"
+status: "active"
+version: "1.0"
+weight: 149
+priority: "CRITICAL"
+related_to:
+  - "MP029": "No Fake Data"
+  - "MP102": "ETL Output Standardization"
+  - "MP108": "ETL Phase Sequence"
+  - "DM_R027": "ETL Schema Validation Rule"
+implements:
+  - "TRANSACTION_BOUNDARY": "Atomic source-to-local import contract"
+  - "AUDITABLE_GATE": "0IM completeness gate with persisted evidence"
+---
+
+# MP149: Data Transaction Integrity Principle
+
+## Core Statement
+
+**Any 0IM import from external sources must execute as an auditable data transaction: either all expected source data is imported, reconciled, and committed, or the run must fail and roll back.**
+
+This principle formalizes the 0IM completeness gate as a transactional contract, not only a logging convention.
+
+## Transaction Model
+
+For each 0IM run, the ETL must create a single `import_run_id` and enforce five required guarantees:
+
+1. **Atomicity**
+   - No partial success is allowed for production 0IM runs.
+   - If any mandatory source unit fails or reconciliation fails, write operations must be rolled back.
+
+2. **Completeness**
+   - All expected source units (files/tabs/pages) are discovered before import.
+   - Every source unit gets an explicit terminal status: `IMPORTED`, `EMPTY`, `SKIPPED`, or `FAILED`.
+
+3. **Consistency**
+   - Row-level reconciliation must pass (`rows_source` == `rows_written` for imported units).
+   - Critical-key reconciliation (for example `ASIN`, `order_id`, `sku`) must pass after write.
+
+4. **Durability**
+   - Commit is allowed only after all mandatory checks pass.
+   - A committed run must be reproducible from its audit artifact.
+
+5. **Auditability**
+   - Persist machine-readable audit output (CSV/Parquet/table) for each run.
+   - Audit output must include source discovery, per-unit status, row reconciliation, key reconciliation, and final commit/rollback result.
+
+## Mandatory 0IM Gate Sequence
+
+```text
+discover source units
+  -> import each source unit with status capture
+  -> write to target within transaction boundary
+  -> reconcile rows and critical keys
+  -> PASS: commit + emit audit artifact
+  -> FAIL: rollback + emit audit artifact + stop
+```
+
+## Implementation Pattern
+
+```r
+run_0im_import_transaction <- function(con, source_units, import_fn) {
+  import_run_id <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  discovered <- discover_source_units(source_units)
+
+  if (nrow(discovered) == 0) {
+    stop("MP149 violation: no source units discovered")
+  }
+
+  DBI::dbBegin(con)
+  committed <- FALSE
+
+  on.exit({
+    if (!committed) {
+      try(DBI::dbRollback(con), silent = TRUE)
+    }
+  }, add = TRUE)
+
+  report <- import_fn(discovered, import_run_id)
+
+  if (!report$summary$success) {
+    stop("MP149 violation: completeness gate failed")
+  }
+
+  DBI::dbCommit(con)
+  committed <- TRUE
+  write_audit_artifact(report, import_run_id)
+
+  invisible(report)
+}
+```
+
+## Non-Compliant Patterns
+
+- Importing all files, logging failures, and still committing partial data.
+- Skipping source discovery and only validating files that happened to be read.
+- Passing row-count checks while ignoring key-level gaps (for example missing ASINs).
+- Producing console logs only, without a persisted audit artifact.
+
+## Compliance Checklist
+
+A 0IM implementation is compliant with MP149 only if all statements are true:
+
+- Source inventory is captured before any write.
+- Per-source status is persisted for all expected source units.
+- Row and key reconciliation both pass.
+- Failures trigger rollback and non-zero script exit.
+- Audit artifact is written for both pass and fail outcomes.
+
+## Relationship to Existing Principles
+
+- **MP102** defines what standardized ETL output should look like; **MP149** defines when that output is transactionally valid.
+- **DM_R027** operationalizes MP149 with concrete schema and reconciliation checks.
+- **MP108** keeps phase order (`0IM -> 1ST -> 2TR`); MP149 adds correctness gates inside `0IM`.

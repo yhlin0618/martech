@@ -1,0 +1,201 @@
+---
+title: "MP039: 初始化期間一次性操作元原則 (One-Time Operations During Initialization)"
+subtitle: "需要執行一次的操作應在初始化階段執行，而非條件性或反應性執行"
+author: "System"
+date: "2025-04-07"
+date-modified: "2025-08-16"
+categories: [meta-principle, initialization, performance, lifecycle-management]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 定義
+
+需要恰好執行一次的操作應該在初始化階段執行，絕不應該條件性或反應性地執行。一次性操作屬於作為初始化一部分執行的靜態代碼（在用戶交互開始之前）。
+
+## 多維術語
+
+在應用程式生命週期管理中：
+
+- **階段（Phase）**：應用程式生命週期中具有明確目的和資源分配的主要時期
+- **步驟（Stage）**：花費時間和資源來完成特定任務的過程
+- **階段是步驟的序列**：每個階段由按順序消耗時間和資源的有序步驟序列組成
+
+階段和步驟扮演多個角色：
+1. **時間單位**：測量操作何時發生
+2. **資源單位**：測量和控制 CPU、內存、GPU 和其他計算資源
+3. **狀態轉換器**：通過定義的過程將一個狀態（數據）轉換為另一個狀態
+
+這種多維視圖允許對應用程式行為和優化進行全面推理。
+
+## 初始化階段分解
+
+初始化階段包含按順序執行的幾個不同步驟：
+
+1. **系統初始化步驟**：載入庫、配置環境、設置全域變數
+2. **UI 構建步驟**：創建所有 UI 元素和組件（所有可能的組件）
+3. **數據準備步驟**：載入和準備啟動時需要的靜態數據
+4. **會話設置步驟**：在用戶交互之前建立初始會話狀態
+
+所有一次性操作都應在適當的初始化步驟中執行，而不是延遲到運行時條件執行。
+
+## 說明
+
+當已知代碼只執行一次時，將其放在條件邏輯中會增加不必要的複雜性和潛在錯誤。一次性操作應該在應用程式啟動階段確定性地執行，為應用程式的反應性部分創建穩定的基礎。
+
+## 實施指南
+
+### 1. UI 結構創建 {#ui-structure-creation}
+
+所有 UI 結構應在啟動階段創建一次：
+
+```r
+# 正確：啟動時一次性 UI 創建
+ui <- fluidPage(
+  div(id = "always_visible", ...),
+  div(id = "sometimes_visible", style = "display: none;", ...),
+  div(id = "conditionally_visible", style = "display: none;", ...)
+)
+
+# 錯誤：條件性 UI 創建
+ui <- fluidPage(
+  div(id = "always_visible", ...),
+  conditionalPanel(
+    condition = "input.show_panel == true",
+    div(id = "sometimes_visible", ...)
+  )
+)
+```
+
+### 2. 配置載入 {#configuration-loading}
+
+所有配置應在啟動時載入一次：
+
+```r
+# 正確：啟動時一次性配置載入
+app_config <- load_config("config.yaml")
+
+# 錯誤：條件性配置載入
+observe({
+  if (input$reload_config) {
+    app_config(load_config("config.yaml"))
+  }
+})
+```
+
+### 3. 靜態組件初始化 {#static-component-initialization}
+
+不會改變的組件應在啟動時完全初始化：
+
+```r
+# 正確：一次性組件初始化
+oneTimeUnionUI(
+  main = div(...),
+  panel1 = div(...),
+  panel2 = div(...)
+)
+
+# 錯誤：反應性組件生成
+output$ui_components <- renderUI({
+  if (input$show_panel1) {
+    tagList(div(...))
+  } else {
+    tagList(div(...))
+  }
+})
+```
+
+## 好處
+
+1. **性能**：啟動時的一次性操作消除了冗餘執行
+2. **可預測性**：確定性的啟動序列更容易推理
+3. **可靠性**：減少條件邏輯導致運行時錯誤的可能性
+4. **狀態保持**：組件在整個應用程式生命週期中存在，保持狀態
+5. **簡單性**：應用程式的靜態和動態方面之間的清晰分離
+
+## 運行時可見性控制
+
+對於需要條件可見性的啟動時創建的元素：
+
+```r
+# 啟動時創建所有 UI 元素（一次性）
+ui <- fluidPage(
+  div(id = "panel1", ...),
+  div(id = "panel2", style = "display: none;", ...)
+)
+
+# 運行時控制可見性（多次）
+server <- function(input, output, session) {
+  observe({
+    if (input$show_panel2) {
+      shinyjs::show("panel2")
+    } else {
+      shinyjs::hide("panel2")
+    }
+  })
+}
+```
+
+## 反模式
+
+### 1. 條件組件創建 {#conditional-component-creation}
+
+避免：
+```r
+# 不好：條件性創建組件
+observe({
+  if (input$create_component) {
+    output$component <- renderUI({
+      div(...)
+    })
+  }
+})
+```
+
+### 2. 運行時動態載入 {#runtime-dynamic-loading}
+
+避免：
+```r
+# 不好：運行時條件性載入資源
+observeEvent(input$load_module, {
+  source("module.R")
+  callModule(...)
+})
+```
+
+### 3. 重新創建一次性元素 {#recreating-one-time-elements}
+
+避免：
+```r
+# 不好：重新創建應該創建一次的元素
+output$static_text <- renderUI({
+  div("這永遠不會改變但每次都重新創建")
+})
+```
+
+## 應用於組件命名
+
+對遵循此模式的組件使用「oneTime」前綴：
+
+```r
+# 清楚地傳達執行模式
+oneTimeUnionUI <- function(...) {
+  # 啟動時創建 UI 結構一次
+}
+
+oneTimeInitializer <- function() {
+  # 啟動時執行初始化一次
+}
+```
+
+## 相關原則
+
+- P22：CSS 控制優於 Shiny 條件
+- MP0038：增量單功能發布
+- MP0037：僅為臨時或不確定代碼添加註釋

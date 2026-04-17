@@ -1,0 +1,243 @@
+---
+title: "MP093: Script Separation Principle"
+subtitle: "Separation of executable scripts from reusable components"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP093"
+date-created: "2025-08-27"
+date-modified: "2025-08-27"
+author: "Claude"
+type: "meta-principle"
+law: "Framework Architecture Law"
+article:
+  number: 93
+  title: "Script Separation Principle"
+related_to:
+  - "MP002: Structural Blueprint"
+  - "MP014: Modularity"
+  - "MP019: Neighborhood Principle"
+  - "MP122: Dual-Track Subrepo Architecture"
+  - "SO_R001: Directory Structure"
+  - "DEV_R032: Update Script Structure Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 93: Script Separation Principle {#overview}
+
+**Framework Architecture Law Article 93 (Script Separation Principle)**
+
+The system architecture MUST maintain a clear separation between **executable scripts** that perform operations and **reusable components** that provide functionality. This separation ensures maintainability, reusability, and clear architectural boundaries.
+
+:::{.callout-important}
+## Core Principle
+- **update_scripts/**: Contains all executable scripts that perform actual operations
+- **global_scripts/**: Contains reusable functions, modules, components, and documentation
+- Executable scripts SOURCE reusable components but never the reverse
+:::
+
+# Section 1: Architectural Distinction {#distinction}
+
+## Subsection 1: update_scripts Directory {#update-scripts}
+
+The `update_scripts/` directory is the **execution layer** of the system:
+
+**Purpose**: Contains all scripts that actually execute operations
+- ETL pipelines (`platform_ETL01_*.R` files)
+- Data derivation scripts (`platform_D01_*.R` files)  
+- Database update operations (`sc_*.R` files)
+- Data refresh scripts
+- Migration scripts
+- One-time fix scripts
+
+**Characteristics**:
+- Scripts are **executable** - they DO things
+- Scripts are **stateful** - they modify system state
+- Scripts are **specific** - they perform particular tasks
+- Scripts are **time-bound** - they run at specific times or events
+- Scripts **consume** functions from global_scripts
+
+**Naming Pattern**:
+```
+platform_type_number.R
+```
+Where:
+- `platform`: Platform ID (e.g., cbz, eby, amz)
+- `type`: Operation type (ETL, D for derivation, sc for system change)
+- `number`: Sequential identifier
+
+## Subsection 2: global_scripts Directory {#global-scripts}
+
+The `global_scripts/` directory is the **library layer** of the system:
+
+**Purpose**: Contains all reusable components and documentation
+- Shared functions (`04_utils/`)
+- Database utilities (`02_db_utils/`)
+- Configuration tools (`03_config/`)
+- UI components (`10_rshinyapp_components/`)
+- System principles (`00_principles/`)
+- Templates and examples
+- Language frameworks (NSQL, AIMETA)
+
+**Characteristics**:
+- Components are **reusable** - they can be used many times
+- Components are **stateless** - they don't modify global state
+- Components are **generic** - they solve general problems
+- Components are **timeless** - they exist to be called
+- Components **provide** functions to update_scripts
+
+**Organization Pattern**:
+```
+global_scripts/
+├── 00_principles/        # Documentation layer
+├── 01_db/               # Infrastructure layer
+├── 02_db_utils/         # Data access layer
+├── 03_config/           # Configuration layer
+├── 04_utils/            # Utility layer
+├── 05_data_processing/  # Processing layer
+└── 10_rshinyapp_components/ # UI layer
+```
+
+# Section 2: Dependency Rules {#dependencies}
+
+## Subsection 1: Allowed Dependencies {#allowed}
+
+**update_scripts → global_scripts** ✅
+```r
+# In update_scripts/cbz_ETL01_0IM.R
+source("scripts/global_scripts/01_db/dbConnect.R")
+source("scripts/global_scripts/04_utils/fn_process_data.R")
+```
+
+**global_scripts → global_scripts** ✅ (within layer hierarchy)
+```r
+# In global_scripts/05_data_processing/fn_transform.R
+source("../04_utils/fn_validate.R")  # Lower numbered layer OK
+```
+
+## Subsection 2: Forbidden Dependencies {#forbidden}
+
+**global_scripts → update_scripts** ❌
+```r
+# NEVER do this in global_scripts
+source("../../update_scripts/cbz_ETL01.R")  # FORBIDDEN
+```
+
+**Higher → Lower numbered global_scripts** ❌
+```r
+# In 04_utils/fn_utility.R
+source("../05_data_processing/fn_process.R")  # FORBIDDEN - breaks hierarchy
+```
+
+# Section 3: Implementation Patterns {#patterns}
+
+## Subsection 1: Executable Script Pattern {#executable-pattern}
+
+Every executable script in `update_scripts/` follows this pattern:
+
+```r
+# cbz_ETL01_0IM.R - Executable script
+
+# 1. INITIALIZE - Source required components
+source("scripts/global_scripts/00_principles/sc_initialization_update_mode.R")
+source("scripts/global_scripts/01_db/dbConnect.R")
+source("scripts/global_scripts/04_utils/fn_extract_data.R")
+
+# 2. MAIN - Execute operations using sourced functions
+conn <- dbConnect_universal()
+data <- fn_extract_data(conn, params)
+# ... perform ETL operations
+
+# 3. TEST - Verify results
+test_results <- fn_validate_etl(data)
+
+# 4. DEINITIALIZE - Clean up
+dbDisconnect(conn)
+```
+
+## Subsection 2: Reusable Component Pattern {#component-pattern}
+
+Every reusable component in `global_scripts/` follows this pattern:
+
+```r
+# global_scripts/04_utils/fn_process_data.R - Reusable function
+
+#' Process Data Function
+#' @description A reusable function for data processing
+#' @param data Input data frame
+#' @param config Processing configuration
+#' @return Processed data frame
+fn_process_data <- function(data, config) {
+  # Pure function - no side effects
+  # No sourcing of update_scripts
+  # May source other global_scripts functions
+  
+  processed <- data %>%
+    validate_input() %>%
+    transform_data(config) %>%
+    validate_output()
+    
+  return(processed)
+}
+```
+
+# Section 4: Benefits {#benefits}
+
+This separation provides:
+
+1. **Clear Boundaries**: Obvious distinction between "what runs" and "what helps"
+2. **Reusability**: Functions in global_scripts can be used by any executable
+3. **Maintainability**: Changes to functions don't affect script logic
+4. **Testability**: Functions can be tested independently
+5. **Discoverability**: Developers know where to find executables vs utilities
+6. **Version Control**: Different change patterns for scripts vs libraries
+7. **Architectural Foundation**: Provides conceptual basis for MP122's physical separation via subrepos
+
+# Section 5: Migration Guidelines {#migration}
+
+When encountering code that violates this principle:
+
+1. **Identify misplaced code**:
+   - Executable logic in global_scripts → Move to update_scripts
+   - Reusable functions in update_scripts → Extract to global_scripts
+
+2. **Refactor pattern**:
+   ```r
+   # Before: Mixed concerns in update_scripts/script.R
+   process_data <- function(x) { ... }  # Reusable
+   data <- read.csv("file.csv")        # Executable
+   result <- process_data(data)        # Executable
+   
+   # After: Separated concerns
+   # global_scripts/04_utils/fn_process_data.R
+   fn_process_data <- function(x) { ... }
+   
+   # update_scripts/script.R  
+   source("scripts/global_scripts/04_utils/fn_process_data.R")
+   data <- read.csv("file.csv")
+   result <- fn_process_data(data)
+   ```
+
+# Section 6: Enforcement {#enforcement}
+
+## Code Review Checklist
+
+When reviewing code, verify:
+
+- [ ] No executable scripts in global_scripts/
+- [ ] No reusable function definitions in update_scripts/ (except script-specific helpers)
+- [ ] All sourcing follows the dependency rules
+- [ ] Scripts in update_scripts/ follow DEV_R032 structure
+- [ ] Functions in global_scripts/ are properly documented
+- [ ] Directory placement matches code purpose
+
+---
+
+*Based on: Framework Architecture Law Article 93*  
+*Implements: System architectural separation of concerns*  
+*Related: [SO_R001 Directory Structure](../../CH01_structure_organization/rules/SO_R001_directory_structure.qmd), [DEV_R032 Update Script Structure](../../CH03_development_methodology/rules/DEV_R032_update_script_structure.qmd)*

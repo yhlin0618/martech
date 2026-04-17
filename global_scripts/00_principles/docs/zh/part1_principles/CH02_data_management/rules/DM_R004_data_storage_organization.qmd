@@ -1,0 +1,673 @@
+---
+title: "DM_R004: Data Storage Organization Rule"
+subtitle: "Organized storage of data files by type and purpose in designated directories"
+chapter: "CH02"
+category: "rule"
+number: "DM_R004"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Data Management Law Implementation Rules"
+article-number: "Article 4"
+related_to:
+  - "SO_R006: Archiving Standard"
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Data Management Law Implementation Rules Article 4 (Data Storage Organization Rule)**
+
+This article mandates that data files must be organized by type and purpose in designated directories, with database files specifically stored in the `app_data` folder rather than in the application root directory.
+
+:::{.callout-important}
+## Core Rule
+Data files must be organized by type and purpose in designated directories, with database files specifically stored in the `app_data` folder rather than in the application root directory.
+:::
+
+# Section 1: Directory Structure {#structure}
+
+## Subsection 1: Database Files {#database}
+
+第一項：資料庫檔案位置 (Database file location)
+
+All database files MUST be stored in the `app_data` directory:
+- Files include: `.db`, `.sqlite`, `.duckdb` extensions
+- Correct: `app_data/app_data.duckdb`
+- Incorrect: `app_data.duckdb` in root directory
+
+## Subsection 2: Data Type Separation {#separation}
+
+第一項：資料類型分離 (Data type separation)
+
+Data files shall be organized by purpose:
+
+```
+app_data/
+├── raw/           # Raw input data files
+├── processed/     # Processed intermediate files
+├── exports/       # Exported output files
+├── temp/          # Temporary working files
+├── cache/         # Cached results
+└── backups/       # Backup files
+    ├── db/        # Database backups
+    └── config/    # Configuration backups
+```
+
+第二項：目錄用途說明 (Directory purpose descriptions)
+
+- **raw/**: Original data files as received, unmodified
+- **processed/**: Data after transformation or cleaning
+- **exports/**: Files generated for external use
+- **temp/**: Working files that can be safely deleted
+- **cache/**: Performance optimization caches
+- **backups/**: Historical versions and safety copies
+
+## Subsection 3: Backup Organization {#backup}
+
+第一項：備份檔案組織 (Backup file organization)
+
+- Database backups: `app_data/backups/db/`
+- Configuration backups: `app_data/backups/config/`
+- Date-based naming: `app_data.duckdb.YYYY-MM-DD.bak`
+
+# Section 2: Naming Conventions {#naming}
+
+## Subsection 1: Database File Names {#db-names}
+
+第一項：資料庫檔案命名 (Database file naming)
+
+Standard database file names:
+- Primary application database: `app_data.duckdb`
+- Test database: `test_data.duckdb`
+- Development database: `dev_data.duckdb`
+- Production database: `prod_data.duckdb`
+
+## Subsection 2: Data File Names {#data-names}
+
+第一項：資料檔案命名格式 (Data file naming format)
+
+Use the format: `[purpose]_[source]_[date].[extension]`
+
+Examples:
+- `customers_cbz_20250406.csv`
+- `products_amz_20250407.json`
+- `sales_all_20250408.xlsx`
+
+第二項：命名元素說明 (Naming element descriptions)
+
+- **purpose**: What the data represents (customers, products, sales)
+- **source**: Where the data comes from (platform_id, system name)
+- **date**: When the data was created/extracted (YYYYMMDD format)
+- **extension**: File format indicator
+
+# Section 3: Implementation Guidelines {#implementation}
+
+## Subsection 1: Directory Creation {#creation}
+
+第一項：目錄建立函數 (Directory creation function)
+
+When initializing the application, ensure proper directory structure:
+
+```r
+create_data_directories <- function() {
+  dirs <- c(
+    "app_data",
+    "app_data/raw", 
+    "app_data/processed",
+    "app_data/exports",
+    "app_data/temp",
+    "app_data/cache",
+    "app_data/backups/db",
+    "app_data/backups/config"
+  )
+  
+  for (dir in dirs) {
+    if (!dir.exists(dir)) {
+      dir.create(dir, recursive = TRUE)
+      message(paste("Created directory:", dir))
+    }
+  }
+}
+```
+
+## Subsection 2: Database Connection {#connection}
+
+第一項：資料庫連接模式 (Database connection pattern)
+
+Always use correct paths when connecting to databases:
+
+```r
+connect_to_app_db <- function(mode = "production") {
+  require(duckdb)
+  
+  # Select database based on mode
+  db_file <- switch(mode,
+    "production" = "app_data/app_data.duckdb",
+    "test" = "app_data/test_data.duckdb",
+    "development" = "app_data/dev_data.duckdb",
+    "app_data/app_data.duckdb"  # default
+  )
+  
+  # Ensure directory exists
+  if (!dir.exists("app_data")) {
+    dir.create("app_data")
+  }
+  
+  # Connect to database
+  con <- dbConnect(duckdb(), db_file)
+  return(con)
+}
+```
+
+## Subsection 3: Data Import/Export {#import-export}
+
+第一項：資料匯入函數 (Data import function)
+
+```r
+import_raw_data <- function(file_name) {
+  # Correct: raw data stored in app_data/raw directory
+  file_path <- file.path("app_data/raw", file_name)
+  
+  if (!file.exists(file_path)) {
+    stop(paste("File not found:", file_path))
+  }
+  
+  # Detect file type and read accordingly
+  ext <- tools::file_ext(file_name)
+  data <- switch(ext,
+    "csv" = read.csv(file_path),
+    "json" = jsonlite::fromJSON(file_path),
+    "xlsx" = readxl::read_excel(file_path),
+    stop(paste("Unsupported file type:", ext))
+  )
+  
+  return(data)
+}
+```
+
+第二項：資料匯出函數 (Data export function)
+
+```r
+export_processed_data <- function(data, file_name, add_timestamp = TRUE) {
+  # Add timestamp if requested
+  if (add_timestamp) {
+    base_name <- tools::file_path_sans_ext(file_name)
+    ext <- tools::file_ext(file_name)
+    timestamp <- format(Sys.Date(), "%Y%m%d")
+    file_name <- paste0(base_name, "_", timestamp, ".", ext)
+  }
+  
+  # Correct: exports stored in app_data/exports directory
+  file_path <- file.path("app_data/exports", file_name)
+  
+  # Ensure directory exists
+  if (!dir.exists("app_data/exports")) {
+    dir.create("app_data/exports", recursive = TRUE)
+  }
+  
+  # Export based on file type
+  ext <- tools::file_ext(file_name)
+  switch(ext,
+    "csv" = write.csv(data, file_path, row.names = FALSE),
+    "json" = jsonlite::write_json(data, file_path),
+    "xlsx" = writexl::write_xlsx(data, file_path),
+    stop(paste("Unsupported file type:", ext))
+  )
+  
+  message(paste("Data exported to:", file_path))
+}
+```
+
+# Section 4: Benefits and Rationale {#benefits}
+
+## Subsection 1: Primary Advantages {#advantages}
+
+第一項：主要優勢 (Primary advantages)
+
+1. **Logical Separation**: Keeps data files separate from application code
+2. **Backup Simplicity**: Makes it easier to backup and restore data files
+3. **Enhanced Security**: Simplifies access control for sensitive data
+4. **Reduced Clutter**: Prevents root directory pollution
+5. **Consistency**: Ensures all team members follow the same structure
+6. **Scalability**: Supports growth without reorganization
+
+## Subsection 2: Security Considerations {#security}
+
+第一項：安全性考量 (Security considerations)
+
+- Centralized data location enables focused security measures
+- Easier to implement access controls on data directories
+- Simplified audit logging for data access
+- Clear separation between code and data
+
+# Section 5: Enforcement and Validation {#enforcement}
+
+## Subsection 1: Code Review Checklist {#review}
+
+第一項：程式碼審查清單 (Code review checklist)
+
+During code reviews, check specifically for:
+
+1. Database files in the root directory
+2. Data files outside their appropriate directories
+3. Inconsistent naming patterns
+4. Missing directory creation logic
+5. Hard-coded paths instead of using `file.path()`
+
+## Subsection 2: Automated Validation {#validation}
+
+第一項：自動驗證函數 (Automated validation function)
+
+```r
+validate_data_organization <- function() {
+  issues <- character()
+  
+  # Check for database files in root
+  root_db_files <- list.files(".", pattern = "\\.(db|sqlite|duckdb)$")
+  if (length(root_db_files) > 0) {
+    issues <- c(issues, paste("Database files in root:", 
+                             paste(root_db_files, collapse = ", ")))
+  }
+  
+  # Check required directories exist
+  required_dirs <- c("app_data", "app_data/raw", "app_data/processed", 
+                     "app_data/exports", "app_data/temp", "app_data/cache")
+  
+  for (dir in required_dirs) {
+    if (!dir.exists(dir)) {
+      issues <- c(issues, paste("Missing directory:", dir))
+    }
+  }
+  
+  # Check for improperly named files
+  if (dir.exists("app_data/raw")) {
+    raw_files <- list.files("app_data/raw")
+    invalid_names <- raw_files[!grepl("^[a-z]+_[a-z0-9]+_[0-9]{8}\\.", raw_files)]
+    if (length(invalid_names) > 0) {
+      issues <- c(issues, paste("Invalid file names in raw/:", 
+                               paste(invalid_names, collapse = ", ")))
+    }
+  }
+  
+  if (length(issues) > 0) {
+    cat("Data Organization Issues Found:\n")
+    cat(paste("-", issues), sep = "\n")
+    return(FALSE)
+  } else {
+    cat("Data organization validation passed.\n")
+    return(TRUE)
+  }
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Data Storage Organization Checklist
+
+**Directory Structure:**
+- [ ] app_data/ directory exists
+- [ ] raw/ subdirectory created
+- [ ] processed/ subdirectory created
+- [ ] exports/ subdirectory created
+- [ ] temp/ subdirectory created
+- [ ] cache/ subdirectory created
+- [ ] backups/db/ structure created
+- [ ] backups/config/ structure created
+
+**Database Files:**
+- [ ] All .db files in app_data/
+- [ ] All .sqlite files in app_data/
+- [ ] All .duckdb files in app_data/
+- [ ] No database files in root
+
+**Naming Conventions:**
+- [ ] Database files follow standard names
+- [ ] Data files use purpose_source_date format
+- [ ] Backup files include timestamps
+- [ ] Extensions match file content
+
+**Implementation:**
+- [ ] Directory creation function implemented
+- [ ] Database connection uses correct paths
+- [ ] Import functions reference app_data/raw/
+- [ ] Export functions use app_data/exports/
+- [ ] Validation function in place
+
+**Documentation:**
+- [ ] README describes directory structure
+- [ ] Data flow documented
+- [ ] Backup procedures defined
+- [ ] Team trained on conventions
+:::
+
+# Section 6: Three-Tier Data Storage Architecture {#data-tiers}
+
+## Subsection 1: Data Tier Definitions {#tier-definitions}
+
+第一項：三層資料架構定義 (Three-tier data architecture definition)
+
+:::{.callout-important}
+## Critical Distinction
+`global_scripts/` is distributed via git subrepo to **ALL companies** (VitalSigns, BrandEdge, InsightForge, MAMBA, etc.). Therefore:
+- `global_scripts/30_global_data/` contains data shared by **ALL companies**
+- Company-specific data (like MAMBA's turbo metadata) belongs in `{company}/data/`
+:::
+
+This section defines the **three-tier data architecture**:
+
+| Tier | Location | Scope | Examples |
+|------|----------|-------|----------|
+| **Universal** | `global_scripts/30_global_data/` | All companies share | df_metadata_common, GeoJSON, mock data |
+| **Company** | `{company}/data/app_data/` | Single company (cross-app) | df_metadata_turbo (MAMBA only) |
+| **Application** | `{company}/data/app_data/` | Single application | df_analysis_results |
+
+第二項：資料放置決策規則 (Data placement decision rules)
+
+:::{.callout-tip}
+## Data Placement Decision Tree
+1. **Is this data used by ALL companies?**
+   - YES → `global_scripts/30_global_data/` (Universal tier)
+   - NO → Continue to step 2
+
+2. **Is this data specific to ONE company?**
+   - YES → `{company}/data/app_data/` (Company tier)
+   - Example: MAMBA turbo metadata, CBZ product attributes
+
+3. **Is this data specific to ONE application?**
+   - YES → `{company}/data/app_data/` (Application tier)
+   - Example: Analysis results, user sessions
+:::
+
+## Subsection 2: Directory Structure by Tier {#tier-structure}
+
+第一項：Universal 層目錄結構 (Universal tier directory structure)
+
+```
+global_scripts/30_global_data/                    # ALL companies share this
+├── global_scd_type1.duckdb                   # SCD Type 1 primary database
+│   └── df_metadata_common                    # Universal mappings (time, colors, etc.)
+├── mock_data.duckdb                          # Testing mock data
+├── parameters/                               # Global parameter files
+└── scd_type0/                                # SCD Type 0 static data
+    └── *.json                                # GeoJSON, static reference tables
+```
+
+第二項：Company/Application 層目錄結構 (Company/Application tier directory structure)
+
+```
+{company}/data/app_data/                       # Single company's data
+├── app_data.duckdb                           # Company primary database
+│   ├── df_metadata_turbo                     # MAMBA-specific turbo metadata
+│   ├── df_metadata_ebay                      # eBay-specific metadata (if applicable)
+│   ├── df_analysis_results                   # Application analysis outputs
+│   └── df_ai_translation_cache               # AI translation cache
+├── raw/                                      # Raw input data
+├── processed/                                # Processed data
+├── exports/                                  # Exported files
+└── cache/                                    # Performance cache
+```
+
+第三項：資料庫用途說明 (Database purpose descriptions)
+
+**Universal tier (`global_scripts/30_global_data/`):**
+- **global_scd_type1.duckdb**: Slowly changing dimension Type 1 data
+  - `df_metadata_common`: Universal mappings (time periods, colors, common terms)
+  - Cross-company reference data
+- **mock_data.duckdb**: Mock data for testing and development
+- **scd_type0/**: Static reference data that never changes (SCD Type 0)
+  - Geographic boundaries (GeoJSON)
+  - Fixed mappings and constants
+
+**Company tier (`{company}/data/app_data/`):**
+- **app_data.duckdb**: Company-specific database
+  - `df_metadata_turbo`: MAMBA turbocharger product attributes (MAMBA only)
+  - `df_metadata_cbz`: Cyberbiz product attributes (if applicable)
+  - Company-specific lookup tables
+
+## Subsection 3: Data Placement Rules {#data-placement}
+
+第一項：資料放置規則 (Data placement rules)
+
+**Universal tier (`global_scripts/30_global_data/`) - ALL companies share:**
+- `df_metadata_common`: Universal variable name mappings (time, colors, common terms)
+- Cross-company reference data
+- Static geographic data (SCD Type 0): GeoJSON boundaries
+- Mock data for testing
+
+**Company tier (`{company}/data/app_data/`) - Single company:**
+- Company-specific metadata lookup tables:
+  - `df_metadata_turbo`: MAMBA turbocharger attributes (MAMBA only)
+  - `df_metadata_ebay`: eBay product attributes (company-specific)
+- Company-wide shared configurations
+
+**Application tier (`{company}/data/app_data/`) - Single application:**
+- Application-specific analysis results (e.g., `df_cbz_poisson_analysis`)
+- User-generated content
+- Session data and caches
+- Frequently updated operational data
+- AI translation caches
+
+:::{.callout-warning}
+## Critical Rule
+**NEVER place company-specific data in `global_scripts/30_global_data/`.**
+
+`global_scripts/` is distributed via git subrepo to ALL companies. Placing MAMBA-specific data (like `df_metadata_turbo`) in X_global_data/` would:
+1. Pollute other companies' environments
+2. Create unnecessary dependencies
+3. Violate separation of concerns
+:::
+
+## Subsection 4: Database Connection Patterns {#connection-patterns}
+
+第一項：Universal 層資料庫連接 (Universal tier database connection)
+
+Use this pattern for data shared by ALL companies:
+
+```r
+#' Connect to Global (Universal) Database
+#'
+#' @param db_name Name of the database file (without extension)
+#' @return DuckDB connection object
+#' @principle DM_R004 Section 6: Three-Tier Data Architecture
+connect_to_global_db <- function(db_name = "global_scd_type1") {
+  require(duckdb)
+
+  # Universal tier: global_scripts/30_global_data/
+  db_file <- file.path(
+    g_global_scripts_path,  # from initialization
+    "30_global_data",
+    paste0(db_name, ".duckdb")
+  )
+
+  if (!file.exists(db_file)) {
+    stop("Global database not found: ", db_file)
+  }
+
+  con <- dbConnect(duckdb(), db_file)
+  return(con)
+}
+```
+
+第二項：Company/Application 層資料庫連接 (Company/Application tier database connection)
+
+Use this pattern for company-specific data (most common case):
+
+```r
+#' Connect to Company/Application Database
+#'
+#' @param db_name Name of the database file (without extension)
+#' @return DuckDB connection object
+#' @principle DM_R004 Section 6: Three-Tier Data Architecture
+connect_to_app_db <- function(db_name = "app_data") {
+  require(duckdb)
+
+  # Company/Application tier: {project}/data/app_data/
+  db_file <- file.path(
+    g_project_root,  # from initialization (e.g., MAMBA root)
+    "data", "app_data",
+    paste0(db_name, ".duckdb")
+  )
+
+  if (!file.exists(db_file)) {
+    stop("App database not found: ", db_file)
+  }
+
+  con <- dbConnect(duckdb(), db_file)
+  return(con)
+}
+```
+
+第三項：單一連線模式（推薦）(Single connection pattern - recommended)
+
+For most use cases, company-specific metadata and application data reside in the same database (`app_data.duckdb`). Use a single connection:
+
+```r
+my_function <- function(
+  ...,
+  cache_con = NULL    # Single connection to app_data (metadata + cache)
+) {
+  # Company metadata (e.g., df_metadata_turbo) is in app_data
+  if (!is.null(cache_con)) {
+    metadata <- DBI::dbGetQuery(cache_con, "SELECT * FROM df_metadata_turbo")
+    # ... also use for caching, analysis results, etc.
+  }
+}
+```
+
+第四項：雙連線模式（特殊情況）(Dual connection pattern - special cases)
+
+Only use dual connections when you need BOTH universal data and company data:
+
+```r
+my_function <- function(
+  ...,
+  global_con = NULL,  # Connection to 30_global_data (universal metadata)
+  cache_con = NULL    # Connection to app_data (company metadata + cache)
+) {
+  # Universal metadata (e.g., df_metadata_common for time/colors)
+  if (!is.null(global_con)) {
+    common_metadata <- DBI::dbGetQuery(global_con, "SELECT * FROM df_metadata_common")
+  }
+
+  # Company metadata (e.g., df_metadata_turbo for MAMBA)
+  if (!is.null(cache_con)) {
+    turbo_metadata <- DBI::dbGetQuery(cache_con, "SELECT * FROM df_metadata_turbo")
+  }
+}
+```
+
+## Subsection 5: ETL Patterns by Tier {#etl-patterns}
+
+第一項：Universal 層 ETL 模式 (Universal tier ETL pattern)
+
+For data shared by ALL companies (rare - only `df_metadata_common`):
+
+```r
+# Example: ETL for universal metadata_common
+# File: update_scripts/ETL/all/all_ETL_metadata_common_0IM.R
+
+# 1. Load configuration
+config <- yaml::read_yaml(file.path(g_global_scripts_path, "03_config", "metadata_sources.yaml"))
+common_config <- config$metadata_common
+
+# 2. Connect to UNIVERSAL database (all companies share)
+global_db_path <- file.path(
+  g_global_scripts_path,
+  "30_global_data",
+  common_config$target_db_file  # "global_scd_type1.duckdb"
+)
+global_con <- dbConnect(duckdb(), global_db_path)
+
+# 3. Fetch and write data
+df_metadata <- googlesheets4::read_sheet(common_config$sheet_id, sheet = common_config$sheet_name)
+dbWriteTable(global_con, common_config$target_table, df_metadata, overwrite = TRUE)
+
+# 4. Cleanup
+dbDisconnect(global_con)
+```
+
+第二項：Company 層 ETL 模式 (Company tier ETL pattern)
+
+For company-specific data (most common case):
+
+```r
+# Example: ETL for MAMBA's metadata_turbo
+# File: update_scripts/ETL/all/all_ETL_metadata_turbo_0IM.R
+
+# 1. Load configuration
+config <- yaml::read_yaml(file.path(g_global_scripts_path, "03_config", "metadata_sources.yaml"))
+turbo_config <- config$metadata_turbo
+
+# 2. Connect to COMPANY database (MAMBA only)
+# Note: target_scope = "company" indicates this is company-specific
+app_db_path <- file.path(
+  g_project_root,           # e.g., MAMBA project root
+  "data", "app_data",
+  turbo_config$target_db_file  # "app_data.duckdb"
+)
+app_con <- dbConnect(duckdb(), app_db_path)
+
+# 3. Fetch and write data
+df_metadata <- googlesheets4::read_sheet(turbo_config$sheet_id, sheet = turbo_config$sheet_name)
+dbWriteTable(app_con, turbo_config$target_table, df_metadata, overwrite = TRUE)
+
+# 4. Cleanup
+dbDisconnect(app_con)
+```
+
+第三項：Configuration 結構 (Configuration structure)
+
+The `metadata_sources.yaml` should specify `target_scope`:
+
+```yaml
+# metadata_sources.yaml
+metadata_turbo:
+  sheet_id: "..."
+  sheet_name: "metadata_Turbo"
+  target_scope: "company"           # Determines: universal | company | application
+  target_database: "app_data"       # Target directory
+  target_db_file: "app_data.duckdb" # Target database file
+  target_table: "df_metadata_turbo"
+
+metadata_common:
+  sheet_id: "..."
+  sheet_name: "metadata_Common"
+  target_scope: "universal"         # Goes to global_scripts/30_global_data/
+  target_database: "30_global_data"
+  target_db_file: "global_scd_type1.duckdb"
+  target_table: "df_metadata_common"
+```
+
+# Conclusion {#conclusion}
+
+The Data Storage Organization Rule ensures consistent, secure, and maintainable data management across all applications. By distinguishing between the **three-tier data architecture**:
+
+1. **Universal tier** (`global_scripts/30_global_data/`) - Data shared by ALL companies
+   - Example: `df_metadata_common` (time periods, colors, common terms)
+   - Distributed via git subrepo to VitalSigns, BrandEdge, InsightForge, MAMBA, etc.
+
+2. **Company tier** (`{company}/data/app_data/`) - Single company data (cross-app)
+   - Example: `df_metadata_turbo` (MAMBA turbocharger attributes)
+   - Stays within the company's project, NOT distributed to other companies
+
+3. **Application tier** (`{company}/data/app_data/`) - Single application data
+   - Example: `df_cbz_poisson_analysis` (analysis results)
+   - Application-specific caches, session data, user content
+
+We achieve better organization, simplified backups, enhanced security, and proper separation of concerns. This three-tier approach prevents data pollution across companies while enabling code reuse through the shared `global_scripts/` repository.
+
+---
+
+*Based on: Data Management Law Implementation Rules Article 4*
+*Related to: [SO_R006 Archiving Standard](../../CH01_structure_organization/rules/SO_R006_archiving_standard.qmd), [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd), [MP137 No Hardcoded Project-Specific Content](../../CH00_fundamental_principles/03_development_methodology/MP137_no_hardcoded_project_specific_content.qmd), [SO_P015 No Hardcoded Lookup Tables](../../CH01_structure_organization/principles/SO_P015_no_hardcoded_lookup_tables.qmd)*

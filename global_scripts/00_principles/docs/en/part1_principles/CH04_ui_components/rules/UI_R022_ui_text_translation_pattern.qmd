@@ -1,0 +1,459 @@
+---
+title: "UI_R022: UI Text Translation Pattern"
+subtitle: "Standard implementation pattern for translating UI text using the dictionary-driven translation system"
+chapter: "CH04"
+category: "rule"
+number: "UI_R022"
+date-created: "2025-12-26"
+date-modified: "2026-03-01"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article-number:
+  number: 22
+  title: "UI Text Translation Pattern"
+related_to:
+  - "UI_P012: Multi-Language UI Support"
+  - "UI_R023: Language Fallback Chain"
+  - "SO_P010: Config-Driven Customization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 22: UI Text Translation Pattern {#overview}
+
+**UI Components Law Article 22 (UI Text Translation Pattern)**
+
+This rule defines the standard implementation pattern for translating UI text. It specifies the `translate()` function initialization, dictionary file format, and usage patterns throughout the application.
+
+:::{.callout-important}
+## Core Rule
+All user-facing text must pass through the `translate()` function. The translation dictionary must be initialized at app startup before any UI rendering.
+:::
+
+# Section 1: Translation Initialization {#translation-initialization}
+
+## Subsection 1: Function Definition {#function-definition}
+
+**File Location:** `scripts/global_scripts/04_utils/fn_initialize_ui_translation.R`
+
+**Initialization Pattern:**
+
+```r
+#' Initialize UI Translation Function
+#'
+#' Creates a translation function based on configured language
+#' and CSV dictionary file.
+#'
+#' @return function A translation function that takes English text
+#'         and returns translated text
+#'
+#' @export
+initialize_ui_translation <- function() {
+
+  # Dictionary path
+  dict_path <- file.path(
+    "scripts/global_scripts/30_global_data/parameters/scd_type2",
+    "df_ui_terminology_dictionary.csv"
+  )
+
+  # Fallback if dictionary not found
+  if (!file.exists(dict_path)) {
+    message("[Translation] Dictionary not found, using identity")
+    return(identity)
+  }
+
+  # Read dictionary with UTF-8 BOM handling
+  dict <- read.csv(dict_path, fileEncoding = "UTF-8-BOM",
+                   stringsAsFactors = FALSE)
+
+  # Determine target language from config
+  lang <- tolower(gsub("[-_]", "_", app_configs$language))
+  target_col <- switch(lang,
+    "zh_tw" = "zh_tw",
+    "zh_cn" = "zh_cn",
+    "en_us" = "en_us",
+    "en"    = "en_us",
+    "en_us"  # default
+  )
+
+  # Create lookup environment for O(1) access
+  lookup_env <- new.env(hash = TRUE)
+  for (i in seq_len(nrow(dict))) {
+    key <- dict$en_us[i]
+    value <- dict[[target_col]][i]
+    lookup_env[[key]] <- value
+  }
+
+  # Return translation function
+  function(text) {
+    if (is.null(text) || !nzchar(text)) return(text)
+    translation <- lookup_env[[text]]
+    if (is.null(translation) || !nzchar(translation)) {
+      return(text)  # Return original if not found
+    }
+    translation
+  }
+}
+```
+
+## Subsection 2: App Startup Integration {#app-startup}
+
+**In app.R or union file:**
+
+```r
+# At app initialization, BEFORE UI definition
+translate <<- identity   # Safe default
+
+# Source translation utility
+source("scripts/global_scripts/04_utils/fn_initialize_ui_translation.R")
+
+# Initialize after app_configs is loaded
+if (exists("initialize_ui_translation", mode = "function") &&
+    exists("app_configs")) {
+  translate <<- initialize_ui_translation()
+}
+```
+
+# Section 2: Dictionary Format {#dictionary-format}
+
+## Subsection 1: CSV Structure {#csv-structure}
+
+**File Location:** `scripts/global_scripts/30_global_data/parameters/scd_type2/df_ui_terminology_dictionary.csv`
+
+**Required Columns:**
+
+| Column | Description | Required |
+|--------|-------------|----------|
+| en_us  | English text (primary key) | Yes |
+| zh_tw  | Traditional Chinese | Optional |
+| zh_cn  | Simplified Chinese | Optional |
+
+**Example Content:**
+
+```csv
+en_us,zh_tw,zh_cn
+Submit,送出,提交
+Cancel,取消,取消
+Customer Profile,客戶檔案,客户档案
+Sales Analysis,銷售分析,销售分析
+Comment analysis is not available for this platform,此平台無評分資料，無法使用產品賽道分析,
+```
+
+## Subsection 2: Dictionary Guidelines {#dictionary-guidelines}
+
+**Best Practices:**
+
+1. **Unique Keys**: Each en_us value must be unique (first occurrence wins)
+2. **Empty Values**: Empty cell means "use fallback language"
+3. **UTF-8 BOM**: Save with UTF-8 BOM for Excel compatibility
+4. **No Quotes**: Avoid quotes unless necessary for commas
+5. **Consistent Terminology**: Use same translation for same term
+
+# Section 3: English Code Identity {#english-code-identity}
+
+## Subsection 1: Core Rule {#english-code-rule}
+
+**All code identifiers MUST be in English. Translation happens only at the display layer via `translate()`.**
+
+This means:
+- Variable names, column names, function names → English
+- UI labels, button text, table headers → `translate("English Key")`
+- data.frame column names → English internally, translated only when rendering
+
+:::{.callout-warning}
+## Anti-Pattern: Chinese in Code
+Never use Chinese characters directly in R code identifiers or data.frame column names. This breaks column referencing, causes encoding issues, and violates the separation of code logic from display text.
+:::
+
+**Violations:**
+
+```r
+# VIOLATION: Chinese column names in data.frame
+show_df <- data.frame(
+  `客戶ID` = df$customer_id,
+  `風險` = df$r_level,
+  `穩定度` = df$s_level
+)
+
+# VIOLATION: Chinese in variable names
+顧客資料 <- get_customer_data()
+```
+
+**Compliant:**
+
+```r
+# COMPLIANT: English column names + translate at display
+show_df <- data.frame(
+  ID = df$customer_id,
+  Risk = df$r_level,
+  Stability = df$s_level,
+  stringsAsFactors = FALSE
+)
+
+# translate() applied only at DT rendering
+DT::datatable(show_df,
+  colnames = sapply(names(show_df), translate),
+  ...)
+```
+
+## Subsection 2: Business Logic String Literals {#business-logic-strings}
+
+**All string values used in business logic (classification labels, strategy names, customer types, risk levels) MUST be in English. Translation happens only at the display layer.**
+
+This extends the English Code Identity rule beyond variable names to include **data values** generated by classification functions, derivation scripts, or any business logic that produces human-readable labels.
+
+:::{.callout-warning}
+## Anti-Pattern: Chinese in Business Logic
+Never use Chinese characters in string literals that serve as classification labels, strategy names, or any business logic output. These values flow through data pipelines, CSV exports, and filter comparisons — Chinese characters cause encoding issues, break string matching, and violate the separation of logic from display.
+:::
+
+**Violations:**
+
+```r
+# VIOLATION: Chinese classification labels
+customer_type <- ifelse(r == "High" & s == "High" & v == "High",
+                        "高價值忠實客",    # Chinese in logic
+                        "一般客戶")
+
+# VIOLATION: Chinese strategy names
+strategy <- "VIP維護"  # Chinese in business logic
+
+# VIOLATION: Chinese risk levels
+r_level <- ifelse(risk > 0.67, "高", "低")  # Chinese labels
+```
+
+**Compliant:**
+
+```r
+# COMPLIANT: English classification labels + translate at display
+customer_type <- ifelse(r == "High" & s == "High" & v == "High",
+                        "High-Value Loyal",
+                        "General")
+
+# COMPLIANT: English strategy, translated only at UI
+strategy <- "VIP Maintenance"
+# In UI: translate("VIP Maintenance") → "VIP維護"
+
+# COMPLIANT: English risk levels
+r_level <- ifelse(risk > 0.67, "High", "Low")
+# In UI: sapply(df$r_level, translate)
+```
+
+**Key Pattern for Classification Functions:**
+
+```r
+# Business logic produces English values
+classify_customer <- function(df) {
+  df$customer_type <- "General"  # English default
+  df$customer_type[high_value] <- "High-Value Loyal"  # English label
+  df$marketing_strategy <- "Standard Nurturing"  # English strategy
+  df
+}
+
+# UI layer translates for display
+output$table <- DT::renderDataTable({
+  show_df <- classified_data()
+  # Translate classification columns at display time
+  translate_cols <- c("customer_type", "marketing_strategy", "r_level")
+  for (col in translate_cols) {
+    show_df[[col]] <- sapply(show_df[[col]], translate)
+  }
+  DT::datatable(show_df, ...)
+})
+```
+
+**CSV Export Pattern:**
+
+```r
+# CSV keeps English keys (machine-readable)
+output$download_csv <- downloadHandler(
+  filename = function() paste0("export_", Sys.Date(), ".csv"),
+  content = function(file) {
+    # Export with English values — no translation
+    utils::write.csv(export_data(), file, row.names = FALSE)
+  }
+)
+```
+
+## Subsection 3: DT Table Column Translation Pattern {#dt-colnames-pattern}
+
+**Standard pattern for translating DT::datatable column names:**
+
+```r
+# Step 1: Build data.frame with English column names
+show_df <- data.frame(
+  ID = df$customer_id,
+  Risk = df$risk_level,
+  Stability = df$stability_level,
+  Value = df$value_level,
+  Type = df$customer_type,
+  Strategy = df$strategy,
+  stringsAsFactors = FALSE
+)
+
+# Step 2: Render with translated column names
+DT::datatable(show_df,
+  colnames = sapply(names(show_df), translate),
+  filter = "top",
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    scrollX = TRUE,
+    dom = "lftip",
+    language = list(
+      url = "//cdn.datatables.net/plug-ins/1.13.7/i18n/zh-HANT.json"
+    )
+  )
+)
+```
+
+**Key points:**
+- `sapply(names(show_df), translate)` translates each column name via the CSV dictionary
+- The DataTables `language` option localizes pagination, search, etc.
+- Column names in CSV: `ID,客戶ID,` / `Risk,風險,` / etc.
+
+# Section 4: Usage Patterns {#usage-patterns}
+
+## Subsection 1: UI Element Labels {#ui-labels}
+
+**Button Labels:**
+
+```r
+actionButton(
+  inputId = ns("submit"),
+  label = translate("Submit"),
+  icon = icon("check")
+)
+
+# With dynamic text
+actionButton(
+  inputId = ns("download"),
+  label = translate("Download Report"),
+  class = "btn-primary"
+)
+```
+
+**Input Labels:**
+
+```r
+selectInput(
+  inputId = ns("platform"),
+  label = translate("Select Platform"),
+  choices = platforms
+)
+
+dateRangeInput(
+  inputId = ns("date_range"),
+  label = translate("Date Range"),
+  start = Sys.Date() - 30,
+  end = Sys.Date()
+)
+```
+
+## Subsection 2: Server-Side Text {#server-side-text}
+
+**Notifications:**
+
+```r
+showNotification(
+  translate("Data updated successfully"),
+  type = "message"
+)
+
+showModal(modalDialog(
+  title = translate("Confirm Action"),
+  translate("Are you sure you want to proceed?"),
+  footer = tagList(
+    actionButton(ns("confirm"), translate("Confirm")),
+    modalButton(translate("Cancel"))
+  )
+))
+```
+
+**Table Headers (preferred pattern — see Section 3.3):**
+
+```r
+output$data_table <- renderDT({
+  show_df <- data.frame(
+    ID = df$customer_id,
+    Date = df$order_date,
+    Amount = df$total_amount,
+    stringsAsFactors = FALSE
+  )
+  DT::datatable(show_df,
+    colnames = sapply(names(show_df), translate),
+    rownames = FALSE
+  )
+})
+```
+
+## Subsection 3: Tooltips and Help Text {#tooltips}
+
+**Tooltip Translation:**
+
+```r
+tags$span(
+  translate("Revenue"),
+  tags$i(
+    class = "fa fa-info-circle ml-1",
+    title = translate("Total revenue from all orders"),
+    `data-toggle` = "tooltip"
+  )
+)
+```
+
+# Section 5: Violations and Compliance {#violations-compliance}
+
+## Subsection 1: Violations {#violations}
+
+**Common Violations:**
+
+```r
+# VIOLATION: Hardcoded text
+actionButton("submit", label = "Submit")  # Not translated
+
+# VIOLATION: String concatenation
+paste("Total:", value)  # "Total:" not translated
+
+# VIOLATION: Direct text in renderUI
+renderUI({
+  p("No data available")  # Not translated
+})
+```
+
+## Subsection 2: Compliant Examples {#compliant}
+
+**Correct Implementation:**
+
+```r
+# COMPLIANT: Using translate()
+actionButton("submit", label = translate("Submit"))
+
+# COMPLIANT: Translated concatenation
+paste(translate("Total:"), value)
+
+# COMPLIANT: Translated renderUI
+renderUI({
+  p(translate("No data available"))
+})
+```
+
+# Section 6: Principle Relationships {#principle-relationships}
+
+This rule:
+
+1. **Implements UI_P012 (Multi-Language UI Support)** with specific patterns
+2. **Works With UI_R023 (Language Fallback Chain)** for missing translations
+3. **Follows SO_P010 (Config-Driven Customization)** for language selection
+4. **Extends UI_R007 (UI Text Standardization)** to multiple languages
+
+---
+
+*Based on: UI Components Law Article 22*
+*Implements: [UI_P012 Multi-Language UI Support](../principles/UI_P012_multi_language_ui_support.qmd)*

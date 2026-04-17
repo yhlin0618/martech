@@ -1,0 +1,286 @@
+---
+title: "MP049: Docker 基礎部署元原則 (Docker-Based Deployment)"
+subtitle: "所有生產應用程式部署必須使用 Docker 容器化，確保跨環境的一致性、可移植性和可重現性"
+author: "Claude"
+date: "2025-04-08"
+date-modified: "2025-08-16"
+categories: [meta-principle, deployment, docker, containerization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+所有生產應用程式部署必須使用 Docker 容器化，使用標準化的容器定義確保跨不同環境的一致性、可移植性和可重現性。Docker 容器作為所有精準行銷應用程式的基礎部署單元。
+
+## 理由
+
+通過 Docker 容器化提供了幾個關鍵優勢：
+
+1. **環境一致性**：通過將應用程式與其依賴項打包來消除"在我的機器上工作"的問題
+2. **部署可移植性**：能夠部署到任何支持 Docker 容器的平台
+3. **資源隔離**：防止應用程式之間的衝突並優化資源使用
+4. **可擴展性**：促進水平擴展和負載平衡
+5. **版本控制**：提供應用程式部署的清晰版本管理
+6. **快速部署**：簡化部署過程並實現 CI/CD 集成
+7. **回滾能力**：在需要時簡化恢復到先前應用程式版本
+
+## 實施指南
+
+### Dockerfile 結構 {#dockerfile-structure}
+
+每個應用程式必須有一個 Dockerfile，該檔案：
+
+1. **使用官方基礎映像**：從官方、已驗證的基礎映像開始
+   ```dockerfile
+   FROM rocker/shiny:latest
+   ```
+
+2. **最小化映像層**：組合相關操作以減少複雜性
+   ```dockerfile
+   RUN apt-get update && \
+       apt-get install -y --no-install-recommends \
+       libssl-dev \
+       libxml2-dev && \
+       apt-get clean && \
+       rm -rf /var/lib/apt/lists/*
+   ```
+
+3. **分離安裝步驟**：按依賴類型組織
+   ```dockerfile
+   # 系統依賴
+   RUN apt-get update && apt-get install -y ...
+   
+   # R 套件依賴
+   RUN R -e "install.packages(c('shiny', 'dplyr', 'DT'))"
+   
+   # 應用程式代碼
+   COPY . /app
+   ```
+
+4. **實施適當的用戶權限**：避免以 root 身份運行
+   ```dockerfile
+   RUN useradd -m shiny-user
+   USER shiny-user
+   ```
+
+5. **包括健康檢查**：使容器編排系統能夠監控健康狀況
+   ```dockerfile
+   HEALTHCHECK --interval=30s --timeout=5s \
+     CMD curl -f http://localhost:3838/ || exit 1
+   ```
+
+6. **指定暴露的端口**：清楚地記錄應用程式的網路介面
+   ```dockerfile
+   EXPOSE 3838
+   ```
+
+7. **定義入口點**：確立應用程式如何啟動
+   ```dockerfile
+   CMD ["R", "-e", "shiny::runApp('/app', host='0.0.0.0', port=3838)"]
+   ```
+
+### 環境配置 {#environment-configuration}
+
+1. **環境變數**：使用環境變數進行配置
+   ```dockerfile
+   ENV APP_MODE="production"
+   ENV LOG_LEVEL="info"
+   ```
+
+2. **卷管理**：定義持久存儲要求
+   ```dockerfile
+   VOLUME ["/app/data", "/app/logs"]
+   ```
+
+3. **秘密管理**：永遠不要在 Docker 映像中嵌入秘密
+   ```dockerfile
+   # 錯誤：硬編碼憑證
+   ENV DB_PASSWORD="secret123"
+   
+   # 正確：定義為構建參數或留待運行時注入
+   ARG DB_PASSWORD
+   ENV DB_PASSWORD=$DB_PASSWORD
+   ```
+
+### 多階段構建 {#multi-stage-builds}
+
+為了優化生產容器，使用多階段構建：
+
+```dockerfile
+# 構建階段
+FROM rocker/r-ver:4.2.0 AS builder
+
+# 安裝構建依賴
+RUN apt-get update && apt-get install -y ...
+
+# 安裝 R 套件
+RUN R -e "install.packages(...)"
+
+# 編譯任何必要的組件
+RUN Rscript -e "..."
+
+# 最終階段
+FROM rocker/r-ver:4.2.0
+
+# 僅從構建器複製必要的檔案
+COPY --from=builder /usr/local/lib/R/site-library /usr/local/lib/R/site-library
+COPY --from=builder /app/compiled /app/compiled
+
+# 添加應用程式代碼
+COPY app/ /app/
+
+# 配置和運行
+EXPOSE 3838
+CMD ["R", "-e", "shiny::runApp('/app', host='0.0.0.0', port=3838)"]
+```
+
+### Docker Compose {#docker-compose}
+
+具有多個服務的應用程式應包括 docker-compose.yml：
+
+```yaml
+version: '3.8'
+
+services:
+  shiny-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3838:3838"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DB_HOST=database
+      - LOG_LEVEL=info
+    depends_on:
+      - database
+
+  database:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+volumes:
+  postgres_data:
+```
+
+## 部署過程
+
+基於 Docker 的部署過程必須遵循以下步驟：
+
+1. **構建**：創建具有適當版本標籤的 Docker 映像
+   ```bash
+   docker build -t precision-marketing-app:1.0.0 .
+   ```
+
+2. **測試**：在測試環境中驗證 Docker 映像
+   ```bash
+   docker run -d -p 3838:3838 --name test-deployment precision-marketing-app:1.0.0
+   # 對容器運行自動化測試
+   ```
+
+3. **標記**：為適當的環境標記已驗證的映像
+   ```bash
+   docker tag precision-marketing-app:1.0.0 registry.example.com/precision-marketing-app:1.0.0
+   docker tag precision-marketing-app:1.0.0 registry.example.com/precision-marketing-app:latest
+   ```
+
+4. **推送**：將映像上傳到容器註冊表
+   ```bash
+   docker push registry.example.com/precision-marketing-app:1.0.0
+   docker push registry.example.com/precision-marketing-app:latest
+   ```
+
+5. **部署**：在目標環境中拉取並運行映像
+   ```bash
+   docker-compose pull
+   docker-compose up -d
+   ```
+
+6. **驗證**：確認部署正常運行
+   ```bash
+   curl -f http://localhost:3838/healthcheck
+   ```
+
+## 版本管理
+
+Docker 映像必須遵循語義版本控制：
+
+1. **Major.Minor.Patch**：對應於應用程式版本
+2. **環境標籤**：如 `dev`、`staging`、`production`
+3. **Latest 標籤**：用於最新的穩定版本
+4. **Git SHA 標籤**：用於開發構建
+
+範例：
+```
+precision-marketing-app:1.0.0-production
+precision-marketing-app:1.0.0-a1b2c3d (git SHA)
+precision-marketing-app:latest
+```
+
+## 文檔要求
+
+每個容器化應用程式必須包括：
+
+1. **README.md**：包含 Docker 特定的設置說明
+2. **docker-compose.yml**：用於本地開發和測試
+3. **Dockerfile**：包含解釋每個步驟的註釋部分
+4. **env.example**：所需環境變數的模板
+5. **.dockerignore**：要從容器中排除的檔案列表
+
+## 與 CI/CD 的集成
+
+基於 Docker 的部署必須與 CI/CD 管道集成：
+
+1. 在每次提交時構建和測試 Docker 映像
+2. 自動部署到開發環境
+3. 通過批准步驟部署到暫存/生產
+4. 對 Docker 映像運行安全掃描
+5. 強制執行生產部署的映像簽名
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **實施 P08（部署模式）**：提供部署模式的基於容器的實施
+2. **擴展 MP0016（模組化）**：將模組化概念應用於部署單元
+3. **支持 R73（App.R 更改權限）**：提供對 app.R 更改的受控部署
+4. **增強 MP0031（初始化優先）**：確保容器中的正確初始化序列
+5. **補充 MP0048（通用初始化）**：確保環境變數和配置正確初始化
+
+## 例外過程
+
+Docker 基礎部署的例外需要：
+
+1. 正式記錄技術限制
+2. 保留環境一致性的替代部署方法
+3. 架構團隊的批准
+4. 定期審查以確定是否可以消除例外
+
+## 驗證過程
+
+驗證合規性：
+
+1. 根據最佳實踐驗證 Dockerfile
+2. 對 Docker 映像運行安全掃描
+3. 測試容器啟動和關閉程序
+4. 驗證環境變數的正確處理
+5. 確認資源隔離和適當的權限
+
+通過遵循此元原則，我們確保在所有環境中進行一致、可重現的部署，減少部署風險並實現應用程式的快速擴展。

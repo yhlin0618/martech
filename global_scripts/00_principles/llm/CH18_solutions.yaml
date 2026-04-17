@@ -1,0 +1,472 @@
+# ========================================
+# CH16: Solution Patterns
+# Version: 1.1
+# Last Updated: 2025-12-14
+# (Renumbered from CH07 to CH16 per dependency-based reorganization)
+#
+# Contains: SLN00-SLN12, S00 (Solution patterns for common problems)
+# Total: ~15 patterns
+# ========================================
+
+chapter: "CH18_solutions"
+description: "Solution Patterns for Common Development Problems"
+pattern_count: 15
+
+# Note: Solution Patterns (SLN) bridge principles and concrete implementations.
+# They provide proven solutions to recurring problems.
+
+patterns:
+
+  # ====================
+  # OVERVIEW
+  # ====================
+
+  - id: SLN00
+    type: solution_pattern
+    name: solution_patterns_overview
+    display_name: "Solution Patterns Overview"
+    one_liner: "Framework for documenting common solutions"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN00_solution_patterns.qmd"
+
+    rule_natural: |
+      Solution Patterns (SLN) document:
+      - Proven solutions to recurring problems
+      - Knowledge repository of best practices
+      - Actionable guidance for common errors
+      - Connection to theoretical principles
+
+    rule_formal: |
+      RULE SLN00_STRUCTURE:
+      solution_pattern has:
+        issue (problem description)
+        root_cause (why it happens)
+        solution_patterns (code fixes)
+        anti_patterns (what to avoid)
+        connection_to_principles
+
+    when_to_create:
+      - "Problem occurs repeatedly"
+      - "Solution not obvious from existing docs"
+      - "Specific pattern required"
+      - "Affects multiple developers"
+
+  # ====================
+  # SOLUTION PATTERNS
+  # ====================
+
+  - id: SLN01
+    type: solution_pattern
+    name: handling_non_logical_types
+    display_name: "Handling Non-Logical Types"
+    one_liner: "Solutions for type mismatch errors in R"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN01_handling_non_logical_types.qmd"
+
+    issue: "Error: invalid argument type when using ! on non-logical data"
+
+    rule_natural: |
+      When checking non-logical types:
+      - Use is.null() for NULL checks
+      - Use length() == 0 for empty collections
+      - Use %in% names() for list elements
+      - Never use ! on lists or data frames
+
+    rule_formal: |
+      RULE SLN01_TYPE_CHECK:
+      FOR checking object O:
+      IF check_null THEN is.null(O)
+      IF check_empty THEN length(O) == 0
+      IF check_element THEN "key" %in% names(O)
+      NOT !O (when O is list/data.frame)
+
+    violations:
+      - "if (!tab_filters) { ... }"
+      - "if (!data) { ... }"
+    compliant:
+      - "if (is.null(tab_filters)) { ... }"
+      - "if (length(data) == 0) { ... }"
+
+  - id: SLN02
+    type: solution_pattern
+    name: closure_coercion_error
+    display_name: "Closure Coercion Error"
+    one_liner: "Fix type closure cannot be coerced errors"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN02_closure_coercion_error.qmd"
+
+    issue: "Error: type 'closure' is not subsettable"
+
+    rule_natural: |
+      Closure errors occur when:
+      - Function used instead of its result
+      - Missing parentheses on function call
+      - Variable name shadows function name
+
+    rule_formal: |
+      RULE SLN02_CLOSURE:
+      ensure function_call() NOT function
+      avoid variable_shadowing
+      use explicit_parentheses
+
+    violations:
+      - "data[1]  # where data is a function"
+    compliant:
+      - "data()[1]  # call function first"
+
+  - id: SLN03
+    type: solution_pattern
+    name: sql_parameter_type_safety
+    display_name: "SQL Parameter Type Safety"
+    one_liner: "Ensure proper SQL parameter types"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN03_sql_parameter_type_safety.qmd"
+
+    issue: "SQL type mismatch in parameterized queries"
+
+    rule_natural: |
+      SQL parameter handling:
+      - Use parameterized queries
+      - Match R types to SQL types
+      - Handle NULL properly
+      - Convert dates explicitly
+
+    rule_formal: |
+      RULE SLN03_SQL:
+      queries use parameterized_statements
+      types match sql_column_types
+      null_handling explicit
+
+    violations:
+      - "paste0('WHERE id = ', user_input)"
+    compliant:
+      - "dbGetQuery(con, 'WHERE id = ?', params = list(id))"
+
+  - id: SLN04
+    type: solution_pattern
+    name: shiny_namespace_collision
+    display_name: "Shiny Namespace Collision"
+    one_liner: "Resolve Shiny module ID conflicts"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN04_shiny_namespace_collision.qmd"
+
+    issue: "Module inputs/outputs conflict with other modules"
+
+    rule_natural: |
+      Namespace management:
+      - Use unique module IDs
+      - Always use ns() in module UI
+      - Pass namespace to nested modules
+      - Prefix shared elements
+
+    rule_formal: |
+      RULE SLN04_NAMESPACE:
+      module_id is_unique
+      ui_elements use ns()
+      nested_modules receive namespace_prefix
+
+    violations:
+      - "inputId = 'submit'"
+    compliant:
+      - "inputId = ns('submit')"
+
+  - id: SLN05
+    type: solution_pattern
+    name: shiny_nested_ui_rendering
+    display_name: "Shiny Nested UI Rendering"
+    one_liner: "Handle nested renderUI properly"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN05_shiny_nested_ui_rendering.qmd"
+
+    issue: "Nested UI elements fail to render or update"
+
+    rule_natural: |
+      Nested UI patterns:
+      - Use insertUI/removeUI for dynamic content
+      - Avoid deeply nested renderUI
+      - Use req() for dependencies
+      - Consider static UI with CSS visibility
+
+    rule_formal: |
+      RULE SLN05_NESTED:
+      prefer insertUI over nested_renderUI
+      use req() for_dependencies
+      max_nesting_depth = 2
+
+    violations:
+      - "renderUI({ renderUI({ ... }) })"
+    compliant:
+      - "insertUI with CSS visibility control"
+
+  - id: SLN06
+    type: solution_pattern
+    name: named_vector_creation
+    display_name: "Named Vector Creation"
+    one_liner: "Create named vectors correctly in R"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN06_named_vector_creation.qmd"
+
+    issue: "Named vectors lose names or have wrong structure"
+
+    rule_natural: |
+      Named vector creation:
+      - Use setNames() for dynamic names
+      - c() with names for static
+      - Use structure() for complex cases
+      - Verify with names()
+
+    rule_formal: |
+      RULE SLN06_NAMED:
+      named_vector = setNames(values, names)
+      OR c(name1 = val1, name2 = val2)
+
+    violations:
+      - "names(vec) <- dynamic_names"
+    compliant:
+      - "setNames(values, dynamic_names)"
+
+  - id: SLN07
+    type: solution_pattern
+    name: selectize_input_naming
+    display_name: "Selectize Input Naming"
+    one_liner: "Handle selectInput choices correctly"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN07_shiny_selectize_naming.qmd"
+
+    issue: "selectInput choices display incorrectly"
+
+    rule_natural: |
+      Selectize naming:
+      - Display names as names
+      - Values as vector values
+      - Use setNames(values, labels)
+      - Handle empty choices
+
+    rule_formal: |
+      RULE SLN07_SELECTIZE:
+      choices = setNames(values, display_labels)
+      selected matches value NOT label
+
+    violations:
+      - "choices = c('Label1', 'Label2')"
+    compliant:
+      - "choices = setNames(c('val1', 'val2'), c('Label1', 'Label2'))"
+
+  - id: SLN08
+    type: solution_pattern
+    name: dplyr_force_evaluation
+    display_name: "dplyr Force Evaluation"
+    one_liner: "Force evaluation in dplyr pipelines"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN08_dplyr_force_evaluation.qmd"
+
+    issue: "Variables not evaluated in dplyr context"
+
+    rule_natural: |
+      Force evaluation patterns:
+      - Use !! for single values
+      - Use !!! for multiple values
+      - Use .data[[var]] for column names
+      - Use across() for multiple columns
+
+    rule_formal: |
+      RULE SLN08_EVAL:
+      single_value use !!var
+      multiple_values use !!!vars
+      column_name use .data[[var]]
+
+    violations:
+      - "filter(col == var)"
+    compliant:
+      - "filter(col == !!var)"
+
+  - id: SLN09
+    type: solution_pattern
+    name: app_r_root_location
+    display_name: "App.R Root Location"
+    one_liner: "Correct app.R file placement"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN09_app_r_root_location.qmd"
+
+    issue: "App fails to deploy due to incorrect app.R location"
+
+    rule_natural: |
+      App placement:
+      - app.R at app root directory
+      - Not in subdirectory
+      - Matches manifest.json
+      - Single entry point
+
+    rule_formal: |
+      RULE SLN09_LOCATION:
+      app.R at deploy_root
+      NOT in subdirectory
+      matches manifest.json
+
+    violations:
+      - "scripts/app.R"
+    compliant:
+      - "app.R at project root"
+
+  - id: SLN10
+    type: solution_pattern
+    name: autoinit_autodeinit
+    display_name: "Autoinit/Autodeinit Functions"
+    one_liner: "Centralized initialization and cleanup via sc_Rprofile.R"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN10_autoinit_autodeinit.qmd"
+
+    issue: "Resources not properly initialized or cleaned up across different operation modes"
+
+    rule_natural: |
+      LOCATION: scripts/global_scripts/22_initializations/sc_Rprofile.R
+
+      CRITICAL: Script-level sourcing required for Rscript execution:
+        source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+        autoinit()
+
+      NOTE: .Rprofile auto-loads for RStudio, but NOT for Rscript or {targets}
+
+      autoinit() DOES:
+        1. Detect OPERATION_MODE (UPDATE_MODE, GLOBAL_MODE, APP_MODE)
+        2. Set path constants: APP_DIR, GLOBAL_DIR, CONFIG_PATH, etc.
+        3. Load db_path_list from 30_global_data/db_paths.R
+        4. Source appropriate initialization scripts based on mode
+        5. Set INITIALIZATION_COMPLETED = TRUE
+
+      autodeinit() DOES:
+        1. Close all database connections (dbDisconnect_all)
+        2. Clear .GlobalEnv (except .InitEnv)
+        3. Trigger garbage collection (gc())
+        4. Rebuild thin shell wrappers for autoinit/autodeinit
+        5. Reset mode flag for next init cycle
+
+      USAGE IN DRV/ETL SCRIPTS:
+        # PART 1: INITIALIZE
+        source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+        autoinit()
+        # ... script logic ...
+        # PART 5: DEINITIALIZE
+        autodeinit()  # MUST be LAST statement
+
+    rule_formal: |
+      RULE SLN10_LIFECYCLE:
+      autoinit():
+        detect_mode() -> OPERATION_MODE
+        set_paths(APP_DIR, GLOBAL_DIR, ...)
+        load_db_paths()
+        source_init_scripts(mode)
+      autodeinit():
+        dbDisconnect_all()
+        clear_globalenv()
+        gc()
+        rebuild_shell_wrappers()
+
+      INVARIANT: autoinit() at script start, autodeinit() as LAST statement
+      INVARIANT: sc_Rprofile.R must be sourced explicitly for Rscript execution
+
+    violations:
+      - "Missing source(sc_Rprofile.R) in DRV/ETL script"
+      - "autoinit() called without sourcing sc_Rprofile.R first"
+      - "autodeinit() not at end of script"
+      - "Relying only on .Rprofile for Rscript execution"
+    compliant:
+      - "source() + autoinit() at start, autodeinit() at end"
+      - "All DRV scripts follow DM_R044 five-part structure"
+
+  - id: SLN11
+    type: solution_pattern
+    name: openai_api_adaptation
+    display_name: "OpenAI API Adaptation"
+    one_liner: "Handle OpenAI API changes and errors"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN11_openai_api_adaptation.qmd"
+
+    issue: "OpenAI API errors or unexpected responses"
+
+    rule_natural: |
+      API adaptation:
+      - Handle rate limits
+      - Retry with exponential backoff
+      - Parse JSON responses safely
+      - Log API interactions
+
+    rule_formal: |
+      RULE SLN11_API:
+      handle rate_limits
+      retry with_exponential_backoff
+      parse json_safely
+      log all_interactions
+
+    violations:
+      - "Single API call without retry"
+    compliant:
+      - "Retry logic with backoff"
+
+  - id: SLN12
+    type: solution_pattern
+    name: position_ms_performance
+    display_name: "PositionMS Performance"
+    one_liner: "Optimize positioning calculations"
+    file_path: "part2_implementations/CH19_solutions_patterns/SLN12_positionms_performance.qmd"
+
+    issue: "Slow positioning analysis calculations"
+
+    rule_natural: |
+      Performance optimization:
+      - Use vectorized operations
+      - Cache intermediate results
+      - Batch similar operations
+      - Profile bottlenecks
+
+    rule_formal: |
+      RULE SLN12_PERF:
+      use vectorized_operations
+      cache intermediate_results
+      batch similar_operations
+
+    violations:
+      - "For loop over each point"
+    compliant:
+      - "Vectorized distance calculations"
+
+  # ====================
+  # SIDEBAR ISSUES
+  # ====================
+
+  - id: S00
+    type: solution_pattern
+    name: sidebar_rendering_issues
+    display_name: "Sidebar Rendering Issues"
+    one_liner: "Fix bs4Dash sidebar visibility problems"
+    file_path: "part2_implementations/CH19_solutions_patterns/S00_sidebar_rendering_issues.qmd"
+
+    issue: "bs4Dash sidebar elements fail to appear or cause reactive loops"
+
+    rule_natural: |
+      Sidebar solutions:
+      - Use static UI with CSS visibility
+      - Explicit observeEvent handlers
+      - Use shinyjs for tab switching
+      - Isolate reactive events
+
+    rule_formal: |
+      RULE S00_SIDEBAR:
+      prefer static_ui over renderUI
+      use explicit_observeEvent
+      isolate reactive_events
+      css_visibility for_showing_hiding
+
+    violations:
+      - "Dynamic renderUI in sidebar"
+    compliant:
+      - "Static UI with visibility toggling"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: SLN01
+    to: DEV_P018
+    reason: "Type checking implements defensive error handling"
+
+  - from: SLN04
+    to: UI_R002
+    reason: "Namespace collision relates to Shiny module ID handling"
+
+  - from: S00
+    to: UI_P004
+    reason: "Sidebar issues relate to component n-tuple pattern"
+
+  - from: SLN08
+    to: DEV_R017
+    reason: "Force evaluation implements explicit over implicit evaluation"

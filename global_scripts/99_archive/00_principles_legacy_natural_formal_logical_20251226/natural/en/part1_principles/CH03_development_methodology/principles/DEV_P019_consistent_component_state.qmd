@@ -1,0 +1,1053 @@
+---
+title: "DEV_P019: Consistent Component State Principle"
+subtitle: "Application components should maintain consistent internal state tracking for visibility and configuration, with standardized mechanisms for state changes. This ensures predictable behavior, simplified state management, and enables components to properly respond to navigation or user interaction events"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P019"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article: 
+  number: 19
+  title: "Consistent Component State Principle"
+related_to:
+  - "MP017: Modularity Principle"
+  - "UI_R001: UI-Server-Defaults Triple Rule"
+  - "MP100: Application Dynamics Principle"
+  - "DEV_P014: Performance Optimization Principle"
+  - "UI_P011: Hierarchical Navigation Principle"
+  - "R092: bs4Dash Navbar Navigation Rule"
+  - "MP056: Connected Component Principle"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 19: Consistent Component State Principle {#overview}
+
+**Development Methodology Law Article 19 (Consistent Component State Principle)**
+
+Application components should maintain consistent internal state tracking for visibility and configuration, with standardized mechanisms for state changes. This ensures predictable behavior, simplified state management, and enables components to properly respond to navigation or user interaction events.
+
+:::{.callout-important}
+## Core Principle
+Make components more predictable, maintainable, and robust by defining clear state models, providing consistent state change mechanisms, and integrating state with navigation systems.
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Component State Definition {#component-state-definition}
+
+**State Definition Standards:**
+
+- Each component should have a clearly defined state model
+- Use reactive values to track component state (e.g., active subtab, visibility)
+- Initialize state with sensible defaults
+- Document the expected state properties and valid values
+
+**Implementation Example:**
+
+```r
+# Define reactive values for component state
+initialize_component <- function(id, config = NULL) {
+  # State initialization
+  active_view <- reactiveVal("default")
+  is_expanded <- reactiveVal(FALSE)
+  is_loading <- reactiveVal(FALSE)
+  error_state <- reactiveVal(NULL)
+  
+  # State validation function
+  validate_state <- function(state_name, value) {
+    valid_states <- list(
+      active_view = c("default", "detail", "summary", "analysis"),
+      is_expanded = c(TRUE, FALSE),
+      is_loading = c(TRUE, FALSE)
+    )
+    
+    if (state_name %in% names(valid_states)) {
+      return(value %in% valid_states[[state_name]])
+    }
+    return(TRUE)
+  }
+  
+  # Return component with state management
+  list(
+    # Component state API
+    component_state = list(
+      # Set active view
+      set_active_view = function(view_name) {
+        if (validate_state("active_view", view_name)) {
+          active_view(view_name)
+          message(sprintf("Component %s: View changed to %s", id, view_name))
+        } else {
+          warning(sprintf("Invalid view name: %s", view_name))
+        }
+      },
+      
+      # Get active view
+      get_active_view = function() {
+        active_view()
+      },
+      
+      # Toggle expanded state
+      toggle_expanded = function(expanded = NULL) {
+        if (is.null(expanded)) {
+          is_expanded(!is_expanded())
+        } else {
+          is_expanded(expanded)
+        }
+      },
+      
+      # Set loading state
+      set_loading = function(loading) {
+        is_loading(loading)
+      },
+      
+      # Set error state
+      set_error = function(error_msg = NULL) {
+        error_state(error_msg)
+        if (!is.null(error_msg)) {
+          is_loading(FALSE)  # Stop loading on error
+        }
+      },
+      
+      # Get complete state
+      get_state = function() {
+        list(
+          active_view = active_view(),
+          is_expanded = is_expanded(),
+          is_loading = is_loading(),
+          error_state = error_state()
+        )
+      },
+      
+      # Reset state
+      reset = function() {
+        active_view("default")
+        is_expanded(FALSE)
+        is_loading(FALSE)
+        error_state(NULL)
+      }
+    ),
+    
+    # UI implementation using state
+    ui = list(
+      display = function(ns) {
+        tagList(
+          # Loading indicator
+          conditionalPanel(
+            condition = "true",
+            ns = ns,
+            uiOutput(ns("loading_indicator"))
+          ),
+          
+          # Main content
+          uiOutput(ns("main_content"))
+        )
+      }
+    ),
+    
+    # Server implementation
+    server = function(input, output, session, connection) {
+      ns <- session$ns
+      
+      # Loading indicator
+      output$loading_indicator <- renderUI({
+        if (is_loading()) {
+          div(
+            class = "text-center p-3",
+            icon("spinner", class = "fa-spin"),
+            span("Loading...", class = "ml-2")
+          )
+        }
+      })
+      
+      # Main content based on state
+      output$main_content <- renderUI({
+        if (!is.null(error_state())) {
+          div(
+            class = "alert alert-danger",
+            icon("exclamation-triangle"),
+            strong("Error: "),
+            error_state()
+          )
+        } else if (!is_loading()) {
+          # Render content based on active_view
+          switch(active_view(),
+            default = div("Default view content"),
+            detail = div("Detail view content"),
+            summary = div("Summary view content"),
+            analysis = div("Analysis view content")
+          )
+        }
+      })
+    }
+  )
+}
+```
+
+## Subsection 2: State Change Mechanisms {#state-change-mechanisms}
+
+**State Change Standards:**
+
+- Implement standardized functions for state changes
+- Use reactive programming patterns for state updates
+- Ensure state changes trigger appropriate UI updates
+- Validate state changes to prevent invalid states
+
+**Implementation Example:**
+
+```r
+# Create state manager
+createStateManager <- function(initial_state = list()) {
+  # Private state storage
+  .state <- reactiveValues()
+  
+  # Initialize state
+  for (key in names(initial_state)) {
+    .state[[key]] <- initial_state[[key]]
+  }
+  
+  # State change history
+  .history <- reactiveVal(list())
+  
+  # State change listeners
+  .listeners <- list()
+  
+  list(
+    # Get state value
+    get = function(key = NULL) {
+      if (is.null(key)) {
+        return(reactiveValuesToList(.state))
+      }
+      return(.state[[key]])
+    },
+    
+    # Set state value
+    set = function(key, value) {
+      old_value <- .state[[key]]
+      .state[[key]] <- value
+      
+      # Record change
+      history_entry <- list(
+        timestamp = Sys.time(),
+        key = key,
+        old_value = old_value,
+        new_value = value
+      )
+      .history(append(.history(), list(history_entry)))
+      
+      # Trigger listeners
+      if (key %in% names(.listeners)) {
+        for (listener in .listeners[[key]]) {
+          listener(old_value, value)
+        }
+      }
+      
+      invisible(value)
+    },
+    
+    # Batch update state
+    update = function(updates) {
+      for (key in names(updates)) {
+        .state[[key]] <- updates[[key]]
+      }
+      invisible(TRUE)
+    },
+    
+    # Add state change listener
+    on_change = function(key, callback) {
+      if (!key %in% names(.listeners)) {
+        .listeners[[key]] <- list()
+      }
+      .listeners[[key]] <- append(.listeners[[key]], callback)
+      invisible(TRUE)
+    },
+    
+    # Get change history
+    get_history = function(key = NULL) {
+      history <- .history()
+      if (!is.null(key)) {
+        history <- Filter(function(h) h$key == key, history)
+      }
+      return(history)
+    },
+    
+    # Reset to initial state
+    reset = function() {
+      for (key in names(initial_state)) {
+        .state[[key]] <- initial_state[[key]]
+      }
+      .history(list())
+      invisible(TRUE)
+    }
+  )
+}
+```
+
+# Section 2: State Management in Component Unions {#state-management-in-unions}
+
+## Subsection 1: Union Component API {#union-component-api}
+
+**Union Component State Management:**
+
+- Union components should provide a consistent API for state management
+- Implement methods like `toggle_component()` for visibility control
+- Include functions to query current state (e.g., `get_visible_components()`)
+- Propagate state changes to child components when appropriate
+
+**Implementation Example:**
+
+```r
+# State management for component union
+createComponentUnion <- function(components) {
+  # Component visibility state
+  component_visibility <- reactiveValues()
+  
+  # Component loaded state
+  component_loaded <- reactiveValues()
+  
+  # Initialize all components as hidden
+  for (name in names(components)) {
+    component_visibility[[name]] <- FALSE
+    component_loaded[[name]] <- FALSE
+  }
+  
+  # Union state management API
+  list(
+    components = components,
+    
+    component_state = list(
+      # Toggle component visibility
+      toggle_component = function(component_name, visible) {
+        # Validate component exists
+        if (!component_name %in% names(components)) {
+          warning("Cannot toggle non-existent component: ", component_name)
+          return(FALSE)
+        }
+        
+        # Update visibility state
+        component_visibility[[component_name]] <- visible
+        
+        # If showing component, ensure it's initialized
+        if (visible && !component_loaded[[component_name]]) {
+          initialize_component_if_needed(component_name)
+          component_loaded[[component_name]] <- TRUE
+        }
+        
+        # Log state change
+        message(sprintf(
+          "Component %s visibility changed to: %s", 
+          component_name, 
+          ifelse(visible, "visible", "hidden")
+        ))
+        
+        return(TRUE)
+      },
+      
+      # Get visible components
+      get_visible_components = function() {
+        visible <- reactiveValuesToList(component_visibility)
+        names(visible)[unlist(visible)]
+      },
+      
+      # Check if component is visible
+      is_visible = function(component_name) {
+        component_visibility[[component_name]] %||% FALSE
+      },
+      
+      # Show only one component (hide others)
+      show_only = function(component_name) {
+        for (name in names(components)) {
+          component_visibility[[name]] <- (name == component_name)
+        }
+        
+        # Ensure shown component is loaded
+        if (!component_loaded[[component_name]]) {
+          initialize_component_if_needed(component_name)
+          component_loaded[[component_name]] <- TRUE
+        }
+      },
+      
+      # Show all components
+      show_all = function() {
+        for (name in names(components)) {
+          component_visibility[[name]] <- TRUE
+          if (!component_loaded[[name]]) {
+            initialize_component_if_needed(name)
+            component_loaded[[name]] <- TRUE
+          }
+        }
+      },
+      
+      # Hide all components
+      hide_all = function() {
+        for (name in names(components)) {
+          component_visibility[[name]] <- FALSE
+        }
+      },
+      
+      # Get component state summary
+      get_state_summary = function() {
+        list(
+          visible = get_visible_components(),
+          loaded = names(component_loaded)[unlist(reactiveValuesToList(component_loaded))],
+          total = length(components)
+        )
+      }
+    ),
+    
+    # UI rendering based on state
+    ui = function(id) {
+      ns <- NS(id)
+      
+      tagList(
+        lapply(names(components), function(comp_name) {
+          conditionalPanel(
+            condition = sprintf("true"),  # Use JavaScript condition
+            ns = ns,
+            div(
+              id = ns(paste0(comp_name, "_container")),
+              style = if (!component_visibility[[comp_name]]) "display: none;" else "",
+              components[[comp_name]]$ui$display(ns(comp_name))
+            )
+          )
+        })
+      )
+    },
+    
+    # Server logic
+    server = function(input, output, session, connection) {
+      # Create observers for each component
+      lapply(names(components), function(comp_name) {
+        observe({
+          # Update UI based on visibility state
+          if (component_visibility[[comp_name]]) {
+            shinyjs::show(paste0(comp_name, "_container"))
+          } else {
+            shinyjs::hide(paste0(comp_name, "_container"))
+          }
+        })
+      })
+    }
+  )
+}
+
+# Helper function to initialize component
+initialize_component_if_needed <- function(component_name) {
+  message(sprintf("Initializing component: %s", component_name))
+  # Component initialization logic
+}
+```
+
+## Subsection 2: State Propagation Mechanisms {#state-propagation}
+
+**State Propagation Implementation:**
+
+```r
+# Parent-child component state sync
+createParentChildSync <- function(parent_state, child_states) {
+  
+  # Listen to parent state changes
+  observe({
+    parent_view <- parent_state$get_active_view()
+    
+    # Update child components based on parent state
+    if (parent_view == "detail") {
+      # Expand all child components
+      for (child in child_states) {
+        child$toggle_expanded(TRUE)
+      }
+    } else if (parent_view == "summary") {
+      # Collapse all child components
+      for (child in child_states) {
+        child$toggle_expanded(FALSE)
+      }
+    }
+  })
+  
+  # Listen to child state changes
+  lapply(seq_along(child_states), function(i) {
+    child <- child_states[[i]]
+    
+    observe({
+      if (child$get_error()) {
+        # If any child has error, notify parent
+        parent_state$set_error(sprintf("Child component %d error", i))
+      }
+    })
+  })
+}
+```
+
+# Section 3: Integration with Navigation {#navigation-integration}
+
+## Subsection 1: Navigation Event Linking {#navigation-event-linking}
+
+**Navigation Integration Standards:**
+
+- Link component state to navigation events
+- Ensure state changes when navigation occurs
+- Use state to determine active/inactive styling
+- Maintain state consistency across navigation levels
+
+**Implementation Example:**
+
+```r
+# Link navigation to component state
+setupNavigationStateSync <- function(input, session, component_union) {
+  
+  # Main navigation observer
+  observeEvent(input$main_navbar, {
+    # Get selected tab
+    tab_id <- input$main_navbar
+    
+    # Extract component name from tab ID
+    comp_name <- sub("_tab$", "", tab_id)
+    
+    # Update active tab state
+    session$userData$active_tab <- tab_id
+    
+    # Update component visibility through Union's API
+    if (!is.null(component_union) && 
+        !is.null(component_union$component_state) && 
+        is.function(component_union$component_state$show_only)) {
+      
+      # Show selected component, hide others
+      component_union$component_state$show_only(comp_name)
+      
+      # Log navigation action
+      logNavigation(
+        user = session$user,
+        from = session$userData$previous_tab,
+        to = tab_id,
+        timestamp = Sys.time()
+      )
+      
+      # Update previous tab
+      session$userData$previous_tab <- tab_id
+    }
+  })
+  
+  # Secondary navigation observer
+  observeEvent(input$secondary_nav, {
+    subtab_id <- input$secondary_nav
+    
+    # Get current main tab
+    main_tab <- session$userData$active_tab
+    
+    # Update secondary navigation state
+    session$userData[[paste0(main_tab, "_subtab")]] <- subtab_id
+    
+    # Notify corresponding component
+    if (!is.null(component_union$components[[main_tab]])) {
+      component <- component_union$components[[main_tab]]
+      if (!is.null(component$component_state)) {
+        component$component_state$set_active_view(subtab_id)
+      }
+    }
+  })
+}
+
+# Navigation logging function
+logNavigation <- function(user, from, to, timestamp) {
+  log_entry <- data.frame(
+    user = user %||% "unknown",
+    from_tab = from %||% "none",
+    to_tab = to,
+    timestamp = timestamp,
+    stringsAsFactors = FALSE
+  )
+  
+  # Save to log (file or database)
+  appendToLog(log_entry)
+}
+```
+
+## Subsection 2: State Persistence {#state-persistence}
+
+**State Persistence Implementation:**
+
+```r
+# State persistence manager
+createStatePersistence <- function(storage_key = "app_state") {
+  
+  list(
+    # Save state to local storage
+    save_state = function(state_manager) {
+      state_data <- state_manager$get()
+      
+      # Serialize state
+      serialized <- jsonlite::toJSON(state_data, auto_unbox = TRUE)
+      
+      # Save to browser local storage
+      shinyjs::runjs(sprintf(
+        "localStorage.setItem('%s', '%s');",
+        storage_key,
+        serialized
+      ))
+      
+      message("State saved to local storage")
+      invisible(TRUE)
+    },
+    
+    # Load state from local storage
+    load_state = function(state_manager, session) {
+      # Read state from browser
+      session$sendCustomMessage("getLocalStorage", list(
+        key = storage_key,
+        callback = "restoreState"
+      ))
+      
+      # Handle returned state
+      observeEvent(input$restoredState, {
+        if (!is.null(input$restoredState)) {
+          state_data <- jsonlite::fromJSON(input$restoredState)
+          state_manager$update(state_data)
+          message("State restored from local storage")
+        }
+      })
+    },
+    
+    # Clear stored state
+    clear_state = function() {
+      shinyjs::runjs(sprintf(
+        "localStorage.removeItem('%s');",
+        storage_key
+      ))
+      message("Cleared stored state")
+    },
+    
+    # Setup autosave
+    setup_autosave = function(state_manager, interval_seconds = 30) {
+      observe({
+        invalidateLater(interval_seconds * 1000)
+        isolate({
+          save_state(state_manager)
+        })
+      })
+    }
+  )
+}
+
+# JavaScript handler (add to UI)
+state_persistence_js <- tags$script(HTML("
+  Shiny.addCustomMessageHandler('getLocalStorage', function(params) {
+    var value = localStorage.getItem(params.key);
+    if (value) {
+      Shiny.setInputValue(params.callback, value);
+    }
+  });
+"))
+```
+
+# Section 4: Benefits Analysis {#benefits-analysis}
+
+## Subsection 1: Technical Benefits {#technical-benefits}
+
+**Predictable Component Behavior:**
+
+1. Components respond consistently to the same inputs
+2. State transitions follow expected patterns
+3. Reduces unexpected side effects or state conflicts
+
+**Simplified Debugging:**
+
+1. Clear state model makes it easier to track issues
+2. State can be inspected and validated
+3. State transitions can be logged for troubleshooting
+
+## Subsection 2: User Experience Benefits {#ux-benefits}
+
+**Enhanced User Experience:**
+
+1. Consistent UI behavior across the application
+2. State persists appropriately during navigation
+3. Visual indicators match actual component state
+
+**Improved Maintainability:**
+
+1. Standardized state management pattern across components
+2. Easier to implement new components following the pattern
+3. Reduced complexity for state-dependent logic
+
+# Section 5: Complete Implementation Example {#complete-implementation}
+
+## Subsection 1: Complete State Management System {#complete-state-system}
+
+**Application Implementation:**
+
+```r
+# app_with_state.R - Complete state management demo
+library(shiny)
+library(bs4Dash)
+library(shinyjs)
+
+# Create application state manager
+createAppStateManager <- function() {
+  # Global state
+  app_state <- createStateManager(list(
+    current_tab = "dashboard",
+    user_authenticated = FALSE,
+    theme = "light",
+    language = "en_US"
+  ))
+  
+  # Component state collection
+  component_states <- list()
+  
+  list(
+    # Register component state
+    register_component = function(name, state) {
+      component_states[[name]] <<- state
+    },
+    
+    # Get component state
+    get_component_state = function(name) {
+      component_states[[name]]
+    },
+    
+    # Global state
+    app_state = app_state,
+    
+    # Get all state summary
+    get_summary = function() {
+      list(
+        app = app_state$get(),
+        components = lapply(component_states, function(cs) {
+          if (!is.null(cs$get_state)) {
+            cs$get_state()
+          } else {
+            "State undefined"
+          }
+        })
+      )
+    }
+  )
+}
+
+ui <- bs4DashPage(
+  title = "State Management Demo",
+  
+  header = bs4DashNavbar(
+    title = "Application",
+    rightUi = tagList(
+      actionButton("save_state", "Save State", icon = icon("save")),
+      actionButton("load_state", "Load State", icon = icon("upload")),
+      actionButton("reset_state", "Reset", icon = icon("undo"))
+    )
+  ),
+  
+  sidebar = bs4DashSidebar(
+    bs4SidebarMenu(
+      id = "sidebar_menu",
+      bs4SidebarMenuItem(
+        text = "Dashboard",
+        tabName = "dashboard",
+        icon = icon("dashboard")
+      ),
+      bs4SidebarMenuItem(
+        text = "Analysis",
+        tabName = "analysis",
+        icon = icon("chart-line")
+      ),
+      bs4SidebarMenuItem(
+        text = "Settings",
+        tabName = "settings",
+        icon = icon("cog")
+      )
+    )
+  ),
+  
+  body = bs4DashBody(
+    useShinyjs(),
+    state_persistence_js,
+    
+    tags$style(HTML("
+      .state-indicator {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        padding: 10px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border-radius: 5px;
+        font-size: 12px;
+        z-index: 1000;
+      }
+    ")),
+    
+    # State indicator
+    div(
+      class = "state-indicator",
+      id = "state_indicator",
+      verbatimTextOutput("state_display", placeholder = FALSE)
+    ),
+    
+    bs4TabItems(
+      bs4TabItem(
+        tabName = "dashboard",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "Dashboard",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("dashboard_content")
+            )
+          )
+        )
+      ),
+      
+      bs4TabItem(
+        tabName = "analysis",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "Analysis",
+              status = "info",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("analysis_content")
+            )
+          )
+        )
+      ),
+      
+      bs4TabItem(
+        tabName = "settings",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "Settings",
+              status = "warning",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("settings_content")
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # Initialize state manager
+  state_manager <- createAppStateManager()
+  persistence <- createStatePersistence()
+  
+  # Create components
+  dashboard_component <- initialize_component("dashboard")
+  analysis_component <- initialize_component("analysis")
+  settings_component <- initialize_component("settings")
+  
+  # Register component states
+  state_manager$register_component("dashboard", dashboard_component$component_state)
+  state_manager$register_component("analysis", analysis_component$component_state)
+  state_manager$register_component("settings", settings_component$component_state)
+  
+  # Sidebar navigation observer
+  observeEvent(input$sidebar_menu, {
+    state_manager$app_state$set("current_tab", input$sidebar_menu)
+    
+    # Update component visibility
+    components <- c("dashboard", "analysis", "settings")
+    for (comp in components) {
+      comp_state <- state_manager$get_component_state(comp)
+      if (!is.null(comp_state)) {
+        if (comp == input$sidebar_menu) {
+          comp_state$set_loading(TRUE)
+          # Simulate loading
+          invalidateLater(1000)
+          observeEvent(invalidateLater(1000), {
+            comp_state$set_loading(FALSE)
+          }, once = TRUE)
+        }
+      }
+    }
+  })
+  
+  # Dashboard content
+  output$dashboard_content <- renderUI({
+    comp_state <- state_manager$get_component_state("dashboard")
+    
+    if (comp_state$is_loading) {
+      return(div(
+        class = "text-center p-5",
+        icon("spinner", class = "fa-spin fa-3x"),
+        h4("Loading dashboard...")
+      ))
+    }
+    
+    tagList(
+      h4("Dashboard View: ", comp_state$get_active_view()),
+      fluidRow(
+        column(6,
+          actionButton("dash_view_summary", "Summary View", 
+            class = if(comp_state$get_active_view() == "summary") "btn-primary" else "btn-default"
+          )
+        ),
+        column(6,
+          actionButton("dash_view_detail", "Detail View",
+            class = if(comp_state$get_active_view() == "detail") "btn-primary" else "btn-default"
+          )
+        )
+      ),
+      hr(),
+      div(
+        id = "dashboard_view_content",
+        if (comp_state$get_active_view() == "summary") {
+          p("This is the dashboard summary view")
+        } else {
+          p("This is the dashboard detail view")
+        }
+      )
+    )
+  })
+  
+  # Dashboard view toggles
+  observeEvent(input$dash_view_summary, {
+    state_manager$get_component_state("dashboard")$set_active_view("summary")
+  })
+  
+  observeEvent(input$dash_view_detail, {
+    state_manager$get_component_state("dashboard")$set_active_view("detail")
+  })
+  
+  # Analysis content
+  output$analysis_content <- renderUI({
+    comp_state <- state_manager$get_component_state("analysis")
+    
+    tagList(
+      h4("Analysis Component"),
+      p("Expanded state: ", ifelse(comp_state$is_expanded, "Expanded", "Collapsed")),
+      actionButton("toggle_analysis", 
+        ifelse(comp_state$is_expanded, "Collapse", "Expand"),
+        icon = icon(ifelse(comp_state$is_expanded, "compress", "expand"))
+      ),
+      if (comp_state$is_expanded) {
+        div(
+          class = "mt-3",
+          plotOutput("analysis_plot")
+        )
+      }
+    )
+  })
+  
+  observeEvent(input$toggle_analysis, {
+    state_manager$get_component_state("analysis")$toggle_expanded()
+  })
+  
+  output$analysis_plot <- renderPlot({
+    hist(rnorm(100), main = "Analysis Chart")
+  })
+  
+  # Settings content
+  output$settings_content <- renderUI({
+    app_state <- state_manager$app_state$get()
+    
+    tagList(
+      h4("Application Settings"),
+      selectInput("theme_select", "Theme",
+        choices = c("Light" = "light", "Dark" = "dark"),
+        selected = app_state$theme
+      ),
+      selectInput("language_select", "Language",
+        choices = c("English" = "en_US", "中文" = "zh_TW"),
+        selected = app_state$language
+      ),
+      hr(),
+      h5("State History"),
+      verbatimTextOutput("state_history")
+    )
+  })
+  
+  observeEvent(input$theme_select, {
+    state_manager$app_state$set("theme", input$theme_select)
+  })
+  
+  observeEvent(input$language_select, {
+    state_manager$app_state$set("language", input$language_select)
+  })
+  
+  # State display
+  output$state_display <- renderPrint({
+    invalidateLater(1000)  # Update every second
+    summary <- state_manager$get_summary()
+    cat("Current Tab:", summary$app$current_tab, "\n")
+    cat("Theme:", summary$app$theme, "\n")
+    cat("Language:", summary$app$language)
+  })
+  
+  # State history
+  output$state_history <- renderPrint({
+    history <- state_manager$app_state$get_history()
+    if (length(history) > 0) {
+      recent <- tail(history, 5)
+      for (h in recent) {
+        cat(sprintf("[%s] %s: %s -> %s\n",
+          format(h$timestamp, "%H:%M:%S"),
+          h$key,
+          toString(h$old_value),
+          toString(h$new_value)
+        ))
+      }
+    } else {
+      cat("No history")
+    }
+  })
+  
+  # State operation buttons
+  observeEvent(input$save_state, {
+    persistence$save_state(state_manager$app_state)
+    showNotification("State saved", type = "success")
+  })
+  
+  observeEvent(input$load_state, {
+    persistence$load_state(state_manager$app_state, session)
+    showNotification("State loaded", type = "info")
+  })
+  
+  observeEvent(input$reset_state, {
+    state_manager$app_state$reset()
+    for (comp in c("dashboard", "analysis", "settings")) {
+      comp_state <- state_manager$get_component_state(comp)
+      if (!is.null(comp_state) && !is.null(comp_state$reset)) {
+        comp_state$reset()
+      }
+    }
+    showNotification("State reset", type = "warning")
+  })
+  
+  # Setup autosave
+  persistence$setup_autosave(state_manager$app_state, interval_seconds = 60)
+}
+
+shinyApp(ui, server)
+```
+
+# Section 6: Principle Relationships {#principle-relationships}
+
+## Subsection 1: Extending Relationships {#extending-relationships}
+
+This principle:
+
+1. **Implements MP017 (Modularity Principle)** through modular state management
+2. **Builds Upon UI_R001 (UI-Server-Defaults Triple)** managing state in all three components
+3. **Supports MP100 (Application Dynamics)** providing dynamic state management mechanisms
+4. **Enhances DEV_P014 (Performance Optimization)** improving performance through efficient state management
+5. **Related To UI_P011 (Hierarchical Navigation)** integrating state with navigation systems
+6. **Implements MP056 (Connected Component)** ensuring state connection between components
+
+---
+
+*Based on: Development Methodology Law Article 19*  
+*Related to: [MP017 Modularity Principle](../../CH00_fundamental_principles/meta_principles/MP017_modularity.qmd), [UI_P011 Hierarchical Navigation Principle](../../CH04_ui_components/principles/UI_P011_hierarchical_navigation.qmd)*

@@ -1,0 +1,417 @@
+---
+title: "M00: Renumbering Principles Module"
+subtitle: "Automated system for renumbering and reorganizing principle documents"
+chapter: "CH09"
+category: "module"
+number: "M00"
+date-created: "2025-04-15"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "module"
+law: "Modules & Tools Framework"
+article-number: "Module 0"
+related_to:
+  - "MP002_structural_blueprint"
+  - "MP007_documentation_organization"
+  - "R002_principle_documentation"
+  - "R021_one_function_one_file"
+  - "R069_function_file_naming"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Module 0: Principle Renumbering System {#overview}
+
+This module provides an automated system for renumbering and reorganizing principle documents (MP, P, R series) to maintain consistency and proper ordering across the documentation system.
+
+## Section 1: Module Purpose {#purpose}
+
+### Subsection 1: Problem Statement {#problem}
+
+As principles evolve, documents may need to be:
+- Renumbered to maintain logical ordering
+- Reorganized when new categories emerge
+- Consolidated when principles merge
+- Split when principles become too complex
+
+Manual renumbering is error-prone and can break references throughout the codebase.
+
+### Subsection 2: Solution Overview {#solution}
+
+The renumbering module provides:
+- Automated detection of principle files
+- Intelligent renumbering with reference updates
+- Verification of consistency
+- Batch operations for multiple files
+- Rollback capabilities
+
+## Section 2: Core Functions {#functions}
+
+### Subsection 1: Function Locations {#locations}
+
+All functions are now properly organized:
+- **Utility Functions**: Located in `global_scripts/04_utils/`
+  - `fn_renumber_resource.R`
+  - `fn_verify_consistency.R`
+  - `fn_batch_renumber_resources.R`
+  - `fn_verify_unique.R`
+- **Executable Scripts**: Located in `global_scripts/25_scripts/admin/`
+  - `sc_execute_renumbering_plan.R`
+- **Demo Scripts**: Located in `global_scripts/25_scripts/development/`
+  - `sc_demo_renumbering.R`
+
+### Subsection 2: Renumber Resource Function {#renumber-function}
+
+```r
+#' Renumber a single resource file
+#'
+#' @param old_number Current number (e.g., "MP00", "P05", "R12")
+#' @param new_number Target number (e.g., "MP01", "P06", "R13")
+#' @param dry_run If TRUE, only show what would be changed
+#' @return List with status and changes made
+#'
+fn_renumber_resource <- function(old_number, new_number, dry_run = FALSE) {
+  # Validate inputs
+  stopifnot(
+    grepl("^(MP|P|R)\\d+$", old_number),
+    grepl("^(MP|P|R)\\d+$", new_number),
+    substr(old_number, 1, nchar(old_number) - nchar(gsub("\\D", "", old_number))) ==
+    substr(new_number, 1, nchar(new_number) - nchar(gsub("\\D", "", new_number)))
+  )
+  
+  # Find the file
+  pattern <- paste0("^", old_number, "_.*\\.md$")
+  files <- list.files(".", pattern = pattern, full.names = TRUE)
+  
+  if(length(files) == 0) {
+    return(list(status = "error", message = "File not found"))
+  }
+  
+  if(length(files) > 1) {
+    return(list(status = "error", message = "Multiple files found"))
+  }
+  
+  old_file <- files[1]
+  new_file <- gsub(paste0("^", old_number), new_number, basename(old_file))
+  new_file <- file.path(dirname(old_file), new_file)
+  
+  if(dry_run) {
+    return(list(
+      status = "dry_run",
+      old_file = old_file,
+      new_file = new_file,
+      changes = list(filename = TRUE, content = TRUE, references = TRUE)
+    ))
+  }
+  
+  # Rename file
+  file.rename(old_file, new_file)
+  
+  # Update content
+  content <- readLines(new_file)
+  content <- gsub(old_number, new_number, content)
+  writeLines(content, new_file)
+  
+  # Update references in other files
+  all_files <- list.files(".", pattern = "\\.md$|\\.R$", 
+                         recursive = TRUE, full.names = TRUE)
+  
+  for(f in all_files) {
+    if(f != new_file) {
+      file_content <- readLines(f)
+      updated_content <- gsub(old_number, new_number, file_content)
+      if(!identical(file_content, updated_content)) {
+        writeLines(updated_content, f)
+      }
+    }
+  }
+  
+  return(list(
+    status = "success",
+    old_file = old_file,
+    new_file = new_file
+  ))
+}
+```
+
+### Subsection 3: Verify Consistency Function {#verify-function}
+
+```r
+#' Verify consistency of principle numbering
+#'
+#' @param type Type of principles to check ("MP", "P", "R", or "all")
+#' @return Data frame with consistency report
+#'
+fn_verify_consistency <- function(type = "all") {
+  patterns <- switch(type,
+    MP = "^MP\\d+_.*\\.md$",
+    P = "^P\\d+_.*\\.md$",
+    R = "^R\\d+_.*\\.md$",
+    all = "^(MP|P|R)\\d+_.*\\.md$"
+  )
+  
+  files <- list.files(".", pattern = patterns, full.names = FALSE)
+  
+  if(length(files) == 0) {
+    return(data.frame(
+      type = character(),
+      number = integer(),
+      file = character(),
+      status = character()
+    ))
+  }
+  
+  # Extract numbers
+  numbers <- gsub("^(MP|P|R)(\\d+)_.*", "\\2", files)
+  types <- gsub("^(MP|P|R)\\d+_.*", "\\1", files)
+  
+  results <- data.frame(
+    type = types,
+    number = as.integer(numbers),
+    file = files,
+    stringsAsFactors = FALSE
+  )
+  
+  # Check for duplicates
+  duplicates <- duplicated(paste0(results$type, results$number))
+  results$status <- ifelse(duplicates, "duplicate", "ok")
+  
+  # Check for gaps
+  for(t in unique(results$type)) {
+    subset <- results[results$type == t, ]
+    expected <- seq(0, max(subset$number))
+    missing <- setdiff(expected, subset$number)
+    
+    if(length(missing) > 0) {
+      gap_rows <- data.frame(
+        type = t,
+        number = missing,
+        file = NA,
+        status = "missing"
+      )
+      results <- rbind(results, gap_rows)
+    }
+  }
+  
+  results <- results[order(results$type, results$number), ]
+  return(results)
+}
+```
+
+### Subsection 4: Batch Renumber Function {#batch-function}
+
+```r
+#' Batch renumber multiple resources
+#'
+#' @param renumber_plan Data frame with old_number and new_number columns
+#' @param dry_run If TRUE, only show what would be changed
+#' @return List with results for each renumbering
+#'
+fn_batch_renumber_resources <- function(renumber_plan, dry_run = FALSE) {
+  results <- list()
+  
+  # Sort by new number in reverse to avoid conflicts
+  renumber_plan <- renumber_plan[order(as.numeric(gsub("\\D", "", 
+                                       renumber_plan$new_number)), 
+                                       decreasing = TRUE), ]
+  
+  for(i in seq_len(nrow(renumber_plan))) {
+    old <- renumber_plan$old_number[i]
+    new <- renumber_plan$new_number[i]
+    
+    result <- fn_renumber_resource(old, new, dry_run)
+    results[[paste0(old, "_to_", new)]] <- result
+    
+    if(result$status == "error") {
+      warning(paste("Failed to renumber", old, "to", new, ":", 
+                   result$message))
+    }
+  }
+  
+  return(results)
+}
+```
+
+## Section 3: Usage Workflow {#workflow}
+
+### Subsection 1: Single File Renumbering {#single-renumber}
+
+```r
+# Source the function
+source("global_scripts/04_utils/fn_renumber_resource.R")
+
+# Dry run first
+result <- fn_renumber_resource("MP05", "MP06", dry_run = TRUE)
+print(result)
+
+# Execute if satisfied
+result <- fn_renumber_resource("MP05", "MP06", dry_run = FALSE)
+```
+
+### Subsection 2: Batch Renumbering {#batch-renumber}
+
+```r
+# Source required functions
+source("global_scripts/04_utils/fn_batch_renumber_resources.R")
+
+# Create renumbering plan
+plan <- data.frame(
+  old_number = c("P10", "P11", "P12"),
+  new_number = c("P11", "P12", "P13")
+)
+
+# Dry run
+results <- fn_batch_renumber_resources(plan, dry_run = TRUE)
+
+# Execute
+results <- fn_batch_renumber_resources(plan, dry_run = FALSE)
+```
+
+### Subsection 3: Consistency Verification {#consistency-check}
+
+```r
+# Source verification function
+source("global_scripts/04_utils/fn_verify_consistency.R")
+
+# Check all principles
+consistency_report <- fn_verify_consistency("all")
+
+# View issues
+issues <- consistency_report[consistency_report$status != "ok", ]
+print(issues)
+```
+
+## Section 4: Execution Scripts {#scripts}
+
+### Subsection 1: Main Execution Script {#main-script}
+
+Located at `global_scripts/25_scripts/admin/sc_execute_renumbering_plan.R`:
+
+```r
+#!/usr/bin/env Rscript
+
+# Execute Renumbering Plan
+# This script executes a predefined renumbering plan for principles
+
+# Source functions
+source("global_scripts/04_utils/fn_renumber_resource.R")
+source("global_scripts/04_utils/fn_verify_consistency.R")
+source("global_scripts/04_utils/fn_batch_renumber_resources.R")
+
+# Load renumbering plan (example)
+renumber_plan <- read.csv("renumbering_plan.csv", stringsAsFactors = FALSE)
+
+# Verify current state
+message("Checking current consistency...")
+before_report <- fn_verify_consistency("all")
+issues_before <- sum(before_report$status != "ok")
+message(paste("Issues found:", issues_before))
+
+# Execute renumbering
+message("Executing renumbering plan...")
+results <- fn_batch_renumber_resources(renumber_plan, dry_run = FALSE)
+
+# Verify after renumbering
+message("Checking consistency after renumbering...")
+after_report <- fn_verify_consistency("all")
+issues_after <- sum(after_report$status != "ok")
+message(paste("Issues after renumbering:", issues_after))
+
+# Report results
+if(issues_after < issues_before) {
+  message("SUCCESS: Renumbering improved consistency")
+} else if(issues_after == issues_before) {
+  message("NEUTRAL: Renumbering maintained consistency")
+} else {
+  warning("WARNING: Renumbering introduced new issues")
+}
+```
+
+### Subsection 2: Demo Script {#demo-script}
+
+Located at `global_scripts/25_scripts/development/sc_demo_renumbering.R`:
+
+```r
+#!/usr/bin/env Rscript
+
+# Demo Renumbering Script
+# This script demonstrates the renumbering functionality
+
+# Create demo files
+demo_dir <- tempdir()
+setwd(demo_dir)
+
+# Create sample principle files
+writeLines("# MP00: Test Principle", "MP00_test_principle.md")
+writeLines("# P05: Test Principle", "P05_another_test.md")
+writeLines("# R12: Test Rule", "R12_test_rule.md")
+
+# Source functions
+source("global_scripts/04_utils/fn_renumber_resource.R")
+source("global_scripts/04_utils/fn_verify_consistency.R")
+
+# Show current state
+message("Current files:")
+print(list.files(pattern = "\\.md$"))
+
+# Perform renumbering
+result <- fn_renumber_resource("MP00", "MP01", dry_run = FALSE)
+print(result)
+
+# Show new state
+message("Files after renumbering:")
+print(list.files(pattern = "\\.md$"))
+
+# Cleanup
+unlink(demo_dir, recursive = TRUE)
+```
+
+## Section 5: Best Practices {#best-practices}
+
+### Subsection 1: Pre-Renumbering Checklist {#checklist}
+
+1. **Backup**: Create a backup of all principle files
+2. **Verify**: Run consistency check to understand current state
+3. **Plan**: Create a comprehensive renumbering plan
+4. **Test**: Always do a dry run first
+5. **Review**: Check the dry run results carefully
+6. **Execute**: Run the actual renumbering
+7. **Verify**: Check consistency after renumbering
+8. **Commit**: Commit changes to version control
+
+### Subsection 2: Common Patterns {#patterns}
+
+#### Inserting a New Principle {#insert-pattern}
+```r
+# To insert MP05 between MP04 and current MP05
+plan <- data.frame(
+  old_number = c("MP09", "MP08", "MP07", "MP06", "MP05"),
+  new_number = c("MP10", "MP09", "MP08", "MP07", "MP06")
+)
+# Process in reverse order to avoid conflicts
+```
+
+#### Removing a Principle {#remove-pattern}
+```r
+# To remove P07 and close the gap
+plan <- data.frame(
+  old_number = c("P08", "P09", "P10"),
+  new_number = c("P07", "P08", "P09")
+)
+```
+
+#### Reorganizing a Series {#reorganize-pattern}
+```r
+# Complete reorganization based on new ordering
+plan <- read.csv("complete_reorg_plan.csv")
+# Ensure no conflicts in the plan
+```
+
+---
+
+*This module ensures consistent and accurate principle numbering across the entire documentation system, preventing broken references and maintaining organizational clarity.*

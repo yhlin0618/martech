@@ -1,0 +1,168 @@
+---
+title: "UI_R017: bs4Dash 命名空間規則"
+subtitle: "所有 bs4Dash 函數必須在 Shiny 應用程式中明確使用 bs4Dash:: 命名空間限定符前綴，以防止與其他套件（特別是 shinydashboard）的衝突"
+chapter: "CH04"
+category: "rule"
+number: "UI_R017"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article: 
+  number: 17
+  title: "bs4Dash 命名空間規則"
+related_to:
+  - "MP58: 命名空間衝突避免"
+  - "R90: bs4Dash 結構遵守規則"
+  - "R95: 匯入需求規則"
+  - "MP19: 套件一致性"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十七條：bs4Dash 命名空間規則 {#overview}
+
+**UI組件法第十七條（bs4Dash 命名空間規則）**
+
+此規則建立了在 Shiny 應用程式中對所有 bs4Dash 函數進行明確命名空間前綴的需求，以防止與其他套件（特別是 shinydashboard）的衝突。
+
+:::{.callout-important}
+## 規則定義
+所有 bs4Dash 函數必須在 Shiny 應用程式中明確使用 `bs4Dash::` 命名空間限定符前綴，無論套件是否已使用 library() 載入。
+:::
+
+# 第一項：需求 {#requirements}
+
+## 第一款：明確命名空間 {#explicit-namespace}
+
+始終對所有 bs4Dash 函數使用 `bs4Dash::` 前綴，包括：
+- 佈局函數（dashboardPage、dashboardHeader、dashboardSidebar、dashboardBody 等）
+- UI 組件（valueBox、box、bs4Card 等）
+- 導航元素（tabproducts、tabproduct、menuproduct 等）
+- 主題函數（create_theme、bs4dash_vars 等）
+
+## 第二款：優先使用 bs4Dash 特定函數 {#prefer-specific-functions}
+
+當可用時，使用 bs4Dash 特定的函數名稱而非通用名稱：
+- 使用 `bs4Dash::bs4Tabproduct` 而非 `bs4Dash::tabproduct`
+- 使用 `bs4Dash::bs4Tabproducts` 而非 `bs4Dash::tabproducts`
+- 使用 `bs4Dash::bs4Card` 而非 `bs4Dash::box`
+- 使用 `bs4Dash::bs4ValueBox` 而非 `bs4Dash::valueBox`
+
+這提供雙重保護防止命名空間衝突：命名空間前綴和獨特的函數名稱都使意圖明確。
+
+## 第三款：一致性 {#consistency}
+
+保持一致性，對所有 bs4Dash 函數加前綴，即使：
+- bs4Dash 套件已使用 library() 明確載入
+- 當前環境中沒有明顯衝突
+- 函數在註釋代碼或範例中使用
+
+## 第四款：註釋代碼 {#commented-code}
+
+即使在註釋掉的代碼中也要添加命名空間前綴，以確保如果稍後取消註釋代碼的正確性。
+
+## 第五款：文檔 {#documentation}
+
+在所有文檔中包含具有適當命名空間前綴的範例。
+
+# 第二項：實施模式 {#implementation-pattern}
+
+```r
+# 好的做法：
+ui <- bs4Dash::dashboardPage(
+  header = bs4Dash::dashboardHeader(title = "我的應用程式"),
+  sidebar = bs4Dash::dashboardSidebar(
+    bs4Dash::sidebarMenu(
+      bs4Dash::menuproduct("儀表板", tabName = "dashboard")
+    )
+  ),
+  body = bs4Dash::dashboardBody(
+    bs4Dash::tabproducts(
+      bs4Dash::tabproduct("dashboard",
+        bs4Dash::box(
+          title = "我的盒子",
+          bs4Dash::valueBox(value = 10, subtitle = "產品")
+        )
+      )
+    )
+  )
+)
+
+# 最佳做法：
+ui <- bs4Dash::dashboardPage(
+  header = bs4Dash::dashboardHeader(title = "我的應用程式"),
+  sidebar = bs4Dash::dashboardSidebar(
+    bs4Dash::sidebarMenu(
+      bs4Dash::menuproduct("儀表板", tabName = "dashboard")
+    )
+  ),
+  body = bs4Dash::dashboardBody(
+    bs4Dash::bs4Tabproducts(
+      bs4Dash::bs4Tabproduct("dashboard",
+        bs4Dash::bs4Card(
+          title = "我的盒子",
+          bs4Dash::bs4ValueBox(value = 10, subtitle = "產品")
+        )
+      )
+    )
+  )
+)
+
+# 錯誤做法：
+ui <- dashboardPage(
+  header = dashboardHeader(title = "我的應用程式"),
+  sidebar = dashboardSidebar(
+    sidebarMenu(
+      menuproduct("儀表板", tabName = "dashboard")
+    )
+  ),
+  body = dashboardBody(...)
+)
+```
+
+# 第三項：應避免的常見衝突 {#common-conflicts}
+
+## 第一款：shinydashboard vs. bs4Dash {#shinydashboard-conflicts}
+
+兩個套件都提供具有相同名稱的函數，例如：
+- dashboardPage、dashboardHeader、dashboardSidebar、dashboardBody
+- tabproducts、tabproduct、menuproduct、menuSubproduct
+- valueBox、box、infoBox
+
+## 第二款：其他 UI 套件衝突 {#other-ui-conflicts}
+
+注意與以下套件的潛在衝突：
+- shiny.semantic
+- shinyMobile
+- shinymaterial
+- 其他具有類似組件命名的 UI 框架
+
+# 第四項：相關原則 {#related-principles}
+
+- MP58：命名空間衝突避免
+- R90：bs4Dash 結構遵守規則
+- R95：匯入需求規則
+- MP19：套件一致性
+
+# 第五項：注意事項 {#notes}
+
+bs4Dash 套件通常與其他 UI 套件一起使用，增加了命名空間衝突的風險。通過一致使用明確的命名空間前綴，您可以確保：
+
+1. 始終使用正確的實施
+2. 代碼對套件載入順序的變化保持穩健
+3. 避免使用多個 UI 套件的函數時出現錯誤
+4. 維護更容易，因為命名空間清楚地指示函數的來源
+
+此規則的主要動機是防止由於 bs4Dash 和其他套件（特別是 shinydashboard）之間的命名空間衝突而使用錯誤的函數實施時可能發生的微妙且難以診斷的錯誤。
+
+---
+
+*基於：UI組件法第十七條*  
+*相關連結：[R90 bs4Dash 結構遵守規則](UI_R011_bs4dash_structure_adherence.qmd), [MP58 命名空間衝突避免](../../CH00_fundamental_principles/meta_principles/MP058_namespace_conflict_avoidance.qmd)*

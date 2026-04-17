@@ -1,0 +1,516 @@
+# ========================================
+# CH09: ETL Pipeline Implementation
+# Version: 1.0
+# Last Updated: 2026-02-11
+#
+# Contains: ETL architecture, phases, naming, patterns
+# Total: ~18 implementation guides
+# ========================================
+
+chapter: "CH11_etl"
+description: "ETL Pipeline Implementation Guides and Patterns"
+pattern_count: 18
+
+# Note: ETL patterns implement MP064 (ETL-Derivation Separation),
+# MP107 (ETL Independence), and MP108 (ETL Phase Sequence).
+
+patterns:
+
+  # ====================
+  # ARCHITECTURE OVERVIEW
+  # ====================
+
+  - id: ETL_ARCH
+    type: implementation_guide
+    name: etl_architecture_overview
+    display_name: "ETL Pipeline Architecture Overview"
+    one_liner: "Three-phase ETL model with strict separation of concerns"
+    file_path: "part2_implementations/CH12_etl_pipelines/00_overview/ETL_architecture.qmd"
+
+    rule_natural: |
+      ETL follows a three-phase model:
+      - 0IM (Import): Raw data preservation, no JOINs
+      - 1ST (Staging): Format standardization, no JOINs
+      - 2TR (Transform): Structural JOINs and schema mapping
+
+      Operations forbidden by phase:
+      - 0IM: JOINs, business logic, column renaming
+      - 1ST: JOINs, business calculations, aggregations
+      - 2TR: Analytical JOINs, complex derivations, ML processing
+
+    rule_formal: |
+      RULE ETL_ARCH_PHASES:
+      phase(0IM) allows {data_extraction, encoding, basic_validation}
+      phase(0IM) forbids {join, business_logic, column_rename}
+      phase(1ST) allows {column_rename, type_conversion, encoding_fix}
+      phase(1ST) forbids {join, business_calc, aggregation}
+      phase(2TR) allows {structural_join, schema_map, business_rule}
+      phase(2TR) forbids {analytical_join, ml_processing, complex_derive}
+
+    violations:
+      - "Performing JOIN in 0IM import phase"
+      - "Adding business calculations in 1ST staging"
+      - "Running ML models in 2TR transform"
+    compliant:
+      - "Keeping tables separate until 2TR phase"
+      - "Only standardizing formats in 1ST"
+      - "Structural JOINs only in 2TR"
+
+  # ====================
+  # ETL INDEPENDENCE
+  # ====================
+
+  - id: ETL_IND
+    type: implementation_guide
+    name: etl_independence_guide
+    display_name: "ETL Independence Implementation"
+    one_liner: "Every ETL must be completely self-contained and runnable alone"
+    file_path: "part2_implementations/CH12_etl_pipelines/ETL_INDEPENDENCE_GUIDE.qmd"
+    implements: ["MP107", "MP108"]
+
+    rule_natural: |
+      Every ETL MUST be:
+      - Self-Initializing: Contains its own autoinit()
+      - Self-Contained: Has all resources internally
+      - Standalone Executable: Can run without any other ETL
+      - Parallel-Ready: Can run simultaneously with all other ETLs
+      - Selectively Runnable: Can be skipped without breaking anything
+
+      The Golden Rule Test:
+      "Can I run this ETL right now, by itself, without running anything else first?"
+      If NO → ETL violates MP107 and MUST be fixed
+
+    rule_formal: |
+      RULE ETL_IND_CHECK:
+      FOR ALL etl E:
+      has_autoinit(E)
+      AND has_autodeinit(E)
+      AND NOT depends_on_other_etl(E)
+      AND can_run_parallel(E)
+      AND can_run_selective(E)
+
+    violations:
+      - "ETL depends on another ETL's output file"
+      - "ETL reads from shared global state"
+      - "ETL uses numbered file naming implying sequence"
+    compliant:
+      - "Each ETL has autoinit() and autodeinit()"
+      - "ETL reads from database tables, not temp files"
+      - "Flat directory structure without sequence numbers"
+
+  # ====================
+  # NAMING CONVENTIONS
+  # ====================
+
+  - id: ETL_NAME
+    type: implementation_guide
+    name: etl_naming_conventions
+    display_name: "ETL Naming Conventions"
+    one_liner: "Triple underscore convention for ETL table and file naming"
+    file_path: "part2_implementations/CH12_etl_pipelines/00_overview/naming_conventions.qmd"
+    implements: ["MP078", "MP079"]
+
+    rule_natural: |
+      ETL pipeline tables follow triple underscore (___) convention:
+      table_name = rigid_identifier + "___" + stage_descriptor
+
+      Stage descriptors:
+      - 0 Import: (none) - raw data
+      - 1 Staging: ___staged
+      - 2 Transform: ___transformed
+      - 3 Cleanse: ___cleansed
+      - 4 Process: ___processed
+      - 5 Application: ___application
+
+      Complete pattern:
+      df_[platform]_[purpose]_[entity]___[stage_descriptor]
+
+    rule_formal: |
+      RULE ETL_NAME_PATTERN:
+      table_name matches "df_{platform}_{purpose}_{entity}(___staged|___transformed|___cleansed|___processed|___application)?"
+
+      RULE ETL_STAGE_DB:
+      stage(0) stores_in raw_data.duckdb
+      stage(1) stores_in staged_data.duckdb
+      stage(2) stores_in transformed_data.duckdb
+      stage(3) stores_in cleansed_data.duckdb
+      stage(4) stores_in processed_data.duckdb
+      stage(5) stores_in app_data.duckdb
+
+    violations:
+      - "df_product_staged (missing triple underscore)"
+      - "product_property___staged (missing df_ prefix)"
+    compliant:
+      - "df_product_property_jew___staged"
+      - "df_eby_sales___transformed"
+
+  # ====================
+  # SALES PIPELINE
+  # ====================
+
+  - id: ETL_SALES_0IM
+    type: implementation_pattern
+    name: sales_import_pattern
+    display_name: "Sales Data Import (0IM)"
+    one_liner: "Import raw sales data preserving original structure"
+    file_path: "part2_implementations/CH12_etl_pipelines/01_sales_pipeline/generic/sales_0IM_pattern.qmd"
+
+    rule_natural: |
+      Sales 0IM phase responsibilities:
+      - Import sales transactions from external sources
+      - Preserve original column names and types
+      - Add import metadata (timestamp, source_path, platform_id)
+      - Detect and record file format
+      - Enforce source completeness gate:
+        - enumerate all source units first (files/tabs/pages)
+        - record per-unit status (IMPORTED/EMPTY/FAILED)
+        - reconcile per-unit rows_source vs rows_written
+        - reconcile critical keys (e.g., ASIN/order_id) source vs local
+        - fail run on any unexpected FAILED/mismatch
+      - Execute import+reconciliation inside transaction boundary:
+        - commit only when completeness gate passes
+        - rollback and stop on any mismatch/failure
+      - Emit audit CSV for reproducibility and issue triage
+      - NO transformations or JOINs
+
+    rule_formal: |
+      RULE SALES_0IM:
+      import(external_source) INTO raw_data
+      preserve original_columns
+      add metadata {import_timestamp, source_path, platform_id}
+      validate source_unit_completeness
+      validate row_reconciliation
+      validate critical_key_reconciliation
+      transaction_commit_on_pass
+      transaction_rollback_on_fail
+      fail_on_any_import_failure
+      emit audit_artifact_csv
+      NOT transform
+      NOT join
+
+    violations:
+      - "Renaming columns during import"
+      - "Joining orders with details in 0IM"
+    compliant:
+      - "DBI::dbWriteTable(raw_data, 'df_eby_orders___raw', orders_raw)"
+
+  - id: ETL_SALES_2TR
+    type: implementation_pattern
+    name: sales_transform_pattern
+    display_name: "Sales Data Transform (2TR)"
+    one_liner: "Transform and denormalize sales data with structural JOINs"
+    file_path: "part2_implementations/CH12_etl_pipelines/01_sales_pipeline/generic/sales_2TR_pattern.qmd"
+
+    rule_natural: |
+      Sales 2TR phase responsibilities:
+      - Map columns to standard schema
+      - Convert data types appropriately
+      - Perform structural JOIN (orders + order_details = sales)
+      - Add platform identification
+      - Create indexes for performance
+      - Apply business rule validations
+
+    rule_formal: |
+      RULE SALES_2TR:
+      read staged_orders AND staged_order_details
+      structural_join ON order_id
+      map_columns TO standard_schema
+      convert_types
+      validate business_rules
+      write TO transformed_data
+
+    violations:
+      - "Performing analytical JOINs with customer segments"
+      - "Adding RFM calculations"
+    compliant:
+      - "orders %>% inner_join(details, by = 'order_id')"
+
+  # ====================
+  # STRUCTURAL JOIN PATTERN
+  # ====================
+
+  - id: ETL_STRUCT_JOIN
+    type: implementation_pattern
+    name: structural_join_pattern
+    display_name: "Structural JOIN Implementation"
+    one_liner: "Combine normalized tables into denormalized records in 2TR only"
+    file_path: "part2_implementations/CH12_etl_pipelines/05_special_patterns/structural_join/overview.qmd"
+    implements: ["MP064", "DM_R040"]
+
+    rule_natural: |
+      Structural JOINs belong ONLY in 2TR phase:
+      - 0IM: NO JOINs - preserve raw structure
+      - 1ST: NO JOINs - only standardize formats
+      - 2TR: Structural JOINs to create denormalized records
+      - Derivation: Only analytical JOINs
+
+      Data flow:
+      BAYORD (raw) + BAYORE (raw) → separate in 0IM/1ST → JOIN in 2TR → Sales (transformed)
+
+    rule_formal: |
+      RULE STRUCTURAL_JOIN_PLACEMENT:
+      FOR ALL join J:
+      IF is_structural_join(J)
+      THEN phase(J) = "2TR"
+
+      structural_join combines normalized_tables INTO denormalized_record
+      analytical_join combines data FOR analysis IN derivation_layer
+
+    violations:
+      - "inner_join in eby_ETL_sales_0IM.R"
+      - "left_join in eby_ETL_sales_1ST.R"
+      - "Structural JOIN in derivation function"
+    compliant:
+      - "Structural JOIN only in eby_ETL_sales_2TR.R"
+      - "Derivations read from df_eby_sales___transformed"
+
+  # ====================
+  # CUSTOMER PIPELINE
+  # ====================
+
+  - id: ETL_CUST_REVIEWS
+    type: implementation_pattern
+    name: customer_reviews_pattern
+    display_name: "Customer Reviews Import Pattern"
+    one_liner: "Import and process customer review data"
+    file_path: "part2_implementations/CH12_etl_pipelines/02_customers_pipeline/generic/customer_reviews_pattern.qmd"
+
+    rule_natural: |
+      Customer reviews ETL:
+      - Import reviews preserving original text
+      - Handle character encoding issues
+      - Standardize date formats
+      - Link to customer and product IDs
+      - NO sentiment analysis (that's derivation)
+
+    rule_formal: |
+      RULE CUST_REVIEWS_ETL:
+      import reviews WITH original_text
+      fix encoding TO UTF8
+      standardize dates
+      link TO customer_id AND product_id
+      NOT analyze_sentiment (derivation_layer)
+
+  - id: ETL_REVIEWS_IMPORT
+    type: implementation_pattern
+    name: reviews_import_pattern
+    display_name: "Reviews Import Pattern"
+    one_liner: "Generic pattern for importing review data across platforms"
+    file_path: "part2_implementations/CH12_etl_pipelines/02_customers_pipeline/generic/reviews_import_pattern.qmd"
+
+    rule_natural: |
+      Reviews import follows standard 0IM pattern:
+      - Extract from platform API or files
+      - Preserve original review text and metadata
+      - Handle Unicode and special characters
+      - Add import timestamp and source tracking
+
+  # ====================
+  # PRODUCTS PIPELINE
+  # ====================
+
+  - id: ETL_PROD_COMPLETE
+    type: implementation_pattern
+    name: products_complete_pattern
+    display_name: "Products Complete Pipeline Pattern"
+    one_liner: "Full pipeline for product data from import to application layer"
+    file_path: "part2_implementations/CH12_etl_pipelines/04_products_pipeline/generic/products_complete_pattern.qmd"
+
+    rule_natural: |
+      Products ETL complete pipeline:
+      - 0IM: Import product catalog and attributes
+      - 1ST: Standardize product codes and categories
+      - 2TR: Join with product line dictionary
+      - Further phases: Cleanse duplicates, process hierarchies
+
+  # ====================
+  # SPECIAL PATTERNS
+  # ====================
+
+  - id: ETL_EXTENSIBLE
+    type: implementation_pattern
+    name: extensible_etl_pattern
+    display_name: "Extensible ETL Pattern"
+    one_liner: "Design ETLs for future extension and modification"
+    file_path: "part2_implementations/CH12_etl_pipelines/05_special_patterns/extensible_pattern.qmd"
+
+    rule_natural: |
+      Extensible ETL design:
+      - Use configuration-driven processing
+      - Separate generic patterns from platform-specific
+      - Use triple underscore for company variants
+      - Support adding new data types without restructuring
+
+    rule_formal: |
+      RULE EXTENSIBLE_ETL:
+      config_driven processing
+      generic_pattern + platform_specific_override
+      company_variant uses "___COMPANY" suffix
+      new_data_type NOT require restructure
+
+  # ====================
+  # CASE STUDIES
+  # ====================
+
+  - id: ETL_MAMBA_IMPL
+    type: case_study
+    name: mamba_etl_implementation
+    display_name: "MAMBA Complete ETL Implementation"
+    one_liner: "Case study of complete ETL implementation for MAMBA"
+    file_path: "part2_implementations/CH12_etl_pipelines/06_case_studies/MAMBA_complete_implementation/implementation_guide.qmd"
+
+    rule_natural: |
+      MAMBA ETL implementation demonstrates:
+      - Multi-platform data integration (eBay, Amazon, CBZ)
+      - Consistent naming with ___MAMBA suffix
+      - Full three-phase architecture
+      - Independence testing and validation
+
+  - id: ETL_COMPETITOR
+    type: case_study
+    name: competitor_analysis_etl
+    display_name: "Competitor Analysis ETL Pattern"
+    one_liner: "ETL pattern for importing competitor data"
+    file_path: "part2_implementations/CH12_etl_pipelines/06_case_studies/migration_stories/competitor_analysis_pattern.qmd"
+
+    rule_natural: |
+      Competitor analysis ETL:
+      - Import competitor product listings
+      - Standardize for comparison with own products
+      - Maintain source attribution
+
+  - id: ETL_COMP_SALES
+    type: case_study
+    name: competitor_sales_etl
+    display_name: "Competitor Sales ETL Pattern"
+    one_liner: "ETL pattern for competitor sales data"
+    file_path: "part2_implementations/CH12_etl_pipelines/06_case_studies/migration_stories/competitor_sales_pattern.qmd"
+
+  # ====================
+  # DATABASE DESIGN
+  # ====================
+
+  - id: ETL_DB_DESIGN
+    type: implementation_guide
+    name: ebay_database_design
+    display_name: "MAMBA eBay Database Design"
+    one_liner: "Database schema design for eBay platform ETL"
+    file_path: "part2_implementations/CH12_etl_pipelines/MAMBA_eBay_Database_Design.qmd"
+
+    rule_natural: |
+      eBay database design follows:
+      - Separate tables for orders (BAYORD) and details (BAYORE)
+      - Normalized structure in raw and staged layers
+      - Denormalized sales table in transformed layer
+      - Clear foreign key relationships
+
+  # ====================
+  # DECISION TREE
+  # ====================
+
+  - id: ETL_DECISION
+    type: decision_guide
+    name: etl_decision_tree
+    display_name: "ETL Design Decision Tree"
+    one_liner: "Decision tree for ETL pipeline design choices"
+    file_path: "part2_implementations/CH12_etl_pipelines/00_overview/decision_tree.qmd"
+
+    rule_natural: |
+      ETL Design Decision Tree:
+      1. Source has multiple tables? → Create separate pipelines
+      2. Data mixed in one table? → Split in 0IM phase
+      3. Need denormalized output? → JOIN in 2TR phase
+      4. Company-specific logic? → Add ___COMPANY suffix
+
+    rule_formal: |
+      RULE ETL_DECISION:
+      IF source has multiple_tables THEN create separate_pipelines
+      IF data_mixed_in_one_table THEN split_in_0IM
+      IF need_denormalized_output THEN join_in_2TR
+      IF company_specific_logic THEN add "___COMPANY" suffix
+
+  # ====================
+  # eBay SPECIFIC
+  # ====================
+
+  - id: ETL_EBY_SALES
+    type: platform_specific
+    name: eby_sales_complete
+    display_name: "eBay Sales Complete Pipeline (MAMBA)"
+    one_liner: "Complete eBay sales ETL implementation for MAMBA"
+    file_path: "part2_implementations/CH12_etl_pipelines/01_sales_pipeline/implementations/eby_sales/MAMBA/eby_sales_complete___MAMBA.qmd"
+
+    rule_natural: |
+      eBay MAMBA implementation:
+      - 0IM: Import BAYORD and BAYORE separately
+      - 1ST: Standardize each table independently
+      - 2TR: Structural JOIN to create denormalized sales
+      - Uses ___MAMBA suffix for company-specific tables
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: ETL_ARCH
+    to: MP064
+    reason: "Architecture implements ETL-Derivation separation"
+
+  - from: ETL_IND
+    to: MP107
+    reason: "Independence guide implements MP107"
+
+  - from: ETL_IND
+    to: MP108
+    reason: "Phase sequence within independent ETLs"
+
+  - from: ETL_STRUCT_JOIN
+    to: DM_R040
+    reason: "Structural JOIN follows DM_R040 pattern"
+
+  - from: ETL_NAME
+    to: MP078
+    reason: "Naming follows object naming convention"
+
+  - from: ETL_SALES_2TR
+    to: ETL_STRUCT_JOIN
+    reason: "Sales transform uses structural JOIN pattern"
+
+# ====================
+# SCENARIOS
+# ====================
+
+scenarios:
+  building_new_etl:
+    description: "Creating a new ETL pipeline from scratch"
+    must_read:
+      - ETL_ARCH
+      - ETL_IND
+      - ETL_NAME
+      - ETL_DECISION
+    checklist:
+      - "Does ETL have autoinit() and autodeinit()?"
+      - "Can ETL run independently without other ETLs?"
+      - "Are JOINs only in 2TR phase?"
+      - "Does naming follow df_{platform}_{type}___stage pattern?"
+
+  debugging_etl_issues:
+    description: "Troubleshooting ETL pipeline problems"
+    must_read:
+      - ETL_ARCH
+      - ETL_IND
+      - ETL_STRUCT_JOIN
+    checklist:
+      - "Is phase isolation maintained?"
+      - "Are there hidden dependencies on other ETLs?"
+      - "Is structural JOIN in correct phase?"
+
+  platform_specific_etl:
+    description: "Creating platform-specific ETL variant"
+    must_read:
+      - ETL_NAME
+      - ETL_EXTENSIBLE
+      - ETL_MAMBA_IMPL
+    checklist:
+      - "Using ___COMPANY suffix for company-specific tables?"
+      - "Generic pattern exists before creating specific?"

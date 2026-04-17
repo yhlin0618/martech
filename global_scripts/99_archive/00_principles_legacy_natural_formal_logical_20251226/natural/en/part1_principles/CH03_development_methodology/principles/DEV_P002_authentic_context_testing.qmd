@@ -1,0 +1,197 @@
+---
+title: "DEV_P002: Authentic Context Testing"
+subtitle: "Testing components in their real execution environment rather than in isolation"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P002"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法 (Development Methodology Law)"
+article: "第2條"
+derives_from:
+  - "CH05.TD_P001: Deployment Patterns"
+  - "CH00.MP006: Data Source Hierarchy"
+influences:
+  - "CH01.SO_P003: App Construction Principles"
+  - "CH01.SO_P004: App Bottom-Up Construction"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**開發方法法第2條（真實環境測試）**
+
+本條建立在真實執行環境中測試組件的重要性，而非在隔離或範例環境中測試。
+
+:::{.callout-important}
+## 核心概念
+組件應在它們最終執行的確切環境中進行測試，包含相同的目錄結構、相依性，以及它們在實際使用中會遇到的操作條件。
+:::
+
+# 第一項：基本原理 {#rationale}
+
+## 第一款：真實環境測試的必要性 {#necessity}
+
+在真實環境中測試揭示了在簡化或隔離測試環境中可能不明顯的問題：
+
+1. **路徑解析**：相對路徑在範例資料夾與根目錄中的運作可能不同
+2. **相依性載入**：相依性的順序和可用性在真實環境中可能不同
+3. **配置存取**：配置檔案和環境變數的存取方式可能不同
+4. **權限邊界**：檔案系統和資料存取權限在不同環境間可能有所差異
+5. **初始化狀態**：初始化後的全域狀態在真實環境中可能不同
+
+# 第二項：實作指導原則 {#implementation}
+
+## 第一款：根目錄測試 {#root-directory}
+
+測試腳本應從專案根目錄執行以確保準確的路徑解析：
+
+```r
+# 正確 - 從根目錄執行測試
+shiny::runApp("update_scripts/global_scripts/98_debug/rshinyapp/test_db_permission_app.R")
+
+# 錯誤 - 從範例目錄執行測試
+setwd("update_scripts/global_scripts/10_rshinyapp_components/examples")
+shiny::runApp("app_complete_template.R")  # 不同的路徑環境！
+```
+
+## 第二款：初始化驗證 {#initialization}
+
+測試應使用生產環境中將使用的實際初始化序列：
+
+```r
+# 正確 - 使用真實的初始化腳本
+source("update_scripts/global_scripts/00_principles/sc_initialization_app_mode.R")
+
+# 錯誤 - 手動設定部分環境
+OPERATION_MODE <- "APP_MODE"  # 缺少完整的初始化！
+```
+
+## 第三款：環境一致性 {#environmental-parity}
+
+開發、測試和生產環境應保持結構上的一致性：
+
+:::{.callout-note}
+## 環境一致性要素
+1. **目錄結構**：相同的層級和命名慣例
+2. **檔案位置**：檔案的相同相對位置
+3. **相依版本**：相同版本的函式庫和相依項
+4. **配置格式**：相同的配置檔案格式和位置
+:::
+
+# 第三項：應用程式目錄作為根環境 {#app-directory}
+
+## 第一款：路徑參考 {#path-reference}
+
+所有操作應參考相對於應用程式根目錄的路徑：
+
+```r
+# 正確 - 相對於應用程式根目錄的路徑
+data_file <- file.path("app_data", "customer_segments.csv")
+
+# 錯誤 - 假設當前工作目錄
+data_file <- "customer_segments.csv"  # 這個檔案在哪裡？
+```
+
+## 第二款：工作目錄管理 {#working-directory}
+
+測試應在需要時明確設定工作目錄為應用程式根目錄：
+
+```r
+# 如果還不在應用程式根目錄
+initial_dir <- getwd()
+setwd("/path/to/precision_marketing_app")  # 設定為應用程式根目錄
+
+# 執行測試...
+
+# 完成後恢復原始目錄
+setwd(initial_dir)
+```
+
+# 第四項：測試範例與真實環境 {#examples-vs-real}
+
+## 第一款：不同用途 {#different-purposes}
+
+範例目錄與真實環境測試服務於不同的目的：
+
+:::{.panel-tabset}
+
+### 範例
+
+- 展示隔離功能與最少相依性
+- 用於學習和理解組件
+- 快速原型設計和實驗
+- 文檔和教學目的
+
+### 真實測試
+
+- 驗證完整環境中的真實世界行為
+- 檢測整合問題
+- 確認路徑和配置解析
+- 驗證權限和存取控制
+
+:::
+
+兩者都有價值，但最終驗證應始終在真實環境中進行。
+
+# 第五項：特殊情況：可攜式應用程式 {#portable-apps}
+
+## 第一款：可攜式應用程式測試 {#portable-testing}
+
+對於設計在不同環境中執行的可攜式應用程式：
+
+1. 在所有目標環境中測試
+2. 使用絕對路徑或環境感知路徑解析
+3. 包含環境偵測和適應邏輯
+4. 明確記錄環境需求
+
+# 第六項：測試腳本組織 {#test-organization}
+
+## 第一款：組織與執行 {#organization-execution}
+
+雖然測試腳本應為清晰起見組織在除錯目錄中，但它們應從應用程式根目錄執行：
+
+```r
+# 組織：放置在除錯目錄
+# /update_scripts/global_scripts/98_debug/test_db_utilities.R
+
+# 執行：從應用程式根目錄執行
+Rscript update_scripts/global_scripts/98_debug/test_db_utilities.R
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 真實環境測試檢查清單
+
+進行測試時，確認：
+
+- [ ] 從專案根目錄執行測試
+- [ ] 使用實際的初始化序列
+- [ ] 保持環境結構一致性
+- [ ] 使用相對於應用程式根目錄的路徑
+- [ ] 明確管理工作目錄
+- [ ] 在所有目標環境中測試
+- [ ] 驗證路徑解析
+- [ ] 檢查相依性載入
+- [ ] 確認配置存取
+- [ ] 測試權限邊界
+:::
+
+# 結論 {#conclusion}
+
+透過在真實環境中測試，我們確保組件在其真實操作環境中正確運作。此原則有助於識別整合問題、路徑解析問題，以及可能在部署前未被偵測到的環境特定行為。
+
+---
+
+*依據：開發方法法第2條*  
+*衍生自：[TD_P001 部署模式](../../CH05_testing_deployment/principles/TD_P001_deployment_patterns.qmd)、[MP006 資料來源層級](../../CH00_fundamental_principles/MP006_data_source_hierarchy.qmd)*  
+*影響：[SO_P003 應用程式建構原則](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd)、[SO_P004 應用程式自下而上建構](../../CH01_structure_organization/principles/SO_P004_app_bottom_up_construction.qmd)*

@@ -1,0 +1,846 @@
+---
+id: "DF004"
+title: "Processing Operations"
+type: "data-flow"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "DF003": "Cleansing Operations"
+  - "MP0052": "Unidirectional Data Flow"
+influences:
+  - "DF005": "Application Data"
+relates_to:
+  - "MP0030": "Vectorization Principle"
+  - "MP0018": "Don't Repeat Yourself"
+  - "R049": "Apply Functions Over For Loops"
+  - "R050": "data.table Vectorized Operations"
+---
+
+# DF04: Processing Operations
+
+## Core Principle
+
+Processing operations implement **business logic and analytical transformations**, converting cleansed data into meaningful business metrics, segmentations, and derived insights that directly support decision-making and application functionality.
+
+## Purpose and Scope
+
+### What Processing Does
+- **Business metrics calculation**: KPIs, performance indicators, conversion rates
+- **Customer segmentation**: RFM analysis, behavioral clustering, value tiers
+- **Aggregation and summarization**: Time-series rollups, dimensional aggregates
+- **Complex derived fields**: Multi-step calculations requiring business logic
+- **Star/Snowflake schema creation**: Dimensional modeling for analytics
+- **Predictive feature engineering**: Variables for ML models and algorithms
+
+### What Processing Does NOT Do
+- **Data quality fixes**: No missing value imputation or outlier correction
+- **Schema standardization**: No column renaming or type conversion
+- **UI formatting**: No presentation-specific data preparation
+- **Real-time calculations**: No dynamic computations (handled in application layer)
+
+## Layer Position in Pipeline
+
+```mermaid
+graph LR
+    A[raw_data] --> B[staged_data]
+    B --> C[transformed_data]
+    C --> D[cleansed_data]
+    D --> E[processed_data]
+    E --> F[app_data]
+    
+    E -.-> E1["Processing Layer<br/>• Business logic<br/>• KPI calculation<br/>• Customer segmentation<br/>• Aggregation"]
+    
+    style E fill:#fff8e1
+    style E1 fill:#fff8e1
+```
+
+**Input**: `cleansed_data.duckdb` (Layer 4)  
+**Output**: `processed_data.duckdb` (Layer 5)  
+**Directory**: `40_processed/`
+
+## Business Metrics Framework
+
+### 1. Customer Analytics
+
+Comprehensive customer behavior analysis and segmentation:
+
+```r
+#' Calculate comprehensive customer metrics
+#' 
+#' Generates RFM analysis, lifetime value, and behavioral segmentation
+#'
+calculate_customer_metrics <- function(cleansed_conn, processed_conn) {
+  
+  # Extract base customer and order data
+  customers <- tbl2(cleansed_conn, "customers") %>% collect()
+  orders <- tbl2(cleansed_conn, "orders") %>% collect()
+  
+  # Calculate RFM metrics
+  analysis_date <- Sys.Date()
+  
+  customer_rfm <- orders %>%
+    dplyr::group_by(order_detail_customer_id) %>%
+    dplyr::summarise(
+      # Recency: days since last order
+      last_order_date = max(order_detail_date, na.rm = TRUE),
+      recency_days = as.numeric(analysis_date - last_order_date),
+      
+      # Frequency: number of orders
+      frequency_orders = dplyr::n(),
+      
+      # Monetary: total spend
+      monetary_total = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      monetary_average = monetary_total / frequency_orders,
+      
+      # Additional behavioral metrics
+      first_order_date = min(order_detail_date, na.rm = TRUE),
+      customer_tenure_days = as.numeric(analysis_date - first_order_date),
+      
+      # Order patterns
+      avg_days_between_orders = ifelse(frequency_orders > 1, 
+                                     customer_tenure_days / (frequency_orders - 1), 
+                                     NA),
+      
+      # Recent activity (last 90 days)
+      recent_orders_90d = sum(order_detail_date >= (analysis_date - 90), na.rm = TRUE),
+      recent_spend_90d = sum(ifelse(order_detail_date >= (analysis_date - 90),
+                                   order_detail_quantity * order_detail_unit_price, 0),
+                            na.rm = TRUE),
+      
+      .groups = "drop"
+    )
+  
+  # Calculate RFM scores (1-5 scale using quintiles)
+  customer_rfm <- customer_rfm %>%
+    dplyr::mutate(
+      # Recency score (lower recency = higher score)
+      recency_score = 6 - as.numeric(cut(recency_days, 
+                                        breaks = quantile(recency_days, probs = 0:5/5, na.rm = TRUE),
+                                        labels = 1:5, include.lowest = TRUE)),
+      
+      # Frequency score
+      frequency_score = as.numeric(cut(frequency_orders,
+                                      breaks = quantile(frequency_orders, probs = 0:5/5, na.rm = TRUE),
+                                      labels = 1:5, include.lowest = TRUE)),
+      
+      # Monetary score  
+      monetary_score = as.numeric(cut(monetary_total,
+                                     breaks = quantile(monetary_total, probs = 0:5/5, na.rm = TRUE),
+                                     labels = 1:5, include.lowest = TRUE)),
+      
+      # Combined RFM score
+      rfm_score = paste0(recency_score, frequency_score, monetary_score),
+      rfm_numeric = recency_score * 100 + frequency_score * 10 + monetary_score
+    )
+  
+  # Add customer segment classification
+  customer_rfm <- customer_rfm %>%
+    dplyr::mutate(
+      customer_segment_rfm = dplyr::case_when(
+        rfm_numeric >= 555 ~ "Champions",           # Best customers
+        rfm_numeric >= 454 ~ "Loyal Customers",    # High value, regular buyers
+        rfm_numeric >= 344 ~ "Potential Loyalists", # Recent customers with potential
+        rfm_numeric >= 233 ~ "New Customers",      # Recent but low frequency/value
+        rfm_numeric >= 155 ~ "Promising",          # Low recency, but decent F&M
+        rfm_numeric >= 144 ~ "Need Attention",     # Above average but declining
+        rfm_numeric >= 134 ~ "About to Sleep",     # Below average, risk of churning
+        rfm_numeric >= 114 ~ "At Risk",            # Low recent activity
+        rfm_numeric >= 124 ~ "Cannot Lose Them",  # High value but low recent activity
+        rfm_numeric >= 111 ~ "Hibernating",       # Low activity across all metrics
+        TRUE ~ "Lost"                              # Lowest scores
+      ),
+      
+      # Simplified value tier
+      customer_value_tier = dplyr::case_when(
+        monetary_score >= 5 ~ "High Value",
+        monetary_score >= 4 ~ "Medium Value", 
+        monetary_score >= 3 ~ "Regular Value",
+        TRUE ~ "Low Value"
+      ),
+      
+      # Activity status
+      customer_activity_status = dplyr::case_when(
+        recency_days <= 30 ~ "Highly Active",
+        recency_days <= 90 ~ "Active",
+        recency_days <= 180 ~ "Moderately Active",
+        recency_days <= 365 ~ "Low Activity",
+        TRUE ~ "Inactive"
+      )
+    )
+  
+  # Join with customer profile data
+  customer_complete <- customers %>%
+    dplyr::left_join(customer_rfm, by = c("customer_profile_email" = "order_detail_customer_id")) %>%
+    
+    # Handle customers with no orders
+    dplyr::mutate(
+      across(c(recency_days, frequency_orders, monetary_total), ~ replace_na(.x, 0)),
+      customer_segment_rfm = replace_na(customer_segment_rfm, "Prospects"),
+      customer_value_tier = replace_na(customer_value_tier, "No Purchase"),
+      customer_activity_status = replace_na(customer_activity_status, "Never Purchased")
+    ) %>%
+    
+    # Add processing metadata
+    dplyr::mutate(
+      analysis_date = analysis_date,
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_customer_v1.0"
+    )
+  
+  # Write to processed database
+  DBI::dbWriteTable(processed_conn, "customer_analytics", customer_complete, 
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Customer analytics complete: ", nrow(customer_complete), " customers processed")
+  return(nrow(customer_complete))
+}
+```
+
+### 2. Product Performance Analytics
+
+Analyze product performance across multiple dimensions:
+
+```r
+#' Calculate comprehensive product performance metrics
+#' 
+#' Generates sales performance, trend analysis, and category insights
+#'
+calculate_product_metrics <- function(cleansed_conn, processed_conn) {
+  
+  # Extract base data
+  orders <- tbl2(cleansed_conn, "orders") %>% collect()
+  products <- tbl2(cleansed_conn, "products") %>% collect()
+  
+  # Calculate product performance metrics
+  product_performance <- orders %>%
+    dplyr::left_join(products, by = c("order_detail_product_id" = "product_info_id")) %>%
+    dplyr::group_by(
+      order_detail_product_id,
+      product_info_name,
+      product_info_category,
+      product_info_brand
+    ) %>%
+    dplyr::summarise(
+      # Sales volume metrics
+      total_quantity_sold = sum(order_detail_quantity, na.rm = TRUE),
+      total_revenue = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      total_orders = dplyr::n_distinct(order_detail_id),
+      unique_customers = dplyr::n_distinct(order_detail_customer_id),
+      
+      # Price and margin analysis
+      avg_unit_price = mean(order_detail_unit_price, na.rm = TRUE),
+      min_unit_price = min(order_detail_unit_price, na.rm = TRUE),
+      max_unit_price = max(order_detail_unit_price, na.rm = TRUE),
+      price_stability = sd(order_detail_unit_price, na.rm = TRUE) / avg_unit_price,
+      
+      # Time-based metrics
+      first_sale_date = min(order_detail_date, na.rm = TRUE),
+      last_sale_date = max(order_detail_date, na.rm = TRUE),
+      days_on_market = as.numeric(max(order_detail_date) - min(order_detail_date)) + 1,
+      
+      # Customer behavior
+      avg_quantity_per_order = total_quantity_sold / total_orders,
+      customer_repeat_rate = (total_orders - unique_customers) / unique_customers,
+      
+      .groups = "drop"
+    ) %>%
+    
+    # Calculate relative performance metrics
+    dplyr::mutate(
+      # Revenue per day on market
+      revenue_per_day = total_revenue / pmax(days_on_market, 1),
+      
+      # Market penetration (within category)
+      category_revenue_rank = dplyr::dense_rank(desc(total_revenue)),
+      
+      # Performance scores (percentile-based)
+      revenue_percentile = percent_rank(total_revenue),
+      quantity_percentile = percent_rank(total_quantity_sold),
+      customer_penetration_percentile = percent_rank(unique_customers),
+      
+      # Combined performance score
+      performance_score = (revenue_percentile + quantity_percentile + customer_penetration_percentile) / 3
+    )
+  
+  # Add performance classifications
+  product_performance <- product_performance %>%
+    dplyr::mutate(
+      # Performance tier based on composite score
+      performance_tier = dplyr::case_when(
+        performance_score >= 0.8 ~ "Star Performer",
+        performance_score >= 0.6 ~ "Strong Performer", 
+        performance_score >= 0.4 ~ "Average Performer",
+        performance_score >= 0.2 ~ "Underperformer",
+        TRUE ~ "Poor Performer"
+      ),
+      
+      # Product lifecycle stage
+      lifecycle_stage = dplyr::case_when(
+        days_on_market <= 90 ~ "Introduction",
+        days_on_market <= 365 & revenue_percentile >= 0.6 ~ "Growth",
+        revenue_percentile >= 0.4 ~ "Maturity",
+        revenue_percentile < 0.2 ~ "Decline",
+        TRUE ~ "Stable"
+      ),
+      
+      # Recommendation actions
+      recommendation = dplyr::case_when(
+        performance_tier == "Star Performer" ~ "Promote & Expand",
+        performance_tier == "Strong Performer" & lifecycle_stage == "Growth" ~ "Invest & Scale",
+        performance_tier == "Average Performer" ~ "Monitor & Optimize",
+        performance_tier == "Underperformer" ~ "Investigate & Improve",
+        TRUE ~ "Consider Discontinuation"
+      )
+    )
+  
+  # Calculate time-series trends (last 12 months by month)
+  monthly_trends <- orders %>%
+    dplyr::filter(order_detail_date >= Sys.Date() - 365) %>%
+    dplyr::mutate(
+      year_month = format(order_detail_date, "%Y-%m")
+    ) %>%
+    dplyr::group_by(order_detail_product_id, year_month) %>%
+    dplyr::summarise(
+      monthly_revenue = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      monthly_quantity = sum(order_detail_quantity, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::group_by(order_detail_product_id) %>%
+    dplyr::arrange(year_month) %>%
+    dplyr::mutate(
+      # Trend calculations
+      revenue_trend = (dplyr::last(monthly_revenue) - dplyr::first(monthly_revenue)) / dplyr::first(monthly_revenue),
+      quantity_trend = (dplyr::last(monthly_quantity) - dplyr::first(monthly_quantity)) / dplyr::first(monthly_quantity),
+      
+      # Volatility measures
+      revenue_cv = sd(monthly_revenue, na.rm = TRUE) / mean(monthly_revenue, na.rm = TRUE),
+      quantity_cv = sd(monthly_quantity, na.rm = TRUE) / mean(monthly_quantity, na.rm = TRUE)
+    ) %>%
+    dplyr::slice(1) %>%  # Keep only summary row per product
+    dplyr::select(order_detail_product_id, revenue_trend, quantity_trend, revenue_cv, quantity_cv)
+  
+  # Combine performance and trend data
+  product_complete <- product_performance %>%
+    dplyr::left_join(monthly_trends, by = "order_detail_product_id") %>%
+    dplyr::mutate(
+      # Add processing metadata
+      analysis_date = Sys.Date(),
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_product_v1.0"
+    )
+  
+  # Write to processed database
+  DBI::dbWriteTable(processed_conn, "product_analytics", product_complete,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Product analytics complete: ", nrow(product_complete), " products processed")
+  return(nrow(product_complete))
+}
+```
+
+### 3. Time-Series Aggregations
+
+Create time-dimensional rollups for reporting and analysis:
+
+```r
+#' Generate time-series aggregations for dashboard consumption
+#' 
+#' Creates daily, weekly, monthly aggregates across key business dimensions
+#'
+generate_time_series_aggregates <- function(cleansed_conn, processed_conn) {
+  
+  # Extract order data
+  orders <- tbl2(cleansed_conn, "orders") %>% collect()
+  
+  # Daily aggregates
+  daily_metrics <- orders %>%
+    dplyr::group_by(order_date = order_detail_date) %>%
+    dplyr::summarise(
+      # Core metrics
+      total_orders = dplyr::n(),
+      total_revenue = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      total_quantity = sum(order_detail_quantity, na.rm = TRUE),
+      unique_customers = dplyr::n_distinct(order_detail_customer_id),
+      unique_products = dplyr::n_distinct(order_detail_product_id),
+      
+      # Derived metrics
+      avg_order_value = total_revenue / total_orders,
+      avg_quantity_per_order = total_quantity / total_orders,
+      revenue_per_customer = total_revenue / unique_customers,
+      
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(order_date) %>%
+    dplyr::mutate(
+      # Moving averages
+      revenue_7day_ma = slider::slide_dbl(total_revenue, mean, .before = 6, .complete = TRUE),
+      orders_7day_ma = slider::slide_dbl(total_orders, mean, .before = 6, .complete = TRUE),
+      
+      # Growth rates (compared to same day previous week)
+      revenue_wow_growth = (total_revenue / dplyr::lag(total_revenue, 7) - 1) * 100,
+      orders_wow_growth = (total_orders / dplyr::lag(total_orders, 7) - 1) * 100,
+      
+      # Cumulative metrics
+      cumulative_revenue = cumsum(total_revenue),
+      cumulative_orders = cumsum(total_orders),
+      
+      # Time dimensions
+      day_of_week = weekdays(order_date),
+      day_of_month = as.numeric(format(order_date, "%d")),
+      week_of_year = as.numeric(format(order_date, "%U")),
+      month_year = format(order_date, "%Y-%m"),
+      quarter_year = paste0(format(order_date, "%Y"), "-Q", ceiling(as.numeric(format(order_date, "%m"))/3)),
+      
+      # Metadata
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_timeseries_v1.0"
+    )
+  
+  # Weekly aggregates
+  weekly_metrics <- orders %>%
+    dplyr::mutate(
+      week_start = as.Date(order_detail_date) - as.numeric(format(order_detail_date, "%u")) + 1
+    ) %>%
+    dplyr::group_by(week_start) %>%
+    dplyr::summarise(
+      week_end = week_start + 6,
+      total_orders = dplyr::n(),
+      total_revenue = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      total_quantity = sum(order_detail_quantity, na.rm = TRUE),
+      unique_customers = dplyr::n_distinct(order_detail_customer_id),
+      unique_products = dplyr::n_distinct(order_detail_product_id),
+      avg_order_value = total_revenue / total_orders,
+      
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(week_start) %>%
+    dplyr::mutate(
+      # Week-over-week growth
+      revenue_wow_growth = (total_revenue / dplyr::lag(total_revenue) - 1) * 100,
+      orders_wow_growth = (total_orders / dplyr::lag(total_orders) - 1) * 100,
+      
+      # 4-week moving averages
+      revenue_4week_ma = slider::slide_dbl(total_revenue, mean, .before = 3, .complete = TRUE),
+      
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_timeseries_v1.0"
+    )
+  
+  # Monthly aggregates
+  monthly_metrics <- orders %>%
+    dplyr::mutate(month_year = format(order_detail_date, "%Y-%m")) %>%
+    dplyr::group_by(month_year) %>%
+    dplyr::summarise(
+      month_start = as.Date(paste0(month_year, "-01")),
+      total_orders = dplyr::n(),
+      total_revenue = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      total_quantity = sum(order_detail_quantity, na.rm = TRUE),
+      unique_customers = dplyr::n_distinct(order_detail_customer_id),
+      unique_products = dplyr::n_distinct(order_detail_product_id),
+      avg_order_value = total_revenue / total_orders,
+      
+      # Customer acquisition
+      new_customers = sum(!order_detail_customer_id %in% 
+                         (orders %>% 
+                          dplyr::filter(order_detail_date < min(order_detail_date, na.rm = TRUE)) %>% 
+                          dplyr::pull(order_detail_customer_id))),
+      
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(month_start) %>%
+    dplyr::mutate(
+      # Month-over-month growth
+      revenue_mom_growth = (total_revenue / dplyr::lag(total_revenue) - 1) * 100,
+      orders_mom_growth = (total_orders / dplyr::lag(total_orders) - 1) * 100,
+      
+      # Year-over-year growth
+      revenue_yoy_growth = (total_revenue / dplyr::lag(total_revenue, 12) - 1) * 100,
+      orders_yoy_growth = (total_orders / dplyr::lag(total_orders, 12) - 1) * 100,
+      
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_timeseries_v1.0"
+    )
+  
+  # Write all aggregates to processed database
+  DBI::dbWriteTable(processed_conn, "daily_metrics", daily_metrics,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(processed_conn, "weekly_metrics", weekly_metrics,
+                   overwrite = TRUE, append = FALSE)
+  DBI::dbWriteTable(processed_conn, "monthly_metrics", monthly_metrics,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Time-series aggregates complete:")
+  message("  Daily: ", nrow(daily_metrics), " days")
+  message("  Weekly: ", nrow(weekly_metrics), " weeks") 
+  message("  Monthly: ", nrow(monthly_metrics), " months")
+  
+  return(list(
+    daily = nrow(daily_metrics),
+    weekly = nrow(weekly_metrics),
+    monthly = nrow(monthly_metrics)
+  ))
+}
+```
+
+## Advanced Analytics Framework
+
+### 1. Cohort Analysis
+
+Analyze customer retention and behavior over time:
+
+```r
+#' Generate customer cohort analysis
+#' 
+#' Creates retention cohorts based on first purchase month
+#'
+generate_cohort_analysis <- function(cleansed_conn, processed_conn) {
+  
+  orders <- tbl2(cleansed_conn, "orders") %>% collect()
+  
+  # Identify customer first purchase month (cohort)
+  customer_cohorts <- orders %>%
+    dplyr::group_by(order_detail_customer_id) %>%
+    dplyr::summarise(
+      first_purchase_date = min(order_detail_date, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      cohort_month = format(first_purchase_date, "%Y-%m")
+    )
+  
+  # Calculate monthly purchase activity by cohort
+  monthly_activity <- orders %>%
+    dplyr::mutate(order_month = format(order_detail_date, "%Y-%m")) %>%
+    dplyr::left_join(customer_cohorts, by = "order_detail_customer_id") %>%
+    dplyr::group_by(cohort_month, order_month) %>%
+    dplyr::summarise(
+      customers_purchased = dplyr::n_distinct(order_detail_customer_id),
+      total_revenue = sum(order_detail_quantity * order_detail_unit_price, na.rm = TRUE),
+      total_orders = dplyr::n(),
+      .groups = "drop"
+    )
+  
+  # Calculate cohort sizes (total customers in each cohort)
+  cohort_sizes <- customer_cohorts %>%
+    dplyr::count(cohort_month, name = "cohort_size")
+  
+  # Calculate retention rates
+  cohort_retention <- monthly_activity %>%
+    dplyr::left_join(cohort_sizes, by = "cohort_month") %>%
+    dplyr::mutate(
+      # Calculate months since cohort start
+      cohort_date = as.Date(paste0(cohort_month, "-01")),
+      order_date = as.Date(paste0(order_month, "-01")),
+      months_since_first = as.numeric(difftime(order_date, cohort_date, units = "days")) / 30.44,
+      months_since_first = round(months_since_first),
+      
+      # Calculate retention rate
+      retention_rate = customers_purchased / cohort_size,
+      
+      # Calculate revenue per customer in cohort
+      revenue_per_cohort_customer = total_revenue / cohort_size,
+      
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_cohort_v1.0"
+    ) %>%
+    dplyr::filter(months_since_first >= 0) %>%  # Only valid time periods
+    dplyr::arrange(cohort_month, months_since_first)
+  
+  # Write to processed database
+  DBI::dbWriteTable(processed_conn, "cohort_analysis", cohort_retention,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Cohort analysis complete: ", 
+          length(unique(cohort_retention$cohort_month)), " cohorts analyzed")
+  
+  return(nrow(cohort_retention))
+}
+```
+
+### 2. Market Basket Analysis
+
+Analyze product relationships and cross-selling opportunities:
+
+```r
+#' Generate market basket analysis
+#' 
+#' Identifies frequently bought together products and cross-selling opportunities
+#'
+generate_market_basket_analysis <- function(cleansed_conn, processed_conn) {
+  
+  orders <- tbl2(cleansed_conn, "orders") %>% collect()
+  products <- tbl2(cleansed_conn, "products") %>% collect()
+  
+  # Create transaction baskets (orders with multiple products)
+  order_baskets <- orders %>%
+    dplyr::group_by(order_detail_id) %>%
+    dplyr::filter(dplyr::n() > 1) %>%  # Only multi-product orders
+    dplyr::summarise(
+      products = list(unique(order_detail_product_id)),
+      product_count = dplyr::n_distinct(order_detail_product_id),
+      order_date = first(order_detail_date),
+      customer_id = first(order_detail_customer_id),
+      .groups = "drop"
+    )
+  
+  # Generate all product pairs within each basket
+  product_pairs <- order_baskets %>%
+    dplyr::rowwise() %>%
+    dplyr::do({
+      prods <- .$products[[1]]
+      if (length(prods) >= 2) {
+        pairs <- combn(prods, 2, simplify = FALSE)
+        data.frame(
+          order_id = .$order_detail_id,
+          product_a = sapply(pairs, function(x) min(x)),
+          product_b = sapply(pairs, function(x) max(x)),
+          stringsAsFactors = FALSE
+        )
+      } else {
+        data.frame()
+      }
+    }) %>%
+    dplyr::ungroup()
+  
+  # Calculate association metrics
+  total_orders <- dplyr::n_distinct(orders$order_detail_id)
+  
+  product_associations <- product_pairs %>%
+    dplyr::count(product_a, product_b, name = "together_count") %>%
+    
+    # Calculate individual product frequencies
+    dplyr::left_join(
+      orders %>% 
+        dplyr::count(order_detail_product_id, name = "product_a_count") %>%
+        dplyr::rename(product_a = order_detail_product_id),
+      by = "product_a"
+    ) %>%
+    dplyr::left_join(
+      orders %>%
+        dplyr::count(order_detail_product_id, name = "product_b_count") %>%
+        dplyr::rename(product_b = order_detail_product_id),
+      by = "product_b"
+    ) %>%
+    
+    # Calculate association metrics
+    dplyr::mutate(
+      # Support: frequency of the pair
+      support = together_count / total_orders,
+      
+      # Confidence: P(B|A) = P(A,B) / P(A)
+      confidence_a_to_b = together_count / product_a_count,
+      confidence_b_to_a = together_count / product_b_count,
+      
+      # Lift: confidence / expected confidence
+      lift_a_to_b = confidence_a_to_b / (product_b_count / total_orders),
+      lift_b_to_a = confidence_b_to_a / (product_a_count / total_orders),
+      
+      # Combined lift (geometric mean)
+      combined_lift = sqrt(lift_a_to_b * lift_b_to_a),
+      
+      # Classification
+      association_strength = dplyr::case_when(
+        combined_lift >= 3.0 & support >= 0.01 ~ "Very Strong",
+        combined_lift >= 2.0 & support >= 0.005 ~ "Strong", 
+        combined_lift >= 1.5 & support >= 0.002 ~ "Moderate",
+        combined_lift >= 1.2 ~ "Weak",
+        TRUE ~ "No Association"
+      )
+    ) %>%
+    
+    # Add product names for readability
+    dplyr::left_join(
+      products %>% dplyr::select(product_info_id, product_a_name = product_info_name),
+      by = c("product_a" = "product_info_id")
+    ) %>%
+    dplyr::left_join(
+      products %>% dplyr::select(product_info_id, product_b_name = product_info_name),
+      by = c("product_b" = "product_info_id")
+    ) %>%
+    
+    # Filter to meaningful associations
+    dplyr::filter(association_strength != "No Association") %>%
+    dplyr::arrange(desc(combined_lift)) %>%
+    
+    dplyr::mutate(
+      processing_timestamp = Sys.time(),
+      processing_version = "DF04_basket_v1.0"
+    )
+  
+  # Write to processed database
+  DBI::dbWriteTable(processed_conn, "product_associations", product_associations,
+                   overwrite = TRUE, append = FALSE)
+  
+  message("Market basket analysis complete: ", nrow(product_associations), 
+          " meaningful associations found")
+  
+  return(nrow(product_associations))
+}
+```
+
+## Complete Processing Workflow
+
+### Integrated Processing Function
+
+```r
+#' Run complete business processing workflow
+#' 
+#' Executes all processing operations in proper sequence
+#'
+run_complete_processing <- function(processing_config) {
+  
+  # Connect to databases
+  cleansed_conn <- dbConnect_from_list("cleansed_data")
+  processed_conn <- dbConnect_from_list("processed_data")
+  
+  processing_results <- list()
+  start_time <- Sys.time()
+  
+  message("Starting complete processing workflow...")
+  
+  # Step 1: Customer Analytics
+  if (processing_config$enable_customer_analytics) {
+    tryCatch({
+      result <- calculate_customer_metrics(cleansed_conn, processed_conn)
+      processing_results$customer_analytics <- list(success = TRUE, rows = result)
+      message("✓ Customer analytics completed")
+    }, error = function(e) {
+      processing_results$customer_analytics <- list(success = FALSE, error = e$message)
+      warning("✗ Customer analytics failed: ", e$message)
+    })
+  }
+  
+  # Step 2: Product Analytics
+  if (processing_config$enable_product_analytics) {
+    tryCatch({
+      result <- calculate_product_metrics(cleansed_conn, processed_conn)
+      processing_results$product_analytics <- list(success = TRUE, rows = result)
+      message("✓ Product analytics completed")
+    }, error = function(e) {
+      processing_results$product_analytics <- list(success = FALSE, error = e$message)
+      warning("✗ Product analytics failed: ", e$message)
+    })
+  }
+  
+  # Step 3: Time-Series Aggregates
+  if (processing_config$enable_time_series) {
+    tryCatch({
+      result <- generate_time_series_aggregates(cleansed_conn, processed_conn)
+      processing_results$time_series <- list(success = TRUE, rows = result)
+      message("✓ Time-series aggregates completed")
+    }, error = function(e) {
+      processing_results$time_series <- list(success = FALSE, error = e$message)
+      warning("✗ Time-series aggregates failed: ", e$message)
+    })
+  }
+  
+  # Step 4: Cohort Analysis
+  if (processing_config$enable_cohort_analysis) {
+    tryCatch({
+      result <- generate_cohort_analysis(cleansed_conn, processed_conn)
+      processing_results$cohort_analysis <- list(success = TRUE, rows = result)
+      message("✓ Cohort analysis completed")
+    }, error = function(e) {
+      processing_results$cohort_analysis <- list(success = FALSE, error = e$message)
+      warning("✗ Cohort analysis failed: ", e$message)
+    })
+  }
+  
+  # Step 5: Market Basket Analysis
+  if (processing_config$enable_basket_analysis) {
+    tryCatch({
+      result <- generate_market_basket_analysis(cleansed_conn, processed_conn)
+      processing_results$basket_analysis <- list(success = TRUE, rows = result)
+      message("✓ Market basket analysis completed")
+    }, error = function(e) {
+      processing_results$basket_analysis <- list(success = FALSE, error = e$message)
+      warning("✗ Market basket analysis failed: ", e$message)
+    })
+  }
+  
+  # Close connections
+  DBI::dbDisconnect(cleansed_conn)
+  DBI::dbDisconnect(processed_conn)
+  
+  # Generate processing summary
+  end_time <- Sys.time()
+  processing_duration <- as.numeric(difftime(end_time, start_time, units = "mins"))
+  
+  generate_processing_report(processing_results, processing_duration)
+  
+  return(processing_results)
+}
+
+#' Generate processing summary report
+generate_processing_report <- function(results, duration_mins) {
+  
+  total_operations <- length(results)
+  successful_operations <- sum(sapply(results, function(x) x$success))
+  failed_operations <- total_operations - successful_operations
+  
+  message("\n=== PROCESSING SUMMARY ===")
+  message("Total operations: ", total_operations)
+  message("Successful: ", successful_operations)
+  message("Failed: ", failed_operations)
+  message("Duration: ", round(duration_mins, 2), " minutes")
+  
+  if (failed_operations > 0) {
+    message("\nFailed operations:")
+    for (op_name in names(results)) {
+      if (!results[[op_name]]$success) {
+        message("  - ", op_name, ": ", results[[op_name]]$error)
+      }
+    }
+  }
+  
+  # Create detailed report
+  report_data <- data.frame(
+    operation = names(results),
+    success = sapply(results, function(x) x$success),
+    rows_processed = sapply(results, function(x) {
+      if (x$success && !is.null(x$rows)) {
+        if (is.list(x$rows)) paste(x$rows, collapse = "/") else x$rows
+      } else {
+        0
+      }
+    }),
+    error = sapply(results, function(x) x$error %||% ""),
+    stringsAsFactors = FALSE
+  )
+  
+  write.csv(report_data, "40_processed/processing_report.csv", row.names = FALSE)
+  message("\nDetailed report saved to: 40_processed/processing_report.csv")
+}
+
+# Example processing configuration
+default_processing_config <- list(
+  enable_customer_analytics = TRUE,
+  enable_product_analytics = TRUE,
+  enable_time_series = TRUE,
+  enable_cohort_analysis = TRUE,
+  enable_basket_analysis = TRUE
+)
+
+# Usage
+# processing_results <- run_complete_processing(default_processing_config)
+```
+
+## Integration with DF05 (Application Data)
+
+Processing operations prepare business-ready data for application consumption by providing:
+
+1. **Pre-calculated metrics**: KPIs and analytics ready for dashboard display
+2. **Dimensional models**: Star/snowflake schemas optimized for reporting
+3. **Segmentation data**: Customer and product classifications for targeting
+4. **Time-series aggregates**: Historical trends for visualization
+5. **Advanced analytics**: Cohorts, associations, and predictive features
+
+The application layer ([@DF005]) can then focus on UI optimization and real-time display without complex business logic.
+
+## Conclusion
+
+Processing operations transform quality-assured data into actionable business insights and analytics. By implementing comprehensive business logic, customer segmentation, and advanced analytics, the processing layer provides the analytical foundation that drives business decisions and application functionality.
+
+The processed_data layer serves as the business intelligence foundation for all application consumption and reporting needs.

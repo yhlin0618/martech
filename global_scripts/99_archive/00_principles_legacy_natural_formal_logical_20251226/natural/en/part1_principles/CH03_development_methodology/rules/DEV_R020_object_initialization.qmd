@@ -1,0 +1,162 @@
+---
+title: "DEV_R020: Object Initialization Rule"
+subtitle: "All objects must be explicitly initialized with appropriate default values before use. This practice prevents type errors, null reference exceptions, and improves code reliability"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R020"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 20
+  title: "Object Initialization Rule"
+related_to:
+  - "MP047: Functional Programming"
+  - "R019: Object Naming Convention"
+  - "R067: Functional Encapsulation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 20: Object Initialization Rule {#overview}
+
+**Development Methodology Law Article 20 (Object Initialization Rule)**
+
+This rule establishes that all objects must be explicitly initialized with appropriate default values before use.
+
+:::{.callout-important}
+## Core Requirement
+All objects must be explicitly initialized with appropriate default values before use. This practice prevents type errors, null reference exceptions, and improves code reliability.
+:::
+
+# Section 1: Implementation Principles {#implementation}
+
+When working with variables and objects in R:
+
+## Subsection 1: Explicit Initialization {#explicit-initialization}
+
+All variables must be initialized with an appropriate default value of the correct type before being used in operations.
+
+## Subsection 2: Defensive Default Values {#defensive-defaults}
+
+Choose sensible defaults that won't cause errors if operations are performed on them:
+
+- **For numeric variables**: Use `0`, `NA_real_`, or an appropriate numeric default
+- **For character variables**: Use `""`, `NA_character_`, or a meaningful placeholder
+- **For logical variables**: Use `FALSE` or `NA`
+- **For lists/vectors**: Use `list()` or `c()` or an appropriately typed empty vector
+- **For data frames**: Use `data.frame()` or an appropriate skeleton structure
+
+## Subsection 3: Initialization Section {#initialization-section}
+
+Place all variable initializations at the beginning of functions or scripts to clearly separate initialization from operational code.
+
+## Subsection 4: Type Documentation {#type-documentation}
+
+Use code comments or roxygen documentation to explicitly specify the expected type of each variable.
+
+## Subsection 5: Type Checking {#type-checking}
+
+For critical functions, add explicit type checking at the beginning.
+
+# Section 2: Examples {#examples}
+
+## Subsection 1: Invalid Pattern (Violation) {#invalid-pattern}
+
+```r
+# Function without proper initialization
+process_customer_data <- function(customer_id) {
+  # No initialization of result, error-prone
+  tryCatch({
+    customer_data <- fetch_customer(customer_id)
+    for(i in 1:nrow(customer_data)) {
+      result[i] <- calculate_metric(customer_data[i,])  # Error if customer_data empty
+    }
+    return(result)  # Error if no results were calculated
+  }, error = function(e) {
+    # No proper return in error handler
+  })
+}
+```
+
+## Subsection 2: Valid Pattern (Compliant) {#valid-pattern}
+
+```r
+# Function with proper initialization
+process_customer_data <- function(customer_id) {
+  # Initialize result as empty numeric vector
+  result <- numeric(0)
+  
+  tryCatch({
+    customer_data <- fetch_customer(customer_id)
+    
+    # Check data validity before processing
+    if (is.null(customer_data) || nrow(customer_data) == 0) {
+      return(result)  # Return empty but initialized result
+    }
+    
+    # Pre-allocate result vector with correct size
+    result <- numeric(nrow(customer_data))
+    
+    for(i in 1:nrow(customer_data)) {
+      result[i] <- calculate_metric(customer_data[i,])
+    }
+    return(result)
+  }, error = function(e) {
+    warning("Error processing customer data: ", e$message)
+    return(result)  # Return empty but initialized result
+  })
+}
+```
+
+# Section 3: Special Considerations for R {#r-considerations}
+
+Since R uses lazy evaluation and dynamic typing, particular attention must be paid to:
+
+## Subsection 1: Empty Data Structures {#empty-data-structures}
+
+Initialize with proper typing using functions like `integer(0)`, `numeric(0)`, `character(0)`.
+
+## Subsection 2: NA Values {#na-values}
+
+For missing values, use typed NA values like `NA_integer_`, `NA_real_`, `NA_character_` instead of generic `NA`.
+
+## Subsection 3: Vector Pre-allocation {#vector-preallocation}
+
+Pre-allocate vectors of the correct size when the size is known in advance.
+
+## Subsection 4: List Components {#list-components}
+
+Initialize all expected list components, even if with NULL or empty values.
+
+## Subsection 5: Conditional Execution {#conditional-execution}
+
+Ensure all branches initialize variables that will be used later.
+
+# Section 4: Verification {#verification}
+
+- Code reviewers should check for uninitialized variables
+- Static code analysis tools can be configured to detect potential uninitialized variables
+- Unit tests should include edge cases with empty or NULL inputs
+
+# Section 5: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Prevent type errors**: Avoid type mismatches from uninitialized variables
+2. **Improve reliability**: Reduce null references and undefined behavior
+3. **Enhance readability**: Explicit initialization makes code intent clearer
+4. **Simplify debugging**: Initialization errors are easier to track and fix
+5. **Support functional programming**: Properly initialized objects support pure functions with consistent behavior
+
+---
+
+*Based on: Development Methodology Law Article 20*  
+*Related to: [MP047 Functional Programming](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd), [R067 Functional Encapsulation](./DEV_R002_functional_encapsulation.qmd)*

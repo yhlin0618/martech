@@ -1,0 +1,159 @@
+---
+title: "SO_R036: List Object Definition Files"
+principle_id: SO_R036
+category: "Structure Organization - Rules"
+status: active
+created: "2025-12-24"
+---
+
+# SO_R036: List Object Definition Files
+
+## Principle Statement
+
+Files containing pure list object definitions (no functions) should use the `list_` prefix to indicate their purpose as reusable data structure templates.
+
+## Rationale
+
+1. **Clear Intent**: The `list_` prefix immediately signals that the file contains data structures, not executable functions
+2. **Type Safety**: R format provides immediate syntax validation and type checking when sourced
+3. **Direct Integration**: No parsing overhead - objects are immediately available after `source()`
+4. **IDE Support**: RStudio provides autocomplete, syntax highlighting, and error detection
+5. **Consistency**: Aligns with existing MAMBA naming conventions (`list_openai_prompt.yaml`, `list_colname_aliases.yaml`)
+
+## Format Selection Guidelines
+
+### Use R Format (`.R`) When:
+- Need type safety and immediate validation
+- Objects will be directly used in R code without transformation
+- Want IDE support (autocomplete, syntax checking)
+- Objects contain R-specific expressions (`c()`, `TRUE/FALSE`, functions)
+- Examples: DDL templates, configuration constants, lookup tables
+
+### Use YAML Format (`.yaml`) When:
+- Need external editing by non-R users
+- Configuration should be language-agnostic
+- Objects will be shared across multiple languages/tools
+- Content is primarily text-based (prompts, messages, translations)
+- Examples: AI prompts, internationalization strings, deployment configs
+
+## Implementation
+
+### File Naming Convention
+```
+list_{descriptive_name}.R     # R list objects
+list_{descriptive_name}.yaml  # YAML configuration
+```
+
+### R Format Template
+
+```r
+#' @file list_{name}.R
+#' @use {Brief description of purpose}
+#' @principle {Relevant principles}
+#' @author {Author}
+#' @date {Date}
+#'
+#' {Detailed Description}
+#'
+#' Naming Convention:
+#' - File: list_{name}.R (list_ prefix indicates list object definitions)
+#' - Objects: list_{name}_{component} (lowercase snake_case)
+#'
+#' Usage:
+#'   source("path/to/list_{name}.R")
+#'
+#'   # Use objects directly
+#'   my_function(list_{name}_component)
+
+#### Object Definition ####
+
+#' Object documentation
+list_{name}_component <- list(
+  field1 = "value1",
+  field2 = TRUE,
+  nested = list(
+    subfield = c("a", "b", "c")
+  )
+)
+```
+
+### Requirements
+
+1. **No Functions**: List definition files must NOT contain function definitions
+   - Violation of SO_R007 (One Function One File)
+   - Functions should go in separate `fn_*.R` files
+
+2. **No Side Effects**: Files should only define objects, no execution code
+   - No `library()` or `require()` calls (unless absolutely necessary)
+   - No database connections or file I/O
+   - No global state modifications
+
+3. **Documentation**: Use roxygen2-style comments for file headers and object descriptions
+
+4. **Naming**: Objects must use lowercase snake_case with `list_` prefix
+
+## Examples
+
+### Correct: DDL Column Templates (R Format)
+
+```r
+# File: list_column_templates.R
+list_column_template_platform_id <- list(
+  name = "platform_id",
+  type = "VARCHAR(10)",
+  not_null = TRUE,
+  check = "length(platform_id) <= 10"
+)
+```
+
+### Correct: AI Prompts (YAML Format)
+
+```yaml
+# File: list_openai_prompt.yaml
+system_prompts:
+  marketing_consultant:
+    role: "system"
+    content: "You are a marketing consultant..."
+```
+
+### Incorrect: Mixed Functions and Lists
+
+```r
+# ❌ WRONG - Violates SO_R007
+list_templates <- list(...)
+
+process_template <- function(template) {  # Function in list file!
+  # ...
+}
+```
+
+### Incorrect: Execution Code
+
+```r
+# ❌ WRONG - Side effects in list definition file
+library(DBI)  # Should not load packages
+con <- dbConnect(...)  # Should not connect to databases
+
+list_config <- list(...)
+```
+
+## Related Principles
+
+- **SO_R002**: File Naming Convention (snake_case requirement)
+- **SO_R007**: One Function One File (separation of concerns)
+- **SO_R026**: Function File Naming (fn_ prefix for functions)
+- **MP032**: Don't Repeat Yourself (DRY - reusable templates)
+
+## Migration Notes
+
+This principle formalizes an existing pattern in MAMBA:
+- Existing YAML lists: `list_openai_prompt.yaml`, `list_colname_aliases.yaml`, `list_brandname_aliases.yaml`
+- New R format: `list_column_templates.R` (first implementation)
+- Future R lists should follow this standard
+
+## Precedent
+
+First R-format list object definition file: `list_column_templates.R` (2025-12-24)
+- Purpose: Reusable DDL column templates for ETL tables
+- Demonstrates type-safe R list objects with roxygen2 documentation
+- Companion function: `fn_apply_column_templates.R` (separate file per SO_R007)

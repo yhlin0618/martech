@@ -1,0 +1,228 @@
+---
+title: "SO_P001: Project Principles"
+subtitle: "Core principles guiding project development and organization"
+chapter: "CH01"
+category: "principle"
+number: "SO_P001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "結構組織法 (Structure & Organization Law)"
+article-number: "第1條"
+derives_from:
+  - "CH00.MP002: Structural Blueprint"
+  - "CH00.MP001: Primitive Terms and Definitions"
+influences:
+  - "CH01.SO_P002: Script Separation"
+  - "CH01.SO_P003: App Construction"
+  - "CH01.SO_R001: Directory Structure"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**結構組織法第1條（專案原則）**
+
+本條規定專案開發與組織之核心原則，作為系統所有開發與決策之指導準則。
+
+:::{.callout-important}
+## 權威來源
+本原則為權威版本，不應在其他位置重複。應直接引用本檔案。
+:::
+
+# 第一項：程式碼組織 {#code-organization}
+
+## 第一款：目錄結構 {#directory-structure}
+
+:::{.callout-note}
+## 目錄組織原則
+1. 使用編號目錄（01_db, 02_db_utils 等）建立明確載入順序
+2. 相關功能置於同一目錄
+3. 所有檔案與目錄名稱使用 snake_case
+4. **最小化巢狀結構** - 保持扁平結構，使用清晰、目的明確的頂層目錄
+5. 每個目錄應清楚表明其用途，無需進一步細分
+6. 專門的工具函數應組織在專用目錄中（如 14_sql_utils）
+:::
+
+## 第二款：檔案命名 {#file-naming}
+
+:::{.panel-tabset}
+
+### 命名慣例
+- 使用數字前綴表示執行順序（如 101g_create_table.R）
+- 全域腳本使用 'g' 後綴
+- 使用描述性名稱清楚表明功能
+- **一個檔案一個函數** - 每個 R 檔案只定義一個函數
+
+### 範例結構
+```
+01_db/
+├── 101g_create_database.R
+├── 102g_create_tables.R
+└── 103g_initialize_data.R
+```
+
+:::
+
+## 第三款：程式碼風格 {#code-style}
+
+1. **縮排**：一致使用 2 個空格
+2. **變數名稱**：使用描述性變數名稱
+3. **註解**：為複雜邏輯添加註解
+4. **單一職責**：保持函數專注於單一職責
+
+# 第二項：資料處理 {#data-handling}
+
+## 第一款：原始資料完整性 {#raw-data-integrity}
+
+:::{.callout-warning}
+## 關鍵規則
+**絕不修改原始資料檔案** - 透過可審計和重現的腳本處理資料。詳見[資料完整性原則](DM_P001_data_integrity.qmd)。
+:::
+
+## 第二款：資料處理 {#data-processing}
+
+資料處理的關鍵要求：
+
+- 實作適當的錯誤處理
+- 驗證輸入和輸出
+- 記錄處理步驟和遇到的問題
+- 清楚記錄資料處理步驟
+
+## 第三款：資料儲存 {#data-storage}
+
+儲存最佳實踐：
+
+- 使用適當的資料類型以提高儲存效率
+- 在匯入資料前建立適當的資料庫綱要
+- 記錄資料表關係
+- 一致遵循命名慣例
+
+# 第三項：跨機器相容性 {#compatibility}
+
+## 第一款：路徑管理 {#path-management}
+
+:::{.callout-tip}
+## 路徑配置
+- 使用根路徑配置系統實現跨機器相容性
+- 避免硬編碼的絕對路徑
+- 使用 `file.path()` 建構與作業系統無關的路徑
+:::
+
+## 第二款：環境設定 {#environment-setup}
+
+確保跨機器環境一致：
+
+1. 在中央位置記錄相依性
+2. 使用初始化腳本一致地設定環境
+3. 優雅地處理不同的作業系統
+
+# 第四項：文件化 {#documentation}
+
+## 第一款：程式碼文件 {#code-documentation}
+
+文件要求：
+
+- 記錄函數的用途和參數
+- 解釋複雜的演算法
+- 保持文件與程式碼變更同步
+- R 函數使用 roxygen2 格式
+
+## 第二款：專案文件 {#project-documentation}
+
+:::{.callout-important}
+## 文件中的 DRY 原則
+- 絕不在不同目錄間重複文件
+- 總是引用 00_principles 中的權威原則
+- 在每個目錄維護 README 檔案
+- 在根目錄 README 中記錄整體架構
+- 為複雜功能包含範例
+:::
+
+# 第五項：版本控制 {#version-control}
+
+## 第一款：Git 工作流程 {#git-workflow}
+
+版本控制最佳實踐：
+
+:::{.panel-tabset}
+
+### 提交指導原則
+- 使用清晰、描述性的提交訊息
+- 提交訊息前綴使用方括號內的模組名稱
+- 為特定功能或修復建立專注的分支
+- 合併前審查程式碼
+
+### 變更管理
+- 只在有充分理由時修改程式碼
+- 對程式碼變更不確定時，尋求指導而非立即實作
+- 記錄重大變更的理由
+
+:::
+
+## 第二款：Git-Dropbox 整合 {#git-dropbox}
+
+對於使用 Dropbox 的環境：
+
+- 使用 `exclude_git_from_dropbox.sh` 設定適當的整合
+- 遵循 GIT_QUICKSTART.md 中的指導原則
+- 注意 Dropbox 同步問題
+
+# 第六項：測試 {#testing}
+
+## 測試要求 {#code-testing}
+
+1. 在生產資料上執行前，先用範例資料測試腳本
+2. 盡可能建立自動化測試
+3. 記錄測試程序和預期結果
+4. 遵循[真實情境測試](DEV_P002_authentic_context_testing.qmd)原則
+
+# 第七項：安全性 {#security}
+
+## 資料安全 {#data-security}
+
+:::{.callout-warning}
+## 安全要求
+- 絕不將敏感資料提交到儲存庫
+- 憑證使用環境變數
+- 遵循安全編碼實踐
+- 實作適當的存取控制
+:::
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 專案原則檢查清單
+
+開發新功能或模組時，確認：
+
+- [ ] 目錄結構遵循編號慣例
+- [ ] 檔案遵循一個函數一個檔案規則
+- [ ] 原始資料保持未修改
+- [ ] 路徑使用 `file.path()` 以確保相容性
+- [ ] 文件完整且最新
+- [ ] 程式碼已用範例資料測試
+- [ ] 敏感資料已適當保護
+- [ ] 遵循版本控制指導原則
+:::
+
+# 結論 {#conclusion}
+
+本專案原則建立一致、可維護和安全開發的基礎。透過遵循這些指導原則，我們確保程式碼庫在不同環境和團隊成員間保持組織性、可理解性和健壯性。
+
+:::{.callout-important}
+## 關鍵要點
+遵循這些原則的一致性比完美更重要。如有疑問，優先考慮清晰性、可維護性和安全性。
+:::
+
+---
+
+*依據：結構組織法第1條*  
+*相關規則：[SO_R001 目錄結構](../rules/SO_R001_directory_structure.qmd)、[SO_R002 檔案命名](../rules/SO_R002_file_naming.qmd)*

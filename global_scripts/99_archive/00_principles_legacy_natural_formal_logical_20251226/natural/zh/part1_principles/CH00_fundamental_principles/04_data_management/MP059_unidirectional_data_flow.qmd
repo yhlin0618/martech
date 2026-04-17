@@ -1,0 +1,276 @@
+---
+title: "MP052: 單向數據流元原則 (Unidirectional Data Flow)"
+subtitle: "系統中的數據應以單一、可預測的方向流動，具有明確定義的數據源、轉換步驟和消費點"
+author: "Claude"
+date: "2025-04-09"
+date-modified: "2025-08-16"
+categories: [meta-principle, data-flow, architecture, system-design]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+系統中的數據應以單一、可預測的方向流動，具有明確定義的數據源、轉換步驟和消費點。每個組件必須具有明確的輸入和輸出通道，並使用反映數據來源和目的的標準化命名模式。
+
+## 概念框架
+
+單向數據流元原則為整個系統的數據管理建立了基礎方法，確保可預測性、可追溯性和可維護性。
+
+### 1. 流動的方向性 {#directionality}
+
+數據必須通過系統單向流動：
+
+1. **真相來源**：每個數據都有一個單一的權威來源
+2. **轉換鏈**：數據通過明確定義的轉換步驟
+3. **消費點**：組件接收數據但不直接修改來源
+4. **變更傳播**：對數據的修改發生在來源並流經系統
+
+這種單向流動創建了理解數據路徑和調試問題的清晰心智模型。
+
+### 2. 在組件架構中的應用 {#component-architecture}
+
+在 Shiny 應用程式中，此元原則特別表現為伺服器到 UI 的數據流：
+
+1. **伺服器作為數據權威**：伺服器是數據的權威來源
+2. **UI 作為數據消費者**：UI 組件消費和顯示數據但不直接修改它
+3. **輸入處理**：UI 輸入觸發伺服器端過程但不直接修改數據
+4. **輸出渲染**：伺服器向具有匹配標識符的輸出提供處理過的數據
+
+### 3. 理論基礎 {#theoretical-foundation}
+
+此原則借鑒了既定的軟體工程概念：
+
+1. **Flux/Redux 架構**：來自網頁應用程式設計的單向數據流架構
+2. **函數式反應式編程**：數據流經純轉換
+3. **Actor 模型**：組件通過明確的消息傳遞進行通信
+4. **命令-查詢分離**：修改狀態與檢索數據的不同操作
+
+## 實施指南
+
+### 1. 命名慣例 {#naming-conventions}
+
+標識符必須遵循反映數據來源和目的的標準化命名模式：
+
+```
+[section]_[datasource]_[field]
+```
+
+其中：
+- `[section]`：功能區域（例如，customer、product、campaign）
+- `[datasource]`：來源表或對象（例如，profile、history、settings）
+- `[field]`：特定屬性或計算值
+
+範例：
+- `customer_profile_email`：來自客戶個人資料的電子郵件欄位
+- `campaign_performance_conversion_rate`：來自活動績效數據的計算轉換率
+
+### 2. 組件介面設計 {#interface-design}
+
+組件必須定義明確的數據介面：
+
+1. **輸入介面**：明確定義的參數，指定組件需要什麼數據
+2. **輸出介面**：明確定義組件將產生的數據結構
+3. **數據依賴**：外部數據依賴的明確聲明
+
+```r
+# 清晰的輸入介面
+componentServer <- function(id, app_data_connection, filter_params = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 實施
+  })
+}
+
+# 明確的返回介面
+componentServer <- function(id, ...) {
+  moduleServer(id, function(input, output, session) {
+    # 返回具有清晰結構的反應式
+    return(reactive({
+      list(
+        data = processed_data(),
+        status = current_status(),
+        metadata = processing_metadata()
+      )
+    }))
+  })
+}
+```
+
+### 3. 數據流文檔 {#flow-documentation}
+
+所有數據流必須記錄：
+
+1. **流程圖**：數據源、轉換和消費的視覺表示
+2. **介面合約**：組件輸入和輸出的明確文檔
+3. **轉換文檔**：數據如何在組件之間轉換的清晰描述
+
+### 4. 數據流驗證 {#flow-validation}
+
+系統應包括驗證數據流完整性的機制：
+
+1. **類型檢查**：在組件邊界驗證數據類型
+2. **架構驗證**：確保數據結構與預期架構匹配
+3. **流程追蹤**：提供追蹤數據通過系統的工具
+4. **錯誤邊界**：在組件邊界實施清晰的錯誤處理
+
+## 特定應用
+
+### 1. Shiny 中的 UI-伺服器數據流 {#shiny-flow}
+
+在 Shiny 應用程式中，使用以下模式實施單向流：
+
+1. **輸出 ID 匹配**：每個 UI 輸出 ID 必須與其伺服器端對應物匹配：
+   ```r
+   # UI
+   textOutput(ns("customer_profile_name"))
+   
+   # 伺服器
+   output$customer_profile_name <- renderText({...})
+   ```
+
+2. **數據驗證**：在渲染前始終驗證數據：
+   ```r
+   output$customer_profile_email <- renderText({
+     req(df_customer_profile)
+     req("email" %in% colnames(df_customer_profile))
+     
+     df_customer_profile$email[1]
+   })
+   ```
+
+3. **預設回退**：當數據不可用時提供預設值：
+   ```r
+   output$customer_profile_status <- renderText({
+     if (is.null(df_customer_profile)) {
+       return(defaults$customer_profile_status)
+     }
+     
+     df_customer_profile$status[1]
+   })
+   ```
+
+### 2. 數據表操作 {#data-table-operations}
+
+使用 data.table 或資料庫操作時：
+
+1. **轉換鏈**：使用清晰的操作序列：
+   ```r
+   result <- dt[condition, ][, aggregation, by = group][order]
+   ```
+
+2. **命名中間結果**：為清晰起見命名中間數據狀態：
+   ```r
+   filtered_data <- dt[condition]
+   aggregated_data <- filtered_data[, aggregation, by = group]
+   result <- aggregated_data[order]
+   ```
+
+3. **來源保留**：永遠不要直接修改源數據；創建衍生副本：
+   ```r
+   # 創建修改副本
+   working_copy <- copy(source_data)
+   
+   # 將修改應用於副本
+   working_copy[, new_field := calculation]
+   ```
+
+### 3. 模組通信 {#module-communication}
+
+對於模組到模組的通信：
+
+1. **反應式返回值**：通過反應式表達式傳遞數據：
+   ```r
+   # 父模組
+   customer_data <- customerModuleServer("customer", app_data_conn)
+   
+   # 使用父數據的子模組
+   orderModuleServer("orders", app_data_conn, customer_data)
+   ```
+
+2. **明確的數據轉換**：在模組之間明確轉換數據：
+   ```r
+   # 將數據從一個模組轉換為另一個模組的預期格式
+   customer_for_orders <- reactive({
+     req(customer_data())
+     list(
+       id = customer_data()$id,
+       name = customer_data()$name
+     )
+   })
+   
+   orderModuleServer("orders", app_data_conn, customer_for_orders)
+   ```
+
+## 常見反模式
+
+### 1. 雙向數據耦合 {#bidirectional-coupling}
+
+**問題**：組件直接修改彼此的數據，創建循環依賴。
+
+**解決方案**：在組件之間實施嚴格的單向流和清晰的介面。
+
+### 2. 隱藏的數據變異 {#hidden-mutation}
+
+**問題**：組件修改數據而沒有明確指示變更。
+
+**解決方案**：所有數據修改應在定義的點上發生，並具有明確的轉換步驟。
+
+### 3. 全域狀態依賴 {#global-state}
+
+**問題**：組件依賴全域變數來共享狀態。
+
+**解決方案**：通過參數和返回值明確傳遞數據。
+
+### 4. 不一致的命名 {#inconsistent-naming}
+
+**問題**：數據標識符不遵循一致的模式，使流程難以追蹤。
+
+**解決方案**：為所有數據標識符遵循標準化的命名慣例。
+
+## 好處
+
+1. **可預測性**：當數據單向流動時，系統行為變得更可預測
+2. **可追溯性**：數據問題可以通過清晰的流程路徑追蹤
+3. **可測試性**：具有清晰輸入和輸出的組件更容易單獨測試
+4. **可維護性**：當數據流明確時，系統更容易理解和修改
+5. **文檔**：遵循一致模式時，數據流變成自我文檔
+6. **錯誤隔離**：問題可以隔離到流程鏈中的特定組件
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **衍生自 MP0017（關注點分離）**：數據流方向在數據源、轉換器和消費者之間提供了清晰的分離
+2. **影響 R09（UI-伺服器-預設三元組）**：為 UI-伺服器-預設交互中的數據流模式提供基礎
+3. **支持 MP0016（模組化）**：清晰的數據流實現更好的組件模組化
+4. **啟用 MP0030（向量化）**：單向流促進向量化數據操作
+5. **補充 MP0047（函數式編程）**：與函數式編程強調數據轉換而非變異的觀點一致
+6. **與 MP0053（反饋循環）配合**：為用戶交互反饋循環提供基礎
+7. **實施數據流系列**：為 DF00-DF05 數據管道架構提供理論基礎
+
+## 數據流系列實施
+
+此原則通過數據流（DF）系列實施：
+
+- **[@DF000]**：數據管道架構 - 整體五層單向流
+- **[@DF001]**：暫存操作 - 保留單向流的檔案級預處理
+- **[@DF002]**：轉換操作 - 遵循流向的架構標準化
+- **[@DF003]**：清理操作 - 在單向約束內的品質保證
+- **[@DF004]**：處理操作 - 維護流完整性的業務邏輯
+- **[@DF005]**：應用程式數據 - UI 優化作為最終消費點
+
+DF 系列通過以下方式確保單向流：
+- **層分離**：每層僅依賴於先前層
+- **無向後依賴**：後續層永遠不會修改早期層數據
+- **清晰介面**：層之間的明確輸入/輸出合約
+- **元數據追蹤**：通過單向轉換的完整譜系
+
+## 結論
+
+單向數據流元原則建立了一種增強可預測性、可維護性和可追溯性的數據管理基本方法。通過確保數據以單向流動，具有清晰的來源、轉換和消費點，它創建了更容易理解、測試和修改的系統。此原則不僅限於 UI-伺服器交互，還涵蓋系統內的所有數據移動。

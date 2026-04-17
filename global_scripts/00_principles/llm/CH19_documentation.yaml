@@ -1,0 +1,272 @@
+# CH19: Documentation
+# Documentation System and Standards
+# Last updated: 2026-03-06
+
+chapter: "CH19_documentation"
+description: "Documentation - Wiki, Changelog, Issue Tracking, and Reporting Standards"
+principle_count: 5
+
+principles:
+  # ============================================================================
+  # DOC_P001: Documentation System Architecture
+  # ============================================================================
+  - id: DOC_P001
+    type: principle
+    name: documentation_system_architecture
+    display_name: "Documentation System Architecture"
+    one_liner: "Wiki for non-tech stakeholders, principles for developers, GitHub Issues for tracking"
+    implements: MP029
+    scope: "all documentation"
+    file_path: "CH19_documentation/principles/DOC_P001_documentation_system_architecture.qmd"
+
+    rule_natural: |
+      The documentation system has three layers:
+      1. GitHub Wiki — for clients and non-technical team members (dashboard guides, terminology glossary)
+      2. Principles system (00_principles/) — for developers and AI agents (rules, patterns, architecture)
+      3. GitHub Issues — for tracking work items (single source of truth for issue tracking)
+      Each layer serves a different audience. Content must NOT be duplicated across layers.
+
+    rule_formal: |
+      RULE DOC_P001_documentation_system:
+        LAYER wiki:
+          AUDIENCE non_technical
+          CONTENT dashboard_guides, terminology_glossary
+          LOCATION "https://github.com/kiki830621/ai_martech_global_scripts/wiki"
+          GIT_REPO "git@github.com:kiki830621/ai_martech_global_scripts.wiki.git"
+          LOCAL_CLONE "00_principles/docs/wiki/"
+          NOTE "Independent Git repo, listed in .gitignore of global_scripts"
+        LAYER principles:
+          AUDIENCE developers, ai_agents
+          CONTENT architecture_rules, coding_patterns, constraints
+          LOCATION "00_principles/"
+        LAYER issues:
+          AUDIENCE all
+          CONTENT work_items, bugs, feature_requests
+          LOCATION "GitHub Issues (global_scripts repo)"
+          PROHIBITED local_issue_files
+
+    violations:
+      - "Creating local ISSUE_*.md files instead of using GitHub Issues"
+      - "Writing technical implementation details in Wiki pages"
+      - "Duplicating Wiki content in principle files"
+    compliant:
+      - "Wiki: 'RFM 分數 = R+F+M 的加總，範圍 3~15' (non-technical explanation)"
+      - "Principles: 'ECDF percentile: ecdf(all_values)(my_value) → 0~1' (technical spec)"
+      - "GitHub Issues: 'RSV 分類閾值需要調整 #248' (work item)"
+
+  # ============================================================================
+  # DOC_R001: Wiki Link Syntax
+  # ============================================================================
+  - id: DOC_R001
+    type: rule
+    name: wiki_link_syntax
+    display_name: "Wiki Link Syntax"
+    one_liner: "[[Display|Page]] in text, [Display](Page) in tables — NEVER [[Page|Display]]"
+    implements: DOC_P001
+    scope: "GitHub Wiki pages"
+    file_path: "CH19_documentation/rules/DOC_R001_wiki_link_syntax.qmd"
+
+    rule_natural: |
+      GitHub Wiki uses [[Display Text|Page Name]] syntax where the FIRST part is
+      what the user sees and the SECOND part is the target page. This is the
+      opposite of what many people assume. Inside Markdown tables, wiki link
+      syntax cannot be used because the pipe character | conflicts with table
+      column separators. Use standard Markdown links [Display](Page) instead.
+
+    rule_formal: |
+      RULE DOC_R001_wiki_link_syntax:
+        IN general_text:
+          FORMAT "[[{display_text}|{page_name}]]"
+          EXAMPLE "[[RFM|Term-RFM]]"
+          RENDERS_AS link(text="RFM", target="Term-RFM")
+        IN markdown_tables:
+          FORMAT "[{display_text}]({page_name})"
+          EXAMPLE "[RFM](Term-RFM)"
+          REASON pipe_character_conflicts_with_table_separator
+        PROHIBITED:
+          - "[[{page_name}|{display_text}]]"  # reversed order
+          - wiki_links_inside_table_cells
+
+    violations:
+      - "[[Term-RFM|RFM]] — page and display are reversed"
+      - "Using [[RFM|Term-RFM]] inside a table cell — pipe conflicts"
+      - "[[Term-P-alive\\|BG/NBD]] inside tables — escaped pipe still unreliable"
+    compliant:
+      - "[[RFM|Term-RFM]] in regular text or blockquotes"
+      - "[RFM](Term-RFM) inside table cells"
+      - "[[TagPilot]] when display text equals page name"
+
+  # ============================================================================
+  # DOC_R002: Wiki Content Standards
+  # ============================================================================
+  - id: DOC_R002
+    type: rule
+    name: wiki_content_standards
+    display_name: "Wiki Content Standards"
+    one_liner: "Term pages need 5 sections; tab guides need 3 sections"
+    implements: DOC_P001
+    scope: "GitHub Wiki Term-*.md and dashboard guide pages"
+    file_path: "CH19_documentation/rules/DOC_R002_wiki_content_standards.qmd"
+
+    rule_natural: |
+      Every terminology page (Term-*.md) MUST contain exactly 5 sections:
+      definition, mathematical formula, variable descriptions, example, and
+      dashboard location. Every tab description in dashboard guides MUST contain:
+      displayed content, how to use, and business insight (what question it answers).
+      Language must follow UI_R025 (Taiwan Traditional Chinese), with technical
+      terms kept in English.
+
+    rule_formal: |
+      RULE DOC_R002_wiki_content_standards:
+        FOR term_pages("Term-*.md"):
+          REQUIRED_SECTIONS:
+            - definition          # 一句話白話文定義
+            - mathematical_formula # LaTeX 公式（$$ ... $$）
+            - variable_descriptions # 變數說明表格
+            - example              # 具體數字舉例
+            - dashboard_location   # 出現在哪些 tab
+        FOR tab_guides("{Module}.md"):
+          REQUIRED_SECTIONS_PER_TAB:
+            - displayed_content   # KPI、圖表、資料表
+            - how_to_use          # 操作方式
+            - business_insight    # 回答什麼商業問題
+        LANGUAGE:
+          - body_text: "臺灣正體中文 (UI_R025)"
+          - technical_terms: "English (RFM, CLV, IRR, etc.)"
+          - formulas: "LaTeX notation"
+        MATH_MODE:
+          - multi_char_variables: "MUST wrap in \\text{} (e.g., \\text{nrec\\_prob})"
+          - single_letter_subscripts: "use math subscript directly (e.g., n_i)"
+          - acronyms: "MUST wrap in \\text{} (e.g., \\text{MLE}, \\text{CAI})"
+
+    violations:
+      - "Term page missing 'example' section"
+      - "Tab description without 'business insight' explanation"
+      - "Using 營銷 instead of 行銷 (UI_R025 violation)"
+      - "Bare variable name in LaTeX: $$nrec\\_prob$$ without \\text{}"
+    compliant:
+      - "## 定義\n## 數學公式\n## 範例\n## 儀表板中的位置"
+      - "### 看懂重點\n這個 tab 回答：哪些客戶最可能流失？"
+      - "$$\\text{nrec\\_prob} = 1 - P(alive)$$"
+
+  # ============================================================================
+  # DOC_R003: Formula Cross-Verification
+  # ============================================================================
+  - id: DOC_R003
+    type: rule
+    name: formula_cross_verification
+    display_name: "Formula Cross-Verification"
+    one_liner: "Wiki formulas MUST match source code — verify before publishing"
+    implements: MP029
+    scope: "GitHub Wiki Term-*.md pages"
+    file_path: "CH19_documentation/rules/DOC_R003_formula_cross_verification.qmd"
+
+    rule_natural: |
+      Every formula in Wiki terminology pages MUST be verified against the
+      actual source code before publishing. This prevents documentation drift
+      where the Wiki shows one formula but the code computes differently.
+
+    rule_formal: |
+      RULE DOC_R003_formula_cross_verification:
+        BEFORE publishing_wiki_formula(F):
+          MUST verify_against_source_code(F)
+        SOURCE_CODE_MAP:
+          - "RFM, NES, IPT, CAI, PCV, CLV, CRI" -> "04_utils/fn_analysis_dna.R"
+          - "P(alive) / BG-NBD" -> "04_utils/fn_analysis_btyd.R"
+          - "DNA segments (M1-M4, F1-F3, R1-R4)" -> "16_derivations/fn_D01_02_core.R"
+          - "RSV classification" -> "10_rshinyapp_components/tagpilot/fn_rsv_classification.R"
+          - "Poisson regression" -> "docs/.../SCHEMA_001_poisson_analysis.R"
+
+    violations:
+      - "Publishing a formula without checking the source code"
+      - "Wiki shows CLV discount rate = 0.1 but code uses 0.9^t / (1+4d)^t"
+      - "Copying formulas from academic papers without verifying implementation matches"
+    compliant:
+      - "Reading fn_analysis_dna.R line 758-770 before updating Term-CLV.md"
+      - "Adding code comments: '# Formula matches Wiki Term-RFM.md'"
+
+  # ============================================================================
+  # DOC_R004: Changelog and Reporting Format
+  # ============================================================================
+  - id: DOC_R004
+    type: rule
+    name: changelog_reporting_format
+    display_name: "Changelog and Reporting Format"
+    one_liner: "Reports in changelog/reports/, issues in GitHub Issues, commits follow [TYPE] format"
+    implements: DOC_P001
+    scope: "all project documentation"
+    file_path: "CH19_documentation/rules/DOC_R004_changelog_reporting_format.qmd"
+
+    rule_natural: |
+      All implementation reports go to changelog/reports/ with date-prefixed filenames.
+      Issue tracking uses GitHub Issues exclusively (no local issue files).
+      Commit messages follow [TYPE] format with optional principle references.
+      Plan Mode archives automatically save to changelog/reports/.
+
+    rule_formal: |
+      RULE DOC_R004_changelog_reporting:
+        REPORTS:
+          LOCATION "changelog/reports/"
+          NAMING_PATTERNS:
+            - "YYYY-MM-DD_PLAN_{topic}.md"          # Plan Mode auto-archive
+            - "YYYY-MM-DD_{description}.md"          # Implementation report
+            - "ADR-NNN_{description}.md"             # Architecture Decision Record
+            - "YYYY-MM-DD_issue-{number}_{desc}.md"  # Issue execution report
+        ISSUE_TRACKING:
+          SOURCE_OF_TRUTH "GitHub Issues (global_scripts repo)"
+          PROHIBITED local_issue_files
+          LABELS:
+            - "company:{COMPANY_CODE}"
+            - "module:{ModuleName}"
+            - "source:suggestion_docs"
+        COMMIT_FORMAT:
+          PATTERN "[TYPE] Brief description"
+          TYPES [ETL, DRV, FIX, FEAT, DOCS, REFACTOR, PRINCIPLE]
+          FOOTER "Principles: {principle_ids}"
+
+    violations:
+      - "Creating changelog/issues/open/new_issue.md"
+      - "Commit message without [TYPE] prefix"
+      - "Report file without date prefix"
+    compliant:
+      - "2026-03-06_issue-248_rsv_threshold_fix.md"
+      - "[FIX] Correct RSV threshold for High Risk\n\nPrinciples: MP029"
+
+# ============================================================================
+# Relationship Hierarchy
+# ============================================================================
+hierarchy:
+  - level: meta_principle
+    id: MP029
+    name: "No Fake Information"
+    description: "Foundation for all documentation accuracy requirements"
+
+  - level: principle
+    id: DOC_P001
+    name: "Documentation System Architecture"
+    description: "Three-layer documentation: Wiki, Principles, GitHub Issues"
+    implements: MP029
+
+  - level: rule
+    id: DOC_R001
+    name: "Wiki Link Syntax"
+    description: "Correct [[Display|Page]] syntax, [Display](Page) in tables"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R002
+    name: "Wiki Content Standards"
+    description: "Required sections for Term pages and tab guides"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R003
+    name: "Formula Cross-Verification"
+    description: "Wiki formulas must match source code"
+    implements: MP029
+
+  - level: rule
+    id: DOC_R004
+    name: "Changelog and Reporting Format"
+    description: "Reports, issue tracking, commit message standards"
+    implements: DOC_P001

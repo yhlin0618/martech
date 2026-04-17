@@ -1,0 +1,343 @@
+---
+title: "TS_R003: NSQL Language Specification v3"
+subtitle: "NSQL (Natural SQL Language) is a specialized documentation language for describing data operations, transformations, and flows in reactive applications, combining SQL's declarative clarity with enhanced syntax"
+chapter: "CH00"
+category: "rule"
+number: "TS_R003"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Fundamental Principles Law"
+article: 
+  number: 3
+  title: "NSQL Language Specification"
+related_to:
+  - "MP27: Integrated Natural SQL Language"
+  - "MP24: Natural SQL Language"
+  - "MP65: Radical Translation in NSQL"
+  - "MP52: Unidirectional Data Flow"
+  - "P73: Server-to-UI Data Flow"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 3: NSQL Language Specification v3 {#overview}
+
+**Fundamental Principles Law Article 3 (NSQL Language Specification)**
+
+NSQL (Natural SQL Language) is a specialized documentation language for describing data operations, transformations, and flows in reactive applications. It combines SQL's declarative clarity with additional syntax for documenting UI components, reactive dependencies, visualizations, graph relationships, and testing requirements.
+
+:::{.callout-important}
+## Overview
+NSQL (Natural SQL Language) is a specialized documentation language for describing data operations, transformations, and flows in reactive applications.
+:::
+
+# Section 1: Core Principles {#core-principles}
+
+1. **Clarity**: Expressions must clearly indicate source, transformation, and destination
+2. **Precision**: Syntax must eliminate ambiguity in data operation descriptions
+3. **Alignment**: Documentation must align with implementation patterns
+4. **Completeness**: All aspects of data flow must be documentable
+5. **Visualization**: Support for generating flow diagrams and visualizations
+6. **Hierarchical Organization**: Provide clear structural hierarchy for documentation
+7. **Graph Representation**: Support formal representation of component relationships
+8. **Integration**: Seamlessly blend with existing documentation systems
+9. **Radical Translation**: Enable transformation between representation systems while preserving semantics
+
+# Section 2: NSQL Integration Model {#integration-model}
+
+NSQL now integrates five major component systems:
+
+1. **Core NSQL**: Data operation and transformation syntax
+2. **Graph Theory Extension**: Component relationship and flow visualization
+3. **LaTeX/Markdown Terminology**: Document structure and formatting
+4. **Roxygen2-Inspired Annotations**: Function and component documentation
+5. **Radical Translation System**: Cross-language and cross-paradigm transformation
+
+# Section 3: Basic Syntax {#basic-syntax}
+
+## Subsection 1: Data Operation Expression {#data-operation-expression}
+
+The fundamental unit of NSQL is the Data Operation Expression:
+
+```
+OPERATION(SOURCE → TRANSFORM → DESTINATION)
+```
+
+Example:
+```sql
+FILTER(transactions → WHERE date > '2023-01-01' → recent_transactions)
+```
+
+## Subsection 2: Component Documentation {#component-documentation}
+
+UI components are documented with their data sources and operations:
+
+```sql
+-- COMPONENT: component_name
+-- Type: component_type
+-- Data Source: data_source_name
+-- Operation: operation_description
+-- SQL Query:
+SELECT ...
+```
+
+## Subsection 3: Data Flow Documentation {#data-flow-documentation}
+
+Document complete reactive data flows:
+
+```sql
+DATA_FLOW(name: "flow_name") {
+  SOURCE: source_1, source_2
+  BRANCH: "branch_name_1" {
+    TRANSFORM(source → operation → destination)
+    DISPLAY(destination → component)
+  }
+  BRANCH: "branch_name_2" {
+    TRANSFORM(source → operation → destination)
+    DISPLAY(destination → component)
+  }
+}
+```
+
+# Section 4: NSQL Elements {#nsql-elements}
+
+## Subsection 1: Data Sources {#data-sources}
+
+```sql
+-- Simple source
+SOURCE: customers
+
+-- Multiple sources
+SOURCE: customers, transactions, products
+
+-- Source with metadata
+SOURCE: customers {
+  Primary: true
+  Update_Frequency: "Daily"
+  Fields: [
+    { Name: "customer_id", Type: "INTEGER", Key: true },
+    { Name: "name", Type: "VARCHAR(255)" },
+    { Name: "email", Type: "VARCHAR(255)" }
+  ]
+}
+```
+
+## Subsection 2: Operations {#operations}
+
+```sql
+-- Filter operation
+FILTER(customers → WHERE status = 'active' → active_customers)
+
+-- Join operation
+JOIN(orders → WITH customers ON orders.customer_id = customers.id → order_details)
+
+-- Aggregate operation
+AGGREGATE(sales → GROUP BY product_id | SUM(amount) AS total → product_totals)
+
+-- Transform operation
+TRANSFORM(raw_data → CLEAN DUPLICATES | FORMAT DATES → clean_data)
+
+-- Extract operation
+EXTRACT(transactions → DISTINCT customer_id → unique_customers)
+```
+
+## Subsection 3: Flow Control {#flow-control}
+
+```sql
+-- Simple flow
+FLOW: input.date_range 
+  → FILTER(transactions BY date BETWEEN input.date_range.start AND input.date_range.end) 
+  → display_table
+
+-- Branching flow
+FLOW: "Dashboard Update" {
+  TRIGGER: input.refresh_button
+  BRANCH: "Sales Data" {
+    FILTER(transactions → RECENT 30 DAYS → recent_sales)
+    DISPLAY(recent_sales → sales_chart)
+  }
+  BRANCH: "Customer Data" {
+    FILTER(customers → ACTIVE STATUS → active_customers)
+    COUNT(active_customers → total_active)
+    DISPLAY(total_active → customer_counter)
+  }
+}
+```
+
+## Subsection 4: Component Mapping {#component-mapping}
+
+```sql
+-- Input component
+COMPONENT: date_filter {
+  Type: dateRangeInput
+  Default: [CURRENT_DATE - 30 DAYS, CURRENT_DATE]
+  Label: "Select Date Range"
+  Effects: [
+    TRIGGER: FILTER(transactions BY date BETWEEN input.date_filter.start AND input.date_filter.end)
+  ]
+}
+
+-- Output component
+COMPONENT: sales_summary {
+  Type: valueBox
+  Data_Source: filtered_transactions
+  Operation: AGGREGATE(SUM(amount) AS total_sales)
+  Format: "$#,##0.00"
+  Icon: "dollar-sign"
+  Color: "success"
+}
+```
+
+## Subsection 5: Reactive Dependencies {#reactive-dependencies}
+
+```sql
+-- Simple reactive dependency
+REACTIVE: filtered_customers {
+  DEPENDS_ON: [input.status_filter, input.date_range]
+  OPERATION: FILTER(customers → WHERE status = input.status_filter AND 
+                   date BETWEEN input.date_range.start AND input.date_range.end)
+}
+
+-- Complex reactive chain
+REACTIVE_CHAIN: "Customer Analysis" {
+  STEP 1: filtered_customers {
+    DEPENDS_ON: [input.status_filter]
+    OPERATION: FILTER(customers → WHERE status = input.status_filter)
+  }
+  
+  STEP 2: customer_metrics {
+    DEPENDS_ON: [filtered_customers]
+    OPERATION: JOIN(filtered_customers → WITH transactions ON customer_id)
+  }
+  
+  STEP 3: summary_statistics {
+    DEPENDS_ON: [customer_metrics]
+    OPERATION: AGGREGATE(customer_metrics → GROUP BY status | AVG(amount) AS avg_spend)
+  }
+  
+  OUTPUT: DISPLAY(summary_statistics → summary_table)
+}
+```
+
+## Subsection 6: Table Creation and Database Structure {#table-creation}
+
+NSQL provides syntax for defining and documenting database tables and their relationships. This allows for clear specification of data structures that can be implemented in various database systems.
+
+```sql
+-- Create a new table at a specific database connection
+CREATE df_customer_profile AT app_data
+===
+CREATE OR REPLACE TABLE df_customer_profile (
+  customer_id INTEGER,
+  buyer_name VARCHAR,
+  email VARCHAR,
+  platform_id INTEGER NOT NULL,
+  display_name VARCHAR GENERATED ALWAYS AS (buyer_name || ' (' || email || ')') VIRTUAL,
+  PRIMARY KEY (customer_id, platform_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_df_customer_profile_platform_id_df_customer_profile 
+ON df_customer_profile(platform_id);
+===
+```
+
+The CREATE syntax uses a three-part format:
+1. A high-level statement of intent: `CREATE table_name AT connection[.schema]`
+2. Delimiter markers: `===`
+3. The actual SQL implementation between the delimiters
+
+## Subsection 7: Radical Translation {#radical-translation}
+
+NSQL supports radical translation between different representation systems while preserving semantic equivalence. This enables transforming data operations between different languages and paradigms.
+
+```sql
+-- SQL to R Translation Example
+TRANSLATION: "Customer Table Schema" {
+  SOURCE: SQL {
+    CREATE TABLE customers (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  }
+  
+  TARGET: R {
+    generate_create_table_query(
+      con = con,
+      target_table = "customers",
+      column_defs = list(
+        list(name = "id", type = "INTEGER", not_null = TRUE),
+        list(name = "name", type = "TEXT", not_null = TRUE),
+        list(name = "email", type = "TEXT", unique = TRUE),
+        list(name = "created_at", type = "TIMESTAMP", default = "CURRENT_TIMESTAMP")
+      ),
+      primary_key = "id"
+    )
+  }
+  
+  PROPERTIES_PRESERVED: [
+    "structure",
+    "constraints",
+    "data_types",
+    "defaults"
+  ]
+}
+```
+
+# Section 5: Best Practices {#best-practices}
+
+1. **Be explicit about data types**:
+   ```sql
+   -- GOOD
+   FILTER(customers → WHERE customer_id = as.integer(input.customer_filter))
+   
+   -- BAD
+   FILTER(customers → WHERE customer_id = input.customer_filter)
+   ```
+
+2. **Document all reactive dependencies**:
+   ```sql
+   -- GOOD
+   REACTIVE(filtered_data) {
+     DEPENDS_ON: [input.filter_a, input.filter_b, source_data]
+     ...
+   }
+   
+   -- BAD
+   REACTIVE(filtered_data) {
+     DEPENDS_ON: [input.filter_a] -- Missing dependencies
+     ...
+   }
+   ```
+
+3. **Use clear operation expressions**:
+   ```sql
+   -- GOOD
+   TRANSFORM(source → operation → destination)
+   
+   -- BAD
+   process the data and show it
+   ```
+
+# Section 6: Related Principles {#related-principles}
+
+- **MP27**: Integrated Natural SQL Language
+- **MP24**: Natural SQL Language
+- **MP65**: Radical Translation in NSQL
+- **MP52**: Unidirectional Data Flow
+- **P73**: Server-to-UI Data Flow
+- **P79**: State Management
+- **P81**: Tidyverse-Shiny Terminology Alignment
+
+---
+
+*Based on: Fundamental Principles Law Article 3*  
+*Related to: [MP27 Integrated Natural SQL Language](../meta_principles/MP027_integrated_natural_sql_language.qmd), [MP65 Radical Translation in NSQL](../meta_principles/MP065_radical_translation_in_nsql.qmd)*

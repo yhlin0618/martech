@@ -1,0 +1,373 @@
+---
+# NSQL Dictionary
+# Implements R21: NSQL Dictionary Rule
+# Version: 1.0.0
+# Date: 2025-04-04
+
+meta:
+  version: "1.0.2"
+  last_updated: "2025-04-08"
+  supported_languages: ["sql", "dplyr", "pandas"]
+  changes:
+    - "Added hierarchical table reference with dot notation (A.B means table B in schema A)"
+    - "Added key notation for dataset descriptions (2025-04-08)"
+
+# Structural keywords
+structural_keywords:
+  transform:
+    description: "Defines the source dataset to transform"
+    sql_translation: "FROM"
+    dplyr_translation: "dataset %>%"
+    example: "transform Sales to Summary"
+    required: true
+  
+  to:
+    description: "Defines the target dataset"
+    sql_translation: "INTO/CREATE TABLE AS"
+    dplyr_translation: "assign()"
+    example: "transform Sales to Summary"
+    required: true
+  
+  as:
+    description: "Defines the output columns"
+    sql_translation: "SELECT ... AS"
+    dplyr_translation: "mutate()/summarize()"
+    example: "sum(revenue) as total_rev"
+    required: true
+  
+  grouped_by:
+    description: "Defines grouping dimensions"
+    sql_translation: "GROUP BY"
+    dplyr_translation: "group_by()"
+    example: "grouped by region, date"
+    required: false
+    aliases: ["group by"]
+  
+  where:
+    description: "Defines filtering conditions"
+    sql_translation: "WHERE"
+    dplyr_translation: "filter()"
+    example: "where date > \"2025-01-01\""
+    required: false
+  
+  ordered_by:
+    description: "Defines sort order"
+    sql_translation: "ORDER BY"
+    dplyr_translation: "arrange()"
+    example: "ordered by revenue desc"
+    required: false
+    aliases: ["order by"]
+  
+  joined_with:
+    description: "Defines dataset joins"
+    sql_translation: "JOIN"
+    dplyr_translation: "*_join()"
+    example: "joined with Customers on id"
+    required: false
+    aliases: ["join with", "join"]
+  
+  limit:
+    description: "Limits the number of rows"
+    sql_translation: "LIMIT"
+    dplyr_translation: "slice_head()"
+    example: "limit 100"
+    required: false
+
+  arrow_operator:
+    description: "Pipeline operator for chaining operations"
+    symbol: "->"
+    sql_translation: "Nested subqueries"
+    dplyr_translation: "%>%"
+    example: "Sales -> filter(region = \"NA\") -> group(year, month)"
+    required: false
+    
+  key_notation:
+    description: "Notation for identifying primary or join keys in dataset descriptions"
+    symbol: "(key = field_name)"
+    sql_translation: "PRIMARY KEY or JOIN field"
+    dplyr_translation: "join key identification"
+    example: "CustomerProfiles (key = customer_id)"
+    required: false
+
+# Pipeline operations (for arrow syntax)
+pipeline_operations:
+  filter:
+    description: "Filters rows based on conditions"
+    sql_translation: "WHERE {conditions}"
+    dplyr_translation: "filter({conditions})"
+    example: "filter(region = \"North America\", year = 2025)"
+    parameters:
+      - conditions: "One or more filtering conditions"
+  
+  group:
+    description: "Groups data by dimensions"
+    sql_translation: "GROUP BY {dimensions}"
+    dplyr_translation: "group_by({dimensions})"
+    example: "group(region, product_category)"
+    parameters:
+      - dimensions: "One or more grouping dimensions"
+  
+  aggregate:
+    description: "Creates aggregate calculations"
+    sql_translation: "SELECT {aggregations}"
+    dplyr_translation: "summarize({aggregations})"
+    example: "aggregate(total_sales = sum(sales), avg_price = average(price))"
+    parameters:
+      - aggregations: "One or more aggregate calculations"
+  
+  select:
+    description: "Selects columns to include"
+    sql_translation: "SELECT {columns}"
+    dplyr_translation: "select({columns})"
+    example: "select(customer_id, order_date, total)"
+    parameters:
+      - columns: "One or more columns to select"
+  
+  sort:
+    description: "Sorts results by columns"
+    sql_translation: "ORDER BY {sort_specs}"
+    dplyr_translation: "arrange({sort_specs})"
+    example: "sort(sales, direction=desc, date)"
+    parameters:
+      - sort_specs: "One or more sort specifications"
+      - direction: "Optional sort direction (asc or desc)"
+
+# Aggregate functions
+aggregate_functions:
+  sum:
+    description: "Sums values in field"
+    parameters:
+      field: "Field to sum"
+    sql_translation: "SUM({field})"
+    dplyr_translation: "sum({field}, na.rm = TRUE)"
+    example: "sum(revenue) as total_rev"
+  
+  count:
+    description: "Counts non-null values or rows"
+    parameters:
+      field: "Field to count (optional)"
+    sql_translation: "COUNT({field})"
+    dplyr_translation: "sum(!is.na({field}))"
+    special_cases:
+      count_star:
+        nsql: "count(*)"
+        sql: "COUNT(*)"
+        dplyr: "n()"
+      count_distinct:
+        nsql: "count(distinct {field})"
+        sql: "COUNT(DISTINCT {field})"
+        dplyr: "n_distinct({field})"
+    example: "count(order_id) as orders"
+  
+  average:
+    description: "Calculates average"
+    parameters:
+      field: "Field to average"
+    sql_translation: "AVG({field})"
+    dplyr_translation: "mean({field}, na.rm = TRUE)"
+    example: "average(price) as avg_price"
+    aliases: ["avg", "mean"]
+  
+  min:
+    description: "Finds minimum value"
+    parameters:
+      field: "Field to find minimum of"
+    sql_translation: "MIN({field})"
+    dplyr_translation: "min({field}, na.rm = TRUE)"
+    example: "min(price) as min_price"
+  
+  max:
+    description: "Finds maximum value"
+    parameters:
+      field: "Field to find maximum of"
+    sql_translation: "MAX({field})"
+    dplyr_translation: "max({field}, na.rm = TRUE)"
+    example: "max(price) as max_price"
+  
+  median:
+    description: "Finds median value"
+    parameters:
+      field: "Field to find median of"
+    sql_translation: "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {field})"
+    dplyr_translation: "median({field}, na.rm = TRUE)"
+    example: "median(price) as med_price"
+
+# Logical operators
+logical_operators:
+  and:
+    description: "Logical AND"
+    sql_translation: "AND"
+    dplyr_translation: "&"
+    example: "region = \"NA\" and year = 2025"
+  
+  or:
+    description: "Logical OR"
+    sql_translation: "OR"
+    dplyr_translation: "|"
+    example: "status = \"new\" or status = \"pending\""
+  
+  not:
+    description: "Logical negation"
+    sql_translation: "NOT"
+    dplyr_translation: "!"
+    example: "not is_deleted"
+  
+  in:
+    description: "Value in list"
+    sql_translation: "IN"
+    dplyr_translation: "%in%"
+    example: "region in [\"NA\", \"EU\"]"
+
+# Comparison operators
+comparison_operators:
+  equals:
+    description: "Equals"
+    symbol: "="
+    sql_translation: "="
+    dplyr_translation: "=="
+    example: "region = \"North America\""
+  
+  not_equals:
+    description: "Not equals"
+    symbol: "!="
+    sql_translation: "!= or <>"
+    dplyr_translation: "!="
+    example: "status != \"canceled\""
+  
+  greater_than:
+    description: "Greater than"
+    symbol: ">"
+    sql_translation: ">"
+    dplyr_translation: ">"
+    example: "revenue > 1000"
+  
+  greater_equal:
+    description: "Greater than or equal"
+    symbol: ">="
+    sql_translation: ">="
+    dplyr_translation: ">="
+    example: "age >= 18"
+  
+  less_than:
+    description: "Less than"
+    symbol: "<"
+    sql_translation: "<"
+    dplyr_translation: "<"
+    example: "quantity < 5"
+  
+  less_equal:
+    description: "Less than or equal"
+    symbol: "<="
+    sql_translation: "<="
+    dplyr_translation: "<="
+    example: "price <= 99.99"
+
+# Date functions
+date_functions:
+  date_part:
+    description: "Extracts part of date"
+    parameters:
+      field: "Date field"
+      unit: "Time unit (year, month, day, etc.)"
+    sql_translation: "EXTRACT({unit} FROM {field})"
+    dplyr_translation: "lubridate::{unit}({field})"
+    example: "date_part(order_date, \"month\")"
+  
+  date_diff:
+    description: "Difference between dates"
+    parameters:
+      field1: "First date"
+      field2: "Second date"
+      unit: "Time unit (day, month, year, etc.)"
+    sql_translation: "DATEDIFF({unit}, {field1}, {field2})"
+    dplyr_translation: "as.numeric(difftime({field2}, {field1}, units = \"{unit}\"))"
+    example: "date_diff(order_date, ship_date, \"day\")"
+  
+  date_trunc:
+    description: "Truncates date to unit"
+    parameters:
+      field: "Date field"
+      unit: "Time unit (day, month, year, etc.)"
+    sql_translation: "DATE_TRUNC('{unit}', {field})"
+    dplyr_translation: "lubridate::floor_date({field}, \"{unit}\")"
+    example: "date_trunc(date, \"month\")"
+
+# Natural language patterns (from R22)
+natural_language_patterns:
+  imperative_queries:
+    pattern: "show {dimension} by {metric}"
+    transform_to_pattern: "transform [implicit_table] to Results as {metric} grouped by {dimension}"
+    example: "show sales by region"
+  
+  calculation_queries:
+    pattern: "calculate {metric} for {filter}"
+    transform_to_pattern: "transform [implicit_table] to Results as {metric} where {filter}"
+    example: "calculate average order value for premium customers"
+  
+  comparative_queries:
+    pattern: "compare {dimension1} vs {dimension2} by {metric}"
+    transform_to_pattern: "transform [implicit_table] to Comparison as {metric} grouped by {dimension1}, {dimension2}"
+    example: "compare this year vs last year by monthly sales"
+  
+  ranking_queries:
+    pattern: "find top {N} {dimension} by {metric}"
+    transform_to_pattern: "transform [implicit_table] to TopItems as {dimension}, {metric} ordered by {metric} desc limit {N}"
+    example: "find top 10 products by revenue"
+
+# Temporal execution adjectives
+temporal_adjectives:
+  one_time:
+    description: "Executed exactly once, typically during initialization"
+    symbol: "⚡¹"
+    example: "oneTimeUnionUI (union operation performed once at startup)"
+    prefix: "oneTime"
+  
+  two_time:
+    description: "Executed exactly twice during the application lifecycle"
+    symbol: "⚡²"
+    example: "twoTimeValidator (validation performed on both client and server)"
+    prefix: "twoTime"
+  
+  many_time:
+    description: "Executed repeatedly, typically in response to reactive dependencies"
+    symbol: "⚡*"
+    example: "manyTimeFilter (filtering performed whenever data or conditions change)"
+    prefix: "manyTime"
+  
+  every_time:
+    description: "Executed on every occurrence of a specific event"
+    symbol: "⚡ᵉ"
+    example: "everyTimeHandler (event handler called for every event occurrence)"
+    prefix: "everyTime"
+  
+  conditional_time:
+    description: "Executed only when specific conditions are met"
+    symbol: "⚡?"
+    example: "conditionalTimeFeature (feature enabled only under certain conditions)"
+    prefix: "conditionalTime"
+  
+  periodic_time:
+    description: "Executed at regular intervals"
+    symbol: "⚡ᵖ"
+    example: "periodicTimeRefresh (data refreshed on a timer)"
+    prefix: "periodicTime"
+  
+  zero_time:
+    description: "Present in code but never executed (inactive)"
+    symbol: "⚡⁰"
+    example: "zeroTimePlaceholder (placeholder for future functionality)"
+    prefix: "zeroTime"
+
+# Temporal binding types
+binding_types:
+  static_binding:
+    description: "Value bound once at initialization and remains constant"
+    symbol: "⚓"
+    example: "staticBindingUI (UI structure that remains constant)"
+    prefix: "staticBinding"
+  
+  dynamic_binding:
+    description: "Value re-evaluated whenever dependencies change"
+    symbol: "⚓*"
+    example: "dynamicBindingValue (reactive value that updates automatically)"
+    prefix: "dynamicBinding"

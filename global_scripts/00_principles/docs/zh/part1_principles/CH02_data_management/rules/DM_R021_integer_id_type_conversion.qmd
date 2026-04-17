@@ -1,0 +1,254 @@
+---
+title: "DM_R004: 整數 ID 類型轉換規則"
+subtitle: "所有系統識別碼在用於資料操作時必須明確轉換為整數類型"
+chapter: "CH02"
+category: "rule"
+number: "DM_R004"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 4
+  title: "整數 ID 類型轉換規則"
+implements:
+  - "P080: 整數 ID 一致性原則"
+  - "MP052: 單向資料流"
+related_to:
+  - "R076: 模組資料連接規則"
+  - "R088: Shiny 模組 ID 處理"
+  - "R090: ID 關係驗證"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第四條：整數 ID 類型轉換規則 {#overview}
+
+**資料管理法第四條（整數 ID 類型轉換規則）**
+
+此規則強制在整個應用程式中對 ID 進行一致的類型處理。
+
+:::{.callout-important}
+## 核心規則
+所有系統識別碼在用於資料操作時必須明確轉換為整數類型。
+:::
+
+# 第一項：描述 {#description}
+
+此規則強制在整個應用程式中對 ID 進行一致的類型處理，特別是在可能發生類型轉換的系統邊界。它確保所有 ID 在用於過濾、連接或其他資料操作之前都明確轉換為整數。
+
+# 第二項：理由 {#rationale}
+
+## 第一款：類型安全 {#type-safety}
+
+防止隱式類型轉換造成的微妙錯誤。
+
+## 第二款：性能 {#performance}
+
+整數比較比字串比較更快。
+
+## 第三款：可預測性 {#predictability}
+
+無論資料來源如何，都確保一致的行為。
+
+## 第四款：可靠性 {#reliability}
+
+避免資料過濾和連接操作中的錯誤。
+
+# 第三項：實施指南 {#implementation-guide}
+
+## 第一款：模組函數參數 {#module-function-parameters}
+
+當模組接收 ID 參數時，立即將其轉換為整數：
+
+```r
+customerModule <- function(id, customer_id) {
+  # 收到時立即將 ID 轉換為整數
+  customer_id <- as.integer(customer_id)
+  
+  # 對所有後續操作使用整數 ID
+  # ...
+}
+```
+
+## 第二款：UI 輸入處理 {#ui-input-handling}
+
+當接收表示 ID 的使用者輸入值時，在使用前將其轉換為整數：
+
+```r
+observeEvent(input$customer_select, {
+  # 將選擇的 ID 轉換為整數
+  selected_id <- as.integer(input$customer_select)
+  
+  # 使用選擇的 ID 過濾資料
+  filtered_data <- data %>% filter(customer_id == selected_id)
+})
+```
+
+## 第三款：資料過濾 {#data-filtering}
+
+過濾資料框架時始終將 ID 值轉換為整數：
+
+```r
+# 正確：過濾前明確整數轉換
+filter_customers_by_id <- function(data, id_value) {
+  # 確保整數類型
+  id_value <- as.integer(id_value)
+  
+  # 然後過濾
+  filtered <- data %>% filter(customer_id == id_value)
+  return(filtered)
+}
+```
+
+## 第四款：反模式 {#anti-patterns}
+
+### 隱式類型轉換 {#implicit-conversion}
+
+```r
+# 錯誤：依賴隱式類型轉換
+data %>% filter(customer_id == input$customer_select)
+
+# 正確：明確類型轉換
+data %>% filter(customer_id == as.integer(input$customer_select))
+```
+
+### 缺少錯誤處理 {#missing-error-handling}
+
+```r
+# 錯誤：對非數字輸入沒有錯誤處理
+as.integer(input$customer_select)
+
+# 正確：適當的錯誤處理
+tryCatch({
+  selected_id <- as.integer(input$customer_select)
+  if (is.na(selected_id)) {
+    stop("無效的客戶 ID")
+  }
+}, error = function(e) {
+  # 處理錯誤（例如，向使用者顯示訊息）
+  showNotification("請選擇有效的客戶", type = "error")
+})
+```
+
+# 第四項：範例 {#examples}
+
+## 第一款：標準 ID 轉換函數 {#standard-conversion-function}
+
+```r
+safe_as_integer <- function(x, default = NA_integer_) {
+  if (is.null(x) || length(x) == 0) {
+    return(default)
+  }
+  
+  result <- tryCatch({
+    as.integer(x)
+  }, warning = function(w) {
+    default
+  }, error = function(e) {
+    default
+  })
+  
+  if (is.na(result)) {
+    result <- default
+  }
+  
+  return(result)
+}
+```
+
+## 第二款：包含錯誤處理的完整範例 {#complete-example}
+
+```r
+moduleServer("customer_module", function(input, output, session) {
+  # 過濾資料的反應式表達式
+  filtered_data <- reactive({
+    # 驗證選擇存在
+    req(input$customer_select)
+    
+    # 嘗試將選擇的 ID 轉換為整數
+    id <- tryCatch({
+      id <- as.integer(input$customer_select)
+      if (is.na(id)) {
+        showNotification("無效的客戶 ID 格式", type = "error")
+        return(NULL)
+      }
+      id
+    }, error = function(e) {
+      showNotification("處理客戶 ID 時出錯", type = "error")
+      return(NULL)
+    })
+    
+    # 只有在有有效 ID 時才過濾
+    if (!is.null(id)) {
+      data <- customers_data %>% filter(customer_id == id)
+      if (nrow(data) == 0) {
+        showNotification(paste("找不到 ID 為", id, "的客戶"), type = "warning")
+      }
+      return(data)
+    }
+    
+    return(NULL)
+  })
+})
+```
+
+## 第三款：接受 ID 參數的模組 {#module-with-id-parameter}
+
+```r
+customerViewModule <- function(id, customer_id = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 初始化選定客戶的反應值
+    selected_customer_id <- reactiveVal(NULL)
+    
+    # 如果提供了 customer_id，轉換後使用
+    observe({
+      if (!is.null(customer_id)) {
+        # 轉換為整數並驗證
+        id <- as.integer(customer_id)
+        if (!is.na(id)) {
+          selected_customer_id(id)
+        }
+      }
+    })
+    
+    # 當使用者更改選擇時
+    observeEvent(input$customer_select, {
+      id <- as.integer(input$customer_select)
+      if (!is.na(id)) {
+        selected_customer_id(id)
+      }
+    })
+    
+    # 客戶資料的反應式
+    customer_data <- reactive({
+      id <- selected_customer_id()
+      req(id)
+      
+      # 使用整數 id 進行資料過濾
+      customers %>% filter(customer_id == id)
+    })
+  })
+}
+```
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **消除類型相關錯誤**：防止因類型不匹配導致的錯誤
+2. **提高查詢性能**：整數比較更快
+3. **確保資料完整性**：ID 處理在整個應用程式中保持一致
+4. **簡化調試**：類型問題更容易識別和修復
+5. **增強可移植性**：減少對特定資料來源類型的依賴
+
+---
+
+*基於：資料管理法第四條*  
+*相關連結：[P080 整數 ID 一致性原則](../principles/DM_P004_integer_id_consistency.qmd), [R076 模組資料連接規則](../../CH03_development_methodology/rules/DEV_R022_module_data_connection.qmd)*

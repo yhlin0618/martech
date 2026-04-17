@@ -1,0 +1,228 @@
+---
+title: "SO_R010: Implementation Naming Convention for Derivations, Sequences, Modules, and Nodes"
+subtitle: "Establishes the naming convention for files that implement platform-specific derivations, sequences, modules, and nodes, ensuring clear mapping between abstract definitions and their implementations"
+chapter: "CH01"
+category: "rule"
+number: "SO_R010"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article-number: 
+  number: 10
+  title: "Implementation Naming Convention"
+related_to:
+  - "MP001: Primitive Terms and Definitions"
+  - "P005: Naming Principles"
+  - "R007: Update Script Naming Convention"
+  - "DM_R005: Platform Numbering Convention"
+  - "DEV_R011: Derivation Platform Independence"
+  - "R041: Derivation Folder Structure"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 10: Implementation Naming Convention {#overview}
+
+**Structure & Organization Law Article 10 (Implementation Naming Convention)**
+
+This rule establishes the naming convention for files that implement platform-specific derivations, sequences, modules, and nodes, ensuring clear mapping between abstract definitions and their implementations.
+
+:::{.callout-important}
+## Core Requirement
+Implementation files for derivations (D), sequences (S), modules (M), and nodes (N) must follow a unified naming pattern that clearly identifies the type, number, platform, and step - ensuring consistent and explicit identification while remaining compatible with the existing script naming convention (R007).
+:::
+
+# Section 1: Naming Pattern for D/S/M Implementations {#naming-pattern-dsm}
+
+## Subsection 1: Standard Naming Pattern {#standard-naming-pattern}
+
+Files implementing derivations (D), sequences (S), and modules (M) must follow this standardized naming pattern:
+
+```
+{Type}{number}_P{platform}_{step}.R
+```
+
+Where:
+- **{Type}**: The type identifier (D, S, or M)
+- **{number}**: The two-digit type number (e.g., 01 for D01)
+- **{platform}**: The two-digit platform number (e.g., 01 for Amazon) as defined in DM_R005
+- **{step}**: The two-digit step number (e.g., 00, 01, 02)
+
+## Subsection 2: Rule for Multiple Number Systems {#multiple-number-systems-rule}
+
+When D/S/M filenames contain multiple numeric identifiers:
+1. The type prefix and platform prefix ('P') MUST always be included
+2. Only the step suffix may be omitted in cases where no steps exist
+3. All numeric identifiers must use two digits (01 not 1)
+
+## Subsection 3: Examples {#dsm-examples}
+
+- `D01_P0001_00.R`: Implementation of D01 step 00 for Amazon platform (01)
+- `S00_P0007_00.R`: Implementation of S00 step 00 for Cyberbiz platform (07)
+- `M01_P0002_00.R`: Implementation of M01 for Official Website platform (02)
+- `D02_P0006_03.R`: Implementation of D02 step 03 for eBay platform (06)
+
+# Section 2: Naming Pattern for Node (N) Implementations {#naming-pattern-nodes}
+
+## Subsection 1: Node Naming Pattern {#node-naming-pattern}
+
+Node files follow a simpler, sequential numbering system without platform or step designations:
+
+```
+N{four-digit-number}.R
+```
+
+Where:
+- **{four-digit-number}**: A sequential four-digit number (e.g., 0001, 0002, ..., 9999)
+
+## Subsection 2: Node Definition {#node-definition}
+
+Nodes represent individual utility scripts that serve as the fundamental building blocks of the system. Nodes are platform-agnostic and perform specific, reusable operations that can be leveraged by derivations and sequences. Examples include:
+
+- Data export utilities
+- Configuration setup scripts
+- System maintenance tasks
+- Data validation functions
+- Ad-hoc analytical scripts
+- Common transformation utilities
+
+Nodes are designed to be atomic, reusable components that implement specific functionality used across multiple derivations and sequences.
+
+## Subsection 3: Node Examples {#node-examples}
+
+- `N0001.R`: Node utility #0001 (Data Export Utility)
+- `N0204.R`: Node utility #0204 (Configuration Validator)
+- `N1024.R`: Node utility #1024 (Logging Framework)
+
+# Section 3: Directory Structure {#directory-structure}
+
+Implementation files MUST be organized in the 00_principles directory with the following specific hierarchical structure:
+
+```
+00_principles/
+  |-- D01/                          # Derivation type directory
+  |   |-- D01.md                    # Abstract derivation definition (NOT D01_dna_analysis.md)
+  |   |-- platforms/                # Platform implementations directory
+  |       |-- 01/                   # Amazon platform directory
+  |       |   |-- D01_P0001_00.R   # Amazon implementation step 00
+  |       |   |-- D01_P0001_01.R   # Amazon implementation step 01
+  |       |   `-- ...
+  |       |-- 07/                   # Cyberbiz platform directory
+  |           |-- D01_P0007_00.R   # Cyberbiz implementation step 00
+  |           `-- ...
+  |
+  |-- S00/                          # Sequence type directory
+  |   |-- S00.md                    # Abstract sequence definition 
+  |   |-- platforms/                # Platform implementations directory
+  |       |-- 07/                   # Cyberbiz platform directory
+  |           |-- S00_P0007_00.R   # Cyberbiz implementation
+  |           `-- ...
+  |
+  |-- M01/                          # Module type directory
+  |   |-- M01.md                    # Abstract module definition
+  |   |-- functions/                # Shared module functions
+  |   |   |-- fn_xxx.R              # Function implementation
+  |   |   `-- ...
+  |   |-- platforms/                # Platform-specific implementations
+  |       |-- 01/                   # Amazon platform directory
+  |           |-- M01_P0001_00.R   # Amazon implementation
+  |           `-- ...
+  |
+  |-- nodes/                        # Single directory for ALL nodes
+      |-- N0001.R                   # Data Export Utility node
+      |-- N0002.R                   # Configuration Validator node
+      |-- N0003.R                   # Logging Framework node
+      |-- ...                       # All nodes in flat structure
+```
+
+Note: The directory structure MUST use the exact naming pattern shown above. For example, derivation files MUST be stored in `D01/` directories (not in directories named `D01_dna_analysis/` or similar). The abstract definition file MUST be named exactly `D01.md` (not `D01_dna_analysis.md` or similar).
+
+# Section 4: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: File Creation {#file-creation}
+
+When creating a new derivation implementation file:
+
+1. Identify the derivation being implemented (e.g., D01)
+2. Identify the platform (e.g., 06 for eBay) from DM_R005
+3. Identify the specific step being implemented (e.g., 00)
+4. Create the file with the name `D{derivation}_P{platform}_{step}.R`
+5. Include clear comments linking to both the derivation and platform
+
+## Subsection 2: File Content Header {#file-content-header}
+
+Each implementation file should have a standardized header that reflects its purpose:
+
+```r
+# For derivations:
+# D01_P0006_00.R
+# Implementation of D01 step 00 (Import External Raw Data) for eBay platform (06/EBY)
+#
+# This script implements the platform-specific version of the D01_00 derivation step
+# as defined in D01/D01.md.
+#
+# Platform: eBay (06/EBY) per DM_R005 Platform Numbering Convention
+
+# For nodes:
+# N0001.R
+# Data Export Utility Node
+#
+# This script implements a platform-agnostic utility for exporting data
+# to various formats (CSV, Excel, JSON).
+#
+# Node utilities are designed to be atomic, reusable components that can be
+# leveraged by multiple derivations and sequences.
+```
+
+# Section 5: Benefits {#benefits}
+
+## Subsection 1: Benefits for D/S/M Components {#benefits-dsm}
+
+1. **Clear Traceability**: Direct mapping between abstract definitions and implementation files
+2. **Platform Clarity**: Explicit identification of which platform an implementation serves through the 'P' prefix
+3. **Step Identification**: Clear indication of which step is being implemented
+4. **Disambiguation**: The 'P' prefix prevents confusion between platform numbers and other numerical identifiers
+5. **Compatibility**: Works alongside existing naming conventions
+6. **Extensibility**: Allows for future additions of other prefixed identifiers if needed
+
+## Subsection 2: Benefits for Node Components {#benefits-nodes}
+
+1. **Simplicity**: Clean, sequential numbering without complex prefixes
+2. **Platform Independence**: Encourages creation of reusable, platform-agnostic utilities
+3. **Global Addressability**: Each node has a unique, global identifier
+4. **Scalability**: Four-digit scheme provides capacity for 9999 unique utilities
+5. **Composability**: Makes it easy to build derivations and sequences from reusable nodes
+
+# Section 6: Special Remarks {#special-remarks}
+
+## Subsection 1: Remarks on the 'P' Prefix for D/S/M Components {#remarks-p-prefix}
+
+The explicit 'P' prefix before platform numbers serves several critical purposes:
+
+1. **Semantic Clarity**: Explicitly denotes the number as a platform identifier
+2. **Future-proofing**: Prevents conflicts if additional numbered identifiers are added later
+3. **Parsing Reliability**: Makes automated tools more reliable when processing filenames
+4. **Consistency**: Follows the pattern of other prefixed identifiers in the system
+5. **Error Prevention**: Reduces chance of misinterpreting the platform number as another component
+
+## Subsection 2: Remarks on Node Components {#remarks-nodes}
+
+Node components adopt a different paradigm due to their fundamental nature:
+
+1. **Atomic Utilities**: Nodes are the basic building blocks of the system
+2. **Platform Agnosticism**: Nodes should work across all platforms whenever possible
+3. **Simple Addressing**: Sequential global numbering emphasizes reusability
+4. **Functional Composition**: Derivations and sequences should be built by composing nodes
+5. **Flat Organization**: A flat structure encourages discovery and reuse
+
+---
+
+*Based on: Structure & Organization Law Article 10*  
+*Related to: [DM_R005 Platform Numbering Convention](../../CH02_data_management/rules/DM_R005_platform_numbering_convention.qmd), [DEV_R011 Derivation Platform Independence](../../CH03_development_methodology/rules/DEV_R011_derivation_platform_independence.qmd)*

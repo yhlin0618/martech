@@ -1,0 +1,241 @@
+---
+title: "UI_P013: Category-Level Language Override Principle"
+subtitle: "Allows specific content categories to override the global UI language setting"
+chapter: "CH04"
+category: "principle"
+number: "UI_P013"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "principle"
+law: "UI Components Law"
+article-number:
+  number: 13
+  title: "Category-Level Language Override Principle"
+related_to:
+  - "UI_P012: Multi-Language UI Support"
+  - "UI_R022: UI Text Translation Pattern"
+  - "UI_R023: Language Fallback Chain"
+  - "SO_P010: Config-Driven Customization"
+  - "DM_R046: Variable Display Name Metadata Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 13: Category-Level Language Override Principle {#overview}
+
+**UI Components Law Article 13 (Category-Level Language Override Principle)**
+
+UI applications may require different display languages for different content categories. This principle allows specific categories (such as product attributes) to display in a different language than the global UI language, controlled through configuration rather than hardcoding.
+
+:::{.callout-important}
+## Core Principle
+Content categories can override the global language setting through `localization.category_languages` configuration. Categories without explicit override inherit from the global language setting.
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Language Resolution Order {#language-resolution-order}
+
+**Resolution Priority:**
+
+1. Check `category_languages[display_category]` for explicit override
+2. If null/undefined, use global `default_language`
+3. Apply selected language to display name generation
+
+**Resolution Diagram:**
+
+```
+Global Language (app_config.yaml: language)
+        ↓ fallback
+Category Override (localization.category_languages)
+        ↓
+Final Display Language
+```
+
+## Subsection 2: Supported Categories {#supported-categories}
+
+**Display Categories:**
+
+| Category | Description | Typical Override |
+|----------|-------------|------------------|
+| `product_attribute` | Product characteristics | Often English for technical specs |
+| `time` | Time-related variables | Usually local language |
+| `location` | Geographic variables | Usually local language |
+| `seller` | Seller information | Configurable |
+| `derived` | Computed/derived metrics | Usually local language |
+| `other` | Uncategorized | Inherits from global |
+
+## Subsection 3: Configuration Pattern {#configuration-pattern}
+
+**Configuration in app_config.yaml:**
+
+```yaml
+# Global language setting
+language: "zh_TW.UTF-8"
+
+# Category-level language override (UI_P013)
+localization:
+  # Default language (same as language field)
+  default_language: "zh_TW"
+
+  # Category-specific language overrides
+  # Omitted categories inherit from default_language
+  category_languages:
+    product_attribute: "en"    # Product attributes in English
+    # time: "zh_TW"            # Commented = use default
+    # location: "zh_TW"        # Commented = use default
+    # seller: "en"             # Uncomment to use English
+```
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Helper Function Pattern {#helper-function}
+
+**Category Language Resolution Function:**
+
+```r
+get_category_language <- function(display_category,
+                                   category_languages,
+                                   default_locale) {
+  # Return default if no overrides configured
+  if (is.null(category_languages)) {
+    return(default_locale)
+  }
+
+  # Check for category-specific override
+  category_lang <- category_languages[[display_category]]
+
+  # If no override, use default
+  if (is.null(category_lang) || category_lang == "") {
+    return(default_locale)
+  }
+
+  # Normalize language code
+  if (category_lang %in% c("en", "en_US", "english")) {
+    return("en")
+  } else if (category_lang %in% c("zh_TW", "zh-TW", "chinese")) {
+    return("zh_TW")
+  } else if (category_lang %in% c("zh_CN", "zh-CN")) {
+    return("zh_CN")
+  }
+
+  return(category_lang)
+}
+```
+
+## Subsection 2: Integration with Display Name Generation {#display-name-integration}
+
+**Modified Display Name Logic:**
+
+```r
+fn_generate_display_name <- function(
+  predictor,
+  locale = "zh_TW",
+  category_languages = NULL,  # UI_P013: Category override config
+  ...
+) {
+  # Read from global config if not provided
+  if (is.null(category_languages) && exists("app_configs")) {
+    category_languages <- app_configs$localization$category_languages
+  }
+
+  # After determining display_category from metadata lookup:
+  effective_locale <- get_category_language(
+    display_category = display_category,
+    category_languages = category_languages,
+    default_locale = locale
+  )
+
+  # Select display name based on effective locale
+  display_name <- if (effective_locale == "en") {
+    display_name_en
+  } else {
+    display_name_zh
+  }
+
+  return(list(
+    display_name = display_name,
+    effective_locale = effective_locale,  # Track which language was used
+    ...
+  ))
+}
+```
+
+# Section 3: Use Cases {#use-cases}
+
+## Subsection 1: Technical Product Attributes {#technical-attributes}
+
+**Scenario:** Turbocharger product specifications should display in English for international consistency, even when the UI is in Chinese.
+
+**Configuration:**
+
+```yaml
+localization:
+  default_language: "zh_TW"
+  category_languages:
+    product_attribute: "en"
+```
+
+**Result:**
+
+| Input | Category | Display Name |
+|-------|----------|--------------|
+| `seller_nameEiji-Takada` | product_attribute | Seller Name: Eiji-Takada |
+| `壓縮葉輪高流量設計TRUE` | product_attribute | Compressor Wheel High-flow |
+| `month_1` | time | 1月 |
+| `year` | time | 年份 |
+
+## Subsection 2: Mixed Language Dashboard {#mixed-language}
+
+**Scenario:** UI in local language, but certain categories in English for stakeholder reports.
+
+**Configuration:**
+
+```yaml
+localization:
+  default_language: "zh_TW"
+  category_languages:
+    product_attribute: "en"
+    seller: "en"
+```
+
+# Section 4: Benefits Analysis {#benefits-analysis}
+
+## Subsection 1: Configuration-Driven Flexibility {#configuration-driven}
+
+**Advantages:**
+
+1. **No Code Changes**: Language preferences controlled via YAML configuration
+2. **Category Granularity**: Different categories can have different language settings
+3. **Easy Customization**: Each deployment can configure based on client needs
+4. **Fallback Safety**: Unconfigured categories inherit from global setting
+
+## Subsection 2: Principle Compliance {#principle-compliance}
+
+**Compliance:**
+
+1. **Extends UI_P012**: Adds category-level granularity to multi-language support
+2. **Implements SO_P010**: Configuration-driven customization for language settings
+3. **Integrates with DM_R046**: Uses display_category from variable metadata
+
+# Section 5: Principle Relationships {#principle-relationships}
+
+## Subsection 1: Extending Relationships {#extending-relationships}
+
+This principle:
+
+1. **Extends UI_P012 (Multi-Language UI Support)** with category-level granularity
+2. **Implements SO_P010 (Config-Driven Customization)** for category language settings
+3. **Coordinates with DM_R046 (Variable Display Name Metadata)** for category classification
+4. **Complemented By UI_R024 (Category Language Configuration)** for implementation details
+
+---
+
+*Based on: UI Components Law Article 13*
+*Related to: [UI_P012 Multi-Language UI Support](UI_P012_multi_language_ui_support.qmd)*

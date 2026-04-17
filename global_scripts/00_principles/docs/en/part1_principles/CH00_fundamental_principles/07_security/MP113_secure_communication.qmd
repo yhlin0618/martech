@@ -1,0 +1,615 @@
+---
+title: "MP113: Secure Communication Protocols"
+subtitle: "End-to-end encryption and secure communication standards"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP113"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-meta-principle"
+law: "Secure Communication Law"
+article-number: 
+  number: 113
+  title: "Secure Communication and Encryption Standards"
+influences:
+  - "MP009: Default Deny"
+  - "DM_P007: Information Flow Transparency"
+  - "MP110: Security Credentials Management"
+  - "MP111: Data Privacy Protection"
+extends:
+  - "MP111: Data Privacy Protection"
+criticality: "CRITICAL"
+enforcement: "MANDATORY"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+---
+
+## Core Statement
+
+All communication between system components, external services, and users MUST be encrypted using industry-standard protocols, with mandatory HTTPS/TLS for web traffic, encrypted database connections, secure API communications, and proper certificate validation throughout the entire communication chain.
+
+## Encryption Standards
+
+### Minimum Encryption Requirements
+
+```yaml
+# encryption_standards.yaml
+protocols:
+  tls:
+    minimum_version: "1.2"
+    preferred_version: "1.3"
+    forbidden: ["SSL2", "SSL3", "TLS1.0", "TLS1.1"]
+    
+cipher_suites:
+  required_features:
+    - "Forward Secrecy"
+    - "AEAD"
+  minimum_strength: 128
+  preferred:
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_AES_128_GCM_SHA256"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+  forbidden:
+    - "NULL"
+    - "EXPORT"
+    - "DES"
+    - "RC4"
+    - "MD5"
+    
+certificates:
+  minimum_key_size:
+    rsa: 2048
+    ecdsa: 256
+  validity_period: 365  # days
+  required_fields:
+    - "CN"
+    - "SAN"
+```
+
+## HTTPS/TLS Implementation
+
+### Web Server Configuration
+
+```r
+# Shiny app with HTTPS enforcement
+configure_secure_server <- function() {
+  options(
+    shiny.port = 443,
+    shiny.host = "0.0.0.0",
+    shiny.ssl = TRUE,
+    shiny.ssl.cert = Sys.getenv("SSL_CERT_PATH"),
+    shiny.ssl.key = Sys.getenv("SSL_KEY_PATH"),
+    shiny.ssl.ca = Sys.getenv("SSL_CA_PATH")
+  )
+  
+  # HSTS header
+  options(shiny.http.response.headers = list(
+    `Strict-Transport-Security` = "max-age=31536000; includeSubDomains; preload",
+    `X-Content-Type-Options` = "nosniff",
+    `X-Frame-Options` = "DENY",
+    `X-XSS-Protection` = "1; mode=block",
+    `Content-Security-Policy` = "default-src 'self' https:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:;"
+  ))
+}
+
+# Force HTTPS redirect
+force_https <- function(request) {
+  if (request$HTTP_X_FORWARDED_PROTO != "https") {
+    redirect_url <- paste0("https://", request$HTTP_HOST, request$PATH_INFO)
+    httpResponse(
+      status = 301,
+      headers = list(Location = redirect_url),
+      content = "Redirecting to HTTPS"
+    )
+  }
+}
+```
+
+### Certificate Management
+
+```r
+# Certificate validation
+validate_certificate <- function(cert_path) {
+  cert <- openssl::read_cert(cert_path)
+  
+  validations <- list(
+    # Check expiration
+    not_expired = cert$validity$not_after > Sys.time(),
+    
+    # Check key strength
+    key_strength = cert$pubkey$size >= 2048,
+    
+    # Check signature algorithm
+    secure_algorithm = !grepl("sha1|md5", tolower(cert$signature$algorithm)),
+    
+    # Check certificate chain
+    chain_valid = verify_cert_chain(cert),
+    
+    # Check revocation status
+    not_revoked = !check_revocation(cert)
+  )
+  
+  if (!all(unlist(validations))) {
+    log_security_event("CERTIFICATE_VALIDATION_FAILED", cert_path, validations)
+    stop("Certificate validation failed")
+  }
+  
+  return(TRUE)
+}
+
+# Automated certificate renewal
+schedule_cert_renewal <- function(cert_path, renewal_days = 30) {
+  cert <- openssl::read_cert(cert_path)
+  expiry <- cert$validity$not_after
+  renewal_date <- expiry - days(renewal_days)
+  
+  if (Sys.time() > renewal_date) {
+    renew_certificate(cert_path)
+  }
+}
+```
+
+## Database Connection Security
+
+```r
+# Secure database connections
+create_secure_db_connection <- function() {
+  # PostgreSQL with SSL
+  con <- DBI::dbConnect(
+    RPostgres::Postgres(),
+    host = Sys.getenv("PGHOST"),
+    port = as.integer(Sys.getenv("PGPORT")),
+    dbname = Sys.getenv("PGDATABASE"),
+    user = Sys.getenv("PGUSER"),
+    password = Sys.getenv("PGPASSWORD"),
+    sslmode = "require",  # Mandatory SSL
+    sslcert = Sys.getenv("PGSSL_CERT"),
+    sslkey = Sys.getenv("PGSSL_KEY"),
+    sslrootcert = Sys.getenv("PGSSL_ROOT_CERT"),
+    connect_timeout = 10
+  )
+  
+  # Verify SSL connection
+  ssl_info <- dbGetQuery(con, "SELECT ssl_version, ssl_cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+  
+  if (is.null(ssl_info$ssl_version)) {
+    dbDisconnect(con)
+    stop("SSL connection required but not established")
+  }
+  
+  log_connection_info("DATABASE", ssl_info)
+  return(con)
+}
+
+# Connection pool with SSL
+create_secure_pool <- function() {
+  pool::dbPool(
+    drv = RPostgres::Postgres(),
+    host = Sys.getenv("PGHOST"),
+    port = as.integer(Sys.getenv("PGPORT")),
+    dbname = Sys.getenv("PGDATABASE"),
+    user = Sys.getenv("PGUSER"),
+    password = Sys.getenv("PGPASSWORD"),
+    sslmode = "require",
+    minSize = 1,
+    maxSize = 10,
+    idleTimeout = 300000,  # 5 minutes
+    validationInterval = 60000  # 1 minute
+  )
+}
+```
+
+## API Security
+
+### Secure API Client
+
+```r
+# HTTPS-only API client
+create_secure_api_client <- function(base_url, api_key) {
+  # Enforce HTTPS
+  if (!grepl("^https://", base_url)) {
+    stop("API connections must use HTTPS")
+  }
+  
+  # Configure httr for security
+  httr::set_config(
+    httr::config(
+      ssl_verifypeer = TRUE,
+      ssl_verifyhost = 2,
+      timeout = 30,
+      connecttimeout = 10
+    )
+  )
+  
+  # Create authenticated client
+  api_client <- function(endpoint, method = "GET", body = NULL) {
+    url <- paste0(base_url, endpoint)
+    
+    # Build request with security headers
+    response <- httr::VERB(
+      method,
+      url,
+      httr::add_headers(
+        `Authorization` = paste("Bearer", api_key),
+        `X-Request-ID` = generate_request_id(),
+        `User-Agent` = "MAMBA-Client/1.0"
+      ),
+      body = body,
+      encode = "json"
+    )
+    
+    # Verify response
+    verify_api_response(response)
+    
+    return(httr::content(response))
+  }
+  
+  return(api_client)
+}
+
+# API response validation
+verify_api_response <- function(response) {
+  # Check SSL certificate
+  cert_info <- response$request$options$ssl_verifypeer
+  if (!cert_info) {
+    stop("SSL verification was not performed")
+  }
+  
+  # Check for security headers
+  required_headers <- c("X-Content-Type-Options", "X-Frame-Options")
+  missing_headers <- setdiff(required_headers, names(response$headers))
+  
+  if (length(missing_headers) > 0) {
+    warning(paste("Missing security headers:", paste(missing_headers, collapse = ", ")))
+  }
+  
+  # Check status code
+  if (httr::http_error(response)) {
+    stop(paste("API error:", httr::status_code(response)))
+  }
+}
+```
+
+### Webhook Security
+
+```r
+# Secure webhook implementation
+handle_webhook <- function(request) {
+  # Verify HTTPS
+  if (request$HTTP_X_FORWARDED_PROTO != "https") {
+    return(httpResponse(status = 403, content = "HTTPS required"))
+  }
+  
+  # Verify signature
+  signature <- request$HTTP_X_WEBHOOK_SIGNATURE
+  payload <- request$postBody
+  
+  if (!verify_webhook_signature(signature, payload)) {
+    log_security_event("WEBHOOK_SIGNATURE_INVALID", request$REMOTE_ADDR)
+    return(httpResponse(status = 401, content = "Invalid signature"))
+  }
+  
+  # Verify timestamp (prevent replay attacks)
+  timestamp <- as.numeric(request$HTTP_X_WEBHOOK_TIMESTAMP)
+  if (abs(as.numeric(Sys.time()) - timestamp) > 300) {  # 5 minute window
+    return(httpResponse(status = 401, content = "Request too old"))
+  }
+  
+  # Process webhook
+  process_webhook_payload(payload)
+  
+  return(httpResponse(status = 200, content = "OK"))
+}
+
+# Webhook signature verification
+verify_webhook_signature <- function(signature, payload) {
+  webhook_secret <- Sys.getenv("WEBHOOK_SECRET")
+  expected_signature <- openssl::sha256(
+    charToRaw(paste0(webhook_secret, payload)),
+    key = NULL
+  )
+  
+  # Constant-time comparison
+  return(identical(signature, as.character(expected_signature)))
+}
+```
+
+## Internal Service Communication
+
+```r
+# Service mesh security
+configure_service_mesh <- function() {
+  mesh_config <- list(
+    # mTLS for service-to-service
+    mtls = list(
+      enabled = TRUE,
+      mode = "STRICT",
+      cert_rotation = 24  # hours
+    ),
+    
+    # Service authentication
+    authentication = list(
+      jwt_validation = TRUE,
+      service_accounts = TRUE
+    ),
+    
+    # Network policies
+    network_policies = list(
+      default_deny = TRUE,
+      egress_control = TRUE
+    )
+  )
+  
+  return(mesh_config)
+}
+
+# Inter-service authentication
+authenticate_service <- function(service_name, token) {
+  # Validate JWT
+  jwt_payload <- jose::jwt_decode_sig(
+    token,
+    pubkey = get_service_public_key(service_name)
+  )
+  
+  # Check claims
+  validations <- list(
+    issuer = jwt_payload$iss == "mamba-auth",
+    audience = "mamba-services" %in% jwt_payload$aud,
+    not_expired = jwt_payload$exp > as.numeric(Sys.time()),
+    service_match = jwt_payload$sub == service_name
+  )
+  
+  if (!all(unlist(validations))) {
+    log_security_event("SERVICE_AUTH_FAILED", service_name, validations)
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+## Email Security
+
+```r
+# Secure email configuration
+send_secure_email <- function(to, subject, body, attachments = NULL) {
+  # Use TLS for SMTP
+  smtp_config <- list(
+    host = Sys.getenv("SMTP_HOST"),
+    port = 587,  # STARTTLS
+    use_ssl = "starttls",
+    user = Sys.getenv("SMTP_USER"),
+    password = Sys.getenv("SMTP_PASSWORD")
+  )
+  
+  # Encrypt sensitive attachments
+  if (!is.null(attachments)) {
+    attachments <- encrypt_attachments(attachments)
+  }
+  
+  # Add security headers
+  headers <- list(
+    `X-Mailer` = "MAMBA-Mailer/1.0",
+    `X-Encryption` = "TLS",
+    `X-Priority` = "3"
+  )
+  
+  # Send via secure connection
+  blastula::send_message(
+    email = blastula::compose_email(
+      body = body,
+      header = subject,
+      attachments = attachments
+    ),
+    to = to,
+    from = Sys.getenv("SMTP_FROM"),
+    credentials = blastula::creds_envvar(
+      user = "SMTP_USER",
+      pass = "SMTP_PASSWORD",
+      host = "SMTP_HOST",
+      port = 587,
+      use_ssl = TRUE
+    )
+  )
+}
+```
+
+## WebSocket Security
+
+```r
+# Secure WebSocket implementation
+create_secure_websocket <- function(url) {
+  # Enforce WSS (WebSocket Secure)
+  if (!grepl("^wss://", url)) {
+    stop("WebSocket connections must use WSS protocol")
+  }
+  
+  ws <- websocket::WebSocket$new(
+    url,
+    headers = list(
+      `Authorization` = paste("Bearer", get_ws_token()),
+      `X-Client-Version` = "1.0"
+    ),
+    # SSL options
+    ssl_options = list(
+      verify_peer = TRUE,
+      verify_host = TRUE,
+      ca_info = Sys.getenv("CA_BUNDLE_PATH")
+    )
+  )
+  
+  # Handle connection events
+  ws$onOpen(function(event) {
+    log_connection_info("WEBSOCKET", list(url = url, timestamp = Sys.time()))
+  })
+  
+  ws$onMessage(function(event) {
+    # Validate message integrity
+    if (!verify_message_integrity(event$data)) {
+      ws$close()
+      stop("Message integrity check failed")
+    }
+    process_websocket_message(event$data)
+  })
+  
+  ws$onError(function(event) {
+    log_security_event("WEBSOCKET_ERROR", url, event$message)
+  })
+  
+  return(ws)
+}
+```
+
+## Encryption at Rest
+
+```r
+# File encryption
+encrypt_file <- function(file_path, output_path = NULL) {
+  if (is.null(output_path)) {
+    output_path <- paste0(file_path, ".encrypted")
+  }
+  
+  # Generate or retrieve encryption key
+  key <- get_encryption_key()
+  
+  # Read file
+  file_data <- readBin(file_path, "raw", file.info(file_path)$size)
+  
+  # Encrypt with AES-256-GCM
+  encrypted <- openssl::aes_gcm_encrypt(
+    file_data,
+    key = key,
+    iv = openssl::rand_bytes(12)
+  )
+  
+  # Write encrypted file
+  writeBin(encrypted, output_path)
+  
+  # Secure delete original if requested
+  if (getOption("secure_delete_original", FALSE)) {
+    secure_delete(file_path)
+  }
+  
+  return(output_path)
+}
+
+# Database field encryption
+encrypt_field <- function(value, field_name) {
+  # Use field-specific key derivation
+  field_key <- derive_field_key(field_name)
+  
+  # Encrypt value
+  encrypted <- openssl::aes_cbc_encrypt(
+    serialize(value, NULL),
+    key = field_key
+  )
+  
+  # Return base64 encoded
+  return(base64enc::base64encode(encrypted))
+}
+```
+
+## Certificate Pinning
+
+```r
+# Implement certificate pinning
+pin_certificate <- function(hostname, expected_fingerprint) {
+  # Get server certificate
+  cert <- get_server_certificate(hostname)
+  
+  # Calculate fingerprint
+  actual_fingerprint <- openssl::sha256(cert$raw)
+  
+  # Compare fingerprints
+  if (!identical(actual_fingerprint, expected_fingerprint)) {
+    log_security_event("CERT_PINNING_FAILED", hostname, list(
+      expected = expected_fingerprint,
+      actual = actual_fingerprint
+    ))
+    stop("Certificate pinning verification failed")
+  }
+  
+  # Store for future connections
+  store_pinned_cert(hostname, expected_fingerprint)
+  
+  return(TRUE)
+}
+```
+
+## Monitoring and Compliance
+
+```r
+# SSL/TLS monitoring
+monitor_ssl_health <- function() {
+  checks <- list(
+    # Certificate expiration
+    cert_expiry = check_all_cert_expiry(),
+    
+    # Protocol versions
+    protocol_compliance = verify_tls_versions(),
+    
+    # Cipher strength
+    cipher_strength = audit_cipher_suites(),
+    
+    # HSTS headers
+    hsts_enabled = verify_hsts_headers(),
+    
+    # Mixed content
+    no_mixed_content = check_mixed_content()
+  )
+  
+  # Generate report
+  ssl_report <- generate_ssl_report(checks)
+  
+  # Alert on issues
+  if (any(!unlist(checks))) {
+    alert_security_team("SSL_COMPLIANCE_ISSUES", ssl_report)
+  }
+  
+  return(ssl_report)
+}
+```
+
+## Related Rules and Principles
+
+### Security Implementation Rules
+- **R230**: TLS configuration standards
+- **R231**: Certificate management procedures
+- **R232**: API security requirements
+- **R233**: WebSocket security protocols
+- **R234**: Email encryption policies
+
+### Integration with Other MPs
+- **MP110**: Security Credentials Management
+- **MP111**: Data Privacy Protection
+- **MP112**: Access Control and Authorization
+- **MP114**: Input Validation and Sanitization
+
+## Compliance Standards
+
+- **PCI DSS**: Requirement 4 - Encrypt transmission
+- **HIPAA**: Encryption in transit requirements
+- **SOC 2**: Encryption controls
+- **NIST 800-52**: TLS guidelines
+
+## Validation Checklist
+
+- [ ] HTTPS enforced on all web traffic
+- [ ] TLS 1.2+ for all connections
+- [ ] Strong cipher suites configured
+- [ ] Certificates valid and not expired
+- [ ] Database connections use SSL
+- [ ] API communications encrypted
+- [ ] WebSocket uses WSS
+- [ ] Email sent via TLS
+- [ ] Certificate pinning implemented
+- [ ] Monitoring and alerting active
+
+---
+
+**Encryption everywhere**: All data in transit must be encrypted. No exceptions, no compromises. Security is not optional—it's fundamental.

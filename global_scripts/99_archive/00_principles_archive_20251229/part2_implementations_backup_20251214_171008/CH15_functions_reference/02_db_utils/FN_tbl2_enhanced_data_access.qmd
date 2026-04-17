@@ -1,0 +1,194 @@
+---
+title: "FN_tbl2_enhanced_data_access"
+subtitle: "增強版數據表存取函數"
+author: "WISER Team"
+date: "2025-07-16"
+categories: ["Functions", "Database", "Data Access"]
+---
+
+# tbl2() - 增強版數據表存取函數
+
+## 概述
+
+`tbl2()` 是 `dplyr::tbl()` 的增強版本，提供更靈活的數據存取功能，特別是支援 DuckDB 的 attached database 語法。
+
+## 功能特點
+
+### 1. 支援 Attached Database 語法
+- 自動偵測 `database.table` 格式
+- 無縫整合 DuckDB 的 ATTACH 功能
+- 保持完整的 dplyr 鏈式操作支援
+
+### 2. 向後相容性
+- 完全相容原有 `dplyr::tbl()` 用法
+- 支援所有現有的數據源類型
+- 保持相同的返回值和行為
+
+### 3. 多種數據源支援
+- 資料庫連接 (DBIConnection)
+- 數據框 (data.frame)
+- 列表 (list)
+- 檔案路徑 (CSV, Excel, RDS 等)
+
+## 使用語法
+
+### 基本語法
+```r
+tbl2(src, from, ...)
+```
+
+### 參數說明
+- `src`: 數據源對象
+- `from`: 表名或數據標識符
+- `...`: 傳遞給底層函數的額外參數
+
+## 使用範例
+
+### 1. 一般資料表存取
+```r
+# 傳統用法（完全相容）
+tbl2(connection, "table_name")
+
+# 等同於
+dplyr::tbl(connection, "table_name")
+```
+
+### 2. Attached Database 語法
+```r
+# 附加資料庫後存取
+dbAttachDuckdb(con, path = "other.duckdb", alias = "other_db")
+
+# 使用 database.table 語法
+tbl2(con, "other_db.table_name")
+
+# 實際應用範例
+tbl2(comment_property_rating, "transformed_data.df_amz_review___transformed")
+```
+
+### 3. 與 dplyr 鏈式操作
+```r
+# 完整的數據處理流程
+result <- tbl2(connection, "transformed_data.df_amz_review___transformed") %>%
+  filter(included_competiter == TRUE) %>%
+  group_by(product_id) %>%
+  slice_tail(n = comment_sample_size) %>%
+  select(product_id, review_title, review_body, ai_rating_result) %>%
+  collect()
+```
+
+### 4. 其他數據源
+```r
+# 數據框
+df <- data.frame(x = 1:5, y = letters[1:5])
+tbl2(df)
+
+# CSV 檔案
+tbl2("/path/to/file.csv")
+
+# 列表中的數據
+data_list <- list(customers = data.frame(id = 1:3, name = c("A", "B", "C")))
+tbl2(data_list, "customers")
+```
+
+## 實現原理
+
+### 語法偵測邏輯
+```r
+# 檢查是否為 attached database 語法
+if (is.character(from) && length(from) == 1 && grepl("\\.", from)) {
+  # 使用 SQL 語法處理 attached database
+  sql_query <- paste0("SELECT * FROM ", from)
+  return(dplyr::tbl(src, dplyr::sql(sql_query), ...))
+} else {
+  # 使用原始行為處理一般表格
+  return(dplyr::tbl(src, from, ...))
+}
+```
+
+### 支援的語法模式
+
+- `"regular_table"` → 一般語法
+- `"attached_db.test_table"` → attached 語法
+- `"database.schema.table"` → attached 語法
+- `"table_with_underscores"` → 一般語法
+
+## 相關原則
+
+### 遵循的 WISER 原則
+
+- **R091**: Universal Data Access Pattern - 統一的數據存取模式
+- **R092**: Universal DBI Approach - 通用的數據庫介面方法
+- **P82**: Data Processing Method Selection - 數據處理方法選擇
+
+### 設計考量
+
+- 保持與現有程式碼的完全相容性
+- 提供直觀的 attached database 語法支援
+- 維持良好的效能和穩定性
+
+## 錯誤處理
+
+### 常見錯誤及解決方案
+
+1. **資料庫未附加**
+   ```r
+   # 錯誤：Database "other_db" not found
+   # 解決：確保資料庫已正確附加
+   dbAttachDuckdb(con, path = "other.duckdb", alias = "other_db")
+   ```
+
+2. **表格不存在**
+   ```r
+   # 錯誤：Table "table_name" not found
+   # 解決：檢查表格名稱和資料庫內容
+   dbListTables(con)  # 列出所有表格
+   ```
+
+3. **連接問題**
+   ```r
+   # 錯誤：Connection closed
+   # 解決：重新建立連接
+   con <- dbConnectDuckdb(db_path, read_only = TRUE)
+   ```
+
+## 測試驗證
+
+### 執行測試
+```r
+# 執行完整測試套件
+source("scripts/global_scripts/02_db_utils/tbl2/test_attached_database.R")
+```
+
+### 預期結果
+
+- ✅ 語法偵測正確運作
+- ✅ Attached database 存取成功
+- ✅ Dplyr 鏈式操作正常
+- ✅ 向後相容性保持
+
+## 檔案位置
+
+### 主要檔案
+- **實作檔案**: `scripts/global_scripts/02_db_utils/tbl2/fn_tbl2.R`
+- **測試檔案**: `scripts/global_scripts/02_db_utils/tbl2/test_*.R`
+- **文檔檔案**: `scripts/global_scripts/00_principles/principles_qmd/FN/02_db_utils/FN_tbl2_enhanced_data_access.qmd`
+
+### 相關檔案
+- `scripts/global_scripts/02_db_utils/fn_dbAttachDuckdb.R` - 資料庫附加工具
+- `scripts/global_scripts/02_db_utils/fn_dbConnectDuckdb.R` - 資料庫連接工具
+
+## 版本歷史
+
+### v1.1.0 (2025-07-16)
+- ✅ 新增 attached database 語法支援
+- ✅ 增強錯誤處理機制
+- ✅ 完整測試套件
+
+### v1.0.0 (2025-07-15)
+- ✅ 基本 tbl2 功能實現
+- ✅ 多種數據源支援
+- ✅ 向後相容性保證
+
+---
+
+*此文檔遵循 WISER 函數文檔標準，確保開發者能夠快速理解和使用 tbl2 函數的所有功能。*

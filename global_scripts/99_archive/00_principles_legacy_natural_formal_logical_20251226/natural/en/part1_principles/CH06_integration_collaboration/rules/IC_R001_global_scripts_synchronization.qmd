@@ -1,0 +1,556 @@
+---
+title: "IC_R001: Global Scripts Synchronization Rule"
+subtitle: "Immediate commit, pull, and push for continuous synchronization"
+chapter: "CH06"
+category: "rule"
+number: "IC_R001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Integration & Collaboration Law Implementation Rules"
+article: "Article 1"
+implements:
+  - "CH00.MP014: Change Tracking Principle"
+related_to:
+  - "TD_P001: Deployment Patterns"
+  - "SO_R006: Temporary File Handling"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Integration & Collaboration Law Implementation Rules Article 1 (Global Scripts Synchronization Rule)**
+
+This article implements the Change Tracking Principle by establishing specific requirements for synchronizing changes to the global_scripts repository. All changes must be committed, pulled, and pushed immediately after completion to ensure continuous synchronization across all environments.
+
+:::{.callout-important}
+## Core Rule
+Every change to global_scripts must follow immediate synchronization: commit → pull → push. No local changes should remain uncommitted, and no commits should remain unpushed except in documented emergency situations.
+:::
+
+# Section 1: Synchronization Protocol {#protocol}
+
+## Subsection 1: Immediate Synchronization Requirement {#immediate}
+
+When working with files in the global_scripts repository:
+
+第一項：立即提交 (Immediate commit)
+
+```bash
+# After making changes to any file in global_scripts
+git add [changed files]
+git commit -m "Descriptive message about changes"
+```
+
+第二項：拉取後推送 (Pull before push)
+
+```bash
+# Always pull from remote before pushing
+git pull
+
+# Resolve any conflicts if they occur
+# Then push changes immediately
+git push
+```
+
+第三項：無延遲原則 (No delay principle)
+
+- Changes must be committed within minutes of completion
+- Pulls must precede every push to avoid conflicts
+- Pushes must occur immediately after successful pulls
+- No "batch commits" at end of day
+
+## Subsection 2: Standard Workflow {#workflow}
+
+第一項：完整工作流程 (Complete workflow)
+
+```bash
+# 1. Navigate to the global_scripts directory
+cd /path/to/global_scripts
+
+# 2. Check current status
+git status
+
+# 3. Review changes
+git diff
+
+# 4. Add changed files (be specific)
+git add 02_db_utils/fn_dbConnect.R
+git add 02_db_utils/README.md
+
+# 5. Commit with descriptive message
+git commit -m "[MP014] Update connection timeout handling
+
+Increased default timeout from 30s to 60s for slower networks.
+Addresses issue #42 from customer service team."
+
+# 6. Pull latest changes from remote
+git pull --rebase
+
+# 7. Resolve conflicts if any
+# If conflicts occur, resolve them, then:
+git add [resolved files]
+git rebase --continue
+
+# 8. Push changes to remote
+git push
+
+# 9. Verify push succeeded
+git log --oneline -1
+git status
+```
+
+# Section 2: Commit Message Requirements {#messages}
+
+## Subsection 1: Message Structure {#structure}
+
+第一項：訊息格式 (Message format)
+
+```
+[Reference] Brief description (50 chars max)
+
+Detailed explanation of what was changed and why.
+Additional context or considerations if needed.
+
+Relates to: [issue/ticket number if applicable]
+```
+
+第二項：參考標記 (Reference markers)
+
+```bash
+# Meta-Principle reference
+git commit -m "[MP014] Implement change tracking for audit logs"
+
+# Principle reference
+git commit -m "[P008] Update deployment configuration"
+
+# Rule reference
+git commit -m "[R006] Clean up temporary files after processing"
+
+# Multiple references
+git commit -m "[MP014, R008] Enhance synchronization workflow"
+
+# Issue reference
+git commit -m "[#123] Fix database connection timeout issue"
+```
+
+## Subsection 2: Content Requirements {#content}
+
+第一項：必要元素 (Required elements)
+
+All commit messages must:
+
+1. **Be Descriptive**: Clearly explain what was changed
+2. **Reference Principles**: Reference relevant principles (MP/P/R) when applicable
+3. **Explain Purpose**: Explain the purpose of the change
+4. **Include Context**: Provide context for why the change was needed
+
+第二項：良好範例 (Good examples)
+
+```bash
+# GOOD: Clear, descriptive, with context
+git commit -m "[R092] Update universal DBI connection handler
+
+- Added retry logic for transient connection failures
+- Increased default timeout from 30s to 60s
+- Added logging for connection attempts
+
+This addresses connectivity issues reported by remote offices
+where network latency is higher than headquarters."
+
+# GOOD: Bug fix with clear description
+git commit -m "[BUG] Fix null pointer in customer profile module
+
+The customer_id was not being validated before use, causing
+crashes when switching between customers rapidly.
+
+Added validation and error handling.
+Fixes issue #456."
+```
+
+第三項：不良範例 (Bad examples)
+
+```bash
+# BAD: Too vague
+git commit -m "Update files"
+
+# BAD: No context
+git commit -m "Fix bug"
+
+# BAD: No explanation
+git commit -m "Changed timeout"
+
+# BAD: Multiple unrelated changes
+git commit -m "Various updates and fixes"
+```
+
+# Section 3: Conflict Resolution {#conflicts}
+
+## Subsection 1: Conflict Prevention {#prevention}
+
+第一項：預防策略 (Prevention strategies)
+
+```bash
+# Pull frequently to minimize conflicts
+git pull --rebase
+
+# Use feature branches for large changes
+git checkout -b feature/major-update
+# Work on feature
+git checkout main
+git pull
+git merge feature/major-update
+
+# Communicate with team about major changes
+# Before starting major work:
+echo "Working on database module refactoring" > WORKING_ON.md
+git add WORKING_ON.md
+git commit -m "Reserve: Database module refactoring in progress"
+git push
+```
+
+## Subsection 2: Conflict Resolution Process {#resolution-process}
+
+第一項：解決步驟 (Resolution steps)
+
+```bash
+# When conflict occurs during pull
+git pull
+# Auto-merging 02_db_utils/fn_dbConnect.R
+# CONFLICT (content): Merge conflict in 02_db_utils/fn_dbConnect.R
+
+# 1. Review conflicting changes
+git diff
+
+# 2. Open conflicted file and review markers
+# <<<<<<< HEAD
+# Your changes
+# =======
+# Remote changes
+# >>>>>>> origin/main
+
+# 3. Resolve by editing file
+# Keep best of both changes or combine as needed
+
+# 4. Test the resolution
+Rscript -e "source('02_db_utils/fn_dbConnect.R')"
+
+# 5. Mark as resolved
+git add 02_db_utils/fn_dbConnect.R
+
+# 6. Complete the merge/rebase
+git rebase --continue  # if rebasing
+# or
+git commit  # if merging
+
+# 7. Push resolved changes
+git push
+```
+
+第二項：解決原則 (Resolution principles)
+
+1. **Review Carefully**: Examine both versions of conflicting changes
+2. **Preserve Intent**: Ensure resolution preserves intent of both changes
+3. **Test Thoroughly**: Test resolution to ensure functionality
+4. **Document Resolution**: Include conflict resolution details in commit
+
+```bash
+# Document conflict resolution
+git commit -m "[MERGE] Resolve conflict in database connector
+
+Combined timeout changes from both branches:
+- Kept increased timeout from feature branch (60s)
+- Preserved new retry logic from main branch
+- Merged logging improvements from both
+
+Both features now work together correctly."
+```
+
+# Section 4: Exception Handling {#exceptions}
+
+## Subsection 1: Permissible Exceptions {#permissible}
+
+第一項：允許例外情況 (Allowed exceptions)
+
+Exceptions to immediate synchronization are permitted only for:
+
+1. **Network Unavailability**
+   ```bash
+   # Document network issue
+   echo "$(date): Network unavailable, changes pending push" >> .git/SYNC_LOG
+   
+   # Push when network returns
+   # Check for pending commits
+   git log origin/main..HEAD
+   ```
+
+2. **Related Changes in Progress**
+   ```bash
+   # Use atomic commits for related changes
+   git add module1.R
+   git commit -m "[WIP] Part 1 of refactoring"
+   
+   git add module2.R  
+   git commit -m "[WIP] Part 2 of refactoring"
+   
+   # Squash before pushing
+   git rebase -i HEAD~2
+   # Mark second commit as 'squash'
+   
+   git push
+   ```
+
+3. **Emergency Hotfixes**
+   ```bash
+   # Quick fix for production issue
+   git add emergency_fix.R
+   git commit -m "[HOTFIX] Emergency fix for production crash"
+   
+   # If can't push immediately due to ongoing incident
+   echo "$(date): Hotfix applied locally, push pending" >> HOTFIX_LOG
+   ```
+
+## Subsection 2: Exception Documentation {#exception-docs}
+
+第一項：記錄要求 (Documentation requirements)
+
+When exception occurs:
+
+```bash
+# Create exception record
+cat > .git/EXCEPTION_$(date +%Y%m%d_%H%M%S).md << EOF
+Exception Date: $(date)
+Reason: Network outage / Related changes / Emergency
+Expected Resolution: $(date -d "+2 hours")
+Affected Files:
+$(git status --short)
+Uncommitted Changes:
+$(git diff --stat)
+EOF
+
+# Notify team
+mail -s "Git Sync Exception: $(hostname)" team@example.com < .git/EXCEPTION_*.md
+```
+
+第二項：例外恢復 (Exception recovery)
+
+```bash
+# After exception is resolved
+# 1. Review all pending changes
+git status
+git log origin/main..HEAD
+
+# 2. Commit with context
+git commit -m "[DELAYED] Changes from network outage period
+
+These changes were made during network outage from 2pm-4pm:
+- Updated database connectors
+- Fixed validation logic
+- Added error handling
+
+All changes tested locally before this delayed push."
+
+# 3. Carefully pull and merge
+git pull --rebase --verbose
+
+# 4. Test thoroughly
+./run_tests.sh
+
+# 5. Push with verification
+git push --verbose
+git log --oneline -5
+```
+
+# Section 5: Implementation Tools {#tools}
+
+## Subsection 1: Git Configuration {#git-config}
+
+第一項：基本配置 (Basic configuration)
+
+```bash
+# Set up git identity
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+
+# Set up pull strategy
+git config --global pull.rebase true
+git config --global pull.ff only
+
+# Set up push safety
+git config --global push.default current
+git config --global push.followTags true
+
+# Set up helpful aliases
+git config --global alias.st 'status -sb'
+git config --global alias.co checkout
+git config --global alias.ci commit
+git config --global alias.br branch
+git config --global alias.last 'log -1 HEAD'
+git config --global alias.sync '!git pull --rebase && git push'
+git config --global alias.wip 'commit -am "WIP: Work in progress"'
+```
+
+## Subsection 2: Automation Tools {#automation}
+
+第一項：Git Hooks 設置 (Git hooks setup)
+
+```bash
+# Create post-commit hook to remind about pushing
+cat > .git/hooks/post-commit << 'EOF'
+#!/bin/bash
+echo "================================================"
+echo "Remember to push your changes!"
+echo "Run: git push"
+echo "================================================"
+EOF
+chmod +x .git/hooks/post-commit
+
+# Create pre-push hook to check for issues
+cat > .git/hooks/pre-push << 'EOF'
+#!/bin/bash
+# Check for temporary files
+if git diff --cached --name-only | grep -E '\.(tmp|temp|log)$'; then
+  echo "Error: Attempting to push temporary files"
+  exit 1
+fi
+
+# Check for large files
+if git diff --cached --stat | grep -E '[0-9]+ MB'; then
+  echo "Warning: Large files detected"
+  read -p "Continue push? (y/n) " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    exit 1
+  fi
+fi
+EOF
+chmod +x .git/hooks/pre-push
+```
+
+第二項：監控腳本 (Monitoring scripts)
+
+```bash
+#!/bin/bash
+# Script: check_sync_status.sh
+# Check if local is synchronized with remote
+
+# Check for uncommitted changes
+if [[ -n $(git status -s) ]]; then
+  echo "WARNING: Uncommitted changes detected"
+  git status -s
+fi
+
+# Check for unpushed commits
+if [[ -n $(git log origin/main..HEAD --oneline) ]]; then
+  echo "WARNING: Unpushed commits detected"
+  git log origin/main..HEAD --oneline
+fi
+
+# Check how far behind remote
+git fetch
+if [[ -n $(git log HEAD..origin/main --oneline) ]]; then
+  echo "WARNING: Local is behind remote"
+  git log HEAD..origin/main --oneline
+fi
+```
+
+# Section 6: Benefits and Best Practices {#benefits}
+
+## Subsection 1: Benefits {#benefit-list}
+
+1. **Minimal Conflicts**: Frequent synchronization reduces merge conflicts
+2. **Current Codebase**: Team always works with most recent code
+3. **Disaster Recovery**: Critical code backed up in multiple locations
+4. **Transparency**: Changes visible to all team members immediately
+5. **Reduced Integration Issues**: Smaller, frequent changes integrate smoothly
+6. **Audit Trail**: Complete history of all changes maintained
+
+## Subsection 2: Best Practices {#best-practices}
+
+第一項：日常實踐 (Daily practices)
+
+```bash
+# Start of day routine
+cd /path/to/global_scripts
+git pull
+git status
+
+# Before making changes
+git pull
+git branch  # Ensure on correct branch
+
+# After each logical change
+git add -p  # Review changes carefully
+git commit  # With descriptive message
+git pull --rebase
+git push
+
+# End of day routine
+git status  # Should show clean
+git log --oneline -5  # Review day's commits
+```
+
+第二項：團隊協作 (Team collaboration)
+
+- Communicate about major changes before starting
+- Use feature branches for experimental work
+- Review commit history regularly
+- Set up notifications for repository changes
+- Conduct periodic sync status reviews
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Synchronization Checklist
+
+**Daily Workflow:**
+- [ ] Pull before starting work
+- [ ] Commit after each logical change
+- [ ] Write descriptive commit messages
+- [ ] Pull before pushing
+- [ ] Push immediately after committing
+- [ ] Verify clean status at day end
+
+**Commit Messages:**
+- [ ] Include principle/rule references
+- [ ] Describe what changed
+- [ ] Explain why it changed
+- [ ] Add issue/ticket references
+- [ ] Keep subject line under 50 chars
+
+**Conflict Resolution:**
+- [ ] Pull frequently to prevent
+- [ ] Review both versions carefully
+- [ ] Test after resolution
+- [ ] Document resolution in commit
+
+**Exception Handling:**
+- [ ] Document exception reason
+- [ ] Set resolution timeline
+- [ ] Notify team if needed
+- [ ] Recover promptly
+- [ ] Include context in delayed commits
+
+**Tools & Setup:**
+- [ ] Git configured properly
+- [ ] Aliases set up
+- [ ] Hooks installed
+- [ ] Monitoring scripts ready
+:::
+
+# Conclusion {#conclusion}
+
+The Global Scripts Synchronization Rule ensures that the global_scripts repository maintains a current, consistent, and recoverable codebase at all times. By requiring immediate synchronization of changes, this rule reduces conflicts, improves collaboration, and ensures critical code is always backed up across multiple environments. This implementation of the Change Tracking Principle creates a robust foundation for team development and system reliability.
+
+---
+
+*Based on: Integration & Collaboration Law Implementation Rules Article 1*  
+*Implements: [MP014 Change Tracking Principle](../../CH00_fundamental_principles/MP014_change_tracking.qmd)*  
+*Related to: [TD_P001 Deployment Patterns](../../CH05_testing_deployment/principles/TD_P001_deployment_patterns.qmd), [SO_R006 Temporary File Handling](../../CH01_structure_organization/rules/SO_R006_temporary_file_handling.qmd)*

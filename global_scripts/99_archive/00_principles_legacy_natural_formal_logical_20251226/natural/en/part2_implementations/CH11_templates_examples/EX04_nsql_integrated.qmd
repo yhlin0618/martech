@@ -1,0 +1,301 @@
+---
+title: "Example 04: NSQL Integrated Documentation"
+subtitle: "Comprehensive example integrating LaTeX, Markdown, and Roxygen2 elements in NSQL"
+chapter: "CH10"
+category: "example"
+number: "EX04"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "example"
+law: "Templates & Examples"
+article: "Example 4"
+related_to:
+  - "R067_functional_encapsulation"
+  - "R091_universal_data_access"
+  - "R092_universal_dbi_approach"
+  - "R094_roxygen2_function_examples"
+  - "NSQL_EXT02_latex_markdown_roxygen"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Example 4: NSQL Integrated Documentation {#overview}
+
+This example demonstrates the integration of LaTeX, Markdown, and Roxygen2 elements in NSQL for comprehensive documentation and organization.
+
+## Section 1: File Header and Metadata {#metadata}
+
+```r
+#' @file nsql_integrated_example.R
+#' @principle R67 Functional Encapsulation
+#' @principle R91 Universal Data Access Pattern
+#' @principle R92 Universal DBI Approach
+#' @principle R94 Roxygen2 Function Examples Standard
+#' @related_to fn_universal_data_accessor.R
+#' @author Analytics Team
+#' @date 2025-04-10
+#' @modified 2025-04-10
+```
+
+## Section 2: Markdown-Style Documentation {#markdown-docs}
+
+```r
+# # Customer Value Analysis
+# 
+# This file demonstrates integration of LaTeX, Markdown, and Roxygen2 elements
+# in NSQL for comprehensive documentation and organization.
+#
+# ## Key Functions
+#
+# - `connect_to_data_source()`: Creates connection to a data source
+# - `prepare_customer_data()`: Prepares raw customer data for analysis
+# - `calculate_lifetime_value()`: Main function that calculates customer LTV
+```
+
+## Section 3: NSQL Data Flow Documentation {#data-flow}
+
+```r
+# Data flow documentation
+DATA_FLOW(component: customer_lifetime_value) {
+  SOURCE: data_connection
+  INITIALIZE: {
+    EXTRACT(data_connection → GET transactions → transaction_data)
+    EXTRACT(data_connection → GET customer_profiles → profile_data)
+  }
+  PROCESS: {
+    JOIN(transaction_data, profile_data → BY customer_id → customer_data)
+    FILTER(customer_data → WHERE active = TRUE → active_customers)
+    COMPUTE(active_customers → lifetime_value)
+  }
+  OUTPUT: customer_lifetime_value_table
+}
+```
+
+## Section 4: LaTeX-Style Section Markers {#latex-sections}
+
+```r
+####connect_to_data_source####
+
+#' Connect to Data Source Using Universal DBI Approach
+#'
+#' Creates a connection to various data sources using the Universal DBI Approach (R92).
+#'
+#' @param connection_type Type of connection ("sqlite", "postgres", "csv", etc.)
+#' @param connection_params List of connection parameters
+#' @return Connection object or data frame depending on source type
+#' @examples
+#' # Connect to SQLite database
+#' conn <- connect_to_data_source("sqlite", list(dbname = "test.db"))
+#' 
+#' # Connect to CSV files
+#' data <- connect_to_data_source("csv", list(path = "data/"))
+#' @export
+connect_to_data_source <- function(connection_type, connection_params) {
+  
+  ###validation###
+  VALIDATION {
+    connection_type: character(1)
+    connection_params: list
+    required: TRUE
+  }
+  
+  ##connection_logic##
+  #~type_checking~#
+  if (!connection_type %in% c("sqlite", "postgres", "csv", "mock")) {
+    stop("Unsupported connection type")
+  }
+  
+  #~connection_creation~#
+  connection <- switch(connection_type,
+    sqlite = DBI::dbConnect(RSQLite::SQLite(), 
+                            dbname = connection_params$dbname),
+    postgres = DBI::dbConnect(RPostgres::Postgres(),
+                             host = connection_params$host,
+                             port = connection_params$port,
+                             dbname = connection_params$dbname,
+                             user = connection_params$user,
+                             password = connection_params$password),
+    csv = read_csv_directory(connection_params$path),
+    mock = create_mock_connection(connection_params$data)
+  )
+  
+  return(connection)
+}
+```
+
+## Section 5: Function Dependencies {#dependencies}
+
+```r
+FUNCTION_DEP(connect_to_data_source) {
+  requires: [DBI, RSQLite, RPostgres]
+  suggests: [readr]
+  provides: [connection_object]
+  used_by: [prepare_customer_data, calculate_lifetime_value]
+}
+```
+
+## Section 6: Customer Data Preparation {#data-prep}
+
+```r
+####prepare_customer_data####
+
+###subsection_data_extraction###
+prepare_customer_data <- function(connection) {
+  
+  ##extract_raw_data##
+  transactions <- universal_data_accessor(connection, "transactions")
+  customers <- universal_data_accessor(connection, "customers")
+  
+  ##data_transformation##
+  #~join_operations~#
+  customer_data <- transactions %>%
+    left_join(customers, by = "customer_id") %>%
+    filter(!is.na(customer_name))
+  
+  #~aggregation~#
+  customer_summary <- customer_data %>%
+    group_by(customer_id) %>%
+    summarise(
+      total_purchases = n(),
+      total_value = sum(amount, na.rm = TRUE),
+      first_purchase = min(date),
+      last_purchase = max(date),
+      .groups = "drop"
+    )
+  
+  return(customer_summary)
+}
+```
+
+## Section 7: Test Cases {#test-cases}
+
+```r
+TEST_CASE(prepare_customer_data) {
+  name: "basic_customer_preparation"
+  input: mock_connection_with_10_customers
+  expected_columns: ["customer_id", "total_purchases", "total_value"]
+  expected_rows: 10
+  validation: {
+    all(total_purchases > 0)
+    all(total_value >= 0)
+  }
+}
+```
+
+## Section 8: Lifetime Value Calculation {#ltv-calc}
+
+```r
+####calculate_lifetime_value####
+
+#' Calculate Customer Lifetime Value
+#'
+#' @description
+#' Computes the lifetime value of customers based on their purchase history
+#' using various methodologies.
+#'
+#' @param customer_data Data frame with customer purchase history
+#' @param method Calculation method ("simple", "cohort", "predictive")
+#' @param discount_rate Annual discount rate for future value calculations
+#' @return Data frame with customer_id and lifetime_value
+#'
+#' @details
+#' **Simple Method**: Average purchase value × Purchase frequency × Customer lifespan
+#' **Cohort Method**: Analyzes customer cohorts over time
+#' **Predictive Method**: Uses ML models to predict future value
+#'
+#' @examples
+#' EXAMPLE(calculate_lifetime_value) {
+#'   data <- prepare_customer_data(connection)
+#'   ltv <- calculate_lifetime_value(data, method = "simple")
+#'   summary(ltv$lifetime_value)
+#' }
+#'
+#' @seealso \link{prepare_customer_data}
+#' @export
+calculate_lifetime_value <- function(customer_data, 
+                                    method = "simple", 
+                                    discount_rate = 0.1) {
+  
+  ###parameter_validation###
+  stopifnot(
+    is.data.frame(customer_data),
+    method %in% c("simple", "cohort", "predictive"),
+    is.numeric(discount_rate),
+    discount_rate >= 0 && discount_rate < 1
+  )
+  
+  ###calculation_logic###
+  ltv_result <- switch(method,
+    simple = calculate_simple_ltv(customer_data),
+    cohort = calculate_cohort_ltv(customer_data, discount_rate),
+    predictive = calculate_predictive_ltv(customer_data, discount_rate)
+  )
+  
+  return(ltv_result)
+}
+```
+
+## Section 9: Integration Example {#integration}
+
+```r
+# %% Full Integration Example %%
+
+# This demonstrates the complete workflow from connection to analysis
+
+main_analysis <- function() {
+  # > Note: This is a complete example workflow
+  
+  # 1. **Connect to data source**
+  connection <- connect_to_data_source("sqlite", 
+                                      list(dbname = "customer.db"))
+  
+  # 2. **Prepare data**
+  customer_data <- prepare_customer_data(connection)
+  
+  # 3. **Calculate lifetime value**
+  ltv_results <- calculate_lifetime_value(customer_data, 
+                                         method = "simple")
+  
+  # 4. **Generate report**
+  report <- list(
+    summary = summary(ltv_results$lifetime_value),
+    top_customers = ltv_results %>% 
+      arrange(desc(lifetime_value)) %>% 
+      head(10),
+    distribution = hist(ltv_results$lifetime_value, plot = FALSE)
+  )
+  
+  # 5. **Clean up**
+  if (inherits(connection, "DBIConnection")) {
+    DBI::dbDisconnect(connection)
+  }
+  
+  return(report)
+}
+
+# <<< Navigation: Previous Section | [Index](#index) | Next Section >>>
+```
+
+## Section 10: Key Features Demonstrated {#features}
+
+This example showcases:
+
+1. **File Metadata**: Using `@file`, `@principle`, `@author` tags
+2. **Markdown Documentation**: Headers and lists in comments
+3. **NSQL Data Flow**: `DATA_FLOW` blocks for process documentation
+4. **LaTeX Sections**: `####section####` markers for organization
+5. **Validation Blocks**: `VALIDATION {...}` for input checking
+6. **Test Cases**: `TEST_CASE {...}` for unit testing
+7. **Function Dependencies**: `FUNCTION_DEP {...}` for dependency tracking
+8. **Roxygen2 Documentation**: Complete function documentation
+9. **Example Blocks**: `EXAMPLE {...}` for usage examples
+10. **Navigation Markers**: Cross-references and navigation hints
+
+---
+*This integrated example demonstrates the full power of NSQL documentation features combining LaTeX, Markdown, and Roxygen2 elements.*

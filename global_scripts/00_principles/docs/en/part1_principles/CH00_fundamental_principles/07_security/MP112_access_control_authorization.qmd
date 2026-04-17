@@ -1,0 +1,539 @@
+---
+title: "MP112: Access Control and Authorization"
+subtitle: "Role-based access control and principle of least privilege"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP112"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-meta-principle"
+law: "Access Control and Authorization Law"
+article-number: 
+  number: 112
+  title: "Access Control and Authorization Framework"
+influences:
+  - "MP009: Default Deny"
+  - "MP031: Separation of Concerns"
+  - "MP110: Security Credentials Management"
+  - "MP111: Data Privacy Protection"
+extends:
+  - "MP009: Default Deny Principle"
+criticality: "CRITICAL"
+enforcement: "MANDATORY"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+---
+
+## Core Statement
+
+All system access MUST be controlled through a comprehensive Role-Based Access Control (RBAC) framework implementing the principle of least privilege, with explicit authorization required for every resource access, strong authentication mechanisms, and complete audit trails.
+
+## Authorization Framework
+
+### Principle of Least Privilege
+
+Every user, process, and system component must operate with the minimum set of privileges necessary to accomplish their legitimate functions. No more, no less.
+
+```r
+# CORRECT - Least privilege implementation
+grant_minimum_access <- function(user_role, resource) {
+  required_permissions <- get_required_permissions(user_role, resource)
+  grant_permissions(user_role, required_permissions)
+  log_access_grant(user_role, resource, required_permissions)
+}
+
+# VIOLATION - Excessive privileges
+grant_admin_to_everyone <- function() {
+  # NEVER DO THIS - Violates least privilege
+  grant_permissions("all_users", "admin")  # CRITICAL VIOLATION
+}
+```
+
+## Role-Based Access Control (RBAC)
+
+### Role Hierarchy
+
+```yaml
+# roles_hierarchy.yaml
+roles:
+  super_admin:
+    level: 0
+    inherits: []
+    description: "System administration only"
+    
+  admin:
+    level: 1
+    inherits: [data_manager]
+    description: "Application administration"
+    
+  data_manager:
+    level: 2
+    inherits: [analyst]
+    description: "Data management and configuration"
+    
+  analyst:
+    level: 3
+    inherits: [viewer]
+    description: "Data analysis and reporting"
+    
+  viewer:
+    level: 4
+    inherits: []
+    description: "Read-only access"
+    
+  guest:
+    level: 5
+    inherits: []
+    description: "Minimal public access"
+```
+
+### Permission Matrix
+
+```r
+# Permission definitions
+permission_matrix <- list(
+  # Resource: Database
+  database = list(
+    super_admin = c("create", "read", "update", "delete", "admin"),
+    admin = c("read", "update", "delete"),
+    data_manager = c("read", "update"),
+    analyst = c("read"),
+    viewer = c("read_limited"),
+    guest = c()  # No database access
+  ),
+  
+  # Resource: Reports
+  reports = list(
+    super_admin = c("create", "read", "update", "delete", "publish"),
+    admin = c("create", "read", "update", "delete", "publish"),
+    data_manager = c("create", "read", "update", "publish"),
+    analyst = c("create", "read", "update"),
+    viewer = c("read"),
+    guest = c("read_public")
+  ),
+  
+  # Resource: User Management
+  user_management = list(
+    super_admin = c("create", "read", "update", "delete", "assign_roles"),
+    admin = c("create", "read", "update", "assign_roles"),
+    data_manager = c("read"),
+    analyst = c(),
+    viewer = c(),
+    guest = c()
+  )
+)
+```
+
+## Authentication Implementation
+
+### Multi-Factor Authentication (MFA)
+
+```r
+# MFA requirement enforcement
+require_mfa <- function(user, resource_sensitivity) {
+  mfa_required <- resource_sensitivity >= "confidential" ||
+                  user$role %in% c("admin", "super_admin", "data_manager")
+  
+  if (mfa_required) {
+    if (!verify_mfa(user)) {
+      log_security_event("MFA_REQUIRED", user$id, resource_sensitivity)
+      stop("Multi-factor authentication required for this resource")
+    }
+  }
+  
+  return(TRUE)
+}
+
+# MFA verification
+verify_mfa <- function(user) {
+  # Time-based One-Time Password (TOTP)
+  totp_valid <- verify_totp(user$totp_token, user$secret)
+  
+  # Backup: SMS or Email code
+  if (!totp_valid) {
+    backup_code <- request_backup_code(user)
+    return(verify_backup_code(user, backup_code))
+  }
+  
+  return(totp_valid)
+}
+```
+
+### Session Management
+
+```r
+# Secure session creation
+create_secure_session <- function(user, ip_address) {
+  session <- list(
+    id = generate_secure_token(32),
+    user_id = user$id,
+    role = user$role,
+    created_at = Sys.time(),
+    expires_at = Sys.time() + hours(8),  # 8-hour max session
+    ip_address = ip_address,
+    last_activity = Sys.time()
+  )
+  
+  # Secure session storage
+  store_session_secure(session)
+  
+  # Set secure cookie
+  set_cookie(
+    name = "session_id",
+    value = session$id,
+    httponly = TRUE,
+    secure = TRUE,
+    samesite = "Strict",
+    max_age = 8 * 3600
+  )
+  
+  return(session)
+}
+
+# Session validation
+validate_session <- function(session_id, ip_address) {
+  session <- get_session(session_id)
+  
+  # Multiple validation checks
+  validations <- list(
+    exists = !is.null(session),
+    not_expired = session$expires_at > Sys.time(),
+    ip_match = session$ip_address == ip_address,
+    not_idle = Sys.time() - session$last_activity < minutes(30)
+  )
+  
+  if (!all(unlist(validations))) {
+    invalidate_session(session_id)
+    log_security_event("SESSION_INVALID", session_id, validations)
+    return(FALSE)
+  }
+  
+  # Update last activity
+  update_session_activity(session_id)
+  return(TRUE)
+}
+```
+
+## Authorization Engine
+
+### Resource-Level Authorization
+
+```r
+# Fine-grained authorization checks
+authorize_resource_access <- function(user, resource, action) {
+  # Get user's effective permissions
+  user_permissions <- get_effective_permissions(user$role)
+  
+  # Check resource-specific permissions
+  resource_permissions <- user_permissions[[resource$type]]
+  
+  # Verify action is allowed
+  if (!(action %in% resource_permissions)) {
+    log_authorization_failure(user$id, resource$id, action)
+    stop(sprintf("Unauthorized: User %s cannot %s resource %s",
+                 user$id, action, resource$id))
+  }
+  
+  # Additional context-based checks
+  if (!check_contextual_authorization(user, resource, action)) {
+    stop("Contextual authorization failed")
+  }
+  
+  log_authorization_success(user$id, resource$id, action)
+  return(TRUE)
+}
+
+# Contextual authorization
+check_contextual_authorization <- function(user, resource, action) {
+  checks <- list(
+    # Time-based access
+    time_allowed = is_within_allowed_hours(user$role),
+    
+    # Location-based access
+    location_allowed = is_allowed_location(user$ip_address),
+    
+    # Data ownership
+    owns_resource = resource$owner_id == user$id ||
+                   user$role %in% c("admin", "super_admin"),
+    
+    # Department isolation
+    department_match = user$department == resource$department ||
+                      user$role %in% c("admin", "super_admin")
+  )
+  
+  return(all(unlist(checks)))
+}
+```
+
+### Dynamic Permission Evaluation
+
+```r
+# Runtime permission evaluation
+evaluate_dynamic_permissions <- function(user, context) {
+  base_permissions <- get_role_permissions(user$role)
+  
+  # Apply dynamic rules
+  dynamic_permissions <- base_permissions
+  
+  # Temporal restrictions
+  if (!is_business_hours() && user$role == "analyst") {
+    dynamic_permissions <- remove_permission(dynamic_permissions, "export")
+  }
+  
+  # Conditional elevation
+  if (context$emergency_mode && user$certified_responder) {
+    dynamic_permissions <- add_permission(dynamic_permissions, "emergency_access")
+  }
+  
+  # Delegation
+  if (context$delegated_from) {
+    delegated_perms <- get_delegated_permissions(user$id, context$delegated_from)
+    dynamic_permissions <- merge_permissions(dynamic_permissions, delegated_perms)
+  }
+  
+  return(dynamic_permissions)
+}
+```
+
+## Access Control Lists (ACLs)
+
+```r
+# ACL implementation for fine-grained control
+manage_acl <- function(resource_id, principal_id, permission, action = "grant") {
+  acl_entry <- list(
+    resource_id = resource_id,
+    principal_id = principal_id,
+    principal_type = detect_principal_type(principal_id),
+    permission = permission,
+    granted_by = get_current_user(),
+    granted_at = Sys.time()
+  )
+  
+  if (action == "grant") {
+    add_acl_entry(acl_entry)
+    log_acl_change("GRANT", acl_entry)
+  } else if (action == "revoke") {
+    remove_acl_entry(resource_id, principal_id, permission)
+    log_acl_change("REVOKE", acl_entry)
+  }
+}
+
+# Check ACL permissions
+check_acl <- function(user_id, resource_id, required_permission) {
+  # Get all applicable ACL entries
+  acl_entries <- get_acl_entries(resource_id)
+  
+  # Check direct user permissions
+  user_acls <- filter(acl_entries, principal_id == user_id)
+  if (required_permission %in% user_acls$permission) return(TRUE)
+  
+  # Check group permissions
+  user_groups <- get_user_groups(user_id)
+  group_acls <- filter(acl_entries, principal_id %in% user_groups)
+  if (required_permission %in% group_acls$permission) return(TRUE)
+  
+  return(FALSE)
+}
+```
+
+## Privilege Escalation Prevention
+
+```r
+# Prevent unauthorized privilege escalation
+prevent_privilege_escalation <- function(user, requested_role) {
+  current_level <- get_role_level(user$role)
+  requested_level <- get_role_level(requested_role)
+  
+  # Cannot grant higher privileges than you have
+  if (requested_level < current_level) {
+    log_security_event("PRIVILEGE_ESCALATION_ATTEMPT", user$id, requested_role)
+    alert_security_team(user$id, "Privilege escalation attempt")
+    stop("Cannot grant privileges higher than your own role")
+  }
+  
+  # Cannot modify your own privileges
+  if (user$id == target_user_id) {
+    log_security_event("SELF_PRIVILEGE_MODIFICATION", user$id)
+    stop("Cannot modify your own privileges")
+  }
+  
+  # Require approval for sensitive role changes
+  if (requested_role %in% c("admin", "super_admin")) {
+    require_approval(user$id, target_user_id, requested_role)
+  }
+}
+```
+
+## API Security
+
+```r
+# API key management
+manage_api_keys <- function(user_id, action, key_id = NULL) {
+  if (action == "create") {
+    api_key <- list(
+      key_id = generate_uuid(),
+      key_value = generate_secure_token(32),
+      user_id = user_id,
+      created_at = Sys.time(),
+      expires_at = Sys.time() + days(90),
+      permissions = get_api_permissions(user_id),
+      rate_limit = get_rate_limit(user_id)
+    )
+    
+    store_api_key(hash_key(api_key$key_value), api_key)
+    return(api_key$key_value)  # Return only once
+    
+  } else if (action == "revoke") {
+    revoke_api_key(key_id)
+    log_api_key_event("REVOKED", key_id, user_id)
+  }
+}
+
+# API authentication
+authenticate_api_request <- function(request) {
+  api_key <- extract_api_key(request$headers)
+  
+  if (is.null(api_key)) {
+    return(list(authenticated = FALSE, reason = "Missing API key"))
+  }
+  
+  key_data <- validate_api_key(hash_key(api_key))
+  
+  if (!key_data$valid) {
+    log_api_auth_failure(api_key, request$ip)
+    return(list(authenticated = FALSE, reason = key_data$reason))
+  }
+  
+  # Check rate limits
+  if (!check_rate_limit(key_data$key_id, request$ip)) {
+    return(list(authenticated = FALSE, reason = "Rate limit exceeded"))
+  }
+  
+  return(list(
+    authenticated = TRUE,
+    user_id = key_data$user_id,
+    permissions = key_data$permissions
+  ))
+}
+```
+
+## Audit and Compliance
+
+```r
+# Comprehensive audit logging
+log_access_event <- function(event_type, user_id, resource_id, action, result) {
+  audit_log <- list(
+    timestamp = Sys.time(),
+    event_type = event_type,
+    user_id = user_id,
+    session_id = get_current_session_id(),
+    resource_id = resource_id,
+    action = action,
+    result = result,
+    ip_address = get_client_ip(),
+    user_agent = get_user_agent(),
+    additional_context = capture_context()
+  )
+  
+  # Write to immutable audit log
+  write_audit_log(audit_log)
+  
+  # Real-time alerting for suspicious activity
+  if (is_suspicious_activity(audit_log)) {
+    alert_security_team(audit_log)
+  }
+}
+
+# Access review automation
+conduct_access_review <- function() {
+  # Identify excessive permissions
+  excessive_permissions <- identify_excessive_permissions()
+  
+  # Find dormant accounts
+  dormant_accounts <- find_dormant_accounts(days = 90)
+  
+  # Check role assignments
+  inappropriate_roles <- validate_role_assignments()
+  
+  # Generate review report
+  review_report <- generate_access_review_report(
+    excessive_permissions,
+    dormant_accounts,
+    inappropriate_roles
+  )
+  
+  # Automatic remediation for clear violations
+  auto_remediate_access_issues(review_report)
+  
+  return(review_report)
+}
+```
+
+## Integration Requirements
+
+### Shiny Application Integration
+
+```r
+# Shiny server authentication
+shinyServer(function(input, output, session) {
+  # Check authentication on startup
+  user <- reactive({
+    validate_session_or_redirect(session)
+  })
+  
+  # Protect sensitive outputs
+  output$sensitive_data <- renderTable({
+    req(authorize_resource_access(user(), "sensitive_data", "read"))
+    get_sensitive_data()
+  })
+  
+  # Protect actions
+  observeEvent(input$delete_button, {
+    req(authorize_resource_access(user(), "records", "delete"))
+    delete_records(input$selected_ids)
+  })
+})
+```
+
+## Related Rules and Principles
+
+### Derived Security Rules
+- **R220**: RBAC implementation standards
+- **R221**: Session timeout configuration
+- **R222**: MFA enforcement policies
+- **R223**: API key rotation schedule
+- **R224**: Access review frequency
+
+### Integration with Other MPs
+- **MP110**: Security Credentials Management
+- **MP111**: Data Privacy Protection
+- **MP115**: Audit Logging and Monitoring
+- **MP118**: Development Security Practices
+
+## Compliance Requirements
+
+- **SOC 2**: Access control requirements
+- **ISO 27001**: Access management controls
+- **NIST 800-53**: Access control family
+- **PCI DSS**: Requirement 7 - Restrict access
+
+## Validation Checklist
+
+- [ ] RBAC roles defined and documented
+- [ ] Least privilege implemented
+- [ ] MFA enabled for sensitive access
+- [ ] Session management secure
+- [ ] API authentication implemented
+- [ ] Audit logging comprehensive
+- [ ] Access reviews scheduled
+- [ ] Privilege escalation prevented
+- [ ] Authorization checks consistent
+
+---
+
+**Security through control**: Every access must be authenticated, authorized, and audited. Trust nothing, verify everything, log all activities.

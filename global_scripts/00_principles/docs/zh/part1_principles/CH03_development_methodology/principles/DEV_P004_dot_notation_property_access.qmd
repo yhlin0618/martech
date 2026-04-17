@@ -1,0 +1,281 @@
+---
+title: "DEV_P004: Dot Notation Property Access Principle"
+subtitle: "Consistent dot notation for hierarchical references"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P004"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article-number: "Article 4"
+implements:
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+  - "CH00.MP020: Principle Language Versions"
+related_to:
+  - "CH00.MP024: Natural SQL Language"
+  - "SO_R023: Object Naming Convention"
+  - "CH00.MP001: Primitive Terms and Definitions"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Article 4 (Dot Notation Property Access Principle)**
+
+This article establishes dot notation as the standard access pattern for object properties and hierarchical references across all system components, creating consistent and intuitive access patterns.
+
+:::{.callout-important}
+## Core Principle
+All property access and hierarchical references within the system should use consistent dot notation, following a hierarchical pattern from general to specific. This creates intuitive, predictable access patterns that align with natural hierarchical thinking.
+:::
+
+# Section 1: Conceptual Framework {#framework}
+
+## Subsection 1: Unified Reference Patterns {#unified-patterns}
+
+The Dot Notation Property Access Principle unifies reference patterns across code, data structures, and query languages. By establishing a consistent pattern where dots separate hierarchical levels from general to specific, this principle creates intuitive access patterns.
+
+## Subsection 2: Manifestation Contexts {#contexts}
+
+This principle manifests in multiple contexts:
+
+1. **Code Access Patterns**: How components access properties in code
+2. **Naming Conventions**: How objects are named and referenced
+3. **Query Languages**: How data sources and properties are referenced in queries
+4. **Configuration Structures**: How settings are organized and accessed
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Object Property Access {#property-access}
+
+When accessing object properties in code:
+
+```r
+# Preferred
+customer.profile.contact.email
+
+# Not preferred
+customer$profile$contact$email
+customer[["profile"]][["contact"]][["email"]]
+```
+
+## Subsection 2: Hierarchical Naming {#hierarchical-naming}
+
+When naming components that have hierarchical relationships:
+
+```r
+# Preferred
+authentication.service.validate
+ui.sidebar.navigation.controls
+
+# Not preferred
+authentication_service_validate
+ui_sidebar_navigation_controls
+```
+
+## Subsection 3: Table and Schema References {#table-references}
+
+When referencing database tables and schemas:
+
+```r
+# Preferred
+Sales.Orders
+Analytics.Reports.Performance
+
+# Not preferred
+Sales_Orders
+Analytics_Reports_Performance
+```
+
+## Subsection 4: Configuration Access {#config-access}
+
+When accessing configuration settings:
+
+```r
+# Preferred
+config.database.connection.timeout
+config.ui.theme.colors.primary
+
+# Not preferred
+config$database$connection$timeout
+config[["ui"]][["theme"]][["colors"]][["primary"]]
+```
+
+## Subsection 5: Object Naming {#object-naming}
+
+When naming objects that have hierarchical classifications:
+
+```r
+# Preferred
+df.amazon.sales.now.001
+mdl.regression.sales.price_seasonality
+
+# Not preferred
+df_amazon_sales_now_001
+mdl_regression_sales_price_seasonality
+```
+
+# Section 3: Alignment with NSQL {#nsql-alignment}
+
+## Subsection 1: Consistent Pattern {#consistent-pattern}
+
+This principle aligns with the Natural SQL Language (MP024) by using the same reference pattern:
+
+### NSQL Query
+```
+transform Sales.Orders to OrderSummary
+```
+
+### Object Names
+```
+df.Sales.Orders
+```
+
+### Code Access
+```r
+result <- process_data(df.Sales.Orders)
+```
+
+## Subsection 2: System Cohesion {#system-cohesion}
+
+This creates a cohesive system where the same pattern is used across all contexts, reducing cognitive load and improving developer productivity.
+
+# Section 4: Implementation Examples {#examples}
+
+## Subsection 1: Data Object Naming and Access {#data-example}
+
+```r
+# Object naming
+df.customer.profile.active
+
+# Data access
+active_customers <- df.customer.profile.active[
+  df.customer.profile.active$status == "active", 
+]
+summary_stats <- calculate_statistics(
+  df.customer.profile.active.purchases
+)
+```
+
+## Subsection 2: Service Component Organization {#service-example}
+
+```r
+# Service organization
+services.authentication.validate_credentials <- function(username, password) { 
+  # Implementation
+}
+
+services.authentication.generate_token <- function(user_id) { 
+  # Implementation
+}
+
+services.users.get_profile <- function(user_id) { 
+  # Implementation
+}
+
+# Service usage
+token <- services.authentication.generate_token(user_id)
+profile <- services.users.get_profile(user_id)
+```
+
+## Subsection 3: Configuration Structure {#config-example}
+
+```r
+# Configuration structure
+app.config.database.host <- "db.example.com"
+app.config.database.port <- 5432
+app.config.ui.theme <- "light"
+
+# Configuration access
+db_conn <- connect_db(
+  app.config.database.host, 
+  app.config.database.port
+)
+apply_theme(app.config.ui.theme)
+```
+
+# Section 5: Implementation Considerations {#considerations}
+
+## Subsection 1: R Language Context {#r-context}
+
+In R, both `$` and `[[]]` are common for accessing list elements, but this principle establishes dot notation as the preferred pattern for hierarchical naming and references, even if the underlying implementation uses different operators.
+
+## Subsection 2: Implementation Bridge {#bridge}
+
+Utility functions or operator overloading may be needed to bridge between dot notation in names/references and actual implementation in various languages and systems.
+
+## Subsection 3: Performance {#performance}
+
+Consider caching or optimizing dot notation resolution in performance-critical paths if needed.
+
+## Subsection 4: Integration {#integration}
+
+This principle should be integrated with naming conventions (R023) to create a cohesive reference system.
+
+# Section 6: Benefits {#benefits}
+
+1. **Consistency**: Creates a unified reference pattern across the system
+2. **Readability**: Makes code more readable with clear property paths
+3. **Discoverability**: Enables better IDE auto-completion and discovery
+4. **Natural Hierarchy**: Matches human mental models of categorization
+5. **Alignment**: Aligns with standard practices in many programming languages
+6. **Query Integration**: Creates natural mapping between code and query languages
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Dot Notation Implementation Checklist
+
+When implementing dot notation patterns:
+
+**Property Access:**
+- [ ] Object properties use dot notation
+- [ ] Hierarchical levels clear
+- [ ] General to specific ordering
+
+**Naming Conventions:**
+- [ ] Components follow hierarchical naming
+- [ ] Dots separate hierarchy levels
+- [ ] Names readable and discoverable
+
+**Database References:**
+- [ ] Schema.Table pattern used
+- [ ] Multi-level hierarchies supported
+- [ ] Consistent with NSQL patterns
+
+**Configuration:**
+- [ ] Settings use dot notation
+- [ ] Hierarchy reflects structure
+- [ ] Access patterns consistent
+
+**Object Naming:**
+- [ ] Classification hierarchy clear
+- [ ] Dot notation for levels
+- [ ] Alignment with conventions
+
+**Integration:**
+- [ ] NSQL alignment verified
+- [ ] Naming conventions followed
+- [ ] Performance considered
+- [ ] Utilities implemented if needed
+:::
+
+# Conclusion {#conclusion}
+
+The Dot Notation Property Access Principle establishes a consistent pattern for hierarchical references across all aspects of the system. By using dots to separate hierarchical levels from general to specific, this principle creates intuitive access patterns that align with natural thinking and create cohesion across code, naming conventions, and query languages.
+
+This principle simplifies mental models, improves code readability, and creates natural alignment with the Natural SQL Language, enhancing overall system cohesion and developer productivity.
+
+---
+
+*Based on: Development Methodology Law Article 4*  
+*Implements: [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd), [MP020 Principle Language Versions](../../CH00_fundamental_principles/MP020_principle_language_versions.qmd)*

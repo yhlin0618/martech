@@ -1,0 +1,662 @@
+---
+id: "DM_R028"
+title: "ETL Data Type Separation and Directory Structure Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2025-01-28"
+author: "Claude"
+status: "active"
+version: "2.1"
+weight: 28
+implements:
+  - "MP104": "ETL Data Flow Separation Principle"
+related_to:
+  - "MP064": "ETL-Derivation Separation Principle"
+  - "MP102": "ETL Output Standardization Principle"
+  - "MP092": "Platform ID Standard"
+  - "DM_R027": "ETL Schema Validation Rule"
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+---
+
+# DM_R028: ETL Data Type Separation and Directory Structure Rule
+
+## Rule Statement
+
+**ETL pipelines MUST be organized by data type with dedicated scripts for each data type and phase, following a mandatory hierarchical directory structure**: Each combination of platform, data type, and ETL phase (0IM/1ST/2TR) requires a separate script following the naming pattern `{platform}_ETL_{datatype}_{phase}.R` and MUST be placed in the appropriate directory hierarchy.
+
+## Mandatory Requirements
+
+### 1. Hierarchical Directory Structure
+
+**MANDATORY Directory Organization**:
+```yaml
+update_scripts/
+├── ETL/                    # All ETL scripts MUST be here
+│   ├── {platform}/        # Platform-specific subdirectories
+│   │   └── *.R           # ETL scripts for this platform
+│   └── all/              # Cross-platform ETL summaries
+├── DRV/                    # All Derivation scripts MUST be here
+│   ├── {platform}/        # Platform-specific subdirectories
+│   │   └── *.R           # DRV scripts for this platform
+│   └── all/              # Cross-platform derivations
+└── orchestration/          # Pipeline control scripts
+    └── *.R               # Orchestration and runners
+```
+
+**CRITICAL**: ETL scripts MUST NOT exist in the root update_scripts/ directory. They MUST be placed in ETL/{platform}/ subdirectories.
+
+### 2. Script Naming Convention
+
+**REQUIRED Format**: `{platform}_ETL_{datatype}_{phase}.R`
+**Company-Specific Extension**: `{platform}_ETL_{datatype}_{phase}___{company}.R` (see DM_R037)
+**Full Path Pattern**: `ETL/{platform}/{platform}_ETL_{datatype}_{phase}.R`
+
+```yaml
+required_patterns:
+  # Standard ETLs with hierarchical paths
+  sales_etl:
+    - "ETL/cbz/cbz_ETL_sales_0IM.R"     # ✅ Compliant
+    - "ETL/cbz/cbz_ETL_sales_1ST.R"     # ✅ Compliant
+    - "ETL/cbz/cbz_ETL_sales_2TR.R"     # ✅ Compliant
+
+  customer_etl:
+    - "ETL/eby/eby_ETL_customers_0IM.R" # ✅ Compliant
+    - "ETL/eby/eby_ETL_customers_1ST.R" # ✅ Compliant
+    - "ETL/eby/eby_ETL_customers_2TR.R" # ✅ Compliant
+
+  # Company-specific ETLs (valid extension)
+  company_specific_etl:
+    - "ETL/eby/eby_ETL_sales_0IM___MAMBA.R"     # ✅ Compliant (company-specific)
+    - "ETL/amz/amz_ETL_products_1ST___ACME.R"   # ✅ Compliant (company-specific)
+    - "ETL/cbz/cbz_ETL_orders_2TR___WIDGET.R"   # ✅ Compliant (company-specific)
+
+  # Cross-platform summaries
+  cross_platform_etl:
+    - "ETL/all/all_ETL_summary_0IM.R"           # ✅ Compliant (cross-platform)
+    - "ETL/all/all_ETL_summary_1ST.R"           # ✅ Compliant (cross-platform)
+    - "ETL/all/all_ETL_summary_2TR.R"           # ✅ Compliant (cross-platform)
+
+prohibited_patterns:
+  - "cbz_ETL01_0IM.R"                  # ❌ Non-compliant (not in ETL/ directory)
+  - "update_scripts/cbz_ETL_sales_0IM.R" # ❌ Non-compliant (in root, not ETL/cbz/)
+  - "ETL/cbz_ETL_sales_0IM.R"          # ❌ Non-compliant (missing platform subdirectory)
+  - "platform_ETL_generic.R"           # ❌ Non-compliant (no data type)
+  - "cbz_sales_import.R"               # ❌ Non-compliant (missing ETL pattern)
+  - "eby_ETL_sales_0IM_MAMBA.R"        # ❌ Non-compliant (wrong separator for company)
+```
+
+### DRV Naming (Handled by DM_R042)
+
+**NOTE**: DRV (Derivation) file naming is governed by DM_R042, not this rule.
+
+```yaml
+drv_naming_reference:
+  rule: "DM_R042"
+  pattern: "{platform}_D{group}_{seq}.R"
+  examples:
+    - "cbz_D01_03.R"  # Sequential numbering
+    - "amz_D02_15.R"  # No descriptive suffixes
+  deprecated_pattern: "{platform}_DRV{nn}_{purpose}.R"  # Old pattern no longer used
+```
+
+For complete DRV naming specifications, see DM_R042: DRV Sequential Numbering Rule.
+
+### 3. Data Type Categories
+
+**REQUIRED Data Types** (minimum):
+
+```yaml
+mandatory_data_types:
+  sales:
+    description: "Transaction-level sales data"
+    output_table: "df_{platform}_sales___raw"
+    
+  customers:
+    description: "Customer profile and demographic data" 
+    output_table: "df_{platform}_customers___raw"
+    
+  orders:
+    description: "Order header and metadata"
+    output_table: "df_{platform}_orders___raw"
+    
+  products:
+    description: "Product catalog and specifications"
+    output_table: "df_{platform}_products___raw"
+
+optional_data_types:
+  reviews:
+    description: "Product reviews and ratings"
+    output_table: "df_{platform}_reviews___raw"
+    
+  inventory:
+    description: "Stock levels and warehouse data"
+    output_table: "df_{platform}_inventory___raw"
+```
+
+### 4. Single Responsibility Rule
+
+**PROHIBITED**: One script handling multiple data types
+
+```r
+# ❌ VIOLATION: Mixed data types in single script
+cbz_ETL01_0IM <- function() {
+  # WRONG: Importing multiple data types
+  sales_data <- fetch_sales()
+  customers_data <- fetch_customers()  # Belongs in separate pipeline
+  orders_data <- fetch_orders()        # Belongs in separate pipeline
+}
+
+# ✅ COMPLIANT: Single data type per script
+cbz_ETL_sales_0IM <- function() {
+  # CORRECT: Only sales data
+  sales_data <- fetch_sales()
+  process_sales_import(sales_data)
+}
+
+cbz_ETL_customers_0IM <- function() {
+  # CORRECT: Only customer data
+  customers_data <- fetch_customers()
+  process_customers_import(customers_data)
+}
+```
+
+### 5. Complete Pipeline Requirement
+
+**MANDATORY**: Each data type must have all three phases
+
+```yaml
+completeness_check:
+  for_each_platform:
+    for_each_data_type:
+      required_scripts:
+        - "{platform}_ETL_{datatype}_0IM.R"  # Import phase
+        - "{platform}_ETL_{datatype}_1ST.R"  # Staging phase
+        - "{platform}_ETL_{datatype}_2TR.R"  # Transform phase
+
+validation_example:
+  cbz_sales_pipeline:
+    - "cbz_ETL_sales_0IM.R"    # ✅ Present
+    - "cbz_ETL_sales_1ST.R"    # ✅ Present
+    - "cbz_ETL_sales_2TR.R"    # ✅ Present
+    status: "✅ Complete"
+    
+  cbz_customers_pipeline:
+    - "cbz_ETL_customers_0IM.R" # ✅ Present
+    - "cbz_ETL_customers_1ST.R" # ❌ Missing
+    - "cbz_ETL_customers_2TR.R" # ❌ Missing
+    status: "❌ Incomplete - Missing 1ST and 2TR phases"
+```
+
+## Implementation Requirements
+
+### 1. Script Structure Standards
+
+Each ETL script must follow the four-part structure (R113):
+
+```r
+# Template: {platform}_ETL_{datatype}_{phase}.R
+
+# ==============================================================================
+# 1. INITIALIZE
+# ==============================================================================
+script_success <- FALSE
+test_passed <- FALSE
+main_error <- NULL
+
+# Initialize using unified autoinit system
+autoinit()
+
+# Load data type-specific functions
+source_datatype_functions(datatype = "{datatype}")
+
+# Establish database connections
+raw_data <- dbConnectDuckdb(db_path_list$raw_data)
+staged_data <- dbConnectDuckdb(db_path_list$staged_data)
+transformed_data <- dbConnectDuckdb(db_path_list$transformed_data)
+
+# ==============================================================================
+# 2. MAIN
+# ==============================================================================
+main_execution <- function() {
+  tryCatch({
+    # Data type-specific processing logic
+    result <- process_{datatype}_{phase}()
+    
+    # Validate output against schema
+    validate_etl_output(con, platform_code, datatype, phase)
+    
+    return(result)
+    
+  }, error = function(e) {
+    main_error <<- e$message
+    stop(sprintf("ETL %s %s %s failed: %s", platform, datatype, phase, e$message))
+  })
+}
+
+# ==============================================================================
+# 3. TEST
+# ==============================================================================
+test_execution <- function() {
+  # Test data type-specific logic
+  test_result <- test_{datatype}_{phase}()
+  return(test_result)
+}
+
+# ==============================================================================
+# 4. RESULT
+# ==============================================================================
+if (test_passed && script_success) {
+  message(sprintf("✅ %s ETL %s %s completed successfully", 
+                  platform, datatype, phase))
+} else {
+  stop(sprintf("❌ %s ETL %s %s failed", platform, datatype, phase))
+}
+
+autodeinit()
+```
+
+### 2. Function Naming Convention
+
+Functions within ETL scripts must follow data type patterns:
+
+```r
+# Data type-specific function naming
+function_naming_pattern:
+  import_functions:
+    - "process_{datatype}_import()"     # e.g., process_sales_import()
+    - "fetch_{datatype}_data()"         # e.g., fetch_customers_data()
+    - "extract_{datatype}_from_api()"   # e.g., extract_orders_from_api()
+  
+  staging_functions:
+    - "stage_{datatype}_data()"         # e.g., stage_products_data()
+    - "clean_{datatype}_encoding()"     # e.g., clean_sales_encoding()
+    - "validate_{datatype}_structure()" # e.g., validate_customers_structure()
+  
+  transform_functions:
+    - "transform_{datatype}_schema()"   # e.g., transform_orders_schema()
+    - "enrich_{datatype}_data()"        # e.g., enrich_products_data()
+    - "apply_{datatype}_rules()"        # e.g., apply_sales_rules()
+```
+
+### 3. Output Table Requirements
+
+Each ETL script must produce tables following MP102 standards:
+
+```yaml
+table_naming_requirements:
+  raw_data_tables:
+    pattern: "df_{platform}_{datatype}___raw"
+    examples:
+      - "df_cbz_sales___raw"
+      - "df_eby_customers___raw"
+      - "df_amz_orders___raw"
+  
+  staged_data_tables:
+    pattern: "df_{platform}_{datatype}___staged"
+    examples:
+      - "df_cbz_sales___staged"
+      - "df_eby_customers___staged"
+      - "df_amz_orders___staged"
+  
+  transformed_data_tables:
+    pattern: "df_{platform}_{datatype}___transformed"
+    examples:
+      - "df_cbz_sales___transformed"
+      - "df_eby_customers___transformed"
+      - "df_amz_orders___transformed"
+```
+
+## API Efficiency Patterns
+
+### Pattern 1: Shared Import Distribution
+
+When API returns multiple data types in one call:
+
+```r
+# cbz_ETL_shared_0IM.R - Shared import coordinator
+cbz_shared_api_import <- function() {
+  # Single API call
+  complete_data <- fetch_cyberbiz_complete()
+  
+  # Distribute to data type-specific raw tables
+  distribute_to_raw_tables(complete_data, platform = "cbz")
+}
+
+# cbz_ETL_sales_0IM.R - Reads from shared import
+cbz_ETL_sales_0IM <- function() {
+  # Read sales data from shared import
+  sales_raw <- read_raw_data_by_type("cbz", "sales")
+  
+  # Apply sales-specific import processing
+  processed_sales <- apply_sales_import_logic(sales_raw)
+  
+  # Write to sales-specific raw table
+  write_etl_output("cbz", "sales", "raw", processed_sales)
+}
+```
+
+### Pattern 2: Independent API Calls
+
+When API supports efficient data type-specific endpoints:
+
+```r
+# cbz_ETL_sales_0IM.R - Independent sales import
+cbz_ETL_sales_0IM <- function() {
+  # Direct API call for sales data only
+  sales_data <- fetch_cyberbiz_sales_api()
+  
+  # Process and store
+  processed_sales <- process_sales_import(sales_data)
+  write_etl_output("cbz", "sales", "raw", processed_sales)
+}
+
+# cbz_ETL_customers_0IM.R - Independent customer import  
+cbz_ETL_customers_0IM <- function() {
+  # Direct API call for customer data only
+  customers_data <- fetch_cyberbiz_customers_api()
+  
+  # Process and store
+  processed_customers <- process_customers_import(customers_data)
+  write_etl_output("cbz", "customers", "raw", processed_customers)
+}
+```
+
+## Validation Requirements
+
+### 1. Directory Structure Validation
+
+```r
+# Function: validate_etl_directory_structure
+validate_etl_directory_structure <- function(update_scripts_path) {
+  # Check for mandatory directories
+  required_dirs <- c("ETL", "DRV", "orchestration")
+  missing_dirs <- setdiff(required_dirs, list.dirs(update_scripts_path, full.names = FALSE, recursive = FALSE))
+
+  if (length(missing_dirs) > 0) {
+    stop(sprintf("VIOLATION DM_R028: Missing required directories: %s",
+                 paste(missing_dirs, collapse = ", ")))
+  }
+
+  # Check for ETL scripts in root (prohibited)
+  root_etl_scripts <- list.files(update_scripts_path, pattern = ".*ETL.*\\.R$")
+  if (length(root_etl_scripts) > 0) {
+    stop(sprintf("VIOLATION DM_R028: ETL scripts found in root directory (must be in ETL/): %s",
+                 paste(root_etl_scripts, collapse = ", ")))
+  }
+
+  # Check platform subdirectories
+  etl_platforms <- list.dirs(file.path(update_scripts_path, "ETL"),
+                             full.names = FALSE, recursive = FALSE)
+  drv_platforms <- list.dirs(file.path(update_scripts_path, "DRV"),
+                             full.names = FALSE, recursive = FALSE)
+
+  message(sprintf("✅ DM_R028: Directory structure compliant - ETL platforms: %s, DRV platforms: %s",
+                  paste(etl_platforms, collapse = ", "),
+                  paste(drv_platforms, collapse = ", ")))
+  return(TRUE)
+}
+```
+
+### 2. Naming Convention Validation
+
+```r
+# Function: validate_etl_naming_convention
+validate_etl_naming_convention <- function(script_path) {
+  filename <- basename(script_path)
+  
+  # Check patterns: standard and company-specific
+  standard_pattern <- "^([a-z]{3})_ETL_([a-z_]+)_(0IM|1ST|2TR)\\.R$"
+  company_pattern <- "^([a-z]{3})_ETL_([a-z_]+)_(0IM|1ST|2TR)___([A-Z]{3,10})\\.R$"
+  
+  if (grepl(company_pattern, filename)) {
+    # Company-specific ETL (DM_R037)
+    matches <- regmatches(filename, regexec(company_pattern, filename))[[1]]
+    platform <- matches[2]
+    datatype <- matches[3]
+    phase <- matches[4]
+    company <- matches[5]
+    
+    message(sprintf("DM_R028: Valid company-specific ETL for %s", company))
+    
+  } else if (grepl(standard_pattern, filename)) {
+    # Standard ETL
+    matches <- regmatches(filename, regexec(standard_pattern, filename))[[1]]
+    platform <- matches[2]
+    datatype <- matches[3] 
+    phase <- matches[4]
+    company <- NA
+    
+  } else {
+    stop(sprintf("VIOLATION DM_R028: Script name '%s' does not follow required pattern", filename))
+  }
+  
+  # Validate platform_id (3 letters)
+  if (nchar(platform) != 3) {
+    stop(sprintf("VIOLATION DM_R028: Platform ID '%s' must be exactly 3 characters", platform))
+  }
+  
+  # Validate data type
+  valid_datatypes <- c("sales", "customers", "orders", "products", "reviews", "inventory")
+  if (!datatype %in% valid_datatypes) {
+    warning(sprintf("DM_R028: Data type '%s' is not in standard list: %s", 
+                    datatype, paste(valid_datatypes, collapse = ", ")))
+  }
+  
+  return(list(platform = platform, datatype = datatype, phase = phase, 
+              company = if (exists("company")) company else NA))
+}
+```
+
+### 3. Pipeline Completeness Validation
+
+```r
+# Function: validate_pipeline_completeness
+validate_pipeline_completeness <- function(update_scripts_path) {
+  # Check ETL directory for each platform
+  etl_path <- file.path(update_scripts_path, "ETL")
+  platforms <- list.dirs(etl_path, full.names = FALSE, recursive = FALSE)
+
+  for (platform in platforms) {
+    platform_path <- file.path(etl_path, platform)
+    scripts <- list.files(platform_path, pattern = ".*_ETL_.*\\.(R|r)$")
+  
+  # Parse all ETL scripts
+  parsed_scripts <- map(scripts, validate_etl_naming_convention)
+  
+  # Group by platform and datatype
+  pipelines <- parsed_scripts %>%
+    map_dfr(~ data.frame(platform = .$platform, 
+                        datatype = .$datatype, 
+                        phase = .$phase)) %>%
+    group_by(platform, datatype) %>%
+    summarize(phases = list(sort(phase)), .groups = "drop")
+  
+  # Check for complete pipelines
+  required_phases <- c("0IM", "1ST", "2TR")
+  
+  incomplete_pipelines <- pipelines %>%
+    filter(map_lgl(phases, ~ !identical(sort(.), required_phases)))
+  
+  if (nrow(incomplete_pipelines) > 0) {
+    stop(sprintf("VIOLATION DM_R028: Incomplete pipelines found: %s",
+                 paste(sprintf("%s_%s", incomplete_pipelines$platform, 
+                              incomplete_pipelines$datatype), collapse = ", ")))
+  }
+  
+  message(sprintf("✅ DM_R028: All %d pipelines are complete", nrow(pipelines)))
+  return(TRUE)
+}
+```
+
+### 4. Single Responsibility Validation
+
+```r
+# Function: validate_single_responsibility
+validate_single_responsibility <- function(script_path) {
+  script_content <- readLines(script_path)
+  
+  # Extract declared data type from filename
+  script_components <- validate_etl_naming_convention(script_path)
+  declared_datatype <- script_components$datatype
+  
+  # Check for references to other data types
+  other_datatypes <- c("sales", "customers", "orders", "products", "reviews", "inventory")
+  other_datatypes <- setdiff(other_datatypes, declared_datatype)
+  
+  violations <- c()
+  
+  for (other_type in other_datatypes) {
+    # Look for patterns suggesting handling of other data types
+    patterns <- c(
+      sprintf("fetch_%s", other_type),
+      sprintf("process_%s", other_type), 
+      sprintf("df_.*_%s_", other_type),
+      sprintf("table.*%s", other_type)
+    )
+    
+    for (pattern in patterns) {
+      matches <- grep(pattern, script_content, ignore.case = TRUE)
+      if (length(matches) > 0) {
+        violations <- c(violations, sprintf("Line %s: References '%s' data type", 
+                                          matches[1], other_type))
+      }
+    }
+  }
+  
+  if (length(violations) > 0) {
+    warning(sprintf("DM_R028 potential violations in %s:\n%s", 
+                    script_path, paste(violations, collapse = "\n")))
+  }
+  
+  return(length(violations) == 0)
+}
+```
+
+## Migration Guidelines
+
+### Step 1: Create Hierarchical Structure
+
+```r
+# Create the mandatory directory structure
+create_hierarchical_structure <- function(update_scripts_path) {
+  # Create main directories
+  dir.create(file.path(update_scripts_path, "ETL"), showWarnings = FALSE)
+  dir.create(file.path(update_scripts_path, "DRV"), showWarnings = FALSE)
+  dir.create(file.path(update_scripts_path, "orchestration"), showWarnings = FALSE)
+
+  # Create platform subdirectories
+  platforms <- c("cbz", "amz", "eby", "all")
+  for (platform in platforms) {
+    dir.create(file.path(update_scripts_path, "ETL", platform), showWarnings = FALSE)
+    dir.create(file.path(update_scripts_path, "DRV", platform), showWarnings = FALSE)
+  }
+}
+```
+
+### Step 2: Audit Current Mixed ETLs
+
+```r
+# Identify all current ETL scripts in root (non-compliant)
+current_etls <- list.files("scripts/update_scripts", pattern = ".*ETL.*\\.(R|r)$")
+
+# Analyze which violate DM_R028
+violations <- map(current_etls, function(script) {
+  tryCatch({
+    validate_etl_naming_convention(script)
+    return(NULL)
+  }, error = function(e) {
+    return(list(script = script, error = e$message))
+  })
+}) %>% compact()
+```
+
+### Step 3: Migrate to Hierarchical Structure
+
+```r
+# Move ETL scripts to proper directories
+migrate_etl_to_hierarchy <- function(script_path) {
+  filename <- basename(script_path)
+
+  # Parse the filename to determine platform
+  if (grepl("^([a-z]{3})_ETL_", filename)) {
+    platform <- substr(filename, 1, 3)
+    new_path <- file.path("ETL", platform, filename)
+    file.rename(script_path, new_path)
+    message(sprintf("Moved %s to %s", filename, new_path))
+  } else if (grepl("^all_ETL_", filename)) {
+    new_path <- file.path("ETL", "all", filename)
+    file.rename(script_path, new_path)
+    message(sprintf("Moved %s to %s", filename, new_path))
+  }
+}
+```
+
+### Step 4: Create Separation Plan
+
+```r
+# For each mixed-type ETL, create separation plan
+create_separation_plan <- function(mixed_etl_script) {
+  # Analyze script content to identify data types handled
+  data_types <- identify_data_types_in_script(mixed_etl_script)
+  
+  # Generate new script names
+  platform <- extract_platform_from_script(mixed_etl_script)
+  phase <- extract_phase_from_script(mixed_etl_script)
+  
+  new_scripts <- map(data_types, function(datatype) {
+    sprintf("%s_ETL_%s_%s.R", platform, datatype, phase)
+  })
+  
+  return(list(
+    original = mixed_etl_script,
+    new_scripts = new_scripts,
+    data_types = data_types
+  ))
+}
+```
+
+### Step 5: Execute Migration
+
+```r
+# Migrate each mixed ETL to separated ETLs
+execute_etl_separation <- function(separation_plan) {
+  # Extract logic for each data type
+  for (i in seq_along(separation_plan$data_types)) {
+    datatype <- separation_plan$data_types[i]
+    new_script <- separation_plan$new_scripts[i]
+    
+    # Extract datatype-specific logic from original script
+    extracted_logic <- extract_datatype_logic(separation_plan$original, datatype)
+    
+    # Create new compliant script
+    create_compliant_etl_script(new_script, datatype, extracted_logic)
+  }
+}
+```
+
+## Compliance Checklist
+
+- [ ] Hierarchical directory structure created (ETL/, DRV/, orchestration/)
+- [ ] All ETL scripts in ETL/{platform}/ subdirectories
+- [ ] All DRV scripts in DRV/{platform}/ subdirectories
+- [ ] No ETL/DRV scripts in root update_scripts/ directory
+- [ ] All ETL scripts follow `{platform}_ETL_{datatype}_{phase}.R` naming
+- [ ] No script handles multiple data types
+- [ ] Each data type has complete 0IM→1ST→2TR pipeline
+- [ ] Output tables follow `df_{platform}_{datatype}_{phase}` pattern
+- [ ] Functions use data type-specific naming
+- [ ] API calls are optimized (shared or independent patterns)
+- [ ] Script structure follows R113 four-part pattern
+- [ ] Validation functions pass for all scripts
+- [ ] Legacy mixed-type ETLs have been migrated
+
+## Conclusion
+
+DM_R028 ensures clean separation of data processing by mandating that each ETL script handles exactly one data type through one phase. This rule eliminates mixed-type ETL problems, enables parallel processing, and provides clear boundaries for maintenance and debugging.
+
+Compliance with this rule is essential for maintaining the architectural integrity of the MAMBA system and enabling scalable data processing operations.
+
+## Version History
+
+**Version 2.1 (2025-01-28)**: Added clarification that DRV file naming is now governed by DM_R042, which specifies the sequential numbering pattern `{platform}_D{group}_{seq}.R` and deprecates the old `{platform}_DRV{nn}_{purpose}.R` pattern.

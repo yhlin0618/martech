@@ -1,0 +1,174 @@
+---
+title: "MP080: 聚合變數命名約定"
+subtitle: "命名聚合資料變數時，使用聚合函數名稱作為前綴，而非使用如「總計」或「全部」等通用術語"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP080"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "meta-principle"
+law: "基本原則法"
+article-number: 
+  number: 80
+  title: "聚合變數命名標準"
+related_to:
+  - "MP017: 關注點分離"
+  - "MP008: 術語公理化"
+  - "MP077: 物件命名約定"
+  - "MP024: 類型標記命名"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第八十條：聚合變數命名標準 {#overview}
+
+**基本原則法第八十條（聚合變數命名標準）**
+
+此標準建立聚合資料變數的命名約定，要求使用明確的函數前綴而非通用術語。
+
+:::{.callout-important}
+## 核心規則
+命名代表聚合資料的變數時，使用聚合函數名稱作為變數名稱前綴，而非使用如「總計」或「全部」等通用術語。
+:::
+
+# 第一項：標準理由 {#rationale}
+
+## 第一款：清晰一致命名的優點 {#benefits-clear-naming}
+
+聚合變數的清晰且一致命名：
+
+1. **提供明確資訊**：關於資料如何處理
+2. **避免歧義**：關於應用於資料的操作
+3. **增強程式碼可讀性**：和自我文件化
+4. **促進除錯**：使資料轉換更透明
+5. **確保一致性**：在整個程式碼庫的命名約定
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：首選前綴 {#preferred-prefixes}
+
+對聚合變數使用這些基於函數的前綴：
+
+| 前綴      | 含義                                   | 範例                  |
+|-----------|----------------------------------------|------------------------|
+| `sum_`    | 值的總和                              | `sum_spent_by_date`    |
+| `mean_`   | 算術平均值                            | `mean_price_by_product`   |
+| `median_` | 中位數值                              | `median_amount_by_cat` |
+| `min_`    | 最小值                                | `min_time_by_date`     |
+| `max_`    | 最大值                                | `max_price_by_vendor`  |
+| `count_`  | 觀察數量                              | `count_orders_by_day`  |
+| `std_`    | 標準差                                | `std_price_by_category`|
+| `var_`    | 變異數                                | `var_sales_by_region`  |
+
+## 第二款：後綴使用 {#suffix-usage}
+
+包含描述性後綴，指示分組或分類：
+
+| 後綴        | 含義                                   | 範例                  |
+|-------------|----------------------------------------|------------------------|
+| `_by_date`  | 按日期聚合                            | `sum_spent_by_date`    |
+| `_by_customer` | 按客戶聚合                         | `sum_orders_by_customer` |
+| `_by_region`| 按地理區域聚合                        | `mean_sales_by_region` |
+| `_by_product`| 按產品聚合                           | `count_units_by_product`|
+
+## 第三款：後綴消除規則 {#suffix-elimination}
+
+進一步聚合已聚合變數時，消除冗餘後綴：
+
+1. 如果 `min_time_by_date` 代表每個日期內的最小時間，則：
+2. 所有 `min_time_by_date` 值的最小值應命名為 `min_time`（而非 `min_min_time_by_date` 或 `min_time_by_date_by_customer`）
+
+**範例：**
+```r
+# 按日期的第一層聚合
+result[, min_time_by_date := min(payment_time), by = .(customer_id, date)]
+
+# 對每個客戶跨日期的進一步聚合
+result[, min_time := min(min_time_by_date), by = customer_id]
+```
+
+# 第三項：正確與錯誤範例 {#examples}
+
+## 第一款：錯誤與正確對比 {#incorrect-vs-correct}
+
+**錯誤命名（太通用）：**
+```r
+total_spent <- sum(transaction_amount)
+average_price <- mean(product_price)
+all_transactions <- count(transactions)
+```
+
+**正確命名（具體且清晰）：**
+```r
+sum_spent <- sum(transaction_amount)
+mean_price <- mean(product_price)
+count_transactions <- count(transactions)
+```
+
+**錯誤命名（分組資料）：**
+```r
+total_spent_date <- aggregate(amount ~ date, data = df, sum)
+customer_transactions <- aggregate(count ~ customer_id, data = df, sum)
+```
+
+**正確命名（分組資料）：**
+```r
+sum_spent_by_date <- aggregate(amount ~ date, data = df, sum)
+sum_transactions_by_customer <- aggregate(count ~ customer_id, data = df, sum)
+```
+
+# 第四項：特定轉換 {#specific-transformations}
+
+## 第一款：data.table 操作 {#datatable-operations}
+
+對於 data.table 操作，維護一致命名：
+
+```r
+# 按日期分組，總和交易
+dt[, sum_spent_by_date := sum(amount), by = date]
+
+# 一步中的多個聚合
+result <- dt[, .(
+  sum_spent_by_date = sum(amount),
+  count_orders_by_date = .N,
+  min_time_by_date = min(order_time)
+), by = .(customer_id, date)]
+```
+
+# 第五項：優點 {#benefits}
+
+1. **自我文件化程式碼**：變數名稱本身解釋資料如何處理
+2. **一致性**：建立的模式使程式碼更可預測和可維護
+3. **清晰度**：減少對執行了哪些操作的困惑
+4. **可追溯性**：更容易追蹤資料轉換
+
+# 第六項：與其他原則整合 {#integration}
+
+此規則建立在以下原則之上並補充：
+
+1. **MP077（物件命名約定）**：將命名約定擴展到聚合變數
+2. **MP024（類型標記命名）**：為常見的衍生資料類型提供特定指導
+3. **MP017（關注點分離）**：幫助清楚分離不同類型的聚合資料
+
+# 第七項：例外情況 {#exceptions}
+
+## 第一款：可接受的例外 {#acceptable-exceptions}
+
+雖然強烈建議使用描述性前綴，但有一些可接受的例外：
+
+1. **已建立的特定領域術語**：如 `lifetime_value` 等在該領域標準的變數
+2. **最終呈現變數**：準備最終報告的資料時，可能使用更易讀的名稱
+3. **非常有限的範圍**：在小型、自包含的函數中，上下文極其清晰
+
+然而，即使在這些情況下，也應考慮添加註解以澄清聚合是如何執行的。
+
+---
+
+*基於：基本原則法第八十條*  
+*相關連結：[MP017 關注點分離](MP017_separation_of_concerns.qmd), [MP077 物件命名約定](MP077_object_naming_convention.qmd)*

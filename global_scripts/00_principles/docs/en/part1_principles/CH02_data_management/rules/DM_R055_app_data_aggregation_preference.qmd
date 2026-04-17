@@ -1,0 +1,94 @@
+---
+title: "DM_R055: App Data Aggregation Preference"
+subtitle: "Prefer _all + filter in app_data; avoid per-slice tables"
+chapter: "CH02"
+category: "rule"
+number: "DM_R055"
+date-created: "2026-01-03"
+date-modified: "2026-01-03"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 55"
+parent_principle: "MP110"
+related_to:
+  - "MP110": "Application Data Consolidation"
+  - "DM_R045": "Database File Naming Standard"
+  - "DM_R047": "Multi-Platform Synchronization"
+  - "DM_R054": "Metadata Table Storage Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R055: App Data Aggregation Preference {#overview}
+
+App-facing tables in `app_data.duckdb` should favor **one aggregated `_all` table**
+with filter columns (e.g., `product_line_id`) instead of duplicating per-slice tables.
+
+## Rule Statement
+
+**In `app_data`, store an aggregated `_all` table and filter by key columns in the UI.
+Per-slice tables should stay in `processed_data` unless an explicit exception applies.**
+
+## Scope
+
+- Applies **only** to `app_data` (4APP).
+- Other layers (processed_data, transformed_data) may keep per-slice tables if needed.
+
+## Rationale {#rationale}
+
+1. **Reduces table sprawl** in the app database
+2. **Single source of truth** for UI components
+3. **Less missing-table failure** across platforms/product lines
+4. **Simpler filters** in UI code and tests
+
+## Required Filter Columns
+
+Aggregated tables must include columns that allow UI filtering:
+
+- `product_line_id` (required for product line filtering)
+- `platform` or `platform_id` (if multi-platform data is merged)
+- Any other dimension the UI exposes as a filter
+
+## Preferred Pattern {#pattern}
+
+**Good (app_data):**
+
+```text
+app_data.df_cbz_poisson_analysis_all
+  - product_line_id column
+```
+
+```r
+tbl2(app_data_connection, "df_cbz_poisson_analysis_all") %>%
+  dplyr::filter(product_line_id == "tur")
+```
+
+**Avoid (app_data):**
+
+- `app_data.df_cbz_poisson_analysis_tur`
+- `app_data.df_cbz_poisson_analysis_pre`
+
+## Exceptions {#exceptions}
+
+Per-slice app_data tables are allowed only when:
+
+1. **Performance**: aggregated table is too large for acceptable UI latency
+2. **Access control**: different users should not see other slices
+3. **Storage constraints**: aggregated table is impractically wide/heavy
+
+## Example: D04 Poisson
+
+- `processed_data.df_{platform}_poisson_analysis_{product_line}` stays for debug/trace
+- `app_data.df_{platform}_poisson_analysis_all` is the UI source
+- UI filters by `product_line_id`
+
+## Checklist {#checklist}
+
+- [ ] `app_data` has `_all` table
+- [ ] Filter columns exist (`product_line_id`, etc.)
+- [ ] UI filters by column, not table name
+- [ ] Per-slice tables remain in `processed_data` (if needed)

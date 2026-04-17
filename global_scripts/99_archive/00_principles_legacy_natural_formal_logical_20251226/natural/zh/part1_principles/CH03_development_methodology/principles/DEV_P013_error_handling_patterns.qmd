@@ -1,0 +1,526 @@
+---
+title: "DEV_P013: 錯誤處理模式原則"
+subtitle: "應用程式必須實施系統性的錯誤檢測、處理和復原方法，提供一致的用戶反饋。每種錯誤類型都需要適當的檢測機制、清晰的溝通模式和明確的復原路徑"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P013"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article: 
+  number: 13
+  title: "錯誤處理模式原則"
+related_to:
+  - "MP053: 反饋迴路"
+  - "MP054: UI-伺服器對應性"
+  - "DEV_R009: UI-伺服器-預設值三元組"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十三條：錯誤處理模式原則 {#overview}
+
+**開發方法法第十三條（錯誤處理模式原則）**
+
+應用程式必須實施系統性的錯誤檢測、處理和復原方法，提供一致的用戶反饋。每種錯誤類型都需要適當的檢測機制、清晰的溝通模式和明確的復原路徑。
+
+:::{.callout-important}
+## 核心原則
+系統性建立錯誤處理機制，確保每種錯誤都有明確的檢測、溝通和復原策略，維護用戶信任與系統穩定性。
+:::
+
+# 第一項：錯誤類型分類 {#error-types}
+
+## 第一款：輸入驗證錯誤 {#input-validation-errors}
+
+**定義與特徵：**
+- **定義**：用戶輸入未通過驗證標準時發生的錯誤
+- **檢測位置**：客戶端輸入期間或提交前的驗證
+- **常見範例**：無效的電子郵件格式、必填欄位遺漏、數值範圍違反
+
+**實施標準：**
+```r
+# 漸進式輸入驗證
+observe({
+  req(input$email)
+  if (input$email != "" && !is_valid_email(input$email)) {
+    updateTextInput(session, "email", 
+      label = "電子郵件（格式無效）",
+      class = "input-error"
+    )
+    validation_state$email <- FALSE
+  } else {
+    updateTextInput(session, "email", 
+      label = "電子郵件",
+      class = "input-valid"
+    )
+    validation_state$email <- TRUE
+  }
+})
+
+# 表單層級提交前驗證
+observeEvent(input$submit, {
+  validation_errors <- list()
+  
+  if (!validation_state$email) {
+    validation_errors$email <- "請輸入有效的電子郵件地址"
+  }
+  
+  if (length(validation_errors) > 0) {
+    handle_validation_errors(validation_errors)
+    return()
+  }
+  
+  # 繼續表單提交
+  submit_form(input)
+})
+```
+
+## 第二款：資料存取錯誤 {#data-access-errors}
+
+**定義與特徵：**
+- **定義**：系統無法存取所需資料來源時發生的錯誤
+- **檢測位置**：資料庫連接失敗、檔案遺失、網路問題
+- **常見範例**：資料庫逾時、表格找不到、網路中斷
+
+**檢測實施：**
+```r
+# 資料存取與錯誤檢測
+data <- reactive({
+  tryCatch({
+    # 嘗試資料存取
+    result <- dbGetQuery(connection, query)
+    if (nrow(result) == 0) {
+      # 無資料（技術上非錯誤但需處理）
+      return(list(
+        status = "empty",
+        data = NULL,
+        message = "查詢條件未找到相符資料"
+      ))
+    }
+    return(list(
+      status = "success",
+      data = result,
+      message = NULL
+    ))
+  }, error = function(e) {
+    # 資料庫錯誤
+    return(list(
+      status = "error",
+      data = NULL,
+      message = paste("資料庫錯誤：", e$message)
+    ))
+  })
+})
+```
+
+## 第三款：處理錯誤 {#processing-errors}
+
+**定義與特徵：**
+- **定義**：伺服器端資料處理期間發生的錯誤
+- **檢測位置**：業務邏輯例外處理、非預期資料格式
+- **常見範例**：計算錯誤、不相容資料類型、非預期空值
+
+**處理實施：**
+```r
+# 處理與錯誤檢測
+processed_data <- reactive({
+  req(data())
+  
+  if (data()$status != "success") {
+    # 傳遞錯誤狀態
+    return(data())
+  }
+  
+  tryCatch({
+    # 嘗試處理
+    result <- process_data(data()$data)
+    return(list(
+      status = "success",
+      data = result,
+      message = NULL
+    ))
+  }, error = function(e) {
+    # 處理錯誤
+    return(list(
+      status = "error",
+      data = NULL,
+      message = paste("處理錯誤：", e$message)
+    ))
+  }, warning = function(w) {
+    # 處理完成但有警告
+    result <- process_data(data()$data)
+    return(list(
+      status = "warning",
+      data = result,
+      message = paste("警告：", w$message)
+    ))
+  })
+})
+```
+
+## 第四款：系統錯誤 {#system-errors}
+
+**定義與特徵：**
+- **定義**：廣泛系統故障導致的錯誤
+- **檢測位置**：應用程式監控、環境故障
+- **常見範例**：記憶體不足、伺服器當機、依賴服務失敗
+
+# 第二項：錯誤溝通模式 {#error-communication}
+
+## 第一款：即時驗證反饋 {#inline-validation-feedback}
+
+**實施標準：**
+```r
+# 即時驗證與立即反饋
+textInput(inputId = "email", 
+  label = "電子郵件地址",
+  placeholder = "example@domain.com"
+)
+
+# 驗證訊息顯示
+uiOutput("email_validation")
+
+# 伺服器端驗證訊息渲染
+output$email_validation <- renderUI({
+  req(input$email, input$email != "")
+  
+  if (!is_valid_email(input$email)) {
+    div(class = "validation-error",
+      icon("exclamation-circle"),
+      "請輸入有效的電子郵件地址"
+    )
+  } else {
+    div(class = "validation-success",
+      icon("check-circle"),
+      "電子郵件格式有效"
+    )
+  }
+})
+```
+
+## 第二款：狀態驅動資料顯示 {#status-based-display}
+
+**實施標準：**
+```r
+# 具狀態處理的UI組件
+output$data_display <- renderUI({
+  req(processed_data())
+  
+  status <- processed_data()$status
+  
+  if (status == "error") {
+    div(class = "error-message",
+      icon("exclamation-triangle"),
+      h4("發生錯誤"),
+      p(processed_data()$message),
+      actionButton(ns("retry"), "重試")
+    )
+  } else if (status == "empty") {
+    div(class = "empty-state",
+      icon("info-circle"),
+      h4("無可用資料"),
+      p(processed_data()$message),
+      p("請嘗試調整搜尋條件。")
+    )
+  } else if (status == "warning") {
+    div(
+      div(class = "warning-banner",
+        icon("exclamation-circle"),
+        "警告：", processed_data()$message
+      ),
+      # 仍顯示有警告的資料
+      render_data_table(processed_data()$data)
+    )
+  } else {
+    # 成功狀態
+    render_data_table(processed_data()$data)
+  }
+})
+```
+
+## 第三款：關鍵錯誤對話框 {#modal-error-messages}
+
+**實施標準：**
+```r
+# 阻止繼續的關鍵錯誤
+display_critical_error <- function(title, message, details = NULL) {
+  showModal(modalDialog(
+    title = title,
+    div(
+      div(class = "critical-error-message", message),
+      if (!is.null(details)) {
+        div(class = "error-details",
+          h5("技術詳情："),
+          pre(details)
+        )
+      } else NULL,
+      div(class = "error-actions",
+        actionButton("refresh", "重新整理頁面", icon = icon("sync")),
+        actionButton("contact_support", "聯繫技術支援", icon = icon("envelope"))
+      )
+    ),
+    footer = NULL,
+    easyClose = FALSE
+  ))
+}
+```
+
+# 第三項：復原策略 {#recovery-patterns}
+
+## 第一款：自動重試機制 {#automatic-retry}
+
+**實施標準：**
+```r
+# 指數退避自動重試
+get_data_with_retry <- function(query, max_retries = 3) {
+  reactive({
+    attempt <- 1
+    retry_delay <- 1000  # 1秒初始延遲
+    
+    while (attempt <= max_retries) {
+      result <- tryCatch({
+        # 嘗試取得資料
+        data <- dbGetQuery(connection, query)
+        list(
+          success = TRUE,
+          data = data,
+          error = NULL
+        )
+      }, error = function(e) {
+        list(
+          success = FALSE,
+          data = NULL,
+          error = e$message
+        )
+      })
+      
+      if (result$success) {
+        return(result)
+      }
+      
+      # 如果是最後一次嘗試，回傳錯誤
+      if (attempt == max_retries) {
+        return(result)
+      }
+      
+      # 重試前等待
+      Sys.sleep(retry_delay / 1000)
+      
+      # 增加下次嘗試的延遲（指數退避）
+      retry_delay <- min(retry_delay * 2, 30000)  # 上限30秒
+      attempt <- attempt + 1
+    }
+  })
+}
+```
+
+## 第二款：用戶引發復原 {#user-initiated-recovery}
+
+**實施標準：**
+```r
+# 允許用戶重試操作
+observeEvent(input$retry, {
+  # 重設錯誤狀態
+  error_state$current <- NULL
+  
+  # 重新觸發資料載入
+  data_trigger$refresh <- Sys.time()
+})
+
+# 帶重新整理觸發的資料載入
+data <- reactive({
+  # 響應重新整理觸發
+  data_trigger$refresh
+  
+  tryCatch({
+    # 資料載入邏輯
+    dbGetQuery(connection, query)
+  }, error = function(e) {
+    error_state$current <- e$message
+    NULL
+  })
+})
+```
+
+## 第三款：後備內容機制 {#fallback-content}
+
+**實施標準：**
+```r
+# 主要資料不可用時提供後備內容
+output$dashboard_chart <- renderPlot({
+  if (is.null(primary_data()) || primary_data()$status == "error") {
+    # 使用快取資料作為後備
+    cached_data <- get_cached_data()
+    
+    if (!is.null(cached_data)) {
+      # 使用快取資料建立圖表但顯示快取指示器
+      p <- create_plot(cached_data)
+      p + theme(
+        plot.background = element_rect(fill = "#FFF9F0"),
+        plot.caption = element_text(
+          color = "#B94700", 
+          hjust = 1, 
+          face = "italic", 
+          size = 10
+        )
+      ) + 
+      labs(caption = "* 使用先前會話的快取資料")
+    } else {
+      # 無資料可用 - 顯示佔位符
+      create_empty_plot("無可用資料")
+    }
+  } else {
+    # 正常情況 - 使用主要資料
+    create_plot(primary_data()$data)
+  }
+})
+```
+
+# 第四項：效能最佳化 {#performance-optimization}
+
+## 第一款：搜尋防抖動 {#search-debouncing}
+
+**實施標準：**
+```r
+# 防抖動搜尋實施
+search_debounced <- reactive({
+  input$search_input_search
+}) %>% debounce(500)  # 500毫秒延遲
+
+observeEvent(search_debounced(), {
+  if (nchar(search_debounced()) >= 2) {
+    perform_search(search_debounced())
+  }
+})
+```
+
+## 第二款：結果限制 {#result-limiting}
+
+**實施標準：**
+```r
+# 限制搜尋結果數量
+search_with_limit <- function(term, max_results = 15) {
+  all_results <- perform_database_search(term)
+  
+  if (nrow(all_results) > max_results) {
+    limited_results <- all_results[1:max_results, ]
+    
+    # 加入「更多結果」指示器
+    additional_info <- data.frame(
+      id = "more_results",
+      display_text = paste("...", nrow(all_results) - max_results, "個更多結果")
+    )
+    
+    return(rbind(limited_results, additional_info))
+  }
+  
+  return(all_results)
+}
+```
+
+# 第五項：文件化要求 {#documentation-requirements}
+
+## 第一款：錯誤處理文件化 {#error-documentation}
+
+**標準格式：**
+```r
+#' 客戶檔案組件伺服器
+#'
+#' @param id 模組ID
+#' @param app_data_connection 資料庫連接
+#'
+#' @return 反應值
+#' @section 錯誤處理:
+#' 此組件處理以下錯誤：
+#' * 資料庫連接錯誤：顯示連接失敗訊息並提供重試選項
+#' * 空客戶資料：顯示「無客戶資料」訊息並提供設定指示
+#' * 權限錯誤：顯示「存取拒絕」並提供請求權限按鈕
+#' @export
+customerProfileServer <- function(id, app_data_connection) {
+  # 實施
+}
+```
+
+# 第六項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **擴展 MP053（反饋迴路）**：透過指定錯誤特定的反饋模式
+2. **支援 MP054（UI-伺服器對應性）**：確保伺服器處理的錯誤反映在UI中
+3. **補充 MP052（單向資料流）**：定義錯誤如何從資料來源流向UI
+4. **配合 DEV_R009（UI-伺服器-預設值三元組）**：確保錯誤狀態的預設後備機制
+
+## 第二款：常見反模式 {#common-anti-patterns}
+
+### 靜默失敗 {#silent-failures}
+**問題**：錯誤發生但未通知用戶
+**解決方案**：透過適當的UI模式始終向用戶傳達錯誤
+
+### 技術錯誤訊息 {#technical-error-messages}
+**問題**：直接向終端用戶顯示技術錯誤詳情
+**解決方案**：將技術錯誤翻譯為用戶友善訊息，同時為開發人員保留技術詳情
+
+### 死胡同錯誤 {#dead-end-errors}
+**問題**：錯誤後未提供復原路徑
+**解決方案**：錯誤發生後始終提供清晰的後續步驟
+
+### 不一致錯誤處理 {#inconsistent-error-handling}
+**問題**：不同組件以不同方式處理類似錯誤
+**解決方案**：在整個應用程式中使用一致的模式
+
+# 第七項：測試方法 {#testing-approach}
+
+## 第一款：系統性測試 {#systematic-testing}
+
+錯誤處理應系統性測試：
+
+1. **模擬每種錯誤類型**以驗證檢測機制
+2. **驗證適當的UI反饋**針對每種錯誤條件
+3. **測試復原路徑**確保其按預期工作
+4. **驗證後備內容**當主要內容不可用時
+
+## 第二款：錯誤注入測試 {#error-injection-testing}
+
+```r
+# 錯誤注入測試功能
+test_error_scenarios <- function() {
+  # 測試資料庫連接錯誤
+  mock_db_error <- function() {
+    stop("Connection timeout")
+  }
+  
+  # 測試空結果
+  mock_empty_result <- function() {
+    data.frame()
+  }
+  
+  # 測試處理錯誤
+  mock_processing_error <- function() {
+    stop("Invalid data format")
+  }
+  
+  # 執行測試案例
+  test_scenarios <- list(
+    db_error = mock_db_error,
+    empty_result = mock_empty_result,
+    processing_error = mock_processing_error
+  )
+  
+  return(test_scenarios)
+}
+```
+
+---
+
+*基於：開發方法法第十三條*  
+*相關連結：[MP053 反饋迴路](../../CH00_fundamental_principles/meta_principles/MP053_feedback_loop.qmd), [DEV_P012 反應式資料過濾原則](DEV_P012_reactive_data_filtering.qmd)*

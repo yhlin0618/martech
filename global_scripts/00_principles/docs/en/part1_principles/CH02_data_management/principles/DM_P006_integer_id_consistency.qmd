@@ -1,0 +1,506 @@
+---
+title: "DM_P006: Integer ID Consistency Principle"
+subtitle: "System identifiers shall be implemented as integers for data relationships, with consistent type handling across all application layers"
+chapter: "CH02"
+category: "principle"
+number: "DM_P006"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Data Management Law"
+article-number: 
+  number: 6
+  title: "Integer ID Consistency Principle"
+related_to:
+  - "MP052: Unidirectional Data Flow"
+  - "DM_R002: Universal Data Access Rule"
+  - "UI_R002: Shiny Module ID Handling"
+  - "DM_R003: Database Access tbl Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 6: Integer ID Consistency Principle {#overview}
+
+**Data Management Law Article 6 (Integer ID Consistency Principle)**
+
+System identifiers shall be implemented as integers for data relationships, with consistent type handling across all application layers.
+
+:::{.callout-important}
+## Core Principle
+Implement integers as primary identifiers throughout the data pipeline, from database storage through server processing to UI presentation, ensuring optimal performance, consistency, and compatibility.
+:::
+
+# Section 1: Implementation Rationale {#implementation-rationale}
+
+## Subsection 1: Performance Advantages {#performance-advantages}
+
+**Performance Benefits of Integer IDs:**
+
+1. **Storage Efficiency**: Integer IDs provide optimal storage and comparison performance
+2. **Query Speed**: Integer comparisons and indexing operations are faster
+3. **Memory Usage**: Integers consume less memory space
+4. **Processing Efficiency**: Numerical operations are more efficient than string processing
+
+**Implementation Standards:**
+```sql
+-- Database schema design
+CREATE TABLE customers (
+  customer_id INTEGER PRIMARY KEY,
+  name VARCHAR(255),
+  email VARCHAR(255)
+);
+
+CREATE TABLE transactions (
+  transaction_id INTEGER PRIMARY KEY,
+  customer_id INTEGER,
+  amount DECIMAL(10,2),
+  FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+```
+
+## Subsection 2: Consistency Guarantees {#consistency-guarantees}
+
+**Type Consistency Strategies:**
+
+1. **Single Data Type**: Using a single data type for IDs avoids type conversion issues
+2. **Explicit Relationships**: Makes relationships between data entities explicit and unambiguous
+3. **Reliability**: Prevents string comparison errors in filtering and joining operations
+4. **Compatibility**: Ensures consistent behavior across different system components
+
+# Section 2: Data Access Layer Implementation {#data-access-layer}
+
+## Subsection 1: Data Query Standards {#data-query-standards}
+
+**Data Access Function Implementation:**
+```r
+get_customer_by_id <- function(id) {
+  # Ensure id is treated as an integer
+  id <- as.integer(id)
+  
+  # Validate ID
+  if (is.na(id) || id <= 0) {
+    stop("Invalid customer ID: ", id)
+  }
+  
+  # Query customer data
+  query <- sprintf("SELECT * FROM customers WHERE customer_id = %d", id)
+  result <- dbGetQuery(conn, query)
+  
+  if (nrow(result) == 0) {
+    warning("No customer found with ID: ", id)
+    return(NULL)
+  }
+  
+  return(result)
+}
+
+# Batch data query
+get_customers_by_ids <- function(ids) {
+  # Ensure all IDs are integers
+  ids <- as.integer(ids)
+  
+  # Remove invalid IDs
+  valid_ids <- ids[!is.na(ids) & ids > 0]
+  
+  if (length(valid_ids) == 0) {
+    return(data.frame())
+  }
+  
+  # Build IN query
+  ids_string <- paste(valid_ids, collapse = ", ")
+  query <- sprintf("SELECT * FROM customers WHERE customer_id IN (%s)", ids_string)
+  result <- dbGetQuery(conn, query)
+  
+  return(result)
+}
+```
+
+## Subsection 2: Server Processing Standards {#server-processing-standards}
+
+**Data Filtering Implementation:**
+```r
+# R code for filtering by customer_id
+filter_customer_data <- function(data, customer_id) {
+  # Ensure consistent type handling
+  customer_id <- as.integer(customer_id)
+  
+  # Validate input
+  if (is.na(customer_id)) {
+    warning("Invalid customer_id provided for filtering")
+    return(data.frame())
+  }
+  
+  # Filter data
+  filtered_data <- data %>%
+    filter(customer_id == !!customer_id)
+  
+  return(filtered_data)
+}
+
+# Multiple ID filtering
+filter_customer_data_multiple <- function(data, customer_ids) {
+  # Ensure consistent type handling
+  customer_ids <- as.integer(customer_ids)
+  
+  # Remove invalid IDs
+  valid_ids <- customer_ids[!is.na(customer_ids)]
+  
+  if (length(valid_ids) == 0) {
+    return(data.frame())
+  }
+  
+  # Filter data
+  filtered_data <- data %>%
+    filter(customer_id %in% valid_ids)
+  
+  return(filtered_data)
+}
+```
+
+# Section 3: User Interface Implementation {#user-interface-implementation}
+
+## Subsection 1: UI Choice Components {#ui-choice-components}
+
+**Dropdown Implementation:**
+```r
+# When rendering customer choices in a dropdown
+create_customer_choices <- function(customers) {
+  # Convert to character for UI display
+  customer_choices <- setNames(
+    as.character(customers$customer_id),  
+    paste0(customers$name, " (ID: ", customers$customer_id, ")")
+  )
+  
+  return(customer_choices)
+}
+
+# Handle UI selection
+observeEvent(input$customer_select, {
+  # Convert back to integer for data operations
+  selected_id <- as.integer(input$customer_select)
+  
+  # Validate conversion
+  if (is.na(selected_id)) {
+    showNotification("Invalid customer selection", type = "error")
+    return()
+  }
+  
+  # Process the selection...
+  customer_data <- get_customer_by_id(selected_id)
+  
+  # Update UI
+  if (!is.null(customer_data)) {
+    output$customer_details <- renderUI({
+      div(
+        h4(customer_data$name),
+        p("Email: ", customer_data$email),
+        p("Customer ID: ", customer_data$customer_id)
+      )
+    })
+  }
+})
+```
+
+## Subsection 2: ID Input Validation {#id-input-validation}
+
+**Input Validation Implementation:**
+```r
+# ID input validation function
+validate_id_input <- function(input_value) {
+  # Handle null or empty string
+  if (is.null(input_value) || input_value == "") {
+    return(list(valid = FALSE, message = "ID cannot be empty"))
+  }
+  
+  # Try to convert to integer
+  id <- suppressWarnings(as.integer(input_value))
+  
+  # Check if conversion succeeded
+  if (is.na(id)) {
+    return(list(valid = FALSE, message = "ID must be a valid integer"))
+  }
+  
+  # Check for positive value
+  if (id <= 0) {
+    return(list(valid = FALSE, message = "ID must be a positive integer"))
+  }
+  
+  return(list(valid = TRUE, id = id, message = NULL))
+}
+
+# Use validation in UI
+observeEvent(input$customer_id_input, {
+  validation <- validate_id_input(input$customer_id_input)
+  
+  if (!validation$valid) {
+    # Show error message
+    output$id_validation_message <- renderUI({
+      div(class = "text-danger", validation$message)
+    })
+    
+    # Disable submit button
+    shinyjs::disable("submit_button")
+  } else {
+    # Clear error message
+    output$id_validation_message <- renderUI(NULL)
+    
+    # Enable submit button
+    shinyjs::enable("submit_button")
+    
+    # Store validated ID
+    customer_id_validated(validation$id)
+  }
+})
+```
+
+# Section 4: Utility Functions {#utility-functions}
+
+## Subsection 1: ID Type Conversion Utilities {#id-conversion-utilities}
+
+**Standardized ID Handling Utilities:**
+```r
+# Utility function for standardizing ID handling
+ensure_integer_id <- function(id, allow_null = FALSE) {
+  if (is.null(id)) {
+    if (allow_null) return(NULL)
+    stop("ID cannot be NULL")
+  }
+  
+  # Handle vector case
+  if (length(id) > 1) {
+    return(sapply(id, ensure_integer_id, allow_null = allow_null))
+  }
+  
+  # Convert various input formats to integer
+  if (is.character(id)) {
+    # Remove any non-numeric characters
+    id <- gsub("[^0-9]", "", id)
+    if (id == "") {
+      if (allow_null) return(NULL)
+      stop("ID contains no numeric characters")
+    }
+  }
+  
+  # Convert to integer
+  result <- suppressWarnings(as.integer(id))
+  
+  if (is.na(result)) {
+    if (allow_null) return(NULL)
+    stop("Cannot convert ID to integer: ", id)
+  }
+  
+  return(result)
+}
+
+# ID cleaning and standardization
+clean_id_vector <- function(ids) {
+  # Remove NULL and NA values
+  cleaned <- ids[!is.null(ids) & !is.na(ids)]
+  
+  # Convert to integers
+  int_ids <- suppressWarnings(as.integer(cleaned))
+  
+  # Remove failed conversions
+  valid_ids <- int_ids[!is.na(int_ids) & int_ids > 0]
+  
+  return(unique(valid_ids))
+}
+```
+
+## Subsection 2: ID Relationship Validation {#id-relationship-validation}
+
+**Relationship Validation Utilities:**
+```r
+# Function to validate ID relationships
+validate_id_relationship <- function(parent_id, child_ids, relationship_table) {
+  # Ensure consistent ID types
+  parent_id <- ensure_integer_id(parent_id)
+  child_ids <- ensure_integer_id(child_ids)
+  
+  # Query valid relationships
+  valid_relationships <- dbGetQuery(conn, sprintf(
+    "SELECT child_id FROM %s WHERE parent_id = %d AND child_id IN (%s)",
+    relationship_table,
+    parent_id,
+    paste(child_ids, collapse = ", ")
+  ))
+  
+  valid_child_ids <- valid_relationships$child_id
+  invalid_child_ids <- setdiff(child_ids, valid_child_ids)
+  
+  return(list(
+    valid = valid_child_ids,
+    invalid = invalid_child_ids,
+    all_valid = length(invalid_child_ids) == 0
+  ))
+}
+
+# Foreign key existence check
+check_foreign_key_exists <- function(foreign_key_id, reference_table, reference_column) {
+  foreign_key_id <- ensure_integer_id(foreign_key_id)
+  
+  query <- sprintf(
+    "SELECT COUNT(*) as count FROM %s WHERE %s = %d",
+    reference_table,
+    reference_column,
+    foreign_key_id
+  )
+  
+  result <- dbGetQuery(conn, query)
+  return(result$count > 0)
+}
+```
+
+# Section 5: Complete Module Example {#complete-module-example}
+
+## Subsection 1: Customer Module Implementation {#customer-module-implementation}
+
+**Customer Module with Proper ID Handling:**
+```r
+# Customer module with proper ID handling
+customerModuleUI <- function(id) {
+  ns <- NS(id)
+  
+  fluidPage(
+    fluidRow(
+      column(4,
+        selectizeInput(
+          ns("customer_select"),
+          "Select Customer:",
+          choices = NULL,
+          options = list(placeholder = "Please select a customer...")
+        ),
+        uiOutput(ns("validation_message"))
+      ),
+      column(8,
+        uiOutput(ns("customer_details"))
+      )
+    )
+  )
+}
+
+customerModuleServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # Load customer choices
+    observe({
+      customers <- data_source$get_customers()
+      
+      if (!is.null(customers) && nrow(customers) > 0) {
+        choices <- create_customer_choices(customers)
+        updateSelectizeInput(
+          session,
+          "customer_select",
+          choices = choices
+        )
+      }
+    })
+    
+    # When user selects a customer
+    observeEvent(input$customer_select, {
+      # Proper ID type handling
+      tryCatch({
+        selected_id <- ensure_integer_id(input$customer_select)
+        
+        # Get customer data using the integer ID
+        customer_data <- data_source$get_customer(selected_id)
+        
+        # Update UI
+        if (!is.null(customer_data)) {
+          output$customer_details <- renderUI({
+            div(
+              h4(customer_data$name),
+              p("Email: ", customer_data$email),
+              p("Customer ID: ", customer_data$customer_id)
+            )
+          })
+          
+          # Clear any validation messages
+          output$validation_message <- renderUI(NULL)
+        }
+        
+      }, error = function(e) {
+        # Show error message
+        output$validation_message <- renderUI({
+          div(class = "text-danger", 
+              "Error: ", e$message)
+        })
+        
+        # Clear customer details
+        output$customer_details <- renderUI(NULL)
+      })
+    })
+    
+    # Return selected customer ID
+    return(reactive({
+      if (!is.null(input$customer_select)) {
+        tryCatch({
+          ensure_integer_id(input$customer_select)
+        }, error = function(e) {
+          NULL
+        })
+      } else {
+        NULL
+      }
+    }))
+  })
+}
+```
+
+# Section 6: Common Anti-patterns {#common-anti-patterns}
+
+## Subsection 1: Inconsistent Type Handling {#inconsistent-type-handling}
+
+**Problem**: Inconsistent type handling can cause filter mismatches
+```r
+# INCORRECT: Inconsistent type handling can cause filter mismatches
+customers %>% filter(customer_id == input$customer_select)  # String vs Integer comparison!
+
+# CORRECT: Ensure type consistency
+customers %>% filter(customer_id == as.integer(input$customer_select))
+```
+
+## Subsection 2: String-Based IDs {#string-based-ids}
+
+**Problem**: Using string-based IDs
+```r
+# INCORRECT: Using string-based IDs
+customer_data$id <- paste0("CUST_", seq_len(nrow(customer_data)))
+
+# CORRECT: Using integer IDs with separate type field if needed
+customer_data$id <- seq_len(nrow(customer_data))
+customer_data$type <- "CUST"
+```
+
+## Subsection 3: Mixed ID Types {#mixed-id-types}
+
+**Problem**: Mixing ID types in joined data
+```r
+# INCORRECT: Mixing ID types in joined data
+left_join(customers, transactions, by = c("customer_id" = "cust_id"))  # Potentially different types
+
+# CORRECT: Standardizing ID field names and types
+left_join(customers, transactions, by = "customer_id")  # Same named field, same type
+```
+
+# Section 7: Principle Relationships {#principle-relationships}
+
+## Subsection 1: Extending Relationships {#extending-relationships}
+
+This principle:
+
+1. **Supports MP052 (Unidirectional Data Flow)** by ensuring ID type consistency throughout data flow
+2. **Complements DM_R002 (Universal Data Access Rule)** by providing specific guidance for ID handling
+3. **Enhances UI_R002 (Shiny Module ID Handling)** by defining standards for ID passing between modules
+4. **Works with DM_R003 (Database Access tbl Rule)** by ensuring type consistency in database queries
+
+---
+
+*Based on: Data Management Law Article 6*  
+*Related to: [MP052 Unidirectional Data Flow](../../CH00_fundamental_principles/meta_principles/MP052_unidirectional_data_flow.qmd), [DM_R002 Universal Data Access Rule](../rules/DM_R002_universal_data_access.qmd)*

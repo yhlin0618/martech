@@ -1,0 +1,567 @@
+---
+title: "MP097: Principle-Implementation Separation"
+subtitle: "Architectural foundation for separating conceptual documentation from executable code"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP097"
+date-created: "2025-08-28"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "meta-principle"
+law: "Fundamental Principles Law"
+article-number: 
+  number: 97
+  title: "Principle-Implementation Separation"
+influences:
+  - "MP000: Axiomatization System"
+  - "MP011: Documentation Organization"
+  - "MP031: Separation of Concerns"
+  - "MP032: Don't Repeat Yourself (DRY)"
+  - "MP043: Runnable First"
+  - "MP093: Script Separation Principle"
+extends:
+  - "MP031: Separation of Concerns"
+  - "MP011: Documentation Organization"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#core-concept}
+
+**Fundamental Principles Law Article 97 (Principle-Implementation Separation)**
+
+This meta-principle establishes the fundamental architectural separation between conceptual principles (WHAT and WHY) and their concrete implementations (HOW) within the MAMBA framework. This separation ensures language-agnostic documentation, maintainable code, and clear architectural boundaries.
+
+Principles serve as constitutional documents that define:
+- **WHAT**: The concepts, patterns, and structures to be implemented
+- **WHY**: The rationale, philosophy, and theoretical foundations
+- **WHEN**: The contexts and conditions for application
+
+Implementations provide the executable reality:
+- **HOW**: The actual code that realizes the principles
+- **WHERE**: The specific file locations and module structures
+- **WITH**: The languages, tools, and frameworks used
+
+# Section 1: Core Philosophy {#core-philosophy}
+
+## Subsection 1: Fundamental Separation {#fundamental-separation}
+
+:::{.callout-note}
+## Architectural Foundation
+The separation between principles and implementations is as fundamental as the separation between:
+- **Constitution and Legislation**: Principles are constitutional; implementations are statutory
+- **Interface and Implementation**: Principles define contracts; implementations fulfill them
+- **Specification and Realization**: Principles specify requirements; implementations realize them
+:::
+
+## Subsection 2: Documentation vs. Code {#documentation-vs-code}
+
+Principle documents should contain:
+
+| Content Type | Belongs in Principles | Belongs in Implementations |
+|-------------|----------------------|---------------------------|
+| **Conceptual Definitions** | ✓ What IS something | × How it works internally |
+| **Architectural Patterns** | ✓ Structure and relationships | × Specific code structures |
+| **Specifications** | ✓ NSQL, AIMETA descriptions | × R, Python, SQL code |
+| **Minimal Examples** | ✓ Illustrative pseudo-code | × Full function bodies |
+| **References** | ✓ Paths to implementations | × Duplicated code |
+| **Rationale** | ✓ Why decisions were made | × How they're executed |
+
+## Subsection 3: Language Agnosticism {#language-agnosticism}
+
+:::{.callout-important}
+## Multi-Language Support
+Principles must remain language-agnostic to support:
+- **R implementations** for statistical computing
+- **Python implementations** for machine learning
+- **SQL implementations** for database operations
+- **JavaScript implementations** for UI components
+- **Future language implementations** without principle rewrites
+:::
+
+# Section 2: Key Rules {#key-rules}
+
+## Subsection 1: Minimal Code Principle {#minimal-code}
+
+Principle files should contain minimal implementation code:
+
+```yaml
+# GOOD: Conceptual specification in NSQL
+operation: "AGGREGATE customer_transactions BY month"
+output: "monthly_revenue_summary"
+
+# BAD: Full R implementation
+aggregate_monthly <- function(df) {
+  df %>%
+    group_by(month = floor_date(date, "month")) %>%
+    summarize(
+      revenue = sum(amount),
+      transactions = n(),
+      avg_transaction = mean(amount)
+    )
+}
+```
+
+## Subsection 2: Reference Pattern {#reference-pattern}
+
+When implementations are needed, reference external files:
+
+```yaml
+# GOOD: Clear reference to implementation
+implementation:
+  language: "R"
+  location: "scripts/global_scripts/04_utils/fn_aggregate_monthly.R"
+  function: "aggregate_monthly"
+  
+# BAD: Embedded implementation
+implementation: |
+  aggregate_monthly <- function(df) {
+    # 50 lines of R code...
+  }
+```
+
+## Subsection 3: Illustrative Examples {#illustrative-examples}
+
+When code examples are necessary, use:
+
+1. **Pseudo-code** for algorithmic concepts
+2. **NSQL** for data operations
+3. **Minimal snippets** (< 5 lines) for syntax illustration
+4. **Comments** indicating this is conceptual, not executable
+
+```r
+# ILLUSTRATIVE ONLY - See implementations for executable code
+result <- data |> 
+  TRANSFORM(raw -> processed) |>
+  AGGREGATE(by = dimension) |>
+  VISUALIZE(type = "dashboard")
+```
+
+# Section 3: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Directory Structure {#directory-structure}
+
+The MAMBA framework organizes implementations separately from principles:
+
+```
+scripts/
+├── global_scripts/           # Shared implementations
+│   ├── 00_principles/       # Principle documentation ONLY
+│   │   └── docs/         # Natural language specifications
+│   ├── 01_db/              # Database implementations
+│   ├── 02_db_utils/        # Database utility implementations
+│   ├── 04_utils/           # General utility implementations
+│   └── 10_rshinyapp_components/ # UI component implementations
+└── update_scripts/          # Application-specific implementations
+```
+
+## Subsection 2: Implementation Registry {#implementation-registry}
+
+Each principle should maintain a registry of its implementations:
+
+```yaml
+implementations:
+  - id: "R001"
+    language: "R"
+    location: "scripts/global_scripts/04_utils/fn_customer_dna.R"
+    status: "production"
+    version: "2.3.0"
+    
+  - id: "PY001"
+    language: "Python"
+    location: "scripts/python_utils/customer_dna.py"
+    status: "experimental"
+    version: "0.1.0"
+```
+
+## Subsection 3: Cross-Reference System {#cross-reference-system}
+
+Implementations should reference their governing principles:
+
+```r
+#' @principle MP097 - Principle-Implementation Separation
+#' @implements DM_P003 - Customer DNA Analysis
+#' @see scripts/global_scripts/00_principles/docs/en/part1_principles/CH02_data_management/principles/DM_P003_customer_dna.qmd
+fn_calculate_customer_dna <- function(data) {
+  # Implementation code...
+}
+```
+
+# Section 4: Benefits {#benefits}
+
+## Subsection 1: Maintainability Benefits {#maintainability}
+
+1. **Single Source of Truth**: Code exists in one place only
+2. **Version Control**: Implementations can evolve independently
+3. **Testing**: Executable code can be properly tested
+4. **Debugging**: Real code can be debugged with proper tools
+5. **Refactoring**: Implementations can be refactored without touching documentation
+
+## Subsection 2: Documentation Benefits {#documentation}
+
+1. **Clarity**: Principles focus on concepts without implementation noise
+2. **Accessibility**: Non-programmers can understand principles
+3. **Stability**: Principles remain stable as implementations evolve
+4. **Searchability**: Conceptual content is easier to find
+5. **Translation**: Principles can be translated to other languages
+
+## Subsection 3: Architectural Benefits {#architectural}
+
+1. **Modularity**: Clear separation of concerns
+2. **Flexibility**: Multiple implementations per principle
+3. **Evolution**: Implementations can change without principle changes
+4. **Standards**: Enforces consistent architecture
+5. **Scalability**: New implementations can be added easily
+
+# Section 5: Anti-Patterns to Avoid {#anti-patterns}
+
+## Subsection 1: Code Duplication {#code-duplication}
+
+:::{.callout-warning}
+## Never Duplicate Code
+**Anti-pattern**: Copying full function implementations into multiple principle files
+
+**Problem**: Violates DRY, creates maintenance nightmares, leads to inconsistencies
+
+**Solution**: Create one implementation file, reference it from all relevant principles
+:::
+
+## Subsection 2: Language-Specific Details {#language-specific}
+
+**Anti-pattern**: Including R-specific or Python-specific syntax in principles
+
+```r
+# BAD: R-specific details in principle
+"Use %>% for piping and :: for namespace access"
+
+# GOOD: Language-agnostic concept
+"Use functional composition and explicit namespace references"
+```
+
+## Subsection 3: Untestable Documentation Code {#untestable-code}
+
+**Anti-pattern**: Writing pseudo-code that looks like real code but can't run
+
+```r
+# BAD: Looks real but won't execute
+function process_data(input) {
+  cleaned = clean_somehow(input)
+  analyzed = analyze_somehow(cleaned)
+  return visualize_somehow(analyzed)
+}
+
+# GOOD: Clear pseudo-code or NSQL
+PROCESS: input -> clean -> analyze -> visualize -> output
+```
+
+## Subsection 4: Implementation in Meta-Principles {#implementation-in-mp}
+
+**Anti-pattern**: Embedding implementation code in meta-principles
+
+Meta-principles should NEVER contain implementation code, only:
+- Conceptual definitions
+- Architectural patterns
+- Philosophical foundations
+- Relationship descriptions
+
+# Section 6: Migration Strategy {#migration-strategy}
+
+## Subsection 1: Identification Phase {#identification}
+
+1. **Audit existing principles** for embedded implementations
+2. **Categorize code** as:
+   - Essential examples (keep, minimize)
+   - Full implementations (extract)
+   - Duplicate code (consolidate)
+   - Dead code (remove)
+
+## Subsection 2: Extraction Priority {#extraction-priority}
+
+Extract implementations in this order:
+
+| Priority | Target | Rationale |
+|----------|--------|-----------|
+| **1** | Duplicate implementations | Immediate DRY violation |
+| **2** | Large code blocks (>20 lines) | High maintenance burden |
+| **3** | Frequently changing code | Stability improvement |
+| **4** | Language-specific code | Portability enhancement |
+| **5** | Utility functions | Reusability increase |
+
+## Subsection 3: Extraction Process {#extraction-process}
+
+For each identified implementation:
+
+1. **Create implementation file** in appropriate `scripts/` location
+2. **Move code** to implementation file with proper documentation
+3. **Add references** in principle file pointing to implementation
+4. **Test** the extracted implementation
+5. **Update** all references in other principles
+6. **Document** the extraction in CHANGELOG
+
+## Subsection 4: Validation Process {#validation}
+
+After extraction, verify:
+
+1. **Principles are readable** without implementation details
+2. **Implementations are findable** from principle references
+3. **Code still executes** properly
+4. **Tests still pass** for affected modules
+5. **Documentation remains complete** but cleaner
+
+# Section 7: Relationships with Other Principles {#relationships}
+
+This meta-principle fundamentally affects all other principles and establishes relationships with:
+
+## Subsection 1: Direct Extensions {#direct-extensions}
+
+- **MP011: Documentation Organization** - Extends to separate doc types
+- **MP031: Separation of Concerns** - Applies SoC to documentation
+- **MP032: DRY Principle** - Prevents code duplication across docs
+- **MP093: Script Separation** - Complements script organization
+
+## Subsection 2: Implementation Patterns {#implementation-patterns}
+
+- **MP043: Runnable First** - Implementations must be runnable
+- **MP046: Debug Code Tracing** - Debug in implementations, not principles
+- **MP050: Root Cause Resolution** - Fix in implementations, document in principles
+
+## Subsection 3: Structural Impact {#structural-impact}
+
+- **MP000: Axiomatization System** - Principles as axioms, implementations as theorems
+- **MP014: Modularity** - Clear module boundaries between docs and code
+- **MP016: Concept Documents** - Principles as pure concept documents
+
+# Section 8: Implementation Examples {#examples}
+
+## Subsection 1: Before - Embedded Implementation {#example-before}
+
+```markdown
+# DM_P003: Customer DNA Analysis
+
+The customer DNA is calculated as follows:
+
+```r
+calculate_customer_dna <- function(transactions) {
+  transactions %>%
+    group_by(customer_id) %>%
+    summarize(
+      frequency = n(),
+      monetary = sum(amount),
+      recency = max(date),
+      category_diversity = n_distinct(category),
+      # ... 50 more lines of code
+    ) %>%
+    mutate(
+      dna_score = frequency * 0.3 + monetary * 0.4 + recency * 0.3
+    )
+}
+```
+```
+
+## Subsection 2: After - Separated Implementation {#example-after}
+
+```markdown
+# DM_P003: Customer DNA Analysis
+
+Customer DNA represents the behavioral fingerprint of a customer through:
+
+**Conceptual Definition**:
+```
+CUSTOMER_DNA = AGGREGATE(
+  transactions BY customer_id
+) -> COMPUTE(
+  frequency, monetary, recency, diversity
+) -> SYNTHESIZE(
+  behavioral_profile
+)
+```
+
+**Implementation**:
+- **R**: `scripts/global_scripts/04_utils/fn_customer_dna.R`
+- **Python**: `scripts/python_utils/customer_dna.py`
+- **SQL**: `scripts/sql_utils/customer_dna.sql`
+
+**Interface Specification**:
+- Input: Transaction dataset with customer_id, date, amount, category
+- Output: Customer profile with DNA components and composite score
+- Parameters: Weight configuration for score calculation
+```
+
+# Section 9: Compliance Verification {#compliance}
+
+## Subsection 1: Principle Audit Checklist {#audit-checklist}
+
+For each principle file, verify:
+
+- [ ] Contains < 20 lines of actual code
+- [ ] Code blocks are marked as illustrative/conceptual
+- [ ] Full implementations have external references
+- [ ] No language-specific syntax in specifications
+- [ ] NSQL/pseudo-code used for algorithms
+- [ ] Implementation registry is maintained
+
+## Subsection 2: Implementation Checklist {#implementation-checklist}
+
+For each implementation file, verify:
+
+- [ ] References governing principle(s)
+- [ ] Includes proper documentation headers
+- [ ] Can be tested independently
+- [ ] Follows language-specific standards
+- [ ] Version controlled properly
+- [ ] Located in correct directory
+
+# Section 10: Derivation Documentation Standard {#derivation-docs}
+
+This section applies MP097 specifically to Derivation documentation files (D0X_XX.qmd) in CH13_derivations.
+
+## Subsection 1: Content Separation Rules {#derivation-content}
+
+Derivation documentation files (`.qmd`) MUST contain only conceptual specifications:
+
+| Content Type | In .qmd (Allowed) | In .R Script (Required) |
+|--------------|-------------------|------------------------|
+| NSQL specifications | ✓ Yes | × No |
+| Validation rule tables | ✓ Yes | × No |
+| Data flow diagrams (ASCII) | ✓ Yes | × No |
+| Input/Output schema tables | ✓ Yes | × No |
+| Implementation references | ✓ Yes | - |
+| Complete R functions | × No | ✓ Yes |
+| R code > 10 lines | × No | ✓ Yes |
+| Executable validation logic | × No | ✓ Yes |
+
+## Subsection 2: NSQL as Specification Language {#nsql-specification}
+
+:::{.callout-important}
+## NSQL is NOT R
+NSQL (Natural SQL) is a specification language for describing data operations conceptually.
+It is NOT a programming language and should NOT be mixed with R code.
+
+- **NSQL in .qmd**: Describes WHAT the operation does
+- **R in .R file**: Implements HOW to do it
+:::
+
+**Correct NSQL usage in .qmd**:
+
+```nsql
+# D01_02: RFM Calculation (NSQL specification)
+CALCULATE D01_02_rfm_metrics:
+  FROM processed_data.df_customer_aggregated
+  CALCULATE:
+    r_value: DATEDIFF(days, last_purchase, reference_date)
+    f_value: transaction_count
+    m_value: total_spent / transaction_count
+  OUTPUT TO processed_data.df_customer_rfm
+```
+
+## Subsection 3: Validation Documentation Pattern {#validation-pattern}
+
+When documenting validation requirements, use tables NOT executable functions:
+
+**CORRECT Pattern**:
+
+```markdown
+## Validation Rules {#validation}
+
+| Metric | Validation Rule | Error Action |
+|--------|-----------------|--------------|
+| `r_value` | r_value >= 0 | FAIL if negative |
+| `f_value` | f_value >= 1 | FAIL if < 1 |
+
+### Implementation Reference
+Validation is implemented in PART 3: TEST section of `{platform}_D01_03.R`.
+See [DM_R044](path/to/DM_R044.qmd) for the Five-Part Structure standard.
+```
+
+**WRONG Pattern** (violates MP097):
+
+```markdown
+## Validation Rules
+
+validate_rfm_output <- function(df_rfm) {
+  # 50 lines of R code - SHOULD NOT BE HERE
+  if (any(df_rfm$r_value < 0)) stop("...")
+  ...
+}
+```
+
+## Subsection 4: Reference Format {#reference-format}
+
+Use the YAML front matter `implements:` field to reference implementation scripts:
+
+```yaml
+---
+title: "D01_03: DNA Analysis"
+implements:
+  - script: "cbz_D01_03.R"
+    path: "update_scripts/DRV/cbz/"
+  - script: "amz_D01_03.R"
+    path: "update_scripts/DRV/amz/"
+---
+```
+
+In the document body, include implementation references:
+
+```markdown
+### Implementation Reference
+See implementation scripts for executable R code following DM_R044 Five-Part Structure.
+```
+
+## Subsection 5: Derivation Documentation Checklist {#derivation-checklist}
+
+For each D0X_XX.qmd file, verify:
+
+- [ ] Uses NSQL for data operation specifications
+- [ ] Contains NO complete R functions (> 10 lines)
+- [ ] Validation rules documented as tables, not code
+- [ ] Has `implements:` references in YAML front matter
+- [ ] Points to .R scripts for executable implementations
+- [ ] Follows DM_R044 references for structure patterns
+
+## Subsection 6: NSQL Completeness Requirement {#nsql-completeness}
+
+:::{.callout-important}
+## NSQL Must Be Complete, Not Just Summary
+
+Derivation NSQL specifications must contain ALL computational logic to enable replication.
+See **SO_R036 (Derivation Replicability Rule)** for complete requirements.
+
+| Must Include | Example |
+|--------------|---------|
+| Thresholds | `WHEN r_value <= 60 THEN 'E0'` |
+| Formulas | `cai: (dna_m_score + dna_f_score + dna_r_score) / 3` |
+| Cut points | `breaks = [0, 0.25, 0.5, 0.75, 1]` |
+| Conditions | Full CASE WHEN with all branches |
+
+**Implementation Reference** points to WHERE the code lives, not WHAT it does.
+The NSQL specification is the authoritative source of business logic.
+:::
+
+### Replicability Standard
+
+A derivation document is complete when:
+
+> "看著文件就能 replicate 要做的事情"
+> (Reading the documentation alone should be enough to replicate what needs to be done)
+
+A developer should be able to implement the derivation logic in any language (Python, SQL, R) by reading only the NSQL specifications, without accessing the implementation scripts.
+
+# Conclusion {#conclusion}
+
+The Principle-Implementation Separation meta-principle establishes a fundamental architectural boundary that enhances maintainability, testability, and clarity throughout the MAMBA framework. By treating principles as constitutional documents and implementations as their statutory realizations, we create a system that can evolve gracefully while maintaining conceptual stability.
+
+This separation is not merely organizational—it represents a philosophical commitment to:
+- **Clear thinking** through conceptual clarity
+- **Clean architecture** through separation of concerns
+- **Sustainable development** through maintainable code
+- **Universal applicability** through language agnosticism
+
+---
+
+*Based on: Fundamental Principles Law Article 97*  
+*Related to: [MP000 Axiomatization System](MP000_axiomatization_system.qmd), [MP011 Documentation Organization](../02_structure_organization/MP011_documentation_organization.qmd), [MP031 Separation of Concerns](../03_development_methodology/MP031_separation_of_concerns.qmd)*

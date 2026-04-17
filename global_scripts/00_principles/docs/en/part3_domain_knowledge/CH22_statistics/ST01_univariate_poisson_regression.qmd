@@ -1,0 +1,240 @@
+---
+
+title: "ST01: Univariate Poisson Regression for Sales Drivers"
+subtitle: "Methodology for estimating individual predictor effects on count outcomes"
+chapter: "CH21"
+category: "statistics"
+number: "ST01"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "domain_knowledge"
+law: "Statistics"
+article-number: "Knowledge Article 1"
+migration_note: "Migrated from MK04 (CH20) per SO_P019"
+related_to:
+  - "D04_poisson_marketing"
+  - "MK01_ipt_theoretical_framework"
+  - "R118_statistical_significance_documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Knowledge Article 1: Univariate Poisson Regression {#overview}
+
+## Section 1: Methodology Overview {#methodology}
+
+### Subsection 1: Core Principle {#core-principle}
+
+**Univariate Poisson Regression** estimates the effect of each predictor variable on count outcomes **independently**. Instead of fitting one model with all predictors, we fit separate models for each predictor:
+
+$$Y_i \sim \text{Poisson}(\lambda_i), \quad \log(\lambda_i) = \beta_0 + \beta_1 X_{ij}$$
+
+Where:
+- $Y_i$ = count outcome (e.g., sales quantity) for observation $i$
+- $X_{ij}$ = value of predictor $j$ for observation $i$
+- $\beta_1$ = effect of predictor $j$ on log-expected count
+
+### Subsection 2: Why Univariate Instead of Multivariate? {#why-univariate}
+
+| Aspect | Univariate | Multivariate |
+|--------|------------|--------------|
+| **Model** | `sales ~ x_j` for each j | `sales ~ x_1 + x_2 + ... + x_p` |
+| **Interpretation** | Marginal effect of each predictor | Conditional effect holding others constant |
+| **Collinearity** | Not affected | Causes unstable estimates, NA coefficients |
+| **Sparse Data** | Robust - only needs variation in one X | Requires full rank design matrix |
+| **Computation** | Fast (p small models) | Slow (one large model) |
+
+### Subsection 3: Key Advantage for Sparse Count Data {#sparse-advantage}
+
+In sales data with many zero counts:
+
+1. **Each time cell is an observation**: A product-day with zero sales is still a valid data point
+2. **Zeros contribute to likelihood**: They inform us that the expected count is low
+3. **Univariate models always estimable**: As long as there is variation in X and at least one non-zero Y
+
+## Section 2: Theoretical Foundation {#theory}
+
+### Subsection 1: Poisson Regression Basics {#poisson-basics}
+
+The Poisson distribution models count data:
+
+$$P(Y = k) = \frac{\lambda^k e^{-\lambda}}{k!}, \quad k = 0, 1, 2, ...$$
+
+Key properties:
+- Mean = Variance = $\lambda$
+- Support: non-negative integers
+- Appropriate for rare events (sales per day)
+
+### Subsection 2: Log-Linear Model {#log-linear}
+
+The link function is the natural logarithm:
+
+$$\log(\mathbb{E}[Y|X]) = \beta_0 + \beta_1 X$$
+
+This ensures $\lambda = e^{\beta_0 + \beta_1 X} > 0$ always.
+
+### Subsection 3: Incidence Rate Ratio (IRR) {#irr}
+
+The exponentiated coefficient gives the **Incidence Rate Ratio**:
+
+$$\text{IRR} = e^{\beta_1}$$
+
+Interpretation:
+- IRR = 1.5: A one-unit increase in X multiplies expected count by 1.5 (50% increase)
+- IRR = 0.8: A one-unit increase in X multiplies expected count by 0.8 (20% decrease)
+- IRR = 1.0: No effect
+
+For binary predictors (0/1):
+- IRR = ratio of expected counts when X=1 vs X=0
+
+## Section 3: Implementation {#implementation}
+
+### Subsection 1: Algorithm {#algorithm}
+
+```r
+# Pseudocode for univariate Poisson regression
+results <- list()
+
+for (predictor in predictor_columns) {
+  # Fit univariate model
+  formula <- paste("sales ~", predictor)
+  model <- glm(formula, data = data, family = poisson())
+
+  # Extract coefficient and statistics
+  coef_info <- tidy(model) %>% filter(term == predictor)
+
+  # Calculate IRR
+  irr <- exp(coef_info$estimate)
+
+  results[[predictor]] <- list(
+    coefficient = coef_info$estimate,
+    std_error = coef_info$std.error,
+    p_value = coef_info$p.value,
+    irr = irr
+  )
+}
+```
+
+### Subsection 2: Data Requirements {#data-requirements}
+
+For each univariate model to be estimable:
+
+| Requirement | Description |
+|-------------|-------------|
+| **Non-zero outcomes** | At least 1 observation with Y > 0 |
+| **Variation in X** | X must not be constant |
+| **No perfect separation** | X should not perfectly predict Y = 0 vs Y > 0 |
+
+### Subsection 3: Handling Time Series Data {#time-series}
+
+When analyzing daily sales:
+
+1. **Each day is an observation**: Even days with zero sales
+2. **Complete time series**: Fill missing dates with zeros (marked as FILLED per R117)
+3. **Fixed time frame**: All predictors share the same observation window
+
+Example data structure:
+```
+| date       | sales | is_holiday | is_weekend | price | brand_A |
+|------------|-------|------------|------------|-------|---------|
+| 2024-01-01 | 0     | 1          | 0          | 100   | 1       |
+| 2024-01-02 | 2     | 0          | 0          | 100   | 1       |
+| 2024-01-03 | 0     | 0          | 0          | 95    | 1       |
+| ...        | ...   | ...        | ...        | ...   | ...     |
+```
+
+## Section 4: Interpretation Guidelines {#interpretation}
+
+### Subsection 1: Statistical Significance {#significance}
+
+| p-value | Interpretation |
+|---------|----------------|
+| < 0.001 | Highly significant (***) |
+| < 0.01  | Very significant (**) |
+| < 0.05  | Significant (*) |
+| ≥ 0.05  | Not significant |
+
+### Subsection 2: Effect Size via IRR {#effect-size}
+
+| IRR Range | Effect Magnitude |
+|-----------|------------------|
+| > 2.0 | Very strong positive |
+| 1.5 - 2.0 | Strong positive |
+| 1.2 - 1.5 | Moderate positive |
+| 1.0 - 1.2 | Weak positive |
+| 0.8 - 1.0 | Weak negative |
+| 0.5 - 0.8 | Moderate negative |
+| < 0.5 | Strong negative |
+
+### Subsection 3: Caveats {#caveats}
+
+1. **Marginal vs Conditional Effects**: Univariate estimates are marginal effects, not controlling for other variables
+2. **Confounding**: A significant univariate effect may be confounded by unmeasured variables
+3. **Multiple Testing**: With many predictors, apply Bonferroni or FDR correction
+4. **Overdispersion**: If Var(Y) > E(Y), consider Negative Binomial regression
+
+## Section 5: Comparison with Alternative Approaches {#alternatives}
+
+### Subsection 1: When to Use Univariate Approach {#when-univariate}
+
+✅ Use univariate when:
+- Goal is to screen many potential predictors
+- Data has multicollinearity issues
+- Sparse outcomes (many zeros)
+- Interpretability is paramount
+- Speed is important
+
+### Subsection 2: When to Use Multivariate Approach {#when-multivariate}
+
+✅ Use multivariate when:
+- Need to control for confounders
+- Predictors are independent
+- Sufficient non-zero outcomes
+- Interested in partial effects
+
+### Subsection 3: Hybrid Approach {#hybrid}
+
+1. Screen with univariate models
+2. Select significant predictors
+3. Fit multivariate model with selected predictors
+
+## Section 6: MAMBA Implementation {#mamba-implementation}
+
+### Subsection 1: Script Reference {#script-ref}
+
+- **CBZ**: `scripts/update_scripts/DRV/cbz/cbz_D04_02.R`
+- **EBY**: `scripts/update_scripts/DRV/eby/eby_D04_02.R`
+
+### Subsection 2: Output Schema {#output-schema}
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `predictor` | VARCHAR | Predictor variable name |
+| `coefficient` | DOUBLE | Log-linear coefficient (β₁) |
+| `std_error` | DOUBLE | Standard error of coefficient |
+| `p_value` | DOUBLE | Statistical significance |
+| `incidence_rate_ratio` | DOUBLE | exp(coefficient) |
+| `predictor_type` | VARCHAR | Business classification |
+| `estimation_status` | VARCHAR | 'estimated' or 'not_estimable' |
+
+### Subsection 3: UI Modules {#ui-modules}
+
+Results are displayed in three modules by `predictor_type`:
+
+| Module | predictor_type | Examples |
+|--------|----------------|----------|
+| poissonTimeAnalysis | `time_feature` | month_1, is_weekend, year |
+| poissonFeatureAnalysis | `product_attribute` | brand, material, price |
+| poissonCommentAnalysis | `comment_attribute` | rating, sentiment |
+
+## References {#references}
+
+1. McCullagh, P., & Nelder, J. A. (1989). *Generalized Linear Models* (2nd ed.). Chapman & Hall.
+2. Cameron, A. C., & Trivedi, P. K. (2013). *Regression Analysis of Count Data* (2nd ed.). Cambridge University Press.
+3. Agresti, A. (2015). *Foundations of Linear and Generalized Linear Models*. Wiley.

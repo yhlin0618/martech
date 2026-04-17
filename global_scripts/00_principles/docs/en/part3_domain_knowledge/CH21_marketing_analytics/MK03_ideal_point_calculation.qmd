@@ -1,0 +1,242 @@
+---
+title: "MK01: Ideal Point and Key Factor Calculation"
+category: "Marketing Knowledge"
+domain: "Marketing Analytics"
+principle_type: "MK"
+tags: ["ideal-point", "key-factors", "weighted-average", "cross-attribute-average"]
+related_principles: ["MP047", "MP081", "R116"]
+created: "2025-09-09"
+last_modified: "2025-09-11"
+version: "1.1.0"
+---
+
+## Overview
+
+The ideal point is a **single m-dimensional vector** $I = [I_1, \ldots, I_m]$ representing the optimal attribute combination, not multiple separate points. This document provides the complete calculation methodology for estimating the ideal point and identifying key factors.
+
+## Terminology and Notation
+
+- $x_{ij}$: Score of product $i$ on attribute $j$ (e.g., 1-5 scale)
+- $r_i$: Overall rating of product $i$ (e.g., 1-5 stars)
+- $s_i$: Sales volume of product $i$ (or market share, transactions)
+- $\alpha$: Weight for rating in composite score (e.g., $\alpha = 0.4$ means 40% rating, 60% sales)
+- $w_i$: Product weight based on rating-sales composite ($\sum_i w_i = 1$)
+- $I_j$: Ideal point score for attribute $j$
+- $S_j$: Market supply level for attribute $j$ (sales-weighted)
+- $G_j = I_j - S_j$: Gap (demand minus supply)
+
+**Key Concept**: The ideal point is a vector, not multiple points. "Five ideal point scores" should be called "five attribute scores of the ideal point."
+
+## Step 1: Data Preprocessing
+
+### 1.1 Scale Consistency
+If attributes use different scales, standardize each attribute column:
+- Min-max normalization to [0, 1]
+- Or z-score standardization
+
+### 1.2 Direction Consistency
+Ensure all attributes follow "higher is better":
+- For negative indicators (e.g., price, delay): reverse = max_value - original_value
+- Or multiply z-score by -1
+
+### 1.3 Missing Values and Outliers
+- Imputation for missing values
+- Winsorization for extreme values
+- Consider robust statistics (median, quantiles)
+
+## Step 2: Calculate Product Weights $w_i$
+
+### 2.1 Standardize Ratings and Sales
+$$\hat{r}_i = \frac{r_i - \min(r)}{\max(r) - \min(r)}, \quad \hat{s}_i = \frac{s_i - \min(s)}{\max(s) - \min(s)}$$
+
+### 2.2 Composite Score
+$$u_i = \alpha \hat{r}_i + (1 - \alpha) \hat{s}_i \quad (\text{e.g., } \alpha = 0.4)$$
+
+### 2.3 Normalize to Weights
+$$w_i = \frac{u_i}{\sum_{k=1}^n u_k}, \quad \sum_i w_i = 1$$
+
+**Interpretation**: Products with better sales/rating performance have greater influence on ideal point estimation.
+
+## Step 3: Estimate Ideal Point Vector
+
+For each attribute $j$, calculate weighted average using $w_i$:
+
+$$I_j = \sum_{i=1}^{n} w_i \cdot x_{ij}$$
+
+This yields $m$ values (e.g., 5), representing the ideal point's attribute scores.
+
+## Step 4: Identify Candidate Key Factors
+
+### 4.1 Cross-Attribute Average (Without Attribute Weights)
+$$\bar{I} = \frac{1}{m} \sum_{j=1}^{m} I_j$$
+
+**Decision Rule**: If $I_j > \bar{I}$, attribute $j$ is a candidate key factor.
+
+**Rationale**: Key factors are attributes that the ideal product emphasizes more than average. These represent the dimensions where market leaders excel and customers value most highly. The comparison is done within the ideal point vector itself, not across products.
+
+### 4.2 Weighted Average Threshold (With Attribute Weights)
+If attribute importance weights $\alpha_j$ exist ($\sum \alpha_j = 1$):
+$$\bar{I}_\alpha = \sum_{j=1}^m \alpha_j I_j$$
+
+**Decision Rule**: If $I_j > \bar{I}_\alpha$, attribute $j$ is a candidate key factor.
+
+**Important Note**: The key factor identification compares attributes within the ideal point itself, not how many products achieve the ideal. This identifies which attributes the ideal product prioritizes.
+
+
+## Numerical Example
+
+### Data (3 Products × 5 Attributes)
+- A1: $r = 4.5$, $s = 1200$, attributes = [4, 5, 3, 4, 2]
+- A2: $r = 4.0$, $s = 500$, attributes = [3, 4, 4, 3, 3]
+- A3: $r = 3.5$, $s = 800$, attributes = [2, 3, 5, 2, 4]
+
+### Calculations ($\alpha = 0.4$)
+
+1. **Product Weights**: $w_{A1} \approx 0.686$, $w_{A2} \approx 0.137$, $w_{A3} \approx 0.176$
+
+2. **Ideal Point Vector**: $I \approx [3.510, 4.510, 3.490, 3.510, 2.490]$
+
+3. **Cross-Attribute Average**: $\bar{I} \approx 3.502$
+   - Key Factors: Attributes 1, 2, 4 (above average)
+
+## R Implementation Template
+
+```r
+calculate_ideal_point <- function(data, rating_col, sales_col, attr_cols, 
+                                  alpha = 0.4) {
+  # Step 1: Extract data
+  ratings <- data[[rating_col]]
+  sales <- data[[sales_col]]
+  attrs <- data[, attr_cols]
+  
+  # Step 2: Calculate product weights
+  r_norm <- (ratings - min(ratings)) / (max(ratings) - min(ratings))
+  s_norm <- (sales - min(sales)) / (max(sales) - min(sales))
+  composite <- alpha * r_norm + (1 - alpha) * s_norm
+  w_i <- composite / sum(composite)
+  
+  # Step 3: Calculate ideal point vector
+  ideal_point <- colSums(w_i * attrs)
+  
+  # Step 4: Identify key factors (cross-attribute average)
+  # Key insight: Compare attributes WITHIN the ideal point itself
+  avg_ideal <- mean(ideal_point)
+  key_factors <- names(ideal_point)[ideal_point > avg_ideal]
+  
+  return(list(
+    ideal_point = ideal_point,
+    key_factors = key_factors,
+    avg_threshold = avg_ideal,
+    weights = w_i
+  ))
+}
+
+# Alternative implementation showing the logic clearly
+identify_key_factors <- function(ideal_point_vector) {
+  # The ideal point is a single vector with m attribute scores
+  # Key factors are attributes where ideal score > average of all ideal scores
+  
+  threshold <- mean(ideal_point_vector)
+  key_factors <- names(ideal_point_vector)[ideal_point_vector > threshold]
+  
+  return(list(
+    key_factors = key_factors,
+    threshold = threshold,
+    ideal_scores = ideal_point_vector
+  ))
+}
+```
+
+## Common Misconceptions
+
+### Misconception 1: "There are five ideal points"
+**Correction**: There is only one ideal point (a vector) with five attribute scores.
+
+### Misconception 2: "Average of all ideal points"
+**Correction**: Use "cross-attribute average" (unweighted) or "attribute-weighted average" (if weights exist).
+
+### Misconception 3: Using product weights to weight attributes
+**Correction**: Product weights estimate $I_j$ (ideal demand), not for changing cross-attribute thresholds.
+
+## One-Sentence Definition
+
+**Technical**: We treat the ideal point as a vector $I$ composed of attribute scores. Key factor determination uses the cross-attribute average as threshold: if $I_j > \bar{I}$, attribute $j$ is identified as a key factor.
+
+**Business-Friendly**: The ideal point represents the optimal feature combination derived from best-sellers and highly-rated products. For example, analyzing 5 product features (quality, price, design, functionality, durability), the market's top performers yield ideal levels of: quality 4.5 points, price 3.2 points, design 4.2 points, functionality 2.8 points, durability 2.8 points. These 5 scores average to 3.5 points. "Quality" and "design" exceed this average, making them key factors. This indicates consumers currently value these two attributes most, so companies should prioritize investing in these features to enhance competitiveness.
+
+## Business Presentation Version
+
+### What is the Ideal Point?
+Imagine combining the "best-selling products" with "highest-rated products" to find their common traits. This "optimal combination" is the ideal point—it represents the perfect product in customers' minds.
+
+### What are Key Factors?
+Within the ideal point, some features stand out above the overall average:
+- The average customer requirement is about 3.5 points
+- But "quality" scores 4.5 and "design" scores 4.2 in the ideal point
+
+What does this mean?
+👉 Customers value quality and design especially highly, but current market offerings haven't fully delivered
+👉 These become key factors—investing resources here creates the best opportunity for differentiation and sales growth
+
+### Elevator Pitch
+> The ideal point is the perfect product formula in customers' minds; key factors are the high-scoring features in this formula that the market hasn't yet satisfied. Investing here drives product success.
+
+### Three-Slide Pitch
+
+1. **Ideal Point** = The perfect product combination in customers' minds, from "best-sellers + highest-rated" common features
+2. **Key Factors** = Features scoring particularly high in the ideal combination, but with insufficient market supply
+3. **Business Impact** = Investing in these key factors drives product differentiation and sales growth
+
+### Marketing Presentation Slide
+
+---
+
+#### The Customer's Ideal Point & Key Factors
+
+**1. Ideal Point**
+👉 Combining "best-selling" and "highest-rated" product features to reveal the perfect product in customers' minds
+
+**2. Key Factors**  
+👉 Features scoring particularly high in the ideal point, but not yet satisfied by the market
+
+**3. Investment Priority**
+👉 Focusing resources on these key factors creates maximum differentiation and drives sales growth
+
+---
+
+📌 **One-Line Conclusion**
+> The ideal point tells us what customers truly want; key factors tell us where to invest
+
+## Implementation Notes
+
+1. **Data Requirements**: 
+   - At least 3 products
+   - Consistent attribute scales
+   - Both rating and sales data
+
+2. **Parameter Tuning**:
+   - $\alpha$: Balance between quality (rating) and market success (sales)
+
+3. **Validation**:
+   - Check if identified key factors align with business intuition
+   - Validate with A/B testing or historical performance data
+
+4. **Common Implementation Errors**:
+   - **Wrong**: Counting how many products achieve ideal values (this misses the point)
+   - **Wrong**: Using indicator matrices to identify key factors
+   - **Correct**: Comparing attributes within the ideal point vector itself
+   
+   ```r
+   # WRONG: This counts products, not ideal emphasis
+   indicators <- products >= ideal_point
+   key_factors <- colSums(indicators) > threshold
+   
+   # CORRECT: This identifies ideal's emphasis
+   key_factors <- ideal_point > mean(ideal_point)
+   ```
+
+## Related Principles
+
+- **MP047**: Functional Programming - Use pure functions for calculations
+- **MP081**: Explicit Parameter Specification - All thresholds clearly defined
+- **R116**: Enhanced Data Access - Efficient data retrieval for analysis

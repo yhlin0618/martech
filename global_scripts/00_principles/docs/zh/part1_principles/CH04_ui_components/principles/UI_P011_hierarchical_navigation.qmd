@@ -1,0 +1,660 @@
+---
+title: "UI_P011: 階層式導航原則"
+subtitle: "UI應實施清晰的導航元素階層，頂層為主導航，每個主要區段內有一致的次級導航。這種階層式方法使應用程式結構直觀，並為使用者互動提供清晰的脈絡"
+chapter: "CH04"
+category: "principle"
+number: "UI_P011"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI組件法"
+article-number: 
+  number: 11
+  title: "階層式導航原則"
+related_to:
+  - "MP017: 模組化原則"
+  - "MP067: UI分離元原則"
+  - "R092: bs4Dash導航欄導航規則"
+  - "R011: 混合側邊欄模式"
+  - "UI_P009: 單行UI元素原則"
+  - "UI_P010: 最小化CSS使用原則"
+  - "R014: UI階層規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十一條：階層式導航原則 {#overview}
+
+**UI組件法第十一條（階層式導航原則）**
+
+UI應實施清晰的導航元素階層，頂層為主導航，每個主要區段內有一致的次級導航。這種階層式方法使應用程式結構直觀，並為使用者互動提供清晰的脈絡。
+
+:::{.callout-important}
+## 核心原則
+透過明確定義和分離頂層與次級導航，創建直觀的使用者體驗，幫助使用者有效地在應用程式中導航。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：頂層導航 {#top-level-navigation}
+
+**頂層導航標準：**
+
+- 使用 bs4Dash navbarMenu 和 navbarTab 組件進行主導航（遵循 R92）
+- 放置在介面頂部的一致位置
+- 清楚區分活動與非活動狀態
+- 聚焦於主要應用程式區段/模組
+
+**實施範例：**
+
+```r
+# UI定義中的頂層導航
+header = bs4Dash::dashboardHeader(
+  navbarMenu(
+    id = "main_navbar",
+    navbarTab(
+      text = HTML('<span class="navbarTab-content">
+        <i class="fa fa-user mr-1"></i>
+        <span>微觀分析</span>
+      </span>'),
+      tabName = "micro_tab"
+    ),
+    navbarTab(
+      text = HTML('<span class="navbarTab-content">
+        <i class="fa fa-chart-bar mr-1"></i>
+        <span>宏觀分析</span>
+      </span>'),
+      tabName = "macro_tab"
+    )
+  )
+)
+```
+
+## 第二款：第二層導航 {#second-level-navigation}
+
+**第二層導航標準：**
+
+- 使用動作按鈕在每個主要區段內容的頂部實施
+- 為所有第二層導航元素應用一致的樣式
+- 確保按鈕同時具有圖示和文字以提高可用性
+- 放置在具有適當間距和對齊的容器中
+- 使用活動/非活動視覺樣式來指示當前選擇
+
+**實施範例：**
+
+```r
+# UI定義中的第二層導航
+div(
+  class = "second-level-nav-container",
+  bs4Dash::box(
+    width = 12,
+    status = "primary",
+    solidHeader = FALSE,
+    uiOutput("micro_subtabs")
+  )
+)
+
+# 伺服器函數中
+micro_active_subtab <- reactiveVal("customer")
+
+output$micro_subtabs <- renderUI({
+  div(
+    class = "d-flex justify-content-center my-2",
+    actionButton(
+      inputId = "micro_subtab_customer",
+      label = translate("客戶檔案"),
+      icon = icon("user"),
+      class = paste0("btn ", 
+        if(micro_active_subtab() == "customer") "btn-primary" else "btn-default"),
+      style = "margin: 5px; min-width: 120px;"
+    ),
+    actionButton(
+      inputId = "micro_subtab_dna",
+      label = translate("DNA分布"),
+      icon = icon("dna"),
+      class = paste0("btn ", 
+        if(micro_active_subtab() == "dna") "btn-primary" else "btn-default"),
+      style = "margin: 5px; min-width: 120px;"
+    )
+  )
+})
+```
+
+# 第二項：導航狀態管理 {#navigation-state-management}
+
+## 第一款：狀態追蹤機制 {#state-tracking}
+
+**狀態管理要求：**
+
+- 獨立追蹤每個導航層級的活動狀態
+- 使用響應式值管理活動狀態
+- 實施適當的事件處理器來更新導航狀態
+- 確保內容可見性正確地隨導航變更切換
+
+**實施範例：**
+
+```r
+# 導航狀態管理器
+createNavigationManager <- function() {
+  # 初始化狀態
+  states <- reactiveValues(
+    primary = "micro_tab",
+    micro_secondary = "customer",
+    macro_secondary = "trends"
+  )
+  
+  list(
+    # 取得當前狀態
+    getState = function(level = NULL) {
+      if (is.null(level)) {
+        return(reactiveValuesToList(states))
+      }
+      return(states[[level]])
+    },
+    
+    # 設定狀態
+    setState = function(level, value) {
+      states[[level]] <- value
+    },
+    
+    # 取得活動路徑
+    getActivePath = function() {
+      c(states$primary, 
+        switch(states$primary,
+          micro_tab = states$micro_secondary,
+          macro_tab = states$macro_secondary
+        ))
+    },
+    
+    # 重置狀態
+    reset = function() {
+      states$primary <- "micro_tab"
+      states$micro_secondary <- "customer"
+      states$macro_secondary <- "trends"
+    }
+  )
+}
+
+# 使用導航管理器
+nav_manager <- createNavigationManager()
+```
+
+## 第二款：事件處理 {#event-handling}
+
+**導航事件處理：**
+
+```r
+# 處理微觀子標籤點擊
+observeEvent(input$micro_subtab_customer, {
+  # 更新導航狀態
+  micro_active_subtab("customer")
+  nav_manager$setState("micro_secondary", "customer")
+  
+  # 切換組件可見性
+  if (!is.null(micro_components_union) && 
+      !is.null(micro_components_union$component_state) && 
+      is.function(micro_components_union$component_state$toggle_component)) {
+    
+    # 顯示客戶組件
+    micro_components_union$component_state$toggle_component("customer", TRUE)
+    # 隱藏其他組件
+    micro_components_union$component_state$toggle_component("dna", FALSE)
+    micro_components_union$component_state$toggle_component("analysis", FALSE)
+  }
+  
+  # 記錄導航動作
+  logNavigation("micro", "customer", session$user)
+})
+
+observeEvent(input$micro_subtab_dna, {
+  micro_active_subtab("dna")
+  nav_manager$setState("micro_secondary", "dna")
+  
+  if (!is.null(micro_components_union)) {
+    micro_components_union$component_state$toggle_component("customer", FALSE)
+    micro_components_union$component_state$toggle_component("dna", TRUE)
+    micro_components_union$component_state$toggle_component("analysis", FALSE)
+  }
+  
+  logNavigation("micro", "dna", session$user)
+})
+```
+
+# 第三項：視覺一致性 {#visual-consistency}
+
+## 第一款：樣式標準 {#styling-standards}
+
+**視覺一致性要求：**
+
+- 維持所有導航元素的一致高度和對齊
+- 遵循 UI_P009：單行UI元素原則進行按鈕佈局
+- 使用最小化CSS遵循 UI_P010：最小化CSS使用原則
+- 在導航層級之間應用適當間距
+- 確保主要和次要導航之間有清晰的視覺階層
+
+**CSS實施：**
+
+```css
+/* 頂層導航樣式 */
+.navbarTab-content {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  line-height: 40px;
+  white-space: nowrap;
+}
+
+.navbarTab-content i {
+  margin-right: 5px;
+  display: inline-flex;
+}
+
+/* 第二層導航容器 */
+.second-level-nav-container {
+  background: #f4f4f4;
+  padding: 10px 0;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 20px;
+}
+
+/* 導航按鈕樣式 */
+.second-level-nav-container .btn {
+  height: 36px;
+  line-height: 36px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.second-level-nav-container .btn i {
+  margin-right: 5px;
+}
+
+/* 活動狀態樣式 */
+.btn-primary {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.btn-default {
+  background-color: white;
+  border-color: #dee2e6;
+  color: #333;
+}
+
+.btn-default:hover {
+  background-color: #e9ecef;
+}
+```
+
+## 第二款：響應式設計 {#responsive-design}
+
+**響應式導航實施：**
+
+```r
+# 響應式第二層導航
+output$responsive_subtabs <- renderUI({
+  screen_width <- input$screen_width %||% 1920
+  
+  if (screen_width < 768) {
+    # 手機版：下拉選單
+    selectInput(
+      inputId = "micro_subtab_select",
+      label = NULL,
+      choices = list(
+        "客戶檔案" = "customer",
+        "DNA分布" = "dna",
+        "行為分析" = "analysis"
+      ),
+      selected = micro_active_subtab()
+    )
+  } else {
+    # 桌面版：按鈕組
+    div(
+      class = "d-flex justify-content-center my-2",
+      lapply(list(
+        list(id = "customer", label = "客戶檔案", icon = "user"),
+        list(id = "dna", label = "DNA分布", icon = "dna"),
+        list(id = "analysis", label = "行為分析", icon = "chart-line")
+      ), function(btn) {
+        actionButton(
+          inputId = paste0("micro_subtab_", btn$id),
+          label = translate(btn$label),
+          icon = icon(btn$icon),
+          class = paste0("btn ", 
+            if(micro_active_subtab() == btn$id) "btn-primary" else "btn-default"),
+          style = "margin: 5px; min-width: 120px;"
+        )
+      })
+    )
+  }
+})
+
+# 處理響應式選擇
+observeEvent(input$micro_subtab_select, {
+  micro_active_subtab(input$micro_subtab_select)
+  updateNavigationDisplay(input$micro_subtab_select)
+})
+```
+
+# 第四項：效益分析 {#benefits-analysis}
+
+## 第一款：使用者體驗改善 {#ux-improvements}
+
+**使用者體驗優勢：**
+
+1. **直觀導航流程**：從一般到具體的導航流程
+2. **清晰位置指示**：當前在應用程式中位置的視覺指標
+3. **降低認知負荷**：透過一致模式減少使用者思考
+4. **快速存取**：階層結構允許快速導航到特定功能
+5. **上下文保持**：在導航時維持使用者的工作脈絡
+
+## 第二款：維護與性能優勢 {#maintenance-performance}
+
+**技術優勢：**
+
+1. **維護效益**：
+   - 實施導航的標準化方法
+   - 更清晰的代碼組織分離導航層級
+   - 更容易擴展額外的區段或子區段
+
+2. **性能優勢**：
+   - 透過切換可見性而非重建UI減少伺服器負載
+   - 在次要選項之間切換時最小化UI重繪
+   - 導航互動的響應性更好
+
+# 第五項：完整實施範例 {#complete-implementation}
+
+## 第一款：完整導航系統 {#complete-navigation-system}
+
+**應用程式實施：**
+
+```r
+# navigation_system.R - 完整階層式導航系統
+library(shiny)
+library(bs4Dash)
+
+# 導航配置
+nav_config <- list(
+  primary = list(
+    micro = list(
+      label = "微觀分析",
+      icon = "user",
+      subtabs = list(
+        customer = list(label = "客戶檔案", icon = "user"),
+        dna = list(label = "DNA分布", icon = "dna"),
+        behavior = list(label = "行為分析", icon = "chart-line")
+      )
+    ),
+    macro = list(
+      label = "宏觀分析",
+      icon = "chart-bar",
+      subtabs = list(
+        trends = list(label = "趨勢分析", icon = "trending-up"),
+        segments = list(label = "市場區隔", icon = "pie-chart"),
+        forecast = list(label = "預測模型", icon = "crystal-ball")
+      )
+    ),
+    settings = list(
+      label = "設定",
+      icon = "cog",
+      subtabs = list(
+        profile = list(label = "個人檔案", icon = "id-card"),
+        preferences = list(label = "偏好設定", icon = "sliders-h"),
+        security = list(label = "安全設定", icon = "shield-alt")
+      )
+    )
+  )
+)
+
+ui <- bs4DashPage(
+  title = "階層式導航示範",
+  
+  # 頂層導航
+  header = bs4DashNavbar(
+    title = "應用程式",
+    navbarMenu(
+      id = "main_navbar",
+      lapply(names(nav_config$primary), function(tab_id) {
+        tab_info <- nav_config$primary[[tab_id]]
+        navbarTab(
+          text = HTML(sprintf(
+            '<span class="navbarTab-content">
+              <i class="fa fa-%s mr-1"></i>
+              <span>%s</span>
+            </span>',
+            tab_info$icon, tab_info$label
+          )),
+          tabName = paste0(tab_id, "_tab")
+        )
+      })
+    )
+  ),
+  
+  sidebar = bs4DashSidebar(
+    disable = TRUE  # 使用階層導航代替側邊欄
+  ),
+  
+  body = bs4DashBody(
+    # 導航樣式
+    tags$style(HTML("
+      .navbarTab-content {
+        display: flex;
+        align-items: center;
+        height: 40px;
+      }
+      .second-level-nav-container {
+        background: #f8f9fa;
+        padding: 10px 0;
+        border-bottom: 2px solid #dee2e6;
+      }
+      .nav-btn-active {
+        background: #007bff !important;
+        color: white !important;
+      }
+    ")),
+    
+    # 內容區域
+    uiOutput("navigation_content")
+  )
+)
+
+server <- function(input, output, session) {
+  # 導航狀態管理
+  nav_state <- reactiveValues(
+    primary = "micro",
+    secondary = list(
+      micro = "customer",
+      macro = "trends",
+      settings = "profile"
+    )
+  )
+  
+  # 主導航觀察器
+  observeEvent(input$main_navbar, {
+    tab_name <- gsub("_tab$", "", input$main_navbar)
+    nav_state$primary <- tab_name
+  })
+  
+  # 渲染導航內容
+  output$navigation_content <- renderUI({
+    req(nav_state$primary)
+    
+    primary_tab <- nav_state$primary
+    tab_config <- nav_config$primary[[primary_tab]]
+    
+    tagList(
+      # 第二層導航
+      div(
+        class = "second-level-nav-container",
+        div(
+          class = "container-fluid",
+          div(
+            class = "d-flex justify-content-center",
+            lapply(names(tab_config$subtabs), function(subtab_id) {
+              subtab_info <- tab_config$subtabs[[subtab_id]]
+              is_active <- nav_state$secondary[[primary_tab]] == subtab_id
+              
+              actionButton(
+                inputId = paste0(primary_tab, "_", subtab_id, "_btn"),
+                label = subtab_info$label,
+                icon = icon(subtab_info$icon),
+                class = paste("btn", if(is_active) "nav-btn-active" else "btn-outline-secondary"),
+                style = "margin: 0 5px;"
+              )
+            })
+          )
+        )
+      ),
+      
+      # 內容區域
+      div(
+        class = "container-fluid mt-3",
+        uiOutput(paste0(primary_tab, "_content"))
+      )
+    )
+  })
+  
+  # 動態創建第二層導航觀察器
+  observe({
+    req(nav_state$primary)
+    
+    primary_tab <- nav_state$primary
+    tab_config <- nav_config$primary[[primary_tab]]
+    
+    lapply(names(tab_config$subtabs), function(subtab_id) {
+      btn_id <- paste0(primary_tab, "_", subtab_id, "_btn")
+      
+      observeEvent(input[[btn_id]], {
+        nav_state$secondary[[primary_tab]] <- subtab_id
+        
+        # 記錄導航動作
+        message(sprintf("導航到：%s > %s", 
+          tab_config$label, 
+          tab_config$subtabs[[subtab_id]]$label))
+      })
+    })
+  })
+  
+  # 微觀分析內容
+  output$micro_content <- renderUI({
+    req(nav_state$secondary$micro)
+    
+    content <- switch(nav_state$secondary$micro,
+      customer = bs4Card(
+        title = "客戶檔案",
+        status = "primary",
+        solidHeader = TRUE,
+        width = 12,
+        p("客戶檔案內容...")
+      ),
+      dna = bs4Card(
+        title = "DNA分布",
+        status = "info",
+        solidHeader = TRUE,
+        width = 12,
+        p("DNA分布分析內容...")
+      ),
+      behavior = bs4Card(
+        title = "行為分析",
+        status = "success",
+        solidHeader = TRUE,
+        width = 12,
+        p("行為分析內容...")
+      )
+    )
+    
+    return(content)
+  })
+  
+  # 宏觀分析內容
+  output$macro_content <- renderUI({
+    req(nav_state$secondary$macro)
+    
+    content <- switch(nav_state$secondary$macro,
+      trends = bs4Card(
+        title = "趨勢分析",
+        status = "warning",
+        solidHeader = TRUE,
+        width = 12,
+        p("趨勢分析內容...")
+      ),
+      segments = bs4Card(
+        title = "市場區隔",
+        status = "danger",
+        solidHeader = TRUE,
+        width = 12,
+        p("市場區隔內容...")
+      ),
+      forecast = bs4Card(
+        title = "預測模型",
+        status = "secondary",
+        solidHeader = TRUE,
+        width = 12,
+        p("預測模型內容...")
+      )
+    )
+    
+    return(content)
+  })
+  
+  # 設定內容
+  output$settings_content <- renderUI({
+    req(nav_state$secondary$settings)
+    
+    content <- switch(nav_state$secondary$settings,
+      profile = bs4Card(
+        title = "個人檔案",
+        status = "primary",
+        solidHeader = TRUE,
+        width = 12,
+        p("個人檔案設定...")
+      ),
+      preferences = bs4Card(
+        title = "偏好設定",
+        status = "info",
+        solidHeader = TRUE,
+        width = 12,
+        p("應用程式偏好設定...")
+      ),
+      security = bs4Card(
+        title = "安全設定",
+        status = "danger",
+        solidHeader = TRUE,
+        width = 12,
+        p("安全性設定...")
+      )
+    )
+    
+    return(content)
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# 第六項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **實施 MP017（模組化原則）**：透過模組化導航組件實現
+2. **實施 MP067（UI分離）**：分離導航邏輯與內容呈現
+3. **建立於 R092（bs4Dash導航欄導航）**：使用標準導航組件
+4. **相關於 UI_P009（單行UI元素）**：保持導航元素的單行佈局
+5. **遵循 UI_P010（最小化CSS使用）**：使用最少必要的CSS
+6. **補充 R014（UI階層規則）**：提供具體的階層導航實施
+
+---
+
+*基於：UI組件法第十一條*  
+*相關連結：[MP017 模組化原則](../../CH00_fundamental_principles/meta_principles/MP017_modularity.qmd), [UI_P009 單行UI元素原則](UI_P009_single_line_ui_elements.qmd)*

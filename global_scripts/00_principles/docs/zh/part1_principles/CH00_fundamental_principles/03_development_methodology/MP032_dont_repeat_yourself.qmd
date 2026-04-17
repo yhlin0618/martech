@@ -1,0 +1,406 @@
+---
+title: "MP018: 不重複原則 (Don't Repeat Yourself Principle)"
+subtitle: "每個知識或邏輯片段應在系統內有單一、權威的表示"
+author: "Claude"
+date: "2025-04-02"
+date-modified: "2025-08-16"
+categories: [meta-principle, dry, best-practices]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心概念
+
+每個知識、邏輯或功能片段應在系統內有單一、明確、權威的表示。當相同資訊在多個地方表達時，會造成維護挑戰、增加不一致的風險，並使演化複雜化。
+
+## DRY 基礎
+
+### 1. 知識表示 {#knowledge-representation}
+
+DRY 原則適用於所有形式的知識表示：
+
+#### 1.1 程式碼重複
+- 函數和算法不應重複
+- 業務邏輯應定義一次，然後重用
+- 實用操作應集中化
+- 常見模式應抽象為可重用組件
+
+#### 1.2 數據重複
+- 數據結構應定義一次
+- 常數和配置值應有單一來源
+- 查找表應正規化
+- 參考數據應在一個位置維護
+
+#### 1.3 文檔重複
+- 每個概念應在一個權威位置記錄
+- 應使用交叉引用而非重複
+- 衍生文檔應盡可能從來源生成
+- 原則應定義一次，然後一致應用
+
+#### 1.4 流程重複
+- 程序應記錄一次
+- 自動化流程應定義為可重用工作流
+- 設置步驟應在腳本中擷取
+- 建構和部署流程應標準化
+
+### 2. 重複類型 {#types-of-duplication}
+
+不同類型的重複需要不同的策略：
+
+#### 2.1 字面重複
+- 在多個位置複製的相同程式碼
+- 在不同地方重複的逐字文檔
+- 多次定義的相同配置值
+
+#### 2.2 語義重複
+- 以不同方式實施的相同概念
+- 執行相同功能的不同程式碼
+- 相同業務規則的多個實施
+
+#### 2.3 時間重複
+- 隨時間變成重複的知識
+- 隨著演化而分歧的實施
+- 與程式碼不同步的文檔
+
+## 實施指南
+
+### 1. 程式碼重用模式 {#code-reuse-patterns}
+
+應用這些模式來消除程式碼重複：
+
+#### 1.1 函數提取
+
+- 將重複的程式碼提取為命名函數
+- 參數化函數以處理變化
+- 將函數放在適當的實用模組中
+
+```r
+# 而不是重複這個邏輯：
+if (is.null(data) || nrow(data) == 0) {
+  return(NULL)
+}
+
+# 將其提取為函數：
+is_empty_data <- function(data) {
+  return(is.null(data) || nrow(data) == 0)
+}
+```
+
+#### 1.2 抽象
+
+- 識別特定實施中的常見模式
+- 創建擷取常見模式的抽象函數
+- 允許特定行為作為參數傳遞
+
+```r
+# 而不是多個相似的函數：
+process_sales_data <- function(data) { ... }
+process_customer_data <- function(data) { ... }
+process_product_data <- function(data) { ... }
+
+# 創建抽象：
+process_data <- function(data, entity_type, processor_fn) {
+  # 常見處理步驟
+  validated_data <- validate_data(data, entity_type)
+  processed <- processor_fn(validated_data)
+  return(log_and_return(processed, entity_type))
+}
+```
+
+#### 1.3 繼承和組合
+
+- 使用繼承在相關類別之間共享行為
+- 使用組合從簡單部分構建複雜功能
+- 為跨切關注點創建混入或特徵
+
+```r
+# 使用 R6 進行繼承
+BaseProcessor <- R6Class("BaseProcessor",
+  public = list(
+    process = function(data) {
+      validated_data <- private$.validate(data)
+      return(private$.process_impl(validated_data))
+    }
+  ),
+  private = list(
+    .validate = function(data) { ... },
+    .process_impl = function(data) { stop("必須由子類實施") }
+  )
+)
+
+SalesProcessor <- R6Class("SalesProcessor",
+  inherit = BaseProcessor,
+  private = list(
+    .process_impl = function(data) { ... }
+  )
+)
+```
+
+#### 1.4 配置優於程式碼
+
+- 使用配置驅動行為變化
+- 將可變元素提取到配置檔案
+- 允許自定義而不重複程式碼
+
+```r
+# 配置驅動方法
+entity_processors <- list(
+  "sales" = list(
+    validate_fn = validate_sales,
+    transform_fn = transform_sales,
+    required_fields = c("date", "amount", "customer_id")
+  ),
+  "customer" = list(
+    validate_fn = validate_customer,
+    transform_fn = transform_customer,
+    required_fields = c("name", "customer_id", "segment")
+  )
+)
+
+process_entity <- function(data, entity_type) {
+  config <- entity_processors[[entity_type]]
+  if (is.null(config)) stop("未知的實體類型")
+  
+  validated <- config$validate_fn(data, config$required_fields)
+  return(config$transform_fn(validated))
+}
+```
+
+### 2. 數據重用模式 {#data-reuse-patterns}
+
+應用這些模式來消除數據重複：
+
+#### 2.1 單一真相來源
+
+- 在一個位置定義常數和配置值
+- 為參考數據使用中央儲存庫
+- 實施數據存取層以提供一致的視圖
+
+```r
+# 而不是重複配置：
+MAX_PRODUCTS <- 1000
+DEFAULT_TIMEOUT <- 30
+LOG_LEVEL <- "INFO"
+
+# 創建中央配置來源：
+config <- list(
+  max_products = 1000,
+  default_timeout = 30,
+  log_level = "INFO"
+)
+
+# 然後引用它：
+if (length(products) > config$max_products) { ... }
+```
+
+#### 2.2 正規化
+
+- 應用資料庫正規化原則以減少冗餘
+- 將重複數據提取到參考表
+- 使用外鍵維護關係
+
+```r
+# 而不是重複客戶資訊：
+orders <- data.frame(
+  order_id = c(1, 2, 3),
+  customer_name = c("Alice", "Bob", "Alice"),
+  customer_email = c("alice@example.com", "bob@example.com", "alice@example.com"),
+  amount = c(100, 150, 200)
+)
+
+# 正規化為單獨的表：
+customers <- data.frame(
+  customer_id = c(1, 2),
+  name = c("Alice", "Bob"),
+  email = c("alice@example.com", "bob@example.com")
+)
+
+orders <- data.frame(
+  order_id = c(1, 2, 3),
+  customer_id = c(1, 2, 1),
+  amount = c(100, 150, 200)
+)
+```
+
+#### 2.3 快取
+
+- 快取計算結果以避免重新計算
+- 為昂貴的函數實施備忘錄化
+- 在 Shiny 中使用反應式表達式以避免冗餘計算
+
+```r
+# 備忘錄化以避免冗餘計算
+compute_customer_metrics <- memoise::memoise(function(customer_id) {
+  # 昂貴的計算
+  return(metrics)
+})
+```
+
+#### 2.4 生成的數據
+
+- 從來源數據生成衍生數據
+- 實施數據轉換管道
+- 為重複的數據結構使用程式碼生成
+
+```r
+# 從架構生成驗證函數
+generate_validator <- function(schema) {
+  field_validators <- lapply(names(schema), function(field) {
+    field_schema <- schema[[field]]
+    validate_fn <- get_validator_for_type(field_schema$type)
+    
+    function(data) {
+      validate_fn(data[[field]], field_schema)
+    }
+  })
+  
+  function(data) {
+    lapply(field_validators, function(validator) validator(data))
+    return(data)
+  }
+}
+```
+
+### 3. 文檔重用模式 {#documentation-reuse-patterns}
+
+應用這些模式來消除文檔重複：
+
+#### 3.1 單一來源文檔
+
+- 在一個權威位置記錄每個概念
+- 使用交叉引用連結相關文檔
+- 遵循 P10 文檔更新原則
+
+```markdown
+# 客戶細分
+
+有關細分算法的詳細資訊，請參閱[細分算法](./segmentation_algorithm.md)。
+
+有關實施詳細資訊，請參閱 `07_models/customer_segmentation.R` 中的 `calculate_segment` 函數。
+```
+
+#### 3.2 生成的文檔
+
+- 盡可能從程式碼生成文檔
+- 為 R 函數文檔使用 roxygen2
+- 實施自動文檔生成腳本
+
+```r
+#' 根據購買歷史計算客戶細分
+#'
+#' @param customer_id 客戶的唯一識別碼
+#' @param transactions 客戶的交易歷史
+#' @return 指示客戶細分的字元字串
+#' @examples
+#' calculate_segment("C123", transactions_df)
+calculate_segment <- function(customer_id, transactions) {
+  # 實施
+}
+```
+
+#### 3.3 文檔模板
+
+- 為相似文檔使用標準化模板
+- 確保相關文檔的結構一致
+- 為不同文檔類型定義必需的部分
+
+### 4. 流程重用模式 {#process-reuse-patterns}
+
+應用這些模式來消除流程重複：
+
+#### 4.1 標準化工作流
+
+- 為常見操作定義標準工作流
+- 實施工作流自動化
+- 為重複流程創建可重用模板
+
+```r
+# 標準化數據處理工作流
+process_data_workflow <- function(data_source, entity_type) {
+  # 1. 提取數據
+  raw_data <- extract_data(data_source)
+  
+  # 2. 驗證數據
+  validated_data <- validate_data(raw_data, entity_type)
+  
+  # 3. 轉換數據
+  transformed_data <- transform_data(validated_data, entity_type)
+  
+  # 4. 載入數據
+  load_data(transformed_data, entity_type)
+  
+  # 5. 記錄完成
+  log_completion(entity_type)
+}
+```
+
+#### 4.2 腳本自動化
+
+- 使用腳本自動化重複任務
+- 創建設置和初始化腳本
+- 實施建構和部署自動化
+
+## DRY 邊界和例外
+
+DRY 原則有重要的邊界和例外：
+
+### 1. 適當的重複 {#appropriate-duplication}
+
+某些形式的重複可能是可接受的：
+
+1. **性能優化**：當重複顯著改善性能時
+2. **解耦**：當重複減少組件之間的有害耦合時
+3. **可讀性**：當重複改善程式碼可讀性和理解時
+4. **穩定性**：當重複使組件與依賴項的變更隔離時
+
+### 2. 過度抽象風險 {#over-abstraction-risks}
+
+過度熱心地應用 DRY 可能導致問題：
+
+1. **過早抽象**：在完全理解共同點之前創建抽象
+2. **不當耦合**：強制不相關的組件共享程式碼
+3. **過度間接**：創建複雜的抽象層，模糊意圖
+4. **不靈活的抽象**：創建不適應未來變化的抽象
+
+### 3. 平衡 DRY 與其他原則 {#balancing-principles}
+
+DRY 必須與其他原則平衡：
+
+1. **KISS（保持簡單愚蠢）**：簡單的重複可能比複雜的抽象更好
+2. **YAGNI（你不會需要它）**：不要為預期的未來需求創建抽象
+3. **SRP（單一責任原則）**：不要僅為減少重複而組合不相關的功能
+4. **開放/封閉原則**：抽象應對擴展開放但對修改封閉
+
+## DRY 的好處
+
+應用 DRY 原則提供這些好處：
+
+1. **減少維護負擔**：變更只需在一個地方進行
+2. **改進一致性**：行為在整個系統中是一致的
+3. **增強可讀性**：程式碼意圖更清晰，冗餘更少
+4. **更好的可測試性**：集中化功能更容易徹底測試
+5. **更容易演化**：可以更有信心地進行變更
+6. **減少錯誤**：不一致性潛入的機會更少
+7. **改進性能**：執行和維護的程式碼更少
+8. **知識保存**：知識在單一、權威的位置擷取
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **衍生自 MP000（公理化系統）**：將 DRY 建立為基礎公理
+2. **建立在 MP002（結構藍圖）之上**：為減少系統結構中的重複提供指導
+3. **影響 MP007（文檔組織）**：塑造文檔如何組織以最小化重複
+4. **影響 P001（腳本分離）**：指導函數如何組織以避免重複
+5. **告知 P004（應用程式構建原則）**：指導組件應如何重用而非重複
+6. **支援 P010（文檔更新原則）**：確保文檔變更保持一致性
+
+## 結論
+
+不重複原則（DRY）確立每個知識片段應在系統內有單一、權威的表示。通過消除程式碼、數據、文檔和流程中的重複，我們創建了一個更可維護、一致和可演化的系統。雖然 DRY 必須與其他原則平衡以避免過度抽象，但其明智的應用對於管理複雜性和確保系統隨時間的完整性至關重要。

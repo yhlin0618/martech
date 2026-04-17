@@ -1,0 +1,176 @@
+---
+title: "DM_R007: 多重選擇分隔符規則"
+subtitle: "在單一儲存格或欄位中表示多個選擇時，始終使用分號（;）作為分隔符"
+chapter: "CH02"
+category: "rule"
+number: "DM_R007"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 7
+  title: "多重選擇分隔符規則"
+related_to:
+  - "MP008: 術語公理化"
+  - "MP010: 資訊流透明度"
+  - "DM_P001: 資料完整性"
+  - "DM_R001: 資料框創建策略"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七條：多重選擇分隔符規則 {#overview}
+
+**資料管理法第七條（多重選擇分隔符規則）**
+
+此規則建立在單一欄位中表示多個選擇時使用分號作為分隔符的標準。
+
+:::{.callout-important}
+## 核心規則
+在單一儲存格或欄位中表示多個選擇時，始終使用分號（`;`）作為分隔符。
+:::
+
+# 第一項：規則理由 {#rationale}
+
+## 第一款：使用分號的優點 {#benefits}
+
+使用分號作為多重選擇的分隔符：
+
+1. **避免 CSV 衝突**：逗號保留為 CSV 檔案中的欄位分隔符，使分號對內部欄位分隔更安全
+2. **符合 Excel 標準**：分號是許多地區設定中 Excel 的預設列表分隔符
+3. **確保資料完整性**：減少資料匯出、匯入和處理操作期間的歧義
+4. **便於解析**：使自動化資料擷取更可靠和一致
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：格式規範 {#format-specification}
+
+在單一欄位中儲存多個值時：
+
+```
+value1;value2;value3
+```
+
+- **必須**使用分號且周圍無空格
+- **不得**使用逗號、垂直線或其他字元作為分隔符
+- **應該**在串接前移除個別值中的任何分號
+- **應該**避免分隔符之間的空值（即 `value1;;value3`）
+
+## 第二款：R 程式碼處理 {#r-handling}
+
+```r
+# 分割多重選擇欄位
+selections <- unlist(strsplit(df$multiple_selection_field, ";"))
+
+# 組合值成多重選擇欄位
+combined <- paste(selected_values, collapse = ";")
+```
+
+## 第三款：資料庫儲存 {#database-storage}
+
+- **首選**：儲存在具有適當關係的正規化表格中
+- **替代**：對簡單使用案例儲存為分號分隔字串
+- **絕不**：在可能匯出為 CSV 的資料庫欄位中使用逗號分隔字串
+
+# 第三項：檔案格式相容性 {#file-format-compatibility}
+
+| 格式    | 相容性 | 說明 |
+|---------|--------|------|
+| CSV     | 高     | 避免與逗號欄位分隔符衝突 |
+| Excel   | 高     | 符合 Excel 的預設列表分隔符 |
+| JSON    | 中     | JSON 首選陣列；當儲存為字串時使用分號 |
+| XML     | 中     | 首選專用元素；當儲存為屬性時使用分號 |
+| SQL     | 中     | 首選正規化表格；對簡單案例使用分號 |
+
+# 第四項：使用範例 {#examples}
+
+## 第一款：正確使用 {#correct-usage}
+
+```
+# 產品類別
+Electronics;Computers;Accessories
+
+# 選定地區
+North America;Europe;Asia
+
+# 選定篩選器
+price_range:100-500;color:blue;size:medium
+```
+
+## 第二款：錯誤使用 {#incorrect-usage}
+
+```
+# 使用逗號（避免）
+Electronics,Computers,Accessories
+
+# 使用垂直線（避免）
+North America|Europe|Asia
+
+# 使用其他分隔符（避免）
+price_range:100-500/color:blue/size:medium
+```
+
+# 第五項：與資料處理整合 {#data-processing-integration}
+
+## 第一款：資料處理操作 {#processing-operations}
+
+處理多重選擇資料時：
+
+1. **擷取**：使用分號分隔符分割字串
+   ```r
+   categories <- strsplit(product$categories, ";")[[1]]
+   ```
+
+2. **篩選**：檢查特定值的存在
+   ```r
+   has_electronics <- grepl("Electronics", product$categories)
+   # 更精確的匹配以避免部分匹配
+   has_electronics <- grepl("(^|;)Electronics(;|$)", product$categories)
+   ```
+
+3. **聚合**：計數選擇
+   ```r
+   selection_count <- lengths(strsplit(df$selections, ";"))
+   ```
+
+4. **視覺化**：轉換為因子進行視覺化
+   ```r
+   all_selections <- unlist(strsplit(df$selections, ";"))
+   selection_counts <- table(all_selections)
+   ```
+
+# 第六項：例外處理 {#exception-handling}
+
+## 第一款：處理遺留資料 {#legacy-data}
+
+在遺留資料使用不同分隔符的情況下：
+
+1. **轉換**：在資料處理期間轉換為分號格式
+   ```r
+   # 將逗號分隔轉換為分號分隔
+   standardized <- gsub(",", ";", legacy_data$multiple_values)
+   ```
+
+2. **記錄**：記錄任何無法使用分號的例外
+3. **實施**：實施驗證檢查以強制分隔符一致性
+
+# 第七項：優點總結 {#benefits-summary}
+
+透過遵守此規則：
+
+1. **資料處理管道將更強健**
+2. **匯入/匯出操作期間資料損壞的風險將顯著降低**
+3. **跨不同系統和格式的相容性將提高**
+4. **自動化處理將更可靠**
+
+---
+
+*基於：資料管理法第七條*  
+*相關連結：[MP008 術語公理化](../../CH00_fundamental_principles/meta_principles/MP008_terminology_axiomatization.qmd), [DM_P001 資料完整性](../principles/DM_P001_data_integrity.qmd)*

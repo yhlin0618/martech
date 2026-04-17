@@ -1,0 +1,214 @@
+---
+title: "MP041: 配置驅動 UI 組合元原則 (Configuration-Driven UI Composition)"
+subtitle: "UI 組件應從配置檔案動態生成，UI 結構和行為定義為將配置轉換為組件的函數組合"
+author: "System"
+date: "2025-04-07"
+date-modified: "2025-08-16"
+categories: [meta-principle, ui-architecture, configuration, functional-programming]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 定義
+
+UI 組件應該從配置檔案動態生成而不是硬編碼，UI 結構和行為定義為將配置轉換為組件的函數組合。此原則確立了 UI 可以完全由聲明式配置決定。
+
+## 說明
+
+當 UI 結構從配置檔案衍生時：
+
+1. 配置和 UI 之間的關係是數學函數，其中：
+   - UI = f(配置)
+   - 每個 UI 元素是將轉換函數應用於配置節點的結果
+   - 整個 UI 成為這些轉換函數的組合
+
+2. 這種函數式方法提供了幾個好處：
+   - 將結構（顯示什麼）與實施（如何顯示）分離
+   - 使非開發人員能夠通過配置修改 UI 結構
+   - 在配置和 UI 之間創建可預測、可測試的關係
+   - 允許運行時 UI 適應而無需代碼更改
+
+## 實施指南
+
+### 1. 配置作為單一真相來源 {#configuration-source-of-truth}
+
+```yaml
+# 配置定義存在哪些組件
+components:
+  micro:
+    customer_profile:
+      primary: customer_details
+      history: customer_history
+    sales: sales_by_customer_dta
+  
+  macro:
+    trends:
+      data_source: sales_trends
+      parameters:
+        show_kpi: true
+```
+
+```r
+# UI 通過函數組合從配置衍生
+ui <- configToUI(read_yaml("app_config.yaml"))
+
+# 更明確地作為函數組合：
+ui <- compose(
+  read_config,    # f(config_path) -> config
+  parse_sections, # g(config) -> section_configs
+  map_to_ui,      # h(section_configs) -> ui_components
+  create_union    # j(ui_components) -> final_ui
+)("app_config.yaml")
+```
+
+### 2. 組件生成器作為高階函數 {#component-generators}
+
+組件生成器是接受配置並返回 UI 組件的函數：
+
+```r
+# 基於配置生成 UI 的高階函數
+microComponentGenerator <- function(config) {
+  function(id) {
+    # 基於配置生成 UI
+    fluidRow(
+      column(
+        width = 12,
+        if ("customer_profile" %in% names(config)) {
+          div(...)  # 個人資料組件
+        },
+        if ("sales" %in% names(config)) {
+          div(...)  # 銷售組件
+        }
+      )
+    )
+  }
+}
+
+# 從配置生成特定的微觀組件
+myMicroUI <- microComponentGenerator(config$components$micro)
+```
+
+### 3. 完整的函數衍生 {#functional-derivation}
+
+整個 UI 可以從配置衍生，沒有硬編碼結構：
+
+```r
+# 通過將組件生成器應用於配置部分來創建 UI
+ui_components <- lapply(names(config$components), function(section) {
+  # 獲取此部分的適當生成器
+  generator <- component_generators[[section]]
+  # 將生成器應用於此部分的配置
+  generator(config$components[[section]])
+})
+
+# 創建組件的聯合
+oneTimeUnionUI(
+  !!!ui_components,
+  id = "main_content"
+)
+```
+
+## 數學基礎
+
+此原則通過添加函數組合和狀態轉換來擴展 MP0028（NSQL 集合論基礎）：
+
+1. **集合操作**：UI 組件形成可以用聯合（∪）操作組合的集合
+2. **函數組合**：配置通過函數組合轉換為 UI
+3. **函子**：高階函數將配置結構映射到 UI 結構
+4. **狀態轉換**：過程是轉換狀態的函數
+
+### 函數組合形式主義 {#functional-composition-formalism}
+
+數學上：
+- 設 C 為配置空間
+- 設 U 為 UI 組件空間
+- 定義轉換函數 T: C → U
+- 對於任何配置 c ∈ C，UI 是 T(c) ∈ U
+- 轉換 T 通常是組合 T = T₃ ∘ T₂ ∘ T₁
+
+### 狀態轉換形式主義 {#state-transformation-formalism}
+
+UI 生成管道可以視為一系列狀態轉換：
+1. State₁ (config_path) → State₂ (config) 通過 read_yaml
+2. State₂ (config) → State₃ (component_defs) 通過 config_to_component_defs
+3. State₃ (component_defs) → State₄ (ui_components) 通過 component_defs_to_ui
+4. State₄ (ui_components) → State₅ (union_component) 通過 ui_to_union
+
+每個轉換都是純函數 f(State₁) → State₂，接受一個狀態作為輸入並產生新狀態作為輸出。整個 UI 生成過程是這些狀態轉換器的組合。
+
+```
+UI = (ui_to_union ∘ component_defs_to_ui ∘ config_to_component_defs ∘ read_yaml)(config_path)
+```
+
+## 好處
+
+1. **聲明式定義**：UI 結構在配置中聲明式定義
+2. **關注點分離**：結構（什麼）與表現（如何）分離
+3. **運行時適應性**：UI 可以適應配置更改而無需代碼更改
+4. **可測試性**：將配置轉換為 UI 的函數可以進行單元測試
+5. **一致性**：確保整個應用程式中一致的 UI 模式
+
+## 反模式
+
+### 1. 混合配置和硬編碼 {#mixed-configuration}
+
+避免：
+```r
+# 不好：一些結構來自配置，一些硬編碼
+ui <- fluidPage(
+  configToHeader(config$header),
+  # 不是從配置衍生的硬編碼組件
+  tabPanel("硬編碼標籤", div(...)),
+  configToFooter(config$footer)
+)
+```
+
+### 2. 部分衍生 {#partial-derivation}
+
+避免：
+```r
+# 不好：僅將配置用於簡單值，而不是結構
+ui <- fluidPage(
+  titlePanel(config$title),
+  # 結構仍然硬編碼
+  sidebarLayout(
+    sidebarPanel(...),
+    mainPanel(...)
+  )
+)
+```
+
+### 3. 直接配置訪問 {#direct-configuration-access}
+
+避免：
+```r
+# 不好：在整個代碼庫中直接訪問配置
+ui <- fluidPage(
+  if (config$components$micro$customer_profile$primary) {
+    div(...)
+  }
+)
+```
+
+改為：
+```r
+# 好：使用組件生成器
+ui <- fluidPage(
+  componentGenerator(config$components$micro)(id)
+)
+```
+
+## 相關原則
+
+- MP0028：NSQL 集合論基礎
+- MP0039：初始化期間的一次性操作
+- P22：CSS 控制優於 Shiny 條件
+- MP0016：模組化
+- R04：應用程式 YAML 配置
+- R16：YAML 參數配置

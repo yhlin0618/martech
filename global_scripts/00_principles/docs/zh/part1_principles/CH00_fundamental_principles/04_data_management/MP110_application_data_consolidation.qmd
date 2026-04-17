@@ -1,0 +1,487 @@
+---
+title: "MP110: 應用資料整合"
+subtitle: "五層架構：最終應用層"
+tier: "元原則"
+domain: "資料管理"
+status: "有效"
+version: "1.1.0"
+date: "2025-11-13"
+author: "MAMBA Framework"
+related:
+  - MP108_base_etl_pipeline
+  - MP109_drv_derivation_layer
+  - R092_universal_dbi_approach
+  - DM_R055_app_data_aggregation_preference
+---
+
+# MP110: 應用資料整合
+
+## 原則聲明
+
+**所有供應用程式使用的分析輸出,必須由產生的 DRV/ETL 直接寫入 `app_data.duckdb`，應用程式才可存取。**
+
+App 端資料遵循 **DM_R055**：在 app_data 優先使用 `_all + filter`，切片表保留在 processed_data。
+
+本原則建立MAMBA資料架構的第五層(最終層),確保分析工作(DRV層)與正式環境應用程式使用(APP層)之間的清楚分離。
+
+---
+
+## 憲法基礎
+
+本原則完成MAMBA資料管線架構:
+
+- **MP108: BASE ETL管線** 定義 0IM → 1ST → 2TR 階段(原始資料到轉換資料)
+- **MP109: DRV衍生層** 定義 DRV 階段(分析衍生)
+- **MP110: 應用資料整合**(本原則) 定義 APP 階段(應用程式使用)
+
+這三個元原則共同建立完整的五層架構。
+
+---
+
+## 五層架構
+
+```
+第0層: 0IM (匯入)        → raw_data.duckdb
+第1層: 1ST (暫存)        → staged_data.duckdb
+第2層: 2TR (轉換)        → transformed_data.duckdb
+第3層: DRV (衍生)        → processed_data.duckdb    [分析層]
+第4層: APP (應用)        → app_data.duckdb          [應用層]
+```
+
+### 層級定義
+
+| 層級 | 代碼 | 用途 | 資料庫 | 存取模式 |
+|------|------|------|--------|----------|
+| 0 | 0IM | 匯入原始資料 | `raw_data.duckdb` | 一次寫入,ETL時讀取 |
+| 1 | 1ST | 暫存驗證 | `staged_data.duckdb` | ETL讀寫 |
+| 2 | 2TR | 轉換為架構 | `transformed_data.duckdb` | ETL讀寫 |
+| 3 | DRV | 分析衍生 | `processed_data.duckdb` | 分析工作 |
+| 4 | APP | 應用程式使用 | **`app_data.duckdb`** | **正式環境唯讀** |
+
+---
+
+## 理由說明
+
+### 未整合的問題
+
+**資料位置模糊:**
+- 多個 `processed_data.duckdb` 檔案在不同目錄
+- 應用程式不知道該從哪個資料庫讀取
+- 沒有明確的「正式環境就緒」標記
+- 難以管理不同環境(開發/測試/正式環境)
+
+**混淆範例:**
+```
+data/processed_data.duckdb              # Precision資料(第1-4週)
+data/local_data/processed_data.duckdb   # CBZ資料(第7週)
+```
+
+應用程式該讀哪一個? 兩個都要? 如何合併?
+
+### 整合後的解決方案
+
+**單一真相來源:**
+- 應用程式只從 `app_data/app_data.duckdb` 讀取
+- 清楚分離:分析工作(第3層) vs 應用程式使用(第4層)
+- 易於環境管理:在不同環境間替換 `app_data.duckdb`
+- 原子部署:一次操作替換 `app_data.duckdb`
+
+**明確的資料流:**
+```
+[分析層]                    [應用層]
+processed_data.duckdb  ──────→    app_data.duckdb
+(多個來源)                        (單一整合目標)
+```
+
+---
+
+## 實作規則
+
+### R110.1: DRV輸出至processed_data.duckdb
+
+**所有DRV腳本輸出至 `processed_data.duckdb`:**
+
+```r
+# DRV腳本模式(第3層:分析工作)
+library(DBI)
+library(duckdb)
+
+# 連接至processed資料庫(分析層)
+con_processed <- dbConnect(
+  duckdb::duckdb(),
+  "data/processed_data.duckdb"
+)
+
+# 執行分析衍生
+customer_segments <- derive_rfm_segments(sales_data)
+product_features <- extract_product_features(product_data)
+
+# 寫入processed_data (DRV輸出)
+dbWriteTable(con_processed, "df_segments_by_customer", customer_segments)
+dbWriteTable(con_processed, "df_product_features", product_features)
+
+dbDisconnect(con_processed, shutdown = TRUE)
+```
+
+**命名慣例:**
+- DRV表格必須以 `df_` 為前綴
+- 範例: `df_cbz_product_features`, `df_precision_time_series`
+
+**App 輸出:** 若 DRV 結果提供給 app 使用，DRV 必須同時寫入
+`app_data.duckdb`，並遵循 DM_R055（`_all + filter`）。
+
+```r
+# 例: DRV 直接寫入 app_data
+dbWriteTable(con_app, "df_cbz_poisson_analysis_all", merged_table, overwrite = TRUE)
+```
+
+---
+
+### R110.2: App 輸出由 DRV 直接寫入 app_data.duckdb
+
+**App 使用的表格必須由產生的 DRV/ETL 直接寫入 app_data:**
+
+```r
+# DRV 直接寫入 app_data (第4層)
+con_app <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+dbWriteTable(con_app, "df_cbz_poisson_analysis_all", merged_table, overwrite = TRUE)
+```
+
+**備註:** `consolidate_to_app_data.R` 是過渡用批次搬移腳本，
+已歸檔至 `scripts/global_scripts/99_archive/consolidate_to_app_data.R`，
+不再用於現行流程。
+
+---
+
+### R110.3: 應用程式只從app_data.duckdb讀取
+
+**應用程式不應直接從processed_data.duckdb讀取:**
+
+```r
+# ✓ 正確:應用程式從app_data讀取
+library(DBI)
+library(duckdb)
+
+con_app <- dbConnect(
+  duckdb::duckdb(),
+  "data/app_data/app_data.duckdb",
+  read_only = TRUE  # 應用程式應為唯讀
+)
+
+# 從app_data存取DRV表格
+product_features <- tbl2(con_app, "df_cbz_product_features")
+customer_segments <- tbl2(con_app, "df_segments_by_customer")
+```
+
+```r
+# ✗ 錯誤:應用程式從processed_data讀取
+con_processed <- dbConnect(
+  duckdb::duckdb(),
+  "data/processed_data.duckdb"
+)
+# 應用程式中不要這樣做!
+```
+
+**合規檢查:**
+搜尋所有應用程式碼的資料庫連線:
+```bash
+grep -r "processed_data.duckdb" scripts/global_scripts/10_rshinyapp_components/
+# 應用程式碼應回傳零個結果
+```
+
+---
+
+### R110.4: App 輸出是部署的一部分
+
+**部署檢查清單:**
+
+```bash
+# 完整資料管線工作流程
+
+# 第0-2層: ETL (匯入 → 暫存 → 轉換)
+Rscript scripts/update_scripts/ETL/cbz/cbz_ETL_sales_1ST.R
+Rscript scripts/update_scripts/ETL/cbz/cbz_ETL_sales_2TR.R
+
+# 第3層: DRV (衍生 - 分析工作)
+Rscript scripts/update_scripts/DRV/cbz_DRV_product_features.R
+Rscript scripts/update_scripts/DRV/cbz_DRV_time_series.R
+
+# 第4層: APP (App 輸出)
+# DRV 直接寫入 app_data（不需額外整合步驟）
+
+# 部署應用程式(從app_data.duckdb讀取)
+Rscript scripts/deploy_app.R
+```
+
+**關鍵規則:**
+部署應用程式前，確保 app_data.duckdb 的 App 表格已由 DRV 寫入。
+
+---
+
+## 目錄結構
+
+### 標準結構(單一領域)
+
+```
+data/
+├── raw_data.duckdb              # 第0層: 0IM輸出
+├── staged_data.duckdb           # 第1層: 1ST輸出
+├── transformed_data.duckdb      # 第2層: 2TR輸出
+├── processed_data.duckdb        # 第3層: DRV輸出(分析工作)
+└── app_data/
+    └── app_data.duckdb          # 第4層: APP就緒(應用程式使用) ✓
+```
+
+### 多領域結構
+
+```
+data/
+├── processed_data.duckdb        # Precision領域(第1-4週)
+├── local_data/
+│   └── processed_data.duckdb    # CBZ/eBay/Amazon領域(第7週)
+└── app_data/
+    └── app_data.duckdb          # 從所有領域整合 ✓
+```
+
+---
+
+## 範例: CBZ管線與App輸出
+
+### 第7週:完整工作流程
+
+**第1-3天: ETL (第0-2層)**
+```bash
+Rscript cbz_ETL_sales_1ST.R      → data/local_data/staged_data.duckdb
+Rscript cbz_ETL_sales_2TR.R      → data/local_data/transformed_data.duckdb
+```
+
+**第4天: DRV (第3層) + App輸出 (第4層)**
+```bash
+Rscript cbz_DRV_product_features.R → data/local_data/processed_data.duckdb
+Rscript cbz_DRV_time_series.R      → data/local_data/processed_data.duckdb
+Rscript cbz_DRV_poisson_analysis.R → data/local_data/processed_data.duckdb
+```
+
+結果:
+- `df_cbz_product_features` (670筆)
+- `df_cbz_time_series` (107筆)
+- `df_cbz_poisson_analysis` (2筆)
+- `df_cbz_poisson_analysis_all` (app_data)
+
+**第5天: 應用程式部署**
+```r
+# app.R現在只從app_data.duckdb讀取
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb", read_only = TRUE)
+```
+
+---
+
+## 合規驗證
+
+### 部署前檢查清單
+
+部署任何應用程式前,驗證:
+
+- [ ] **所有DRV表格存在於processed_data.duckdb**
+  ```r
+  con <- dbConnect(duckdb::duckdb(), "data/processed_data.duckdb", read_only = TRUE)
+  df_tables <- grep("^df_", dbListTables(con), value = TRUE)
+  print(df_tables)  # 應列出所有預期的DRV表格
+  ```
+
+- [ ] **必要的 App 表格存在於 app_data.duckdb**（依 DM_R055）
+  ```r
+  con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb", read_only = TRUE)
+  required_tables <- c("df_cbz_poisson_analysis_all", "df_eby_poisson_analysis_all")
+  stopifnot(all(required_tables %in% dbListTables(con)))
+  ```
+
+- [ ] **App 表格具備過濾欄位**（例如 `product_line_id`）
+  ```r
+  cols <- dbListFields(con, "df_cbz_poisson_analysis_all")
+  stopifnot("product_line_id" %in% cols)
+  ```
+
+- [ ] **應用程式設定為從app_data.duckdb讀取**
+  ```bash
+  grep -r "app_data.duckdb" scripts/global_scripts/10_rshinyapp_components/
+  # 應找到app_data的連線
+  ```
+
+- [ ] **無應用程式直接從processed_data.duckdb讀取**
+  ```bash
+  grep -r "processed_data.duckdb" scripts/global_scripts/10_rshinyapp_components/
+  # 應用程式碼應回傳零個結果
+  ```
+
+---
+
+## 效益
+
+### 1. 清楚的架構分離
+
+**分析層(第3層: DRV)**
+- 用途: 實驗性分析、臨時查詢、探索性工作
+- 資料庫: `processed_data.duckdb`
+- 存取: 資料科學家、分析師
+- 更新頻率: 變動、依需求
+
+**應用層(第4層: APP)**
+- 用途: 正式環境應用程式使用
+- 資料庫: `app_data.duckdb`
+- 存取: 終端使用者應用程式(唯讀)
+- 更新頻率: 受控、排程
+
+### 2. 環境管理
+
+**輕鬆切換環境:**
+```bash
+# 開發環境
+cp data/app_data/app_data.duckdb data/app_data/app_data_dev.duckdb
+
+# 測試環境
+cp data/app_data/app_data.duckdb data/app_data/app_data_staging.duckdb
+
+# 正式環境
+cp data/app_data/app_data_staging.duckdb data/app_data/app_data_prod.duckdb
+```
+
+### 3. 原子部署
+
+一次原子操作替換整個應用程式資料庫:
+```bash
+# 零停機部署
+mv data/app_data/app_data.duckdb data/app_data/app_data_old.duckdb
+mv data/app_data/app_data_new.duckdb data/app_data/app_data.duckdb
+# 應用程式下次查詢即看到新資料
+```
+
+### 4. 資料治理
+
+**清楚的稽核軌跡:**
+- 第3層: `processed_data.duckdb` (分析內容)
+- 第4層: `app_data.duckdb` (部署內容)
+- DRV 執行日誌與 metadata 欄位: (部署時間與內容)
+
+---
+
+## 反模式(不應採用的作法)
+
+### ✗ 反模式1: 應用程式從processed_data.duckdb讀取
+
+```r
+# ✗ 不良:應用程式從分析層讀取
+con <- dbConnect(duckdb::duckdb(), "data/processed_data.duckdb")
+df <- tbl2(con, "df_segments_by_customer")
+```
+
+**問題:** 混淆分析工作與正式環境使用。
+
+### ✗ 反模式2: 跳過 App 輸出
+
+```bash
+# ✗ 不良:未寫入 app_data 即部署應用程式
+Rscript cbz_DRV_product_features.R  # 寫入processed_data.duckdb
+# ... 立即部署應用程式(應用程式從app_data讀取 - 無新資料!)
+```
+
+**問題:** 應用程式看到過時資料,App輸出無法使用。
+
+### ✗ 反模式3: 批次複製 processed_data 到 app_data
+
+```r
+# ✗ 不良:批次複製表格
+con_src <- dbConnect(duckdb::duckdb(), "data/processed_data.duckdb")
+con_dst <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+# ... 手動複製邏輯
+```
+
+**問題:** 搬移不必要表格,違反 DM_R055。
+
+**正確作法:** 由 DRV/ETL 直接寫入 app_data。
+
+---
+
+## 相關原則
+
+### 上游相依
+
+- **MP108: BASE ETL管線** - 定義 0IM → 1ST → 2TR (供給DRV)
+- **MP109: DRV衍生層** - 定義 DRV階段 (供給APP)
+
+### 下游應用
+
+- **R092: 通用DBI方法** - 如何連接至app_data.duckdb
+- **UI元件** - 所有Shiny模組應從app_data讀取
+
+### 架構脈絡
+
+本原則完成**五層資料架構**:
+
+```
+第0層: 0IM (匯入)      ─┐
+第1層: 1ST (暫存)       ├─ MP108: BASE ETL管線
+第2層: 2TR (轉換)      ─┘
+第3層: DRV (衍生)      ─── MP109: DRV衍生層
+第4層: APP (應用)      ─── MP110: 應用資料整合(本原則)
+```
+
+---
+
+## 實作歷史
+
+| 日期 | 事件 | 說明 |
+|------|------|------|
+| 2025-11-13 | **MP110建立** | 基於CBZ第7週實作建立原則 |
+| 2025-11-13 | **consolidate_to_app_data.R** | 過渡用批次搬移腳本實作 |
+| 2025-11-13 | **首次整合** | 成功整合6個DRV表格(786筆資料) |
+| 2026-01-03 | **改為直接寫入** | DRV 直接寫入 app_data；腳本歸檔 |
+
+---
+
+## 案例研究: 第7週CBZ實作
+
+參見: `PRECISION_MARKETING_ETL_DRV_CASE_STUDY.md`
+
+**MP110之前:**
+- DRV輸出在 `data/local_data/processed_data.duckdb`
+- Precision輸出在 `data/processed_data.duckdb`
+- 應用程式對資料位置感到困惑
+
+**MP110之後:**
+- App 輸出直接寫入 `data/app_data/app_data.duckdb`
+- 應用程式有單一、明確的資料來源
+- 清楚分離:分析工作 vs 正式環境使用
+
+**結果:**
+- 6個DRV表格已整合
+- 786筆資料就緒供應用程式使用
+- 零資料遺失(已驗證筆數)
+
+---
+
+## 摘要
+
+**MP110: 應用資料整合** 建立MAMBA資料架構的最終層:
+
+1. **清楚分離**: 分析工作(第3層) vs 應用程式使用(第4層)
+2. **單一真相來源**: 應用程式只從 `app_data.duckdb` 讀取
+3. **標準化流程**: DRV 直接寫入 app_data（DM_R055）
+4. **部署就緒**: 部署前確認 App 表格已就緒
+
+**合規要求:**
+所有MAMBA應用程式必須從 `app_data/app_data.duckdb` 讀取,絕不從 `processed_data.duckdb` 讀取。
+
+---
+
+## 版本歷史
+
+- **1.0.0** (2025-11-13): 原則初始建立
+  - 建立五層架構完成
+  - 定義APP層(第4層)
+  - 建立整合工作流程（legacy）
+  - 實作 `consolidate_to_app_data.R`（legacy）
+- **1.1.0** (2026-01-03): 直接寫入 app_data
+  - DRV 直接寫入 App 表格
+  - 對齊 DM_R055（`_all + filter`）
+  - `consolidate_to_app_data.R` 歸檔

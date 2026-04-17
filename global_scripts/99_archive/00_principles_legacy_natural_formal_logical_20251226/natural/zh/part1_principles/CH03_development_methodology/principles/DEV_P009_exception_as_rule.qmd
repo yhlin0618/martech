@@ -1,0 +1,371 @@
+---
+title: "DEV_P009: 例外驅動規則演進原則"
+subtitle: "將錯誤和例外轉化為系統性防禦規則"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P009"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article: "第九條"
+related_to:
+  - "CH00.MP040: 確定性程式碼轉換"
+  - "DEV_R003: 平台中立程式碼"
+  - "DEV_P001: 除錯原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**開發方法法第九條（例外驅動規則演進原則）**
+
+當錯誤或例外發生時，應建立明確的規則來防止整個錯誤類別，而非僅修復特定實例。通過將例外轉化為規則，系統在每次遇到錯誤時都會向更高的穩健性演進。
+
+:::{.callout-important}
+## 核心原則
+當錯誤或例外發生時，建立明確的規則來防止整個錯誤類別，而非僅修復特定實例。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：系統性防禦 {#systematic-prevention}
+
+僅解決錯誤的特定實例會讓系統在其他地方仍然容易受到類似錯誤的影響。通過建立規則，我們從點狀修復轉向系統性防禦。
+
+## 第二款：知識累積 {#knowledge-accumulation}
+
+從例外衍生的規則形成不斷增長的防禦知識體系：
+- 提高系統整體穩健性
+- 保存機構知識
+- 建立最佳實踐模式
+
+## 第三款：前瞻性保護 {#future-proofing}
+
+例外衍生的規則可以保護系統免受尚未發生但共享相同模式的錯誤影響。
+
+# 第二項：實作流程 {#implementation-process}
+
+## 第一款：錯誤分析程序 {#error-analysis}
+
+當錯誤發生時的標準程序：
+
+1. **分析根本原因**
+   ```r
+   # 錯誤實例
+   Error in !tab_filters : invalid argument type
+   
+   # 根本原因分析
+   # - tab_filters 可能為 NULL 或非邏輯值
+   # - 邏輯運算子期待布林值
+   # - 缺少類型檢查
+   ```
+
+2. **識別模式**
+   ```r
+   # 錯誤模式：邏輯運算中的類型不匹配
+   # 可能出現在：
+   # - 條件判斷
+   # - 篩選操作
+   # - 邏輯組合
+   ```
+
+3. **制定規則**
+   ```r
+   # 建立 SLN01：處理邏輯上下文中的非邏輯資料類型
+   # 規則內容：所有邏輯運算前必須進行類型檢查
+   ```
+
+4. **系統性應用**
+   ```r
+   # 在整個程式碼庫中實施規則
+   # 不僅在錯誤發生處
+   ```
+
+5. **記錄連結**
+   ```r
+   #' @error_origin Error in !tab_filters (2025-04-13)
+   #' @rule SLN01 - Handling Non-Logical Data Types
+   ```
+
+## 第二款：規則建立模板 {#rule-template}
+
+```markdown
+# 規則名稱：[錯誤類別]_[防禦模式]
+
+## 起源
+- 錯誤訊息：[原始錯誤]
+- 發生日期：[日期]
+- 影響範圍：[受影響的元件]
+
+## 模式識別
+- 錯誤類別：[類型不匹配/空值參考/配置缺失等]
+- 潛在發生點：[列出可能發生的地方]
+
+## 防禦規則
+[具體的防禦措施]
+
+## 實作範例
+[程式碼範例]
+
+## 驗證方法
+[如何確認規則有效]
+```
+
+# 第三項：常見錯誤類別處理 {#common-error-categories}
+
+## 第一款：類型錯誤 {#type-errors}
+
+**錯誤實例**：
+```r
+Error in !tab_filters : invalid argument type
+```
+
+**衍生規則**：
+```r
+# SLN01: 處理邏輯上下文中的非邏輯資料類型
+safe_logical_operation <- function(value, operation = `!`) {
+  # 類型檢查和轉換
+  if (is.null(value)) {
+    return(FALSE)
+  }
+  
+  if (!is.logical(value)) {
+    value <- as.logical(value)
+    if (is.na(value)) {
+      return(FALSE)
+    }
+  }
+  
+  operation(value)
+}
+
+# 應用規則
+filter_active <- safe_logical_operation(tab_filters)
+```
+
+## 第二款：配置錯誤 {#configuration-errors}
+
+**錯誤實例**：
+```r
+Error: Configuration value 'api_key' not found
+```
+
+**衍生規則**：
+```r
+# 系統性配置驗證和後備模式
+get_config_value <- function(key, default = NULL, required = FALSE) {
+  value <- tryCatch({
+    config[[key]]
+  }, error = function(e) {
+    NULL
+  })
+  
+  if (is.null(value)) {
+    if (required) {
+      stop(paste("Required configuration missing:", key))
+    }
+    return(default)
+  }
+  
+  value
+}
+
+# 配置驗證器
+validate_config <- function(config, schema) {
+  missing <- setdiff(names(schema$required), names(config))
+  if (length(missing) > 0) {
+    stop(paste("Missing required config:", paste(missing, collapse = ", ")))
+  }
+  
+  # 設定預設值
+  for (key in names(schema$defaults)) {
+    if (is.null(config[[key]])) {
+      config[[key]] <- schema$defaults[[key]]
+    }
+  }
+  
+  config
+}
+```
+
+## 第三款：空值參考錯誤 {#null-reference}
+
+**錯誤實例**：
+```r
+Error: attempt to apply non-function
+```
+
+**衍生規則**：
+```r
+# Maybe 模式實作
+maybe <- function(value, operation, default = NULL) {
+  if (is.null(value)) {
+    return(default)
+  }
+  
+  tryCatch({
+    operation(value)
+  }, error = function(e) {
+    warning(paste("Operation failed:", e$message))
+    default
+  })
+}
+
+# 使用範例
+result <- maybe(
+  user_data,
+  function(x) x$profile$settings$theme,
+  default = "light"
+)
+```
+
+# 第四項：規則演進管理 {#rule-evolution}
+
+## 第一款：規則版本控制 {#rule-versioning}
+
+```r
+# rules/evolution_log.yaml
+rules:
+  - id: "SLN01"
+    version: "1.2"
+    created: "2025-04-01"
+    updated: "2025-04-13"
+    origin_errors:
+      - "Error in !tab_filters"
+      - "Error in if(condition)"
+    improvements:
+      - "v1.0: Basic type checking"
+      - "v1.1: Added NULL handling"
+      - "v1.2: Support for NA values"
+```
+
+## 第二款：規則效果追蹤 {#rule-tracking}
+
+```r
+# 規則應用追蹤器
+track_rule_application <- function(rule_id, location, result) {
+  log_entry <- list(
+    timestamp = Sys.time(),
+    rule = rule_id,
+    location = location,
+    success = !inherits(result, "try-error"),
+    prevented_error = attr(result, "prevented_error")
+  )
+  
+  # 記錄到規則應用日誌
+  append_to_log("rule_applications.log", log_entry)
+}
+```
+
+# 第五項：最佳實踐 {#best-practices}
+
+## 第一款：規則優先級 {#rule-priority}
+
+1. **關鍵路徑優先**：先在關鍵業務邏輯中應用規則
+2. **高頻錯誤優先**：優先處理頻繁發生的錯誤類別
+3. **影響範圍優先**：優先處理影響多個模組的錯誤
+
+## 第二款：規則文件化 {#rule-documentation}
+
+```r
+#' 應用例外驅動規則
+#' 
+#' @rule_origin Error in data processing pipeline (2025-04-13)
+#' @rule_id DEV_R099
+#' @rule_category Type Safety
+#' 
+#' @description
+#' 此函數實施類型安全規則，防止類型不匹配錯誤
+#' 
+#' @examples
+#' # 原始錯誤場景
+#' # data <- NULL
+#' # result <- !data  # Error
+#' 
+#' # 應用規則後
+#' data <- NULL
+#' result <- safe_logical_not(data)  # Returns FALSE safely
+safe_logical_not <- function(value) {
+  # 實作...
+}
+```
+
+# 第六項：應用時機 {#application-timing}
+
+## 第一款：觸發條件 {#trigger-conditions}
+
+應該應用此原則的時機：
+
+1. **錯誤發生時**：任何可能在程式碼庫其他地方發生的錯誤
+2. **重複錯誤**：在不同應用部分發現多個類似錯誤
+3. **程式碼審查**：重複識別相同類別的問題
+4. **系統升級**：引入新依賴或功能時預防潛在錯誤
+
+## 第二款：規則整合 {#rule-integration}
+
+```r
+# 在專案初始化時載入所有防禦規則
+load_defensive_rules <- function() {
+  rule_files <- list.files(
+    "scripts/global_scripts/00_principles/defensive_rules",
+    pattern = "*.R",
+    full.names = TRUE
+  )
+  
+  for (file in rule_files) {
+    source(file)
+    rule_name <- tools::file_path_sans_ext(basename(file))
+    message(paste("Loaded defensive rule:", rule_name))
+  }
+}
+
+# 應用程式啟動時
+load_defensive_rules()
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 例外驅動規則實作檢查清單
+
+**錯誤分析**：
+- [ ] 識別根本原因
+- [ ] 確定錯誤模式
+- [ ] 評估潛在影響範圍
+- [ ] 記錄原始錯誤上下文
+
+**規則建立**：
+- [ ] 制定防禦規則
+- [ ] 建立規則文件
+- [ ] 編寫實作程式碼
+- [ ] 添加測試案例
+
+**系統性應用**：
+- [ ] 掃描程式碼庫尋找類似模式
+- [ ] 在所有相關位置應用規則
+- [ ] 更新相關文件
+- [ ] 通知團隊成員
+
+**驗證和追蹤**：
+- [ ] 驗證規則有效性
+- [ ] 設定效果追蹤
+- [ ] 建立監控機制
+- [ ] 定期審查規則效果
+:::
+
+# 結論 {#conclusion}
+
+例外驅動規則演進原則將錯誤從問題轉化為改進機會。通過系統性地將例外轉化為防禦規則，我們建立了一個不斷學習和改進的系統。每個遇到的錯誤都成為增強整體系統穩健性的機會，創建了品質改進的正向回饋循環。
+
+---
+
+*基於：開發方法法第九條*  
+*相關：[MP040 確定性程式碼轉換](../../CH00_fundamental_principles/MP040_deterministic_codebase_transformations.qmd)、[DEV_P001 除錯原則](DEV_P001_debug_principles.qmd)*

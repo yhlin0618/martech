@@ -1,0 +1,475 @@
+---
+title: "DEV_R036: ShinyJS Module Namespace Handling Rule"
+subtitle: "When using shinyjs functions within moduleServer context, use session$ns() instead of ns() to properly namespace element IDs"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R036"
+date-created: "2025-09-28"
+date-modified: "2025-09-28"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article:
+  number: 36
+  title: "ShinyJS Module Namespace Handling Rule"
+related_to:
+  - "UI_R002: Shiny Module ID Handling Rule"
+  - "DEV_R030: Explicit Namespace in Shiny Applications Rule"
+  - "DEV_R022: Module Data Connection Rule"
+  - "MP017: Separation of Concerns"
+  - "MP058: Namespace Conflict Avoidance"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 36: ShinyJS Module Namespace Handling Rule {#overview}
+
+**Development Methodology Law Article 36 (ShinyJS Module Namespace Handling Rule)**
+
+This rule establishes the correct pattern for using shinyjs functions within Shiny modules, specifically addressing the namespace function availability in different contexts.
+
+:::{.callout-important}
+## Core Rule
+When using shinyjs functions (show, hide, toggle, etc.) within `moduleServer` context, you MUST use `session$ns()` to namespace element IDs, not `ns()` which is only available in UI functions.
+:::
+
+# Section 1: The Problem {#problem}
+
+## Subsection 1: Namespace Context Difference {#namespace-context}
+
+In Shiny modules, there are two different namespace contexts:
+
+1. **UI Context**: The `ns()` function created by `NS(id)` in UI functions
+2. **Server Context**: The `session$ns()` function available in `moduleServer`
+
+## Subsection 2: Common Error Pattern {#error-pattern}
+
+The following error occurs when attempting to use `ns()` in server context:
+
+```r
+# INCORRECT - Causes Error
+moduleServer(id, function(input, output, session) {
+  observeEvent(input$button, {
+    shinyjs::show(id = ns("panel"))  # ❌ Error: could not find function "ns"
+  })
+})
+```
+
+This happens because `ns()` is not defined within the `moduleServer` function scope.
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Correct Pattern in Module Server {#correct-server-pattern}
+
+When using shinyjs functions within `moduleServer`, always use `session$ns()`:
+
+```r
+# CORRECT - Using session$ns()
+moduleNameServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    observeEvent(input$toggle_button, {
+      # Use session$ns() to namespace the ID
+      shinyjs::toggle(id = session$ns("panel"))
+    })
+
+    observeEvent(input$show_button, {
+      shinyjs::show(id = session$ns("hidden_content"))
+    })
+
+    observeEvent(input$hide_button, {
+      shinyjs::hide(id = session$ns("visible_content"))
+    })
+  })
+}
+```
+
+## Subsection 2: UI Function Pattern Remains Unchanged {#ui-pattern}
+
+In UI functions, continue using the standard `ns()` pattern:
+
+```r
+# CORRECT - Using ns() in UI function
+moduleNameUI <- function(id) {
+  ns <- NS(id)  # Create namespace function
+
+  tagList(
+    shinyjs::useShinyjs(),
+
+    # Use ns() for all IDs in UI
+    actionButton(ns("toggle_button"), "Toggle Panel"),
+    actionButton(ns("show_button"), "Show Content"),
+    actionButton(ns("hide_button"), "Hide Content"),
+
+    # Hidden elements also use ns()
+    shinyjs::hidden(
+      div(
+        id = ns("panel"),  # This ID will be referenced as session$ns("panel") in server
+        h3("Panel Content"),
+        p("This panel can be toggled")
+      )
+    ),
+
+    div(
+      id = ns("hidden_content"),
+      style = "display: none;",
+      p("Initially hidden content")
+    ),
+
+    div(
+      id = ns("visible_content"),
+      p("Initially visible content")
+    )
+  )
+}
+```
+
+# Section 3: Complete Working Example {#complete-example}
+
+## Subsection 1: Full Module Implementation {#full-implementation}
+
+```r
+# UI Function
+collapsiblePanelUI <- function(id) {
+  ns <- NS(id)
+
+  tagList(
+    shinyjs::useShinyjs(),
+
+    bs4Dash::box(
+      title = "Collapsible Panel",
+      width = 12,
+
+      # Toggle button
+      actionButton(
+        ns("toggle_btn"),
+        "Toggle Content",
+        class = "btn-primary mb-3"
+      ),
+
+      # Content to be toggled
+      shinyjs::hidden(
+        div(
+          id = ns("collapsible_content"),
+          class = "mt-3",
+
+          # Multiple elements within the collapsible section
+          selectInput(
+            ns("selector"),
+            "Select Option:",
+            choices = c("Option A", "Option B", "Option C")
+          ),
+
+          textAreaInput(
+            ns("notes"),
+            "Notes:",
+            rows = 3
+          ),
+
+          actionButton(
+            ns("submit"),
+            "Submit",
+            class = "btn-success"
+          )
+        )
+      ),
+
+      # Status message
+      div(
+        id = ns("status_message"),
+        class = "alert alert-info mt-3",
+        style = "display: none;",
+        textOutput(ns("status_text"))
+      )
+    )
+  )
+}
+
+# Server Function
+collapsiblePanelServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+
+    # Toggle panel visibility
+    observeEvent(input$toggle_btn, {
+      # CORRECT: Using session$ns() for shinyjs functions
+      shinyjs::toggle(
+        id = session$ns("collapsible_content"),
+        anim = TRUE,
+        animType = "slide"
+      )
+    })
+
+    # Handle form submission
+    observeEvent(input$submit, {
+      # Show status message
+      shinyjs::show(
+        id = session$ns("status_message"),
+        anim = TRUE
+      )
+
+      # Update status text
+      output$status_text <- renderText({
+        paste("Submitted:", input$selector, "with notes:", input$notes)
+      })
+
+      # Hide message after 3 seconds
+      shinyjs::delay(
+        3000,
+        shinyjs::hide(
+          id = session$ns("status_message"),
+          anim = TRUE
+        )
+      )
+    })
+
+    # Conditional visibility based on selection
+    observeEvent(input$selector, {
+      if (input$selector == "Option C") {
+        # Show submit button only for Option C
+        shinyjs::show(id = session$ns("submit"))
+      } else {
+        shinyjs::hide(id = session$ns("submit"))
+      }
+    })
+  })
+}
+```
+
+# Section 4: Common ShinyJS Functions Requiring session$ns() {#shinyjs-functions}
+
+## Subsection 1: Visibility Functions {#visibility-functions}
+
+All shinyjs visibility functions require `session$ns()` when used in modules:
+
+```r
+# Inside moduleServer
+shinyjs::show(id = session$ns("element_id"))
+shinyjs::hide(id = session$ns("element_id"))
+shinyjs::toggle(id = session$ns("element_id"))
+shinyjs::toggleState(id = session$ns("button_id"))
+shinyjs::enable(id = session$ns("input_id"))
+shinyjs::disable(id = session$ns("input_id"))
+```
+
+## Subsection 2: CSS and Class Functions {#css-functions}
+
+CSS manipulation functions also require proper namespacing:
+
+```r
+# Inside moduleServer
+shinyjs::addClass(id = session$ns("element_id"), class = "highlight")
+shinyjs::removeClass(id = session$ns("element_id"), class = "highlight")
+shinyjs::toggleClass(id = session$ns("element_id"), class = "active")
+
+# Inline CSS
+shinyjs::inlineCSS(paste0("#", session$ns("element_id"), " { color: red; }"))
+```
+
+## Subsection 3: Advanced ShinyJS Functions {#advanced-functions}
+
+More complex shinyjs operations:
+
+```r
+# Inside moduleServer
+
+# Run JavaScript with namespaced IDs
+shinyjs::runjs(sprintf(
+  "document.getElementById('%s').scrollIntoView();",
+  session$ns("target_element")
+))
+
+# HTML manipulation
+shinyjs::html(
+  id = session$ns("content_div"),
+  html = "<p>New content</p>"
+)
+
+# Delayed actions
+shinyjs::delay(
+  1000,
+  shinyjs::hide(id = session$ns("temporary_message"))
+)
+
+# Click simulation
+shinyjs::click(id = session$ns("hidden_button"))
+```
+
+# Section 5: Anti-patterns to Avoid {#anti-patterns}
+
+## Subsection 1: Creating ns Function in Server {#creating-ns-server}
+
+:::{.callout-warning}
+## Never Create NS() in moduleServer
+
+```r
+# INCORRECT - Do not create NS in server
+moduleServer(id, function(input, output, session) {
+  ns <- NS(id)  # ❌ This creates a new namespace, not the module's namespace
+
+  observeEvent(input$button, {
+    shinyjs::show(id = ns("panel"))  # ❌ Wrong namespace
+  })
+})
+```
+
+This creates a new namespace function that doesn't match the module's actual namespace.
+:::
+
+## Subsection 2: Using Unnamespaced IDs {#unnamespaced-ids}
+
+:::{.callout-warning}
+## Always Namespace Module IDs
+
+```r
+# INCORRECT - Missing namespace
+moduleServer(id, function(input, output, session) {
+  observeEvent(input$button, {
+    shinyjs::show(id = "panel")  # ❌ Will not find the element in module context
+  })
+})
+```
+
+This will fail to find the element because it's looking for a global ID, not the module-namespaced ID.
+:::
+
+## Subsection 3: Mixed Namespace Approaches {#mixed-namespace}
+
+:::{.callout-warning}
+## Inconsistent Namespace Usage
+
+```r
+# INCORRECT - Inconsistent approach
+moduleServer(id, function(input, output, session) {
+  # Creating local ns variable (confusing and error-prone)
+  ns <- session$ns  # ❌ Unnecessary and confusing
+
+  observeEvent(input$button, {
+    shinyjs::show(id = ns("panel"))  # Works but unnecessarily complex
+  })
+})
+```
+
+While this technically works, it's unnecessarily complex and can lead to confusion. Always use `session$ns()` directly.
+:::
+
+# Section 6: Testing and Debugging {#testing}
+
+## Subsection 1: Verifying Namespace {#verify-namespace}
+
+To debug namespace issues, you can print the namespaced ID:
+
+```r
+moduleServer(id, function(input, output, session) {
+  observeEvent(input$debug_button, {
+    # Print the actual namespaced ID
+    print(paste("Namespaced ID:", session$ns("panel")))
+
+    # Verify element exists
+    shinyjs::runjs(sprintf(
+      "console.log('Element exists:', document.getElementById('%s') !== null);",
+      session$ns("panel")
+    ))
+  })
+})
+```
+
+## Subsection 2: Common Debugging Steps {#debugging-steps}
+
+1. **Check browser console**: Look for JavaScript errors about missing elements
+2. **Verify ID matching**: Ensure UI uses `ns()` and server uses `session$ns()`
+3. **Print namespaced IDs**: Use `print(session$ns("id"))` to see actual IDs
+4. **Inspect HTML**: Use browser developer tools to see actual element IDs
+
+# Section 7: Integration with Other Module Patterns {#integration}
+
+## Subsection 1: Nested Modules {#nested-modules}
+
+When modules are nested, each level maintains its own namespace:
+
+```r
+# Parent module server
+parentModuleServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # Parent's shinyjs calls
+    observeEvent(input$parent_button, {
+      shinyjs::show(id = session$ns("parent_panel"))
+    })
+
+    # Call child module (no special namespace handling needed)
+    childModuleServer("child")
+  })
+}
+
+# Child module server
+childModuleServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # Child's shinyjs calls use child's session$ns
+    observeEvent(input$child_button, {
+      shinyjs::show(id = session$ns("child_panel"))
+    })
+  })
+}
+```
+
+## Subsection 2: Dynamic UI with ShinyJS {#dynamic-ui}
+
+When creating dynamic UI that will be manipulated with shinyjs:
+
+```r
+moduleServer(id, function(input, output, session) {
+  output$dynamic_ui <- renderUI({
+    tagList(
+      actionButton(session$ns("dynamic_button"), "Dynamic Action"),
+      shinyjs::hidden(
+        div(
+          id = session$ns("dynamic_content"),
+          "This content can be toggled"
+        )
+      )
+    )
+  })
+
+  # Manipulate dynamically created elements
+  observeEvent(input$dynamic_button, {
+    shinyjs::toggle(id = session$ns("dynamic_content"))
+  })
+})
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## ShinyJS Module Namespace Checklist
+
+When using shinyjs in modules, verify:
+
+- [ ] UI function uses `ns <- NS(id)` and `ns()` for all element IDs
+- [ ] Server function uses `moduleServer(id, function(input, output, session) {...})`
+- [ ] All shinyjs function calls use `session$ns("element_id")` in server
+- [ ] No `NS()` function is created inside `moduleServer`
+- [ ] Dynamic UI elements use `session$ns()` when created in `renderUI`
+- [ ] Nested modules each use their own `session$ns()`
+- [ ] JavaScript code snippets properly escape namespaced IDs
+- [ ] Error messages about missing functions have been resolved
+- [ ] Browser console shows no errors about missing elements
+- [ ] Module works correctly when used multiple times with different IDs
+:::
+
+# Conclusion {#conclusion}
+
+The ShinyJS Module Namespace Handling Rule ensures that shinyjs functions work correctly within Shiny modules by using the appropriate namespace function in each context. Remember:
+
+- **In UI functions**: Use `ns()` created by `NS(id)`
+- **In server functions**: Use `session$ns()` provided by `moduleServer`
+- **Never**: Create `NS()` inside `moduleServer` or use unnamespaced IDs
+
+Following this pattern prevents the common "could not find function 'ns'" error and ensures your modules work reliably regardless of how they're instantiated or nested.
+
+---
+
+*Based on: Development Methodology Law Article 36*
+*Related: [UI_R002 Shiny Module ID Handling](../../CH04_ui_components/rules/UI_R002_shiny_module_id_handling.qmd), [DEV_R030 Explicit Namespace in Shiny](DEV_R030_explicit_namespace_in_shiny.qmd)*

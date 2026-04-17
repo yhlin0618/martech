@@ -1,0 +1,682 @@
+---
+title: "TD_P003: Component-wise Testing Principle"
+subtitle: "Test interactive applications at the component level for better isolation and debugging"
+chapter: "CH05"
+category: "principle"
+number: "TD_P003"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Testing & Deployment Law"
+article: "Article 3"
+derives_from:
+  - "DEV_P001: Debug Principles"
+  - "DEV_P005: Debug Efficiency Exception"
+influences:
+  - "UI_R001: UI-Server-Defaults N-tuple"
+  - "SO_R021: One Function One File"
+related_to:
+  - "TD_P002: Dual Testing Approach"
+  - "TD_R001: Shiny Test Data"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Testing & Deployment Law Article 3 (Component-wise Testing Principle)**
+
+This article establishes that interactive applications, especially those with complex UIs like Shiny apps, must be tested at the component level rather than only as complete systems, enabling isolation of failures, more efficient debugging, and better handling of edge cases.
+
+:::{.callout-important}
+## Core Principle
+Each component must be independently testable with its own test harness, test data generators, and comprehensive test scenarios covering normal operation, edge cases, and error conditions.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Why Component Testing {#why}
+
+Shiny applications and similar interactive systems can easily collapse under complexity, making it difficult to diagnose issues when testing only the complete system. Component-wise testing provides:
+
+1. **Isolation of Issues**: Separates UI/UX problems from data and logic issues
+2. **Independent Development**: Allows components to be developed and debugged separately
+3. **Systematic Edge Case Testing**: Enables thorough testing of edge cases per component
+4. **Refactoring Safety**: Ensures components remain functional after changes
+5. **Incremental Integration**: Facilitates step-by-step system assembly
+
+## Subsection 2: Benefits {#benefits}
+
+第一項：開發效率提升 (Development efficiency improvement)
+
+- Faster development cycles through isolated testing
+- Parallel development of components by different team members
+- Reduced time to identify and fix issues
+- Better code reusability across projects
+
+第二項：品質保證 (Quality assurance)
+
+- More comprehensive test coverage
+- Better handling of edge cases
+- Improved error isolation and diagnosis
+- Higher confidence in component reliability
+
+第三項：維護性改善 (Maintainability improvement)
+
+- Test scripts serve as usage documentation
+- Components can be tested against future requirements
+- Easier onboarding of new developers
+- Clear component interfaces and contracts
+
+# Section 2: Component Isolation Strategy {#isolation}
+
+## Subsection 1: Sandboxed Testing Environment {#sandbox}
+
+第一項：最小測試應用程式 (Minimal test applications)
+
+```r
+# Create minimal test app for each component
+library(shiny)
+library(bs4Dash)
+
+# Test app for CustomerProfileModule
+ui <- fluidPage(
+  titlePanel("CustomerProfile Component Test"),
+  sidebarLayout(
+    sidebarPanel(
+      h4("Test Controls"),
+      selectInput("scenario", "Test Scenario",
+                  choices = c("Normal", "Empty", "Invalid", "Extreme")),
+      actionButton("refresh", "Refresh Data"),
+      hr(),
+      h4("Debug Options"),
+      checkboxInput("show_debug", "Show Debug Info", TRUE)
+    ),
+    mainPanel(
+      # Component under test
+      customerProfileUI("test"),
+      conditionalPanel(
+        condition = "input.show_debug",
+        verbatimTextOutput("debug_output")
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # Test data generation
+  test_data <- reactive({
+    input$refresh  # Trigger on refresh
+    create_test_data(tolower(input$scenario))
+  })
+  
+  # Initialize component
+  result <- customerProfileServer("test", data = test_data)
+  
+  # Debug output
+  output$debug_output <- renderPrint({
+    list(
+      scenario = input$scenario,
+      data_rows = nrow(test_data()),
+      data_structure = str(test_data()),
+      component_output = result()
+    )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+第二項：合成資料產生器 (Synthetic data generators)
+
+```r
+# Test data generator function
+create_test_data <- function(scenario = "normal") {
+  set.seed(123)  # Reproducible test data
+  
+  switch(scenario,
+    "normal" = data.frame(
+      customer_id = sprintf("CUST%03d", 1:100),
+      name = paste("Customer", 1:100),
+      value = rnorm(100, 1000, 200),
+      status = sample(c("Active", "Inactive"), 100, replace = TRUE),
+      last_purchase = Sys.Date() - sample(1:365, 100, replace = TRUE)
+    ),
+    
+    "empty" = data.frame(
+      customer_id = character(0),
+      name = character(0),
+      value = numeric(0),
+      status = character(0),
+      last_purchase = as.Date(character(0))
+    ),
+    
+    "invalid" = data.frame(
+      customer_id = c(NA, "", "INVALID", "CUST001"),
+      name = c("Test", NA, "", "Valid Customer"),
+      value = c(NA, -1000, Inf, 500),
+      status = c("Unknown", NA, "", "Active"),
+      last_purchase = c(NA, NA, NA, Sys.Date())
+    ),
+    
+    "extreme" = data.frame(
+      customer_id = sprintf("CUST%09d", 1:10000),
+      name = strrep("LongCustomerName", 50),
+      value = c(rep(1e9, 5000), rep(-1e9, 5000)),
+      status = rep("Active", 10000),
+      last_purchase = rep(as.Date("1900-01-01"), 10000)
+    )
+  )
+}
+```
+
+## Subsection 2: Independent Component Files {#independent}
+
+第一項：無依賴設計 (Dependency-free design)
+
+```r
+# Component designed to be testable without dependencies
+customerProfileUI <- function(id, defaults = customerProfileDefaults()) {
+  ns <- NS(id)
+  
+  tagList(
+    box(
+      title = "Customer Profile",
+      status = "primary",
+      solidHeader = TRUE,
+      width = 12,
+      
+      # UI elements with defaults
+      valueBoxOutput(ns("total_value")),
+      plotOutput(ns("history_plot")),
+      DTOutput(ns("details_table"))
+    )
+  )
+}
+
+customerProfileServer <- function(id, data = reactive(NULL), 
+                                   config = reactive(NULL)) {
+  moduleServer(id, function(input, output, session) {
+    # Handle missing data gracefully
+    safe_data <- reactive({
+      d <- data()
+      if (is.null(d) || nrow(d) == 0) {
+        return(create_default_data())
+      }
+      validate_and_clean(d)
+    })
+    
+    # Component logic...
+  })
+}
+
+customerProfileDefaults <- function() {
+  list(
+    empty_message = "No customer data available",
+    default_plot_type = "line",
+    max_rows_display = 100,
+    value_format = "currency"
+  )
+}
+```
+
+## Subsection 3: Test Matrix {#test-matrix}
+
+第一項：測試矩陣定義 (Test matrix definition)
+
+```r
+# Define comprehensive test matrix
+component_test_matrix <- tribble(
+  ~test_id, ~scenario, ~data_condition, ~expected_result, ~priority,
+  "T001", "Normal operation", "valid_100_rows", "All visualizations render", "High",
+  "T002", "Empty data", "zero_rows", "Shows empty state message", "High",
+  "T003", "NULL data", "null_input", "Falls back to defaults", "High",
+  "T004", "Missing columns", "partial_schema", "Handles gracefully", "Medium",
+  "T005", "NA values", "contains_na", "Skips NA in calculations", "High",
+  "T006", "Single row", "one_row", "Renders without error", "Medium",
+  "T007", "Large dataset", "10000_rows", "Performance acceptable", "Low",
+  "T008", "Special characters", "unicode_data", "Displays correctly", "Low",
+  "T009", "Negative values", "negative_numbers", "Handles appropriately", "Medium",
+  "T010", "Date boundaries", "extreme_dates", "No overflow errors", "Low"
+)
+
+# Execute test matrix
+run_component_tests <- function(component_name, test_matrix) {
+  results <- list()
+  
+  for (i in seq_len(nrow(test_matrix))) {
+    test <- test_matrix[i, ]
+    
+    result <- tryCatch({
+      # Generate test data
+      test_data <- generate_test_scenario(test$data_condition)
+      
+      # Run component test
+      test_component(component_name, test_data)
+      
+      list(
+        test_id = test$test_id,
+        status = "PASS",
+        message = "Test completed successfully"
+      )
+    }, error = function(e) {
+      list(
+        test_id = test$test_id,
+        status = "FAIL",
+        message = e$message
+      )
+    })
+    
+    results[[i]] <- result
+  }
+  
+  # Return test report
+  bind_rows(results)
+}
+```
+
+# Section 3: Required Testing Artifacts {#artifacts}
+
+## Subsection 1: Component Test File {#test-file}
+
+第一項：獨立測試腳本 (Standalone test script)
+
+```r
+# File: test_customerProfile.R
+#' @title Component Test for CustomerProfile Module
+#' @principle TD_P003 Component-wise Testing
+#' @description Comprehensive test suite for CustomerProfile component
+
+# Setup ----
+library(shiny)
+library(testthat)
+source("customerProfile.R")
+
+# Test Data Generators ----
+source("test_data_generators.R")
+
+# Test Scenarios ----
+test_that("CustomerProfile handles normal data", {
+  data <- create_test_data("normal")
+  
+  testServer(customerProfileServer, args = list(data = reactive(data)), {
+    expect_true(!is.null(output$total_value))
+    expect_true(!is.null(output$history_plot))
+    expect_equal(nrow(output$details_table), 100)
+  })
+})
+
+test_that("CustomerProfile handles empty data", {
+  data <- create_test_data("empty")
+  
+  testServer(customerProfileServer, args = list(data = reactive(data)), {
+    expect_equal(output$total_value$value, 0)
+    expect_true(grepl("No data", output$empty_message))
+  })
+})
+
+test_that("CustomerProfile handles invalid data", {
+  data <- create_test_data("invalid")
+  
+  testServer(customerProfileServer, args = list(data = reactive(data)), {
+    # Should not error out
+    expect_error(output$total_value, NA)
+    # Should filter invalid rows
+    expect_true(output$row_count < nrow(data))
+  })
+})
+
+# Visual Test App ----
+if (interactive()) {
+  run_visual_test <- function() {
+    shinyApp(
+      ui = customerProfileTestUI(),
+      server = customerProfileTestServer()
+    )
+  }
+  
+  run_visual_test()
+}
+```
+
+## Subsection 2: Test Data Generators {#generators}
+
+第一項：場景特定資料產生 (Scenario-specific data generation)
+
+```r
+# File: test_data_generators.R
+#' Generate test data for various scenarios
+
+# Edge case generators
+generate_edge_cases <- function() {
+  list(
+    empty_strings = data.frame(
+      id = c("", "  ", "\t", "\n"),
+      value = c(100, 200, 300, 400)
+    ),
+    
+    special_chars = data.frame(
+      id = c("O'Brien", "José", "北京", "👍"),
+      value = c(100, 200, 300, 400)
+    ),
+    
+    boundary_values = data.frame(
+      id = 1:6,
+      value = c(0, 1, -1, .Machine$double.xmax, 
+                .Machine$double.xmin, .Machine$double.eps)
+    ),
+    
+    missing_patterns = data.frame(
+      id = 1:4,
+      value = c(NA, NaN, Inf, -Inf)
+    )
+  )
+}
+
+# Performance test data
+generate_performance_data <- function(n = 10000) {
+  data.frame(
+    id = seq_len(n),
+    category = sample(LETTERS, n, replace = TRUE),
+    value = rnorm(n, 1000, 200),
+    timestamp = Sys.time() - runif(n, 0, 365*24*60*60),
+    text = replicate(n, paste(sample(letters, 50, replace = TRUE), 
+                               collapse = ""))
+  )
+}
+
+# Time series test data
+generate_time_series_data <- function(periods = 365) {
+  dates <- seq(Sys.Date() - periods, Sys.Date(), by = "day")
+  
+  data.frame(
+    date = dates,
+    value = cumsum(rnorm(length(dates))),
+    events = sample(c(NA, "Event"), length(dates), 
+                    replace = TRUE, prob = c(0.95, 0.05))
+  )
+}
+```
+
+## Subsection 3: Component Documentation {#documentation}
+
+第一項：預期行為文檔 (Expected behavior documentation)
+
+```r
+# File: customerProfile_test_spec.md
+#' # CustomerProfile Component Test Specification
+#' 
+#' ## Expected Behaviors
+#' 
+#' ### Normal Operation
+#' - Displays customer name and ID
+#' - Shows total value as formatted currency
+#' - Renders purchase history plot
+#' - Displays details in sortable table
+#' 
+#' ### Empty Data
+#' - Shows "No customer data available" message
+#' - Value boxes display zero with gray background
+#' - Plot area shows instructional message
+#' - Table shows empty state
+#' 
+#' ### Error Conditions
+#' - Invalid customer ID: Shows "Unknown Customer"
+#' - Missing required fields: Uses defaults
+#' - Calculation errors: Shows "--" in value boxes
+#' - Plot errors: Shows error message in plot area
+#' 
+#' ## Screenshots
+#' - Normal state: ./screenshots/normal.png
+#' - Empty state: ./screenshots/empty.png
+#' - Error state: ./screenshots/error.png
+#' 
+#' ## Common Issues
+#' 1. Slow rendering with >1000 rows
+#'    - Solution: Implement pagination
+#' 2. Memory issues with reactive data
+#'    - Solution: Use reactiveVal with cleanup
+```
+
+# Section 4: Testing Methods by Component Type {#methods}
+
+## Subsection 1: UI Components {#ui-testing}
+
+第一項：UI 測試重點 (UI testing focus)
+
+```r
+# Test UI rendering and responsiveness
+test_ui_component <- function(ui_function, test_id = "test") {
+  # Test rendering across screen sizes
+  screen_sizes <- list(
+    mobile = c(375, 667),
+    tablet = c(768, 1024),
+    desktop = c(1920, 1080)
+  )
+  
+  for (size_name in names(screen_sizes)) {
+    size <- screen_sizes[[size_name]]
+    
+    # Create test app with specific viewport
+    test_app <- shinyApp(
+      ui = fluidPage(
+        tags$head(
+          tags$meta(
+            name = "viewport",
+            content = sprintf("width=%d, height=%d", size[1], size[2])
+          )
+        ),
+        ui_function(test_id)
+      ),
+      server = function(input, output, session) {}
+    )
+    
+    # Verify rendering (would use snapshot testing in practice)
+    expect_error(test_app, NA)
+  }
+}
+
+# Test accessibility
+test_accessibility <- function(ui_element) {
+  # Check for ARIA labels
+  expect_true(
+    grepl("aria-label|role=", as.character(ui_element))
+  )
+  
+  # Check for keyboard navigation
+  expect_true(
+    grepl("tabindex", as.character(ui_element))
+  )
+}
+```
+
+## Subsection 2: Server Components {#server-testing}
+
+第一項：伺服器邏輯測試 (Server logic testing)
+
+```r
+# Test server reactivity and calculations
+test_server_component <- function(server_function, test_scenarios) {
+  for (scenario in test_scenarios) {
+    testServer(server_function, 
+               args = list(data = reactive(scenario$input)), {
+      
+      # Test reactive dependencies
+      session$flushReact()
+      
+      # Verify outputs
+      for (output_name in names(scenario$expected)) {
+        expect_equal(
+          output[[output_name]], 
+          scenario$expected[[output_name]],
+          label = paste("Scenario:", scenario$name, 
+                        "Output:", output_name)
+        )
+      }
+      
+      # Test error handling
+      if (!is.null(scenario$should_error)) {
+        expect_error(
+          output[[scenario$should_error$output]],
+          scenario$should_error$pattern
+        )
+      }
+    })
+  }
+}
+```
+
+## Subsection 3: Integration Testing {#integration-testing}
+
+第一項：UI-Server 整合測試 (UI-Server integration testing)
+
+```r
+# Test complete component integration
+test_component_integration <- function(ui_func, server_func, defaults_func) {
+  app <- shinyApp(
+    ui = fluidPage(
+      ui_func("test", defaults_func())
+    ),
+    server = function(input, output, session) {
+      # Test with various data streams
+      test_data <- reactiveVal(create_test_data("normal"))
+      
+      # Initialize server
+      server_func("test", data = test_data)
+      
+      # Simulate user interactions
+      observe({
+        # Test UI updates trigger server responses
+        session$sendInputMessage("test-filter", 
+                                  list(value = "Active"))
+      })
+      
+      # Test server changes update UI
+      observe({
+        invalidateLater(1000)
+        test_data(create_test_data(sample(c("normal", "empty"), 1)))
+      })
+    }
+  )
+  
+  # Run app and check for errors
+  expect_error(app, NA)
+}
+```
+
+# Section 5: Error Handling and Recovery {#error-handling}
+
+## Subsection 1: Graceful Degradation {#degradation}
+
+```r
+# Components should render sensibly with invalid data
+graceful_component <- function(id, data = reactive(NULL)) {
+  moduleServer(id, function(input, output, session) {
+    
+    # Safe data access with fallback
+    safe_data <- reactive({
+      tryCatch({
+        d <- data()
+        if (is.null(d)) return(default_empty_data())
+        if (!is.data.frame(d)) return(as.data.frame(d))
+        if (nrow(d) == 0) return(default_empty_data())
+        validate_data_structure(d)
+      }, error = function(e) {
+        showNotification(
+          paste("Data error:", e$message),
+          type = "warning"
+        )
+        default_empty_data()
+      })
+    })
+    
+    # Render with error boundaries
+    output$plot <- renderPlot({
+      tryCatch({
+        create_plot(safe_data())
+      }, error = function(e) {
+        plot_error_message(e$message)
+      })
+    })
+  })
+}
+```
+
+## Subsection 2: Recovery Testing {#recovery}
+
+```r
+# Test component recovery after errors
+test_error_recovery <- function(component) {
+  testServer(component, {
+    # Cause an error
+    session$userData$test_data <- reactive(NULL)
+    session$flushReact()
+    
+    # Verify error state
+    expect_true(session$userData$in_error_state)
+    
+    # Provide valid data
+    session$userData$test_data <- reactive(create_test_data("normal"))
+    session$flushReact()
+    
+    # Verify recovery
+    expect_false(session$userData$in_error_state)
+    expect_true(!is.null(output$main_display))
+  })
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Component Testing Checklist
+
+**Test Infrastructure:**
+- [ ] Standalone test file for each component
+- [ ] Test data generators with multiple scenarios
+- [ ] Visual test app for manual testing
+- [ ] Automated test suite integration
+
+**Test Scenarios:**
+- [ ] Normal operation with valid data
+- [ ] Empty/NULL data conditions
+- [ ] Invalid/malformed data
+- [ ] Extreme values and boundaries
+- [ ] Performance with large datasets
+
+**Component Aspects:**
+- [ ] UI rendering across screen sizes
+- [ ] Server logic and calculations
+- [ ] Reactive dependencies
+- [ ] Error handling and recovery
+- [ ] Resource cleanup
+
+**Documentation:**
+- [ ] Expected behavior documentation
+- [ ] Screenshots of correct states
+- [ ] Common failure modes
+- [ ] Performance benchmarks
+
+**Quality Metrics:**
+- [ ] Test coverage > 80%
+- [ ] All edge cases covered
+- [ ] Performance within limits
+- [ ] Accessibility standards met
+:::
+
+# Conclusion {#conclusion}
+
+The Component-wise Testing Principle ensures that complex interactive applications remain reliable and maintainable by testing at the component level. This approach enables faster development, better error isolation, and more comprehensive test coverage. By creating explicit test environments for each component, teams can build more robust applications that handle edge cases gracefully and maintain quality throughout their lifecycle.
+
+---
+
+*Based on: Testing & Deployment Law Article 3*  
+*Derives from: [DEV_P001 Debug Principles](../../CH03_development_methodology/principles/DEV_P001_debug_principles.qmd)*  
+*Influences: [UI_R001 UI-Server-Defaults N-tuple](../../CH04_ui_components/rules/UI_R001_ui_server_defaults_ntuple.qmd)*  
+*Related to: [TD_P002 Dual Testing Approach](TD_P002_dual_testing_approach.qmd), [TD_R001 Shiny Test Data](../rules/TD_R001_shiny_test_data.qmd)*

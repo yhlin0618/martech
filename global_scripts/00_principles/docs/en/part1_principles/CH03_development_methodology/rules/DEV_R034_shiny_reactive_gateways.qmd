@@ -1,0 +1,259 @@
+---
+title: "DEV_R119: Shiny Reactive Gateways"
+subtitle: "Patterns for controlling reactive dependencies in Shiny applications"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R119"
+date-created: "2025-05-14"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "rule"
+law: "Development Methodology"
+article-number: "Rule 119"
+related_to:
+  - "MP052_unidirectional_data_flow"
+  - "MP053_feedback_loop"
+  - "DEV_P013_error_handling_patterns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Overview {#overview}
+
+This rule establishes patterns for controlling reactive dependencies in Shiny applications using reactive gateways: `isolate()`, `req()`, `validate()`/`need()`, and `observeEvent()` parameters.
+
+## Quick Reference {#quick-reference}
+
+| Tool | Core Function | Common Alias/Concept |
+|------|--------------|---------------------|
+| `isolate(expr)` | Break dependency: Access reactive values without creating dependency | "Peek without tracking" |
+| `req(..., cancelOutput = TRUE)` | Gatekeeper: Stop execution if any argument is NULL/FALSE/""/NA | "Ensure preconditions" |
+| `validate(need(cond, msg))` | Form validation: Return user message instead of error | "Gentle blocking with feedback" |
+
+## isolate() - Access Values Without Triggering Dependencies {#isolate}
+
+### Usage Pattern
+
+```r
+observe({
+  input$a                    # ← Creates dependency
+  val <- isolate(input$b)    # ← No dependency created
+  output$txt <- renderText(val)
+})
+```
+
+### Typical Use Cases
+
+| Scenario | Description |
+|----------|-------------|
+| Initial read of reactive | Get config() initial value at module startup without future triggers |
+| Batch UI updates | Call multiple update*Input() in observeEvent, read other inputs without dependencies |
+| Selective dependencies | e.g., `reactive({ input$x + isolate(input$y) })` - only recalculate when x changes |
+
+### Common Pitfalls
+
+1. **Killing entire reactive pipeline**
+   - If you still need "outer condition change → inner data refresh", don't isolate the outer layer
+   - Solution: Use `req()` or `validate()` for conditions instead of isolating the source
+
+2. **Overuse in reactive expressions**
+   ```r
+   # BAD: Defeats purpose of reactivity
+   reactive({ 
+     isolate({
+       input$a + input$b  # Nothing triggers recalculation
+     })
+   })
+   
+   # GOOD: Selective isolation
+   reactive({
+     input$a + isolate(input$b)  # Only a triggers
+   })
+   ```
+
+## req() - Requirement Gatekeeper {#req}
+
+### Basic Usage
+
+```r
+output$plot <- renderPlot({
+  req(input$data)              # Stop if NULL/FALSE/""/NA
+  req(input$column %in% names(input$data))  # Complex condition
+  plot(input$data[[input$column]])
+})
+```
+
+### Advanced Patterns
+
+```r
+# Multiple requirements (ALL must be truthy)
+req(input$file, input$column, input$threshold)
+
+# Custom cancellation
+req(input$x > 0, cancelOutput = FALSE)  # Throw error instead of silent stop
+
+# In reactive expressions
+data <- reactive({
+  req(input$file)
+  read.csv(input$file$datapath)
+})
+```
+
+### Common Pitfalls
+
+1. **req() vs validate()**
+   - `req()`: Silent stop, no user feedback
+   - `validate()`: Show message to user
+   
+2. **Forgetting req() in dependent reactives**
+   ```r
+   # Can cause cascade of errors
+   data <- reactive({ read.csv(input$file$datapath) })  # No req()!
+   
+   # Better
+   data <- reactive({ 
+     req(input$file)
+     read.csv(input$file$datapath) 
+   })
+   ```
+
+## validate() and need() - User-Friendly Validation {#validate}
+
+### Basic Pattern
+
+```r
+output$result <- renderText({
+  validate(
+    need(input$email != "", "Please enter email"),
+    need(grepl("@", input$email), "Invalid email format")
+  )
+  paste("Email validated:", input$email)
+})
+```
+
+### Complex Validation
+
+```r
+output$analysis <- renderPlot({
+  validate(
+    need(input$data, "Please upload data file"),
+    need(nrow(input$data) > 10, "Need at least 10 rows"),
+    need(
+      all(c("x", "y") %in% names(input$data)),
+      "Data must contain columns 'x' and 'y'"
+    )
+  )
+  plot(input$data$x, input$data$y)
+})
+```
+
+### Styling Validation Messages
+
+```r
+# Custom CSS for validation messages
+tags$head(
+  tags$style(HTML("
+    .shiny-output-error-validation {
+      color: #ff6b6b;
+      font-size: 14px;
+      padding: 10px;
+      border-left: 3px solid #ff6b6b;
+    }
+  "))
+)
+```
+
+## observeEvent() Parameters - ignoreInit and ignoreNULL {#observeevent}
+
+### Parameter Overview
+
+```r
+observeEvent(eventExpr, handlerExpr, 
+  ignoreInit = FALSE,  # Skip on app initialization?
+  ignoreNULL = TRUE,   # Skip when eventExpr is NULL?
+  once = FALSE         # Run only once?
+)
+```
+
+### Common Patterns
+
+```r
+# Run after user interaction only
+observeEvent(input$button, {
+  # Handler code
+}, ignoreInit = TRUE)
+
+# Accept NULL as valid trigger
+observeEvent(input$optional, {
+  if (is.null(input$optional)) {
+    # Handle NULL case
+  } else {
+    # Handle value case
+  }
+}, ignoreNULL = FALSE)
+
+# One-time setup
+observeEvent(TRUE, {
+  # Initialization code
+}, once = TRUE)
+```
+
+## Decision Tree {#decision-tree}
+
+```mermaid
+graph TD
+    A[Need to control reactivity?] --> B{What's the goal?}
+    B -->|Read without dependency| C[Use isolate()]
+    B -->|Stop if condition not met| D{Need user feedback?}
+    D -->|No| E[Use req()]
+    D -->|Yes| F[Use validate(need())]
+    B -->|Control when observer runs| G{What to control?}
+    G -->|Skip on startup| H[ignoreInit = TRUE]
+    G -->|Accept NULL triggers| I[ignoreNULL = FALSE]
+```
+
+## Best Practices {#best-practices}
+
+1. **Use req() early in reactive chain**
+   - Place at the beginning of reactive expressions
+   - Prevents downstream errors
+
+2. **Prefer validate() for user-facing outputs**
+   - Provides clear feedback
+   - Better UX than silent failures
+
+3. **Isolate carefully**
+   - Document why isolation is needed
+   - Consider if selective reactivity is better
+
+4. **Combine techniques appropriately**
+   ```r
+   output$result <- renderPlot({
+     req(input$trigger)  # Silent requirement
+     
+     validate(           # User feedback
+       need(input$data, "Upload data first")
+     )
+     
+     data <- input$data
+     threshold <- isolate(input$threshold)  # Read without dependency
+     
+     plot(data[data$value > threshold, ])
+   })
+   ```
+
+## Related Patterns {#related}
+
+- **DEV_P010**: Reactive Access Safety
+- **DEV_P011**: Reactive Requirement Validation
+- **MP052**: Unidirectional Data Flow
+- **MP053**: Feedback Loop
+
+---
+
+*This rule provides comprehensive patterns for controlling reactive dependencies in Shiny applications, ensuring predictable and maintainable reactive behavior.*

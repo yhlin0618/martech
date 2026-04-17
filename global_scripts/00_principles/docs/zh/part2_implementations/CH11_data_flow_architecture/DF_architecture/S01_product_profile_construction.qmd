@@ -1,0 +1,236 @@
+---
+
+title: "S01: Construct Profiles of Product and Product Line"
+subtitle: "Establishing foundational product data structure with hierarchical profiles"
+chapter: "CH10"
+category: "sequence"
+number: "S01"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "sequence"
+law: "Data Processing Framework"
+article-number: "Article 2"
+related_to:
+  - "MP008_terminology_axiomatization"
+  - "MP015_currency_principle"
+  - "MP018_dont_repeat_yourself"
+  - "MP029_no_fake_data"
+  - "MP070_type_prefix_naming"
+  - "MP083_key_selection_principle"
+  - "R118_lowercase_natural_key"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 2: Product Profile Construction Sequence {#overview}
+
+## Section 1: Business Purpose {#business-purpose}
+
+### Subsection 1: Objectives {#objectives}
+
+This sequence establishes and maintains the foundational product data structure by constructing and synchronizing profiles for product lines and individual products. It uses a 3-character lowercase natural key system for product line identification that balances brevity with business meaning while maintaining naming convention consistency.
+
+### Subsection 2: Business Benefits {#benefits}
+
+Creating standardized, hierarchical product profiles with lowercase natural keys enables:
+
+1. Intuitive product categorization that is immediately recognizable
+2. Reliable product hierarchy for aggregation and reporting
+3. Simplified integration with external systems
+4. Cross-referencing between external product data and internal product line classifications
+5. Visual consistency with existing naming patterns
+
+## Section 2: Sequence Steps {#sequence-steps}
+
+### Subsection 1: S01_00 - Construct Product Line Profiles {#step-00}
+
+#### Item 1: Initialization {#initialization}
+- Initialize product line data in `app_data/parameters/scd_type1/df_product_line.csv`
+- Required fields: product_line_name_english, product_line_name_chinese, product_line_id, included
+- Implement soft deletion approach: if a product line is no longer used, mark as included=0 rather than deleting
+
+#### Item 2: Natural Key System {#natural-keys}
+- Use 3-character lowercase natural keys for product_line_id (e.g., "jew" for jewelry box)
+- Keys should be mnemonic and immediately recognizable
+- Follow R118 Lowercase Natural Key Rule for consistency
+
+#### Item 3: Data Loading {#data-loading}
+```sql
+IMPORT source data to app_data.df_product_line_profile
+```
+- Load for application use
+- All parameters should be in R memory
+
+### Subsection 2: S01_01 - Import and Map Product Profiles {#step-01}
+
+#### Item 1: Import External Data {#import-external}
+```sql
+IMPORT external_data.{dictionary of products} to app_data.product_profile
+```
+
+#### Item 2: Map to Product Lines {#map-product-lines}
+- Perform left join with app_data.df_product_line_profile by product_line_name_english (or other key)
+- Enrich products with product_line_id for hierarchical categorization
+
+#### Item 3: Platform Filtering {#platform-filter}
+- Filter to only include products from platforms listed in app_config.yaml (platform list)
+- Ensure platform consistency across the application
+
+## Section 3: Data Structure {#data-structure}
+
+### Subsection 1: Product Line Profile Source CSV {#csv-structure}
+
+```
+app_data/parameters/scd_type1/product_line.csv:
+- product_line_name_english (TEXT): English name of product line
+- product_line_name_chinese (TEXT): Chinese name of product line
+- product_line_id (CHAR(3)): Primary key, 3-character lowercase natural key
+- included (INTEGER): 1 for active, 0 for inactive
+```
+
+### Subsection 2: Product Line Profile Database Table {#product-line-table}
+
+```sql
+app_data.df_product_line_profile:
+- product_line_id (CHAR(3)): Primary key, 3-character lowercase natural key
+- product_line_name_english (TEXT): English name
+- product_line_name_chinese (TEXT): Chinese name
+- included (INTEGER): 1 for active, 0 for inactive
+- created_at (TIMESTAMP): Creation timestamp
+- modified_at (TIMESTAMP): Last modification timestamp
+```
+
+### Subsection 3: Product Profile Database Table {#product-table}
+
+```sql
+app_data.product_profile:
+- product_id (TEXT): Unique product identifier from external system
+- product_line_id (CHAR(3)): Foreign key to product_line_profile
+- platform_id (CHAR(3)): Lowercase natural key identifying the platform (e.g., "amz")
+- product_name (TEXT): Product name
+- price (DECIMAL): Product price
+- currency (CHAR(3)): Currency code
+- category (TEXT): Original category from external system
+- other_attributes (JSON): Additional product attributes
+- created_at (TIMESTAMP): Creation timestamp
+- modified_at (TIMESTAMP): Last modification timestamp
+```
+
+## Section 4: Implementation Example {#implementation}
+
+### Subsection 1: R Implementation {#r-implementation}
+
+```r
+# Set up database connection
+library(DBI)
+library(duckdb)
+conn <- dbConnect(duckdb(), dbdir = "app_data.duckdb")
+
+# Read product line data from CSV
+product_line_csv <- file.path("app_data", "parameters", "scd_type1", "product_line.csv")
+product_lines <- read_csvxlsx(product_line_csv)
+
+# Add timestamps
+product_lines$created_at <- Sys.time()
+product_lines$modified_at <- Sys.time()
+
+# Create or replace product line profile table
+dbExecute(conn, "
+  CREATE TABLE IF NOT EXISTS df_product_line_profile (
+    product_line_id CHAR(3) PRIMARY KEY,
+    product_line_name_english TEXT NOT NULL,
+    product_line_name_chinese TEXT,
+    included INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+")
+
+# Write to database (replace existing)
+dbWriteTable(conn, "df_product_line_profile", product_lines, overwrite = TRUE)
+
+# Get active platforms from app_config.yaml
+app_config <- yaml::read_yaml("app_config.yaml")
+active_platforms <- app_config$platform
+
+# Import external product data and map to product lines
+external_products <- import_raw_data("product_dictionary", 
+                                  data_dir = "data/external",
+                                  dest_con = conn)
+
+# Map products to product lines and filter by active platforms
+dbExecute(conn, sprintf("
+  CREATE OR REPLACE TABLE product_profile AS
+  SELECT 
+    e.product_id,
+    COALESCE(p.product_line_id, 'all') AS product_line_id,
+    e.platform_id,
+    e.product_name,
+    e.price,
+    e.currency,
+    e.category,
+    e.other_attributes,
+    CURRENT_TIMESTAMP AS created_at,
+    CURRENT_TIMESTAMP AS modified_at
+  FROM 
+    external_products e
+  LEFT JOIN 
+    df_product_line_profile p
+  ON 
+    e.category = p.product_line_name_english
+  WHERE 
+    e.platform_id IN (%s)
+  AND
+    (p.included = 1 OR p.included IS NULL)
+", paste0("'", active_platforms, "'", collapse = ", ")))
+
+# Close connection
+dbDisconnect(conn)
+```
+
+## Section 5: Implementation Notes {#notes}
+
+### Subsection 1: Initialization Requirements {#init-requirements}
+1. Initialize in both app_mode and update_mode
+2. Ensure CSV source files exist before initialization
+3. Validate natural key format (3 lowercase characters)
+
+### Subsection 2: Natural Key Convention {#key-convention}
+Product line codes follow the R118 Lowercase Natural Key Rule:
+- Lowercase for consistency
+- 3-character mnemonic identifiers
+- Following a standardized pattern across all categories
+
+### Subsection 3: Data Handling {#data-handling}
+1. Join logic must handle cases where external product lines don't match internal classifications
+2. Special handling for the "all" product line category which applies to all products
+3. Platform filtering should use the platform list from app_config.yaml
+4. For UI presentation, codes may be displayed in uppercase for emphasis if needed
+
+### Subsection 4: Error Handling {#error-handling}
+1. Handle missing product line mappings gracefully (default to "all")
+2. Validate platform_ids against configuration
+3. Log any unmapped products for review
+4. Ensure soft deletion preserves historical data
+
+## Section 6: Key Principles Applied {#principles}
+
+### Subsection 1: Data Management Principles {#data-principles}
+- **MP008**: Terminology Axiomatization - Using standardized codes
+- **MP015**: Currency Principle - Ensuring data profiles stay current
+- **MP029**: No Fake Data - Using only verified product information
+- **MP083**: Key Selection Principle - Using natural keys for immediate context
+
+### Subsection 2: Design Principles {#design-principles}
+- **MP018**: Don't Repeat Yourself - Centralizing product information
+- **MP070**: Type-Prefix Naming - Consistent prefix convention in product codes
+- **R118**: Lowercase Natural Key Rule - Maintaining pattern consistency
+
+---
+*This sequence document provides the complete process for establishing and maintaining product and product line profiles in the application.*

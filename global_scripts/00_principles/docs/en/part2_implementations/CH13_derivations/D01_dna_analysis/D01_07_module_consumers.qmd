@@ -1,0 +1,181 @@
+---
+
+title: "D01_07: Application Module Consumers"
+subtitle: "UI modules that consume D01 derivation outputs"
+parent: "D01_dna_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D01_07"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D01_05_app_views"
+  - "D01_06_execution"
+implements:
+  - "DM_R049": "Derivation Consumer Documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D01_07: Application Module Consumers {#overview}
+
+This task documents which application UI modules consume the outputs from the D01 Customer DNA Analysis derivation. This completes the data flow traceability from ETL -> DRV -> APP.
+
+## Output-to-Module Mapping {#mapping}
+
+The following table maps each D01 output table to its consuming UI modules:
+
+| D01 Output Table | Consuming Module | Component Location |
+|------------------|------------------|-------------------|
+| `df_dna_by_customer` | microCustomer2, microDNADistribution, microMacroKPI | `micro/microCustomer/`, `micro/microDNADistribution/`, `micro/microMacroKPI/` |
+| `df_segments_by_customer` | microCustomer2 | `micro/microCustomer/` |
+| `df_profile_by_customer` | microCustomer2, reportIntegration | `micro/microCustomer/`, `report/reportIntegration/` |
+
+## Primary Consuming Modules {#modules}
+
+### microCustomer2 (Active)
+
+**Location**: `global_scripts/10_rshinyapp_components/micro/microCustomer/microCustomer2.R`
+
+**File Size**: ~40KB
+
+**Purpose**: Customer DNA visualization and analysis module for the Shiny application.
+
+**Tables Consumed**:
+- `df_dna_by_customer` - Customer DNA profiles with behavioral segments
+- `df_segments_by_customer` - Aggregated segment statistics
+- `df_profile_by_customer` - Basic customer profile information
+
+**Data Access Pattern**:
+```r
+# Pattern used in microCustomer2.R (with compatibility fallback)
+dna_table <- if (DBI::dbExistsTable(app_data, "df_dna_by_customer")) "df_dna_by_customer" else "df_dna_by_customer"
+df_dna_by_customer <- tbl2(app_data, dna_table) %>%
+  filter(platform_id == current_platform) %>%
+  collect()
+```
+
+### microDNADistribution
+
+**Location**: `global_scripts/10_rshinyapp_components/micro/microDNADistribution/microDNADistribution.R`
+
+**Purpose**: DNA distribution visualization module.
+
+**Tables Consumed**:
+- `df_dna_by_customer` (fallback to `df_dna_by_customer`)
+
+### microMacroKPI
+
+**Location**: `global_scripts/10_rshinyapp_components/micro/microMacroKPI/microMacroKPI.R`
+
+**Purpose**: Macro KPI summary module driven by DNA metrics.
+
+**Tables Consumed**:
+- `df_dna_by_customer` (fallback to `df_dna_by_customer`)
+
+### reportIntegration
+
+**Location**: `global_scripts/10_rshinyapp_components/report/reportIntegration/reportIntegration.R`
+
+**Purpose**: Report generation module that integrates customer data with other analytics.
+
+**Tables Consumed**:
+- `df_profile_by_customer` - Customer profile data for report generation
+- `df_dna_by_customer` (fallback to `df_dna_by_customer`) - DNA data used for report context
+
+## Archived Versions {#archived}
+
+The following versions have been archived and are no longer in use:
+
+| Archived File | Archive Date | Reason |
+|--------------|--------------|--------|
+| `microCustomer.R.archive` (57KB) | 2025-12 | Superseded by microCustomer2.R |
+
+## Data Flow Diagram {#data-flow}
+
+```
+                    D01 Derivation Pipeline
+                           │
+    ┌──────────────────────┼──────────────────────┐
+    │                      │                      │
+    ▼                      ▼                      ▼
+┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐
+│df_customer_  │  │df_customer_     │  │df_customer_      │
+│dna           │  │segments         │  │profile           │
+└──────┬───────┘  └────────┬────────┘  └────────┬─────────┘
+       │                   │                    │
+       └───────────────────┼────────────────────┘
+                           │
+                    ┌──────┴──────┐
+                    │ app_data    │
+                    │ (DuckDB)    │
+                    └──────┬──────┘
+                           │
+    ┌──────────────────────┼──────────────────────┐
+    │                      │                      │
+    ▼                      ▼                      ▼
+┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐
+│microCustomer2│  │microCustomer2   │  │reportIntegration │
+│(DNA Display) │  │(Segments)       │  │(Reports)         │
+└──────────────┘  └─────────────────┘  └──────────────────┘
+```
+
+## Module Data Access Patterns {#usage}
+
+### DNA Data Access (NSQL)
+
+```nsql
+# Pattern: Load DNA data filtered by platform and product line
+QUERY df_dna_by_customer
+  FILTER BY: platform_id, product_line_id_filter
+  COLLECT TO: dna_data
+
+# Compatibility fallback (legacy table)
+IF df_dna_by_customer not found:
+  QUERY df_dna_by_customer
+    FILTER BY: platform_id
+    COLLECT TO: dna_data
+```
+
+### Segment Statistics (NSQL)
+
+```nsql
+# Pattern: Aggregate segment statistics
+QUERY df_segments_by_customer
+  FILTER BY: platform_id
+  AGGREGATE BY: dna_segment
+  CALCULATE: customer_count, avg_revenue
+```
+
+See `microCustomer2.R` for complete implementation patterns.
+
+## Impact Analysis {#impact}
+
+When modifying D01 outputs, the following modules will be affected:
+
+| Change Type | Affected Modules | Required Actions |
+|-------------|-----------------|------------------|
+| Column rename in `df_dna_by_customer` | microCustomer2 | Update column references |
+| Schema change in `df_segments_by_customer` | microCustomer2 | Update data processing |
+| New columns in `df_profile_by_customer` | microCustomer2, reportIntegration | Optional: utilize new data |
+| Table removal | ALL | Critical: requires major refactoring |
+
+## Principle Compliance {#compliance}
+
+This documentation implements **DM_R049 (Derivation Consumer Documentation)** by:
+
+1. **Output-Consumer Mapping**: Every output table is mapped to its consumers
+2. **Module Location**: Full paths provided in `10_rshinyapp_components/`
+3. **Data Flow Visualization**: ASCII diagram showing complete flow
+4. **Impact Analysis**: Change impact documented for maintenance
+
+## Related Documentation
+
+- [D01_06_execution.qmd](D01_06_execution.qmd) - Master execution flow
+- [D01_05_app_views.qmd](D01_05_app_views.qmd) - Application views generation
+- [DM_R049](../../../part1_principles/CH02_data_management/rules/DM_R049_derivation_consumer_documentation.qmd) - Consumer documentation requirement

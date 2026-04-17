@@ -1,0 +1,100 @@
+---
+title: "MP030: Archive Immutability Principle"
+type: "meta-principle"
+status: "active"
+created: "2024-08-25"
+updated: "2024-08-25"
+---
+
+# MP030: Archive Immutability Principle
+
+## Statement
+
+All content within `archive/` directories at any level of the project hierarchy must remain immutable and unmodified after archival.
+
+## Rationale
+
+Archives serve as historical records and audit trails. Modifying archived content would:
+
+1. Destroy the historical integrity of the project
+2. Make it impossible to trace the evolution of principles and code
+3. Violate audit and compliance requirements
+4. Undermine the purpose of archival as a permanent record
+
+## Implementation
+
+### Absolute Rules
+
+1. **No Edits**: Never edit, rename, or delete files within any `archive/` directory
+2. **No Renumbering**: When renumbering principles or reorganizing structure, skip all archived content
+3. **Read-Only Access**: Treat archive directories as read-only for reference purposes
+4. **Timestamp Preservation**: Maintain original timestamps and directory structures
+5. **Tool Restrictions**: Configure automated tools and scripts to exclude `archive/` paths
+
+### Examples
+
+::: {.panel-tabset}
+
+## Correct Approach
+
+```bash
+# Skip archive when renumbering
+find . -name "MP*.qmd" -not -path "*/archive/*" | while read file; do
+  # Process only non-archived files
+done
+```
+
+## Incorrect Approach
+
+```bash
+# Including archive in bulk operations
+find . -name "MP*.qmd" | while read file; do  # This would modify archived files
+  # Process all files including archived
+done
+```
+
+:::
+
+## Exceptions
+
+None. Archive immutability is absolute.
+
+## Related Principles
+
+- **MP016**: Change Tracking - Archives provide the historical record for changes
+- **R028**: Archiving Standard - Defines when and how content is archived
+
+## Enforcement
+
+1. Git hooks should prevent modifications to archive directories
+2. File permissions should be set to read-only when possible
+3. Code review must reject any changes to archived content
+4. Automated tools must have explicit exclusion rules for archive paths
+
+## Compliance Verification
+
+```r
+# Function to verify archive immutability
+verify_archive_immutability <- function(project_root) {
+  archive_dirs <- list.dirs(
+    path = project_root,
+    pattern = "archive",
+    recursive = TRUE
+  )
+  
+  for (dir in archive_dirs) {
+    # Check file permissions
+    files <- list.files(dir, recursive = TRUE, full.names = TRUE)
+    for (file in files) {
+      info <- file.info(file)
+      if (info$mode != "444") {  # Read-only
+        warning(paste("File not read-only:", file))
+      }
+    }
+  }
+}
+```
+
+## Notes
+
+This principle is fundamental to maintaining the integrity of the project's historical record. It ensures that we can always trace back through the evolution of our principles, code, and decisions.

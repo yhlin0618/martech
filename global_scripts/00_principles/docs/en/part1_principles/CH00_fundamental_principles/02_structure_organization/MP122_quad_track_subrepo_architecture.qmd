@@ -1,0 +1,579 @@
+---
+title: "MP122: Quad-Track Subrepo Architecture Principle"
+subtitle: "Separation of framework, scripts, language, and configuration layers through independent management"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP122"
+date-created: "2025-09-30"
+date-modified: "2025-12-30"
+author: "Claude (Principle Revisor)"
+type: "meta-principle"
+law: "System Architecture Law"
+article-number:
+  number: 122
+  title: "Quad-Track Subrepo Architecture"
+related_to:
+  - "MP093: Script Separation Principle"
+  - "MP044: Functor-Module Correspondence"
+  - "MP097: Principle-Implementation Separation"
+  - "MP104: Script Organization Evolution"
+  - "SO_R001: Directory Structure"
+  - "SO_P016: Configuration Scope Hierarchy"
+  - "MP065: Platform Configuration Management"
+  - "MP142: Configuration-Driven Pipeline"
+  - "DM_R037: Company-Specific ETL Naming"
+  - "DM_R038: Company Suffix Scope Limitation"
+  - "MP083: Natural SQL Language"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 122: Quad-Track Subrepo Architecture {#overview}
+
+**System Architecture Law Article 122 (Quad-Track Subrepo Architecture)**
+
+The system SHALL adopt a quad-track architecture that separates the **framework layer** (`global_scripts`), **scripts layer** (`update_scripts`), **language layer** (`nsql`), and **configuration layer** (project root) as distinct management units, achieving an optimal balance between stability, reusability, language independence, and project-specific customization.
+
+:::{.callout-important}
+## Core Architecture Principle (Updated 2025-12-24)
+- **Track 1 - global_scripts/**: Framework layer - stable, reusable, cross-project functions (git subrepo #1)
+- **Track 2 - update_scripts/**: Scripts layer - executable ETL/DRV scripts, all company variants (git subrepo #2)
+- **Track 3 - nsql/**: Language layer - NSQL language specification and tools (git subrepo #3)
+- **Track 4 - {project_root}/**: Configuration layer - project-specific settings (not shared)
+- **Unidirectional dependency**: Config → Scripts → Language/Framework (never reverse)
+:::
+
+# Section 1: Architectural Philosophy {#philosophy}
+
+## Subsection 1: Design Rationale {#rationale}
+
+The quad-track architecture recognizes that software systems have four fundamentally different types of artifacts:
+
+1. **Framework Code**: General-purpose, stable, reusable across all projects
+2. **Executable Scripts**: Business logic scripts used across projects, including company variants
+3. **Language Specifications**: Domain-specific languages that evolve independently (NSQL)
+4. **Configuration**: Project-specific settings that differentiate deployments
+
+By separating these into four tracks, we achieve:
+- **Maximum code reuse** across projects while maintaining project isolation
+- **Company-specific variants** managed centrally but executed selectively
+- **Language independence** allowing NSQL to evolve without affecting framework code
+- **Project configuration** kept close to deployment, not polluting shared code
+- **Clear architectural boundaries** enforced by git subrepo and directory structure
+
+## Subsection 2: Evolution from Dual-Track {#evolution}
+
+:::{.callout-note}
+## Version History
+- **v1.0 (2025-09-30)**: Original dual-track architecture (global_scripts + update_scripts)
+- **v2.0 (2025-12-23)**: Extended to triple-track (+ project config layer)
+- **v3.0 (2025-12-24)**: Extended to quad-track (+ nsql language layer)
+
+Key changes:
+- v2.0: `update_scripts` is now ALSO a shared git subrepo, containing all company-specific variants
+- v3.0: `nsql` extracted from `global_scripts/16_NSQL_Language/` to independent sibling subrepo for language independence
+:::
+
+# Section 2: Architecture Overview {#architecture}
+
+## Visual Structure
+
+```
+{project}/                              ← Track 4: Config Layer (NOT shared)
+├── app_config.yaml                     (project-specific settings)
+├── _targets_config.yaml                (pipeline configuration)
+├── .env                                (environment variables)
+│
+└── scripts/
+    ├── global_scripts/                 ← Track 1: Framework Layer (subrepo #1)
+    │   ├── 00_principles/              (system principles)
+    │   ├── 01_db/                      (database connections)
+    │   ├── 02_db_utils/                (database utilities)
+    │   ├── 03_config/                  (configuration framework)
+    │   ├── 04_utils/                   (utility functions)
+    │   ├── 05_etl_utils/               (ETL utilities)
+    │   └── ...
+    │
+    ├── update_scripts/                 ← Track 2: Scripts Layer (subrepo #2)
+    │   ├── ETL/
+    │   │   ├── cbz/
+    │   │   │   ├── cbz_ETL_sales_0IM.R           (generic)
+    │   │   │   └── cbz_ETL_sales_0IM___MAMBA.R   (MAMBA variant)
+    │   │   └── eby/
+    │   │       ├── eby_ETL_orders_0IM.R          (generic)
+    │   │       └── eby_ETL_orders_0IM___MAMBA.R  (MAMBA variant)
+    │   └── DRV/
+    │       ├── cbz/
+    │       └── all/
+    │
+    └── nsql/                           ← Track 3: Language Layer (subrepo #3)
+        ├── grammar.ebnf                (formal grammar)
+        ├── dictionary.yaml             (terminology mapping)
+        ├── extensions/                 (language extensions)
+        ├── parsers/                    (language parsers)
+        ├── translators/                (language translators)
+        └── validators/                 (validation tools)
+```
+
+## Track Summary
+
+| Track | Location | Sharing | Content | Management |
+|-------|----------|---------|---------|------------|
+| **1. Framework** | `scripts/global_scripts/` | git subrepo #1 | Reusable functions, utilities, principles | Semantic versioning |
+| **2. Scripts** | `scripts/update_scripts/` | git subrepo #2 | ETL/DRV scripts, all company variants | Feature-based versioning |
+| **3. Language** | `scripts/nsql/` | git subrepo #3 | NSQL grammar, dictionary, extensions | Language versioning |
+| **4. Config** | `{project_root}/` | NOT shared | Project settings, env vars | Per-project management |
+
+# Section 3: Track 1 - Framework Layer {#framework-layer}
+
+## Subsection 1: Characteristics {#framework-characteristics}
+
+The `global_scripts` subrepo contains:
+
+**Content Types**:
+- Reusable utility functions (`04_utils/`)
+- Database abstraction layers (`01_db/`, `02_db_utils/`)
+- Configuration frameworks (`03_config/`)
+- UI component libraries (`10_rshinyapp_components/`)
+- System principles and documentation (`00_principles/`)
+- Communication meta-language (AIMETA)
+- Testing utilities (`98_test/`)
+
+Note: NSQL language specification is now in Track 3 (`scripts/nsql/`)
+
+**Properties**:
+- **Stability**: Changes infrequently, maintains backward compatibility
+- **Generality**: Solves general problems, not specific business cases
+- **Reusability**: Designed for use across ALL projects and companies
+- **No Company-Specific Content**: Must NOT contain any company-specific data or logic
+
+## Subsection 2: Management Rules {#framework-management}
+
+```yaml
+# Subrepo configuration for global_scripts
+remote: git@github.com:org/global_scripts.git
+branch: main
+version_policy: semantic
+breaking_changes: major_version_only
+deprecation_period: 3_months
+cross_project: true
+company_specific_content: FORBIDDEN
+```
+
+# Section 4: Track 2 - Scripts Layer {#scripts-layer}
+
+## Subsection 1: Characteristics {#scripts-characteristics}
+
+The `update_scripts` subrepo contains:
+
+**Content Types**:
+- ETL pipelines (`*_ETL*.R` scripts) - generic AND company-specific variants
+- Data derivation logic (`*_D*.R` scripts)
+- Business-specific transformations
+- Platform-specific integrations
+- All company variants (e.g., `___MAMBA`, `___ACME`, `___WIDGET`)
+
+**Properties**:
+- **Shared Across Projects**: All companies receive the same update_scripts
+- **Company Variants Included**: Per DM_R037, company-specific scripts use `___COMPANY` suffix
+- **Execution Selection**: Project config determines which variants to execute
+- **Volatility**: Changes frequently with business requirements
+
+## Subsection 2: Platform Execution Control {#platform-execution-control}
+
+The `update_scripts` subrepo is a shared cross-project inventory. Platform folders are global and must not be pruned for a single project.
+
+**Rules**:
+- **Do NOT delete platform scripts** because a project does not use that platform.
+- **Platform scope is controlled by pipeline configuration**, not by editing `update_scripts/`.
+- **Default execution reads active platforms** from project config (e.g., `app_config.yaml`), with explicit flags for running all.
+
+**Example**:
+- MAMBA uses `cbz` and `eby`. The pipeline defaults to those platforms, while `amz` scripts remain in `update_scripts/`.
+
+## Subsection 3: Company Variant Handling {#company-variants}
+
+Per **DM_R037** and **DM_R038**, company-specific scripts follow naming conventions:
+
+```
+update_scripts/ETL/eby/
+├── eby_ETL_orders_0IM.R           ← Generic version (fallback)
+├── eby_ETL_orders_0IM___MAMBA.R   ← MAMBA-specific (SSH tunnel, specific DB)
+├── eby_ETL_orders_0IM___ACME.R    ← ACME-specific (different data source)
+└── eby_ETL_orders_0IM___WIDGET.R  ← WIDGET-specific
+```
+
+**Selection at Runtime**:
+```r
+# Resolution logic (per project config)
+resolve_script <- function(base_script, company) {
+  variant <- gsub("\\.R$", paste0("___", company, ".R"), base_script)
+  if (file.exists(variant)) return(variant)
+  return(base_script)  # Fallback to generic
+}
+```
+
+## Subsection 4: Management Rules {#scripts-management}
+
+```yaml
+# Subrepo configuration for update_scripts
+remote: git@github.com:org/update_scripts.git
+branch: main
+version_policy: feature_based
+change_frequency: high
+cross_project: true
+company_variants: ALL_INCLUDED
+depends_on: global_scripts
+```
+
+# Section 5: Track 3 - Language Layer {#language-layer}
+
+## Subsection 1: Characteristics {#language-characteristics}
+
+The `nsql` subrepo contains:
+
+**Content Types**:
+- Formal grammar (`grammar.ebnf`)
+- Terminology dictionary (`dictionary.yaml`)
+- Language extensions (`extensions/`)
+- Parsers for different target languages (`parsers/`)
+- Translators to SQL, dplyr, etc. (`translators/`)
+- Validation tools (`validators/`)
+- Example statements (`examples/`)
+- Meta-principles for the language
+
+**Properties**:
+- **Language Independence**: NSQL evolves independently of framework or scripts
+- **Cross-Project**: Same language specification across all projects
+- **Stability**: Core grammar stable; extensions can evolve
+- **No Project-Specific Content**: Must NOT contain project-specific logic
+
+## Subsection 2: Rationale for Separation {#language-rationale}
+
+NSQL was previously nested inside `global_scripts/16_NSQL_Language/`. This caused problems:
+
+1. **Nested git limitation**: git subrepo doesn't support nested repos
+2. **Independent versioning**: Language changes shouldn't require framework releases
+3. **Cleaner architecture**: Language specification is conceptually distinct from utility code
+4. **Easier contribution**: Language can have separate maintainers
+
+## Subsection 3: Management Rules {#language-management}
+
+```yaml
+# Subrepo configuration for nsql
+remote: git@github.com:org/nsql.git
+branch: main
+version_policy: language_versioning
+stability: grammar_stable_extensions_evolving
+cross_project: true
+project_specific_content: FORBIDDEN
+```
+
+# Section 6: Track 4 - Configuration Layer {#config-layer}
+
+## Subsection 1: Characteristics {#config-characteristics}
+
+The project root contains project-specific configuration:
+
+**Content Types**:
+- `app_config.yaml` - Application settings, company identifier
+- `_targets_config.yaml` - Pipeline orchestration settings
+- `.env` - Environment variables (API keys, DB credentials)
+- `.Rprofile` - Project-specific R initialization
+- `manifest.json` - Deployment manifest
+
+**Properties**:
+- **Project-Specific**: Each deployment has unique configuration
+- **NOT Shared**: Never committed to shared subrepos
+- **Determines Execution**: Controls which scripts/variants are used
+- **Sensitive Data**: May contain credentials (use .gitignore)
+
+## Subsection 2: Configuration Structure {#config-structure}
+
+```yaml
+# app_config.yaml (project root)
+app_info:
+  name: "MAMBA"
+  company: "MAMBA"
+  tier: "l4_enterprise"
+
+execution:
+  company_variant: "MAMBA"
+  use_company_specific_scripts: true
+
+platforms:
+  cbz:
+    enabled: true
+  eby:
+    enabled: true
+    variant: "MAMBA"  # Use eby_ETL_*___MAMBA.R
+```
+
+## Subsection 3: Management Rules {#config-management}
+
+```yaml
+# Configuration layer rules
+sharing: NEVER
+version_control: project_repo_only
+sensitive_data: gitignore_protected
+determines:
+  - which_scripts_to_run
+  - which_company_variants
+  - environment_specific_values
+```
+
+# Section 7: Dependency Architecture {#dependencies}
+
+## Dependency Flow
+
+```
+Track 4: Config    (reads)    Track 2: Scripts    (calls)    Track 1: Framework
+{project_root}/ ──────────→  update_scripts/ ──────────────→  global_scripts/
+app_config.yaml              ETL/, DRV/                       04_utils/, 01_db/
+
+                                    │
+                              (references)
+                                    │
+                                    ▼
+                            Track 3: Language
+                               nsql/
+                        grammar.ebnf, translators/
+
+UNIDIRECTIONAL: Config → Scripts → Language/Framework (never reverse)
+```
+
+## Permitted Dependencies
+
+**Config → Scripts** ✅
+```r
+# In project orchestration
+script_path <- resolve_script("scripts/update_scripts/ETL/cbz/cbz_ETL_sales_0IM.R",
+                              company = config$execution$company_variant)
+source(script_path)
+```
+
+**Scripts → Framework** ✅
+```r
+# In update_scripts/ETL/cbz/cbz_ETL_sales_0IM.R
+source("../global_scripts/01_db/dbConnect.R")
+source("../global_scripts/04_utils/fn_process.R")
+```
+
+## Forbidden Dependencies
+
+**Framework → Scripts** ❌
+```r
+# NEVER in global_scripts
+source("../../update_scripts/specific_logic.R")  # FORBIDDEN
+```
+
+**Framework → Config** ❌
+```r
+# NEVER in global_scripts
+config <- yaml::read_yaml("../../app_config.yaml")  # FORBIDDEN
+```
+
+**Scripts → Config** ❌
+```r
+# NEVER in update_scripts (hardcoded project config)
+config <- yaml::read_yaml("../../app_config.yaml")  # FORBIDDEN
+# Instead: receive config as parameter
+```
+
+# Section 8: Implementation Patterns {#patterns}
+
+## Subsection 1: Subrepo Initialization {#initialization}
+
+```bash
+# Initialize quad-track architecture
+cd {project}/scripts/
+
+# Add framework layer as subrepo
+git subrepo clone git@github.com:org/global_scripts.git global_scripts
+
+# Add scripts layer as subrepo
+git subrepo clone git@github.com:org/update_scripts.git update_scripts
+
+# Add language layer as subrepo
+git subrepo clone git@github.com:org/nsql.git nsql
+
+# Verify structure
+git subrepo status
+```
+
+## Subsection 2: Script Execution Pattern {#execution-pattern}
+
+```r
+# In project orchestration (e.g., _targets.R or run_etl.R)
+
+# 1. Load project config
+config <- yaml::read_yaml("app_config.yaml")
+company <- config$execution$company_variant
+
+# 2. Resolve script path (prefer company variant)
+resolve_script_path <- function(base_script, company = NULL) {
+  if (!is.null(company)) {
+    variant <- gsub("\\.R$", paste0("___", company, ".R"), base_script)
+    full_path <- file.path("scripts/update_scripts", variant)
+    if (file.exists(full_path)) return(full_path)
+  }
+  return(file.path("scripts/update_scripts", base_script))
+}
+
+# 3. Execute appropriate script
+script <- resolve_script_path("ETL/eby/eby_ETL_orders_0IM.R", company)
+source(script)
+```
+
+# Section 9: Decision Matrix {#decision-matrix}
+
+## When to place code in each track:
+
+| Criteria | Track 1: Framework | Track 2: Scripts | Track 3: Language | Track 4: Config |
+|----------|-------------------|------------------|-------------------|-----------------|
+| **Sharing** | All projects | All projects | All projects | Never |
+| **Content** | Utility functions | Executable scripts | NSQL specification | Settings |
+| **Stability** | High | Medium | Grammar stable | Per-project |
+| **Company Logic** | FORBIDDEN | Company variants OK | FORBIDDEN | Company identifier |
+| **Dependencies** | None (leaf) | → Framework/Language | None (leaf) | → Scripts → Framework |
+| **Examples** | fn_process.R | cbz_ETL_sales_0IM.R | grammar.ebnf | app_config.yaml |
+
+# Section 10: Benefits {#benefits}
+
+The quad-track subrepo architecture provides:
+
+1. **Maximum Reusability**: Framework, scripts, AND language shared across all projects
+2. **Centralized Variant Management**: All company variants in one place
+3. **Language Independence**: NSQL evolves without affecting framework or scripts
+4. **Project Isolation**: Configuration never pollutes shared code
+5. **Independent Evolution**: Each track evolves at its natural pace
+6. **Selective Execution**: Project config determines which variants run
+7. **Team Scalability**: Different teams can own different tracks
+8. **Deployment Flexibility**: Same scripts, different configs per deployment
+9. **Compliance**: Clear boundaries prevent cross-contamination
+
+# Section 11: Relationship to Other Principles {#relationships}
+
+## Supporting Principles:
+
+**MP093 (Script Separation)**: Conceptual separation implemented physically by tracks 1 & 2
+
+**SO_P016 (Configuration Scope Hierarchy)**: Track 3 implements project-level scope
+
+**DM_R037 (Company-Specific ETL Naming)**: Defines `___COMPANY` suffix used in Track 2
+
+**DM_R038 (Company Suffix Scope Limitation)**: Company suffix only in scripts, not data
+
+**MP097 (Principle-Implementation Separation)**: Principles in Track 1, implementations in Track 2
+
+**MP083 (Natural SQL Language)**: NSQL specification now in Track 3
+
+# Section 12: Enforcement and Compliance {#enforcement}
+
+## Code Review Checklist:
+
+- [ ] Reusable functions go in Track 1 (global_scripts)
+- [ ] Executable scripts go in Track 2 (update_scripts)
+- [ ] NSQL language spec goes in Track 3 (nsql)
+- [ ] Company variants use `___COMPANY` suffix in Track 2
+- [ ] Project config stays in Track 4 (project root)
+- [ ] No reverse dependencies (Framework ← Scripts ← Config)
+- [ ] No company-specific content in Track 1 or Track 3
+- [ ] Scripts receive config as parameter, don't read directly
+
+# Section 13: Deployment Architecture — Symlink Resolution {#deployment}
+
+## Subsection 1: The Problem {#deployment-problem}
+
+Company projects access shared code via symlinks (e.g., `scripts/global_scripts -> ../../shared/global_scripts`). This works for local development but **fails at deployment**:
+
+- **Posit Connect Cloud** (and similar platforms) clone repos from GitHub
+- The cloned repo only gets the symlink files, not the actual content they point to
+- Result: the deployed app cannot find any shared code
+
+## Subsection 2: Dual Git Repo Pattern {#dual-repo}
+
+Each company project maintains **two** git repos:
+
+| Repo | Purpose | Contents |
+|------|---------|----------|
+| **Dev repo** | Development + version control | Symlinks to `shared/` |
+| **Deploy repo** | Posit Connect deployment source | Real files (rsync'd from dev) |
+
+### Naming Convention
+
+- Dev repo: `ai_martech_{tier}_{COMPANY}` (e.g., `ai_martech_l4_QEF_DESIGN`)
+- Deploy repo: `ai_martech_{tier}_{COMPANY}_deploy` (e.g., `ai_martech_l4_QEF_DESIGN_deploy`)
+
+### Data Flow
+
+```
+Dev repo (symlinks)
+    │
+    ▼  make deploy-sync (rsync -avL)
+Deploy repo (real files)
+    │
+    ▼  make deploy-push (git commit + push)
+GitHub (deploy repo)
+    │
+    ▼  webhook
+Posit Connect Cloud (auto-deploy)
+```
+
+The key is `rsync -avL`: the `-L` flag **resolves symlinks**, copying the actual file content into the deploy repo. This produces a self-contained directory that any platform can clone and run.
+
+## Subsection 3: Key Files per Company Project {#deployment-files}
+
+| File | Purpose |
+|------|---------|
+| `Makefile` | `deploy-init`, `deploy-sync`, `deploy-diff`, `deploy-push` targets |
+| `deployment/.gitignore.deploy` | Template `.gitignore` for the deploy repo |
+| `deployment/deploy_now.R` | Manual deployment fallback (rsconnect) |
+| `deployment/{app-name}/` | Deploy repo directory (has its own `.git`) |
+
+## Subsection 4: Daily Workflow {#deployment-workflow}
+
+```bash
+# 1. Sync dev → deploy (resolves symlinks to real files)
+make deploy-sync
+
+# 2. Review what changed
+make deploy-diff
+
+# 3. Commit and push → triggers auto-deploy
+make deploy-push
+```
+
+### First-Time Initialization
+
+```bash
+# Create deploy repo and link to GitHub
+make deploy-init
+```
+
+This creates the deploy directory, initializes git, sets up `.gitignore` from template, and adds the GitHub remote.
+
+## Subsection 5: Monorepo Analogy {#monorepo-analogy}
+
+This architecture mirrors a **monorepo** pattern:
+
+| Monorepo Concept | Our Implementation |
+|------------------|-------------------|
+| Shared packages | `shared/` directory (global_scripts, update_scripts, nsql) |
+| Workspace references | Symlinks from company projects |
+| Build output | Deploy repo (rsync'd real files) |
+| Package manager linking | `ln -s` (filesystem symlinks) |
+
+The advantage over a true monorepo: each shared component has its own git repo and can be versioned, pushed, and reviewed independently.
+
+---
+
+*Effective Date: 2025-09-30 (v1.0), 2025-12-23 (v2.0), 2025-12-24 (v3.0), 2026-03-04 (v3.1 - deployment)*
+*System Architecture Law Article 122*
+*Architectural Pattern: Quad-Track Subrepo*
+*Status: Active*

@@ -1,0 +1,341 @@
+---
+title: "DEV_R002: Functional Encapsulation Rule"
+subtitle: "All function-like code blocks must be explicitly encapsulated as named functions"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R002"
+date-created: "2025-04-08"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法施行細則 (Development Methodology Law Implementation Rules)"
+article: "第2條"
+implements:
+  - "CH00.MP016: Modularity Principle"
+  - "CH00.MP017: Separation of Concerns"
+  - "CH00.MP018: Don't Repeat Yourself"
+related_to:
+  - "CH01.SO_R021: One Function One File"
+  - "CH01.SO_P012: app.R Is Global Principle"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**開發方法法施行細則第2條（函數封裝規則）**
+
+本條規定所有展現函數特徵的程式碼區塊必須明確封裝為命名函數。如果程式碼區塊具有可識別的輸入（可能是隱含的或空值）並產生可確定的輸出或副作用，則該程式碼區塊被視為「類函數」。此類程式碼絕不能以匿名、內嵌或程序區塊的形式存在。
+
+:::{.callout-important}
+## 核心原則
+所有展現函數特徵的程式碼區塊必須明確封裝為命名函數。
+:::
+
+# 第一項：概念框架 {#conceptual-framework}
+
+## 第一款：函數封裝的重要性 {#importance}
+
+函數封裝元原則建立了程式碼應圍繞函數這個基本單位組織的理念。此元原則認識到函數封裝：
+
+1. **提高可測試性**：封裝的函數可以獨立測試
+2. **增強可重用性**：命名函數可以從多個環境呼叫
+3. **澄清意圖**：函數名稱記錄程式碼區塊的目的
+4. **降低複雜性**：將程式碼分解為函數簡化推理
+5. **啟用組合**：函數可以組合以建構複雜行為
+
+# 第二項：識別類函數程式碼 {#identifying-function-like}
+
+## 第一款：類函數特徵 {#characteristics}
+
+如果程式碼區塊具有以下一個或多個特徵，則被視為「類函數」：
+
+:::{.callout-note}
+## 類函數程式碼特徵
+1. **輸入相依性**：處理或操作特定資料輸入
+2. **輸出生成**：產生定義的結果或資料結構
+3. **副作用產生**：執行狀態變更或外部互動
+4. **錯誤處理**：包含 try/catch 邏輯或錯誤管理
+5. **條件分支**：包含複雜的條件邏輯
+6. **迭代處理**：對資料執行重複操作
+7. **邏輯內聚**：執行單一概念操作
+8. **重用潛力**：相同邏輯可能在其他地方需要
+:::
+
+## 第二款：類函數程式碼範例 {#function-like-examples}
+
+以下模式表示應封裝為函數的程式碼：
+
+```r
+# 錯誤處理模式
+tryCatch({
+  # 複雜操作...
+}, error = function(e) {
+  # 錯誤處理...
+})
+
+# 迴圈處理
+for (product in products) {
+  # 複雜轉換...
+  if (condition) {
+    # 特殊處理...
+  }
+}
+
+# 具有內聚目的的條件區塊
+if (is_valid_data) {
+  # 多步驟資料驗證
+  # 轉換
+  # 狀態變更
+}
+
+# 複雜計算
+result <- complex_expression + with_multiple + operations / that_form + a_logical_unit
+
+# 初始化區塊
+# 設定配置
+# 連接到資源
+# 配置環境
+```
+
+# 第三項：實作要求 {#implementation-requirements}
+
+## 第一款：函數擷取 {#function-extraction}
+
+遇到類函數程式碼時：
+
+1. **識別邊界**：確定操作的邏輯開始和結束
+2. **識別輸入**：確定程式碼區塊依賴的外部資料
+3. **識別輸出**：確定程式碼產生的結果或副作用
+4. **適當命名**：選擇描述操作目的的名稱
+5. **擷取為函數**：將程式碼移至命名函數
+
+:::{.panel-tabset}
+
+### 錯誤：內嵌類函數程式碼
+
+```r
+# 錯誤：內嵌類函數程式碼
+if (data_available) {
+  # 具有多個步驟的複雜資料操作
+  processed_data <- data %>%
+    filter(value > threshold) %>%
+    group_by(category) %>%
+    summarize(total = sum(value))
+    
+  # 額外操作
+}
+```
+
+### 正確：擷取的函數
+
+```r
+# 正確：擷取的函數
+process_data <- function(data, threshold) {
+  if (!data_available) {
+    return(NULL)
+  }
+  
+  processed_data <- data %>%
+    filter(value > threshold) %>%
+    group_by(category) %>%
+    summarize(total = sum(value))
+    
+  # 額外操作
+  
+  return(processed_data)
+}
+
+# 然後呼叫函數
+processed_data <- process_data(data, threshold)
+```
+
+:::
+
+## 第二款：函數檔案放置 {#file-placement}
+
+遵循 SO_R021（一個函數一個檔案）：
+
+1. **創建專用檔案**：每個擷取的函數應放在其自己的檔案中
+2. **適當命名**：檔案應命名為 `fn_[function_name].R`
+3. **適當位置**：檔案應根據功能放在適當的目錄中
+
+## 第三款：函數文檔 {#documentation}
+
+每個擷取的函數必須包含：
+
+```r
+#' 根據閾值條件處理資料
+#'
+#' 根據閾值過濾資料，按類別分組，並總結總計。
+#'
+#' @param data 包含要處理值的資料框架
+#' @param threshold 包含在處理中的最小值
+#' @return 按類別處理的資料框架總計，如果資料不可用則為 NULL
+#' @example
+#' process_data(sales_data, 100)
+#'
+process_data <- function(data, threshold) {
+  # 函數實作
+}
+```
+
+# 第四項：特殊考量 {#special-considerations}
+
+## 第一款：匿名函數 {#anonymous-functions}
+
+匿名函數僅在非常有限的環境中可接受：
+
+:::{.callout-note}
+## 可接受的匿名函數
+1. **作為函數參數**：在高階函數中用作回呼時
+2. **在反應式表達式中**：在簡單反應式表達式中使用時
+3. **用於簡單轉換**：執行簡單的單行操作時
+:::
+
+```r
+# 可接受：簡單匿名函數作為回呼
+lapply(products, function(x) x * 2)
+
+# 可接受：反應式環境中的簡單匿名函數
+output$text <- renderText({ input$value * 2 })
+
+# 不可接受：複雜的匿名函數
+data %>% 
+  group_by(category) %>%
+  summarize(result = (function(x) {
+    # 多個操作
+    # 條件邏輯
+    # 錯誤處理
+  })(value))
+```
+
+## 第二款：小型工具函數 {#utility-functions}
+
+如果非常小的工具函數滿足以下條件，可以在其主要使用者的同一檔案中定義：
+
+1. 它們只被一個函數使用
+2. 它們實作簡單操作
+3. 它們在其他環境中不會有用
+
+這與 SO_R021 對輔助函數的例外情況一致。
+
+# 第五項：實作範例 {#examples}
+
+## 第一款：錯誤處理區塊 {#error-handling-example}
+
+:::{.panel-tabset}
+
+### 原始程式碼
+
+```r
+# 嘗試連接到資料庫
+tryCatch({
+  conn <- dbConnect(duckdb::duckdb(), "app_data.duckdb")
+  message("Connected to database")
+  
+  # 檢查必要表格是否存在
+  tables <- dbListTables(conn)
+  if (!"customer_data" %in% tables) {
+    warning("Customer data table not found")
+    customer_available <- FALSE
+  } else {
+    # 檢查表格是否有資料
+    count <- dbGetQuery(conn, "SELECT COUNT(*) FROM customer_data")
+    customer_available <- count > 0
+    message("Customer data available: ", customer_available)
+  }
+}, error = function(e) {
+  message("Error connecting to database: ", e$message)
+  customer_available <- FALSE
+})
+```
+
+### 重構後的程式碼
+
+```r
+#' 檢查資料庫中客戶資料的可用性
+#'
+#' 連接到資料庫並檢查 customer_data 表格是否存在且有資料
+#'
+#' @param db_path 資料庫檔案的路徑
+#' @return 布林值，表示客戶資料是否可用
+#'
+check_customer_data_availability <- function(db_path = "app_data.duckdb") {
+  tryCatch({
+    conn <- dbConnect(duckdb::duckdb(), db_path)
+    on.exit(dbDisconnect(conn), add = TRUE)
+    message("Connected to database")
+    
+    # 檢查必要表格是否存在
+    tables <- dbListTables(conn)
+    if (!"customer_data" %in% tables) {
+      warning("Customer data table not found")
+      return(FALSE)
+    }
+    
+    # 檢查表格是否有資料
+    count <- dbGetQuery(conn, "SELECT COUNT(*) FROM customer_data")
+    result <- count > 0
+    message("Customer data available: ", result)
+    return(result)
+  }, error = function(e) {
+    message("Error connecting to database: ", e$message)
+    return(FALSE)
+  })
+}
+
+# 然後呼叫函數
+customer_available <- check_customer_data_availability()
+```
+
+:::
+
+# 第六項：效益 {#benefits}
+
+## 第一款：主要優勢 {#main-benefits}
+
+:::{.callout-note}
+## 函數封裝的效益
+1. **增強可測試性**：函數可以獨立測試
+2. **提高可維護性**：函數更容易更新和除錯
+3. **更好的程式碼組織**：函數提供自然的模組化
+4. **更清晰的意圖**：函數名稱記錄程式碼的作用
+5. **減少重複**：函數促進程式碼重用
+6. **更好的錯誤處理**：函數為錯誤管理提供清晰的邊界
+7. **一致的架構**：基於函數的程式碼遵循一致的模式
+:::
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 函數封裝檢查清單
+
+實作函數封裝時，確認：
+
+- [ ] 識別所有類函數程式碼區塊
+- [ ] 確定每個區塊的輸入和輸出
+- [ ] 為函數選擇描述性名稱
+- [ ] 擷取程式碼到命名函數
+- [ ] 創建專用函數檔案
+- [ ] 添加適當的文檔
+- [ ] 為重要函數創建單元測試
+- [ ] 用函數呼叫替換原始程式碼
+- [ ] 檢查組合的機會
+- [ ] 確保函數遵循單一責任原則
+:::
+
+# 結論 {#conclusion}
+
+函數封裝元原則建立了所有類函數程式碼區塊應明確封裝為命名函數。透過遵循此原則，我們創建了更可測試、可維護和可重用的程式碼，同時降低複雜性並提高清晰度。這種方法導致更模組化、可組合的程式碼庫，更好地與函數式程式設計範式一致。
+
+---
+
+*依據：開發方法法施行細則第2條*  
+*實作：[MP016 模組化](../../CH00_fundamental_principles/MP016_modularity.qmd)、[MP017 關注點分離](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)、[MP018 不要重複自己](../../CH00_fundamental_principles/MP018_dont_repeat_yourself.qmd)*  
+*相關：[SO_R021 一個函數一個檔案](../../CH01_structure_organization/rules/SO_R021_one_function_one_file.qmd)*

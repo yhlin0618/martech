@@ -1,0 +1,185 @@
+---
+title: "SO_R017: Global Parameter Organization"
+subtitle: "Global parameters shared across multiple applications must be defined in Excel files within global_scripts/parameters, while application-specific implementations reference these global parameters through YAML configurations in their respective app directories"
+chapter: "CH01"
+category: "rule"
+number: "SO_R017"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article: 
+  number: 17
+  title: "Global Parameter Organization Rules"
+related_to:
+  - "DM_P004: Dual Parameter Sources"
+  - "IC_R001: Global Scripts Synchronization"
+  - "MP017: Separation of Concerns"
+  - "SO_P010: Config-Driven Customization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 17: Global Parameter Organization Rules {#overview}
+
+**Structure & Organization Law Article 17 (Global Parameter Organization Rules)**
+
+This rule establishes the standard structure for managing parameters shared across applications.
+
+:::{.callout-important}
+## Core Rule
+Global parameters shared across multiple applications must be defined in Excel files within `global_scripts/parameters`, while application-specific implementations reference these global parameters through YAML configurations in their respective app directories.
+:::
+
+# Section 1: Implementation Guidelines {#implementation}
+
+## Subsection 1: Directory Structure {#directory-structure}
+
+1. **Global Parameters Location**
+   ```
+   /update_scripts/global_scripts/parameters/
+   ├── platform.xlsx
+   ├── product_line.xlsx
+   ├── ui_terminology_dictionary.xlsx
+   └── [other shared parameter files].xlsx
+   ```
+
+2. **App-Specific Configuration Location**
+   ```
+   /precision_marketing_[APP_NAME]/precision_marketing_app/
+   └── app_config.yaml
+   ```
+
+## Subsection 2: Parameter File Responsibilities {#file-responsibilities}
+
+### Global Parameter Files (Excel)
+- Core domain entities and their attributes
+- Shared reference data (products, platforms, regions)
+- Translation dictionaries
+- Classification systems
+- Entity relationships
+- ID schemes and naming conventions
+
+### App-Specific Configuration (YAML)
+- Which global parameters to use
+- How to present shared entities
+- App-specific behavior and settings
+- Environmental configuration
+- UI component selection and arrangement
+- Feature toggles and customizations
+
+# Section 2: Reference Pattern {#reference-pattern}
+
+App-specific YAML should reference global Excel files:
+
+```yaml
+# In app_config.yaml
+parameters:
+  global_sources:
+    product_line: "../global_scripts/parameters/product_line.xlsx"
+    platform: "../global_scripts/parameters/platform.xlsx"
+    ui_dictionary: "../global_scripts/parameters/ui_terminology_dictionary.xlsx"
+  
+  display:
+    product_categories:
+      enabled: true
+      default: "000"  # "All Products"
+      max_visible: 10
+    
+    platforms:
+      enabled: true
+      exclude: ["999"]  # Exclude "Other" platform
+```
+
+# Section 3: Loading Sequence {#loading-sequence}
+
+1. Load global Excel parameters first
+2. Apply app-specific YAML configurations second
+3. Override with environment-specific settings if needed
+
+```r
+# Loading sequence
+load_configuration <- function() {
+  # 1. Load global parameters from Excel
+  global_params <- load_global_excel_parameters("../global_scripts/parameters/")
+  
+  # 2. Load app-specific YAML
+  app_config <- yaml::read_yaml("app_config.yaml")
+  
+  # 3. Merge configurations, with app-specific taking precedence
+  config <- merge_configurations(global_params, app_config)
+  
+  # 4. Apply any environment-specific overrides
+  config <- apply_environment_overrides(config)
+  
+  return(config)
+}
+```
+
+# Section 4: Implementation Examples {#examples}
+
+## Subsection 1: Global Excel File (product_line.xlsx) {#global-excel}
+
+```
+| product_line_id | product_line_name_english | product_line_name_chinese |
+|----------------|--------------------------|---------------------------|
+| 000            | All Products             | 所有產品                   |
+| 001            | Kitchen Tools            | 廚房工具                  |
+| 002            | Cookware                 | 炊具                     |
+| 003            | Small Appliances        | 小家電                    |
+```
+
+## Subsection 2: App-Specific YAML (app_config.yaml) {#app-yaml}
+
+```yaml
+# Kitchen MAMA App configuration
+app:
+  name: "Kitchen MAMA"
+  language: "zh_TW.UTF-8"
+
+# Product display configuration
+products:
+  categories:
+    source: "../global_scripts/parameters/product_line.xlsx"
+    visible_categories: ["000", "001", "002"]  # Show only these categories
+    default_category: "000"                    # Default to "All Products"
+    order_by: "product_line_id"                # Sort order
+  
+  # Platform display configuration
+  platforms:
+    source: "../global_scripts/parameters/platform.xlsx"
+    exclude_platforms: ["004", "005"]          # Hide certain platforms
+```
+
+# Section 5: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Single Source of Truth**: Domain entities defined once, used everywhere
+2. **Reduced Duplication**: No need to maintain separate copies of reference data
+3. **Consistency**: All apps use the same core definitions
+4. **Flexibility**: Apps can customize how they use shared parameters
+5. **Maintainability**: Update shared data in one place, affects all apps
+
+# Section 6: Implementation Checklist {#checklist}
+
+When implementing global parameter organization:
+
+1. ☐ Identify shared parameters
+2. ☐ Create Excel parameter files
+3. ☐ Configure YAML references
+4. ☐ Implement loading sequence
+5. ☐ Test parameter merging
+6. ☐ Verify override mechanisms
+7. ☐ Document parameter structure
+
+---
+
+*Based on: Structure & Organization Law Article 17*  
+*Related to: [DM_P004 Dual Parameter Sources](../../CH02_data_management/principles/DM_P004_dual_parameter_sources.qmd), [SO_P010 Config-Driven Customization](../principles/SO_P010_config_driven_customization.qmd)*

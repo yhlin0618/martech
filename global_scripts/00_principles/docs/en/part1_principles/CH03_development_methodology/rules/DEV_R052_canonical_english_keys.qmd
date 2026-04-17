@@ -1,0 +1,214 @@
+---
+title: "DEV_R052: Canonical English Keys"
+subtitle: "Business logic uses English keys; only the UI layer translates for display"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R052"
+date-created: "2026-03-05"
+date-modified: "2026-03-05"
+author: "Claude"
+type: "rule"
+law: "Development Methodology"
+article-number: "Rule 52"
+parent_principle: "MP029"
+related_to:
+  - "MP029": "No Fake Information"
+  - "DEV_R050": "Display Data Externalization"
+  - "UI_R022": "UI Text Translation Pattern"
+  - "DEV_R013": "Switch Over If-Else"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DEV_R052: Canonical English Keys {#overview}
+
+All non-UI code — including database labels, switch/case logic, filter conditions, group-by
+keys, and configuration values — **must** use canonical English strings. Translation to the
+user's display language happens **exclusively** at the UI rendering layer via `translate()`.
+
+## Rule Statement
+
+### English Everywhere Except UI Display
+
+1. **DRV / ETL scripts**: All label columns (e.g., `r_label`, `f_label`, `m_label`,
+   `cai_label`, `nes_status`) store **English** values in the database.
+2. **Business logic** (`switch`, `if/else`, `case_when`, filtering, grouping): Always
+   match against **English** keys.
+3. **Configuration files** (YAML, CSV): Use **English** keys for identifiers and lookup
+   values.
+4. **UI rendering** (`renderUI`, `renderPlotly`, `DT::renderDataTable`, etc.): Call
+   `translate()` on English keys **at the point of display** to produce localized text.
+
+### The `translate()` Boundary
+
+```
+┌──────────────────────────────────────────┐
+│         NON-UI (English only)            │
+│                                          │
+│  DRV:    r_label = "Recent Buyer"        │
+│  switch: "Recent Buyer" = strategy(...)  │
+│  filter: df[df$r_label == "Recent...",]  │
+│  config: segment_key: "High Value"       │
+│                                          │
+├────────── translate() boundary ──────────┤
+│                                          │
+│         UI (translated display)          │
+│                                          │
+│  label:  translate("Recent Buyer")       │
+│  pie:    sapply(levels, translate)        │
+│  table:  colnames = translate(...)       │
+│  card:   tags$h6(translate(segment))     │
+│                                          │
+└──────────────────────────────────────────┘
+```
+
+## Rationale {#rationale}
+
+1. **Single Source of Truth**: English keys are unambiguous identifiers. Chinese characters
+   can have encoding issues (`\uXXXX` escapes reduce readability) and multiple
+   representations (simplified vs. traditional).
+
+2. **Logic-Display Separation**: Business logic should never depend on display language.
+   If the display language changes (e.g., adding English UI, Japanese UI), zero business
+   logic needs modification.
+
+3. **Debugging**: English keys in logs, error messages, and database queries are universally
+   readable by all developers regardless of locale.
+
+4. **Prevents Silent Failures**: When `switch()` matches against Chinese strings stored as
+   `\u` escapes, a single character mismatch silently falls through to the default case —
+   producing incorrect but non-crashing behavior that is hard to detect (see Issue #241).
+
+## Correct Pattern {#correct-pattern}
+
+### DRV Script — Store English Labels
+
+```r
+# fn_D01_02_core.R — labels stored in English
+df <- df %>% dplyr::mutate(
+  r_label = dplyr::case_when(
+    r_ecdf >= 0.67 ~ "Recent Buyer",
+    r_ecdf >= 0.33 ~ "Medium Inactive",
+    TRUE           ~ "Long Inactive"
+  ),
+  f_label = dplyr::case_when(
+    f_ecdf >= 0.67 ~ "High Frequency",
+    f_ecdf >= 0.33 ~ "Medium Frequency",
+    TRUE           ~ "Low Frequency"
+  )
+)
+```
+
+### Business Logic — Match English Keys
+
+```r
+# fn_dna_marketing_utils.R — switch on English keys
+get_recommendations <- function(metric, segment) {
+  switch(metric,
+    "R" = switch(as.character(segment),
+      "Recent Buyer"    = list(strategy = "Deepen Engagement", ...),
+      "Medium Inactive" = list(strategy = "Maintain Interaction", ...),
+      "Long Inactive"   = list(strategy = "Win-Back Activation", ...),
+      list(strategy = "Standard Maintenance", ...)
+    ),
+    ...
+  )
+}
+```
+
+### UI Rendering — Translate at Display
+
+```r
+# customerValue.R — translate only at UI output
+output$pie_r <- renderPlotly({
+  tbl <- as.data.frame(table(df$r_label))
+  tbl$display_label <- sapply(tbl$Var1, translate)  # translate here
+  plotly::plot_ly(tbl, labels = ~display_label, values = ~Freq, type = "pie")
+})
+
+output$rec_r <- renderUI({
+  rec <- get_recommendations("R", segment)  # English key in, English strategy out
+  tags$p(tags$b(translate("Strategy"), ": "), translate(rec$strategy))
+})
+```
+
+## Incorrect Pattern {#incorrect-pattern}
+
+### Hardcoded Chinese in Business Logic
+
+```r
+# BAD: Chinese unicode escapes in switch — fragile and unreadable
+switch(segment,
+  "\u9ad8\u6d3b\u8e8d" = list(strategy = "\u6df1\u5316\u7d93\u71df", ...),
+  "\u4e2d\u6d3b\u8e8d" = list(strategy = "\u7dad\u6301\u4e92\u52d5", ...),
+  ...
+)
+```
+
+### Band-Aid Mapping in Component
+
+```r
+# BAD: Translating English to Chinese just to feed into a Chinese-only switch
+label_map <- c("Increasingly Active" = "\u6f38\u8da8\u6d3b\u8e8d", ...)
+rec_df$segment <- label_map[df$cai_label]
+generate_recommendations_html(rec_df, "CAI", translate)
+```
+
+### Chinese Labels in Database
+
+```r
+# BAD: Storing Chinese in DRV output
+r_label = case_when(
+  r_ecdf >= 0.67 ~ "\u9ad8\u6d3b\u8e8d",   # hard to read, encoding-dependent
+  ...
+)
+```
+
+## Translation File Requirements {#translation-files}
+
+All English keys used in labels must have corresponding entries in:
+
+- `ui_terminology.csv` — for `translate()` lookup
+- Columns: `key`, `zh_TW`, `en` (and other locales as needed)
+
+Example entries:
+
+| key | zh_TW | en |
+|-----|-------|-----|
+| Recent Buyer | 近期購買者 | Recent Buyer |
+| Medium Inactive | 中度不活躍 | Medium Inactive |
+| Long Inactive | 長期不活躍 | Long Inactive |
+| High Frequency | 高頻率 | High Frequency |
+
+## Scope {#scope}
+
+| Layer | Language | `translate()` Used? |
+|-------|----------|---------------------|
+| ETL scripts (0IM/1ST/2TR) | English | No |
+| DRV scripts (3PR/4CL/5NM) | English | No |
+| Function files (`fn_*.R`) | English | No |
+| Configuration (YAML/CSV) | English keys | No |
+| Shiny server logic | English | No |
+| Shiny UI rendering | English → translated | **Yes** |
+| Downloaded CSV column headers | English or translated | Optional |
+
+## Discovery Context {#discovery}
+
+Issue #241: `customerValue` RFM marketing strategy recommendations showed identical
+default content for all segments. Root cause: `fn_dna_marketing_utils.R` switch statements
+only matched Chinese labels, but `fn_D01_02_core.R` stored English labels in the database.
+All segments fell through to the default case, producing generic recommendations.
+
+## Checklist {#checklist}
+
+When creating or reviewing code:
+
+- [ ] Database label columns contain English values (not Chinese)
+- [ ] `switch()` / `case_when()` / `if/else` match English keys
+- [ ] No `\uXXXX` Chinese escapes in business logic
+- [ ] `translate()` is called only in `renderUI` / `renderPlotly` / `renderDataTable` output
+- [ ] All English keys have entries in `ui_terminology.csv`
+- [ ] No band-aid mappings (English → Chinese → switch) in components

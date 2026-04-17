@@ -1,0 +1,339 @@
+---
+title: "DEV_R037: Derivation Step Isolation Rule"
+subtitle: "Each D_XX script MUST implement ONLY its documented step; orchestration scripts MUST NOT contain computation logic"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R037"
+date-created: "2025-12-26"
+date-modified: "2026-02-13"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article-number:
+  number: 37
+  title: "Derivation Step Isolation Rule"
+related_to:
+  - "MP145: Documentation-Implementation Alignment"
+  - "MP064: ETL-Derivation Separation"
+  - "MP005: Statute Law Analogy"
+  - "DM_R044: Derivation Implementation Standard"
+  - "SO_R007: One Function One File"
+  - "MP028: Instance vs Principle"
+  - "MP037: Principle-Guided Modifications"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 37: Derivation Step Isolation Rule {#overview}
+
+**Development Methodology Law Article 37 (Derivation Step Isolation Rule)**
+
+This rule establishes strict boundaries for derivation scripts (D_XX), ensuring each script implements only its documented responsibility and preventing logic duplication across steps.
+
+:::{.callout-important}
+## Core Rule
+
+1. Each `D_XX` script MUST implement **ONLY** its documented step
+2. Derivation logic MUST NOT be duplicated across steps
+3. Orchestration steps (`D_XX_06`) MUST NOT contain computation logic
+4. Computation belongs in designated steps or shared utility functions
+:::
+
+# Section 1: The Problem {#problem}
+
+## Subsection 1: Responsibility Creep {#responsibility-creep}
+
+Over time, derivation scripts accumulate functionality beyond their documented scope:
+
+```r
+# D01_03 Documentation: "Transform RFM into DNA segments using analysis_dna()"
+# D01_03 Actual implementation:
+process_dna <- function(df) {
+  # Correct: RFM transformation
+  df <- transform_rfm(df)
+
+  # VIOLATION: This belongs in D01_04!
+  df <- add_customer_profiles(df)
+
+  # VIOLATION: This belongs in D01_05!
+  df <- create_app_views(df)
+
+  return(df)
+}
+```
+
+## Subsection 2: Logic Duplication {#logic-duplication}
+
+The same calculation appears in multiple scripts:
+
+```r
+# D01_03.R
+df$dna_score <- (df$m_norm + df$f_norm + df$r_norm) / 3
+
+# D01_06.R (orchestration)
+# VIOLATION: Same calculation duplicated!
+df$dna_score <- (df$m_norm + df$f_norm + df$r_norm) / 3
+```
+
+## Subsection 3: Computation in Orchestration {#computation-in-orchestration}
+
+Orchestration scripts perform calculations instead of just coordinating:
+
+```r
+# D01_06.R - Should ONLY orchestrate
+execute_pipeline <- function() {
+  run_d01_00()
+  run_d01_01()
+  run_d01_02()
+  run_d01_03()
+  run_d01_04()
+  run_d01_05()
+
+  # VIOLATION: Orchestration should NOT compute!
+  df <- read_output()
+  df$custom_metric <- calculate_something(df)  # This belongs elsewhere!
+  write_output(df)
+}
+```
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Step Type Classification {#step-types}
+
+Derivation steps fall into three categories:
+
+| Type | Description | Allowed Operations |
+|------|-------------|-------------------|
+| **Conceptual** | Describes WHAT to do | Data reading, aggregation |
+| **Concrete** | Specifies exact functions | Call designated function, write output |
+| **Orchestration** | Coordinates other steps | Source scripts, run in sequence, log |
+
+## Subsection 2: Correct Concrete Step Pattern {#correct-concrete-pattern}
+
+```r
+# cbz_D01_03.R - Correct Implementation
+#####
+# CONSUMES: df_rfm_by_customer___processed
+# PRODUCES: df_dna_by_customer___cleansed
+# DEPENDS_ON_DRV: cbz_D01_02
+#####
+
+# === INITIALIZE ===
+source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+autoinit()
+source("scripts/global_scripts/04_utils/fn_analysis_dna.R")
+
+# === MAIN ===
+# Read input
+con_processed <- dbConnectDuckdb(db_path_list$processed_data, read_only = TRUE)
+df_input <- tbl2(con_processed, "df_rfm_by_customer___processed") |> collect()
+dbDisconnect(con_processed)
+
+# Execute documented responsibility - call the designated function
+df_output <- analysis_dna(df_input, platform = "cbz")
+
+# Write to documented output location
+con_cleansed <- dbConnectDuckdb(db_path_list$cleansed_data, read_only = FALSE)
+dbWriteTable(con_cleansed, "df_dna_by_customer___cleansed", df_output, overwrite = TRUE)
+dbDisconnect(con_cleansed)
+
+# === DEINITIALIZE ===
+autodeinit()
+```
+
+## Subsection 3: Correct Orchestration Pattern {#correct-orchestration-pattern}
+
+```r
+# cbz_D01_06.R - Correct Orchestration
+#####
+# ORCHESTRATES: D01_00, D01_01, D01_02, D01_03, D01_04, D01_05
+# COMPUTATION: NONE (orchestration only)
+#####
+
+# === INITIALIZE ===
+source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+autoinit()
+
+# === MAIN ===
+# Orchestration ONLY - no computation
+cat("Starting D01 pipeline for CBZ...\n")
+
+source("scripts/update_scripts/DRV/cbz/cbz_D01_00.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_01.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_02.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_03.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_04.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_05.R")
+
+cat("D01 pipeline complete for CBZ\n")
+
+# === DEINITIALIZE ===
+autodeinit()
+```
+
+## Subsection 4: Using _implementation_rules.yaml {#implementation-rules}
+
+Each derivation module should have a companion specification file:
+
+```yaml
+# D01_dna_analysis/_implementation_rules.yaml
+derivation_steps:
+  d01_03:
+    title: "DNA Analysis"
+    type: "concrete"
+    responsibility: "Transform RFM into customer DNA segments"
+    must_call: "analysis_dna()"
+    function_location: "scripts/global_scripts/04_utils/fn_analysis_dna.R"
+    output_table: "df_dna_by_customer___cleansed"
+
+d01_06:
+    title: "Execution Orchestration"
+    type: "orchestration"
+    responsibility: "Run D01_00-D01_05 in sequence"
+    constraint: "NO direct computation - only orchestration"
+    prohibited_operations:
+      - "Implement DNA calculation logic"
+      - "Duplicate analysis_dna() functionality"
+```
+
+## Subsection 5: Spec-First Conflict Handling {#spec-first-conflict}
+
+When required behavior conflicts with documented responsibility:
+
+1. **Do not** patch implementation scripts directly.
+2. Update `_implementation_rules.yaml` and related task documentation first.
+3. Record the specific change scope and rationale.
+4. Update governing references (responsibility, constraints, input/output ownership).
+5. Implement code only after the spec is authoritative and aligned.
+
+# Section 3: Violation Detection {#violations}
+
+## Subsection 1: Common Violation Patterns {#violation-patterns}
+
+| Pattern | Detection | Severity |
+|---------|-----------|----------|
+| DNA calculation in D01_06 | `grep "dna_.*_score\|analysis_dna" D01_06.R` | Critical |
+| Missing required function call | Script doesn't contain `must_call` function | Critical |
+| Wrong output table | Script writes to non-documented table | High |
+| Extra computation in orchestration | Non-source() code in D01_06 | Medium |
+
+## Subsection 2: Code Review Checklist {#code-review-checklist}
+
+```markdown
+## DEV_R037 Compliance Check
+
+### Script: {script_name}
+### Documented Responsibility: {from _implementation_rules.yaml}
+
+#### Concrete Steps (D01_XX where XX != 06)
+- [ ] Calls only documented function (must_call)?
+- [ ] Writes to correct output table?
+- [ ] No logic that belongs in other steps?
+- [ ] No duplicated calculations?
+
+#### Orchestration Step (D01_06)
+- [ ] Contains ONLY source() calls?
+- [ ] No data manipulation code?
+- [ ] No calculations?
+- [ ] Proper logging only?
+
+### Violations Found
+- None / List specific issues
+```
+
+#### Conflict Governance Add-on
+
+- [ ] Did any requested change conflict with existing documented responsibility?
+- [ ] Were docs/specs updated before code edits?
+- [ ] Are new behaviors explicitly bound in `_implementation_rules.yaml`?
+- [ ] Are changes traceable to MP028/MP037/MP145 references?
+
+# Section 4: Rationale {#rationale}
+
+## Subsection 1: DRY Principle {#dry}
+
+Logic in multiple places = bugs in multiple places.
+
+When DNA calculation is in both D01_03 AND D01_06:
+- Bug fix in D01_03 doesn't fix D01_06
+- Modifications must be made twice
+- Outputs may differ unexpectedly
+
+## Subsection 2: Testability {#testability}
+
+Isolated steps are easier to test:
+
+```r
+# Test D01_03 independently
+test_that("D01_03 produces correct DNA scores", {
+  input <- load_test_rfm_data()
+  output <- analysis_dna(input)
+
+  expect_true("dna_segment" %in% names(output))
+  expect_true(all(output$dna_m_score >= 0 & output$dna_m_score <= 1))
+})
+```
+
+## Subsection 3: MP145 Compliance {#mp145}
+
+This rule enforces MP145 (Documentation-Implementation Alignment) specifically for derivation modules. When documentation says "D01_03 performs DNA analysis", the code must do exactly that.
+
+# Section 5: Exception Handling {#exceptions}
+
+## Subsection 1: Cross-Platform Aggregation {#cross-platform}
+
+`all_D01_06.R` may perform aggregation across platforms, but:
+
+```r
+# ALLOWED: Aggregation of outputs from platform-specific steps
+all_D01_06 <- function() {
+  # Source platform-specific D01_06 scripts
+  source("scripts/update_scripts/DRV/cbz/cbz_D01_06.R")
+  source("scripts/update_scripts/DRV/amz/amz_D01_06.R")
+  source("scripts/update_scripts/DRV/eby/eby_D01_06.R")
+
+  # ALLOWED: Read and combine outputs
+  cbz_data <- read_output("cbz")
+  amz_data <- read_output("amz")
+  eby_data <- read_output("eby")
+
+  combined <- rbind(cbz_data, amz_data, eby_data)
+
+  # ALLOWED: Write combined output
+  write_output(combined)
+
+  # NOT ALLOWED: New calculations
+  # combined$new_metric <- calculate_something(combined)  # ❌
+}
+```
+
+# Section 6: Related Principles {#related}
+
+| Principle | Relationship |
+|-----------|-------------|
+| **MP145** | Parent principle - general doc-implementation alignment |
+| **MP064** | Broader ETL-DRV separation |
+| **MP005** | Foundation - documentation as law |
+| **DM_R044** | Script structure template |
+| **SO_R007** | One function per file (for utility functions) |
+| **MP028** | Instance vs Principle |
+| **MP037** | Principle-Guided Modifications |
+
+# Section 7: Benefits {#benefits}
+
+1. **Predictability**: Each script does exactly what documentation says
+2. **Maintainability**: Changes made in one place
+3. **Testability**: Steps can be tested independently
+4. **Debuggability**: Errors traced to specific step
+5. **Onboarding**: New developers understand system from docs
+
+# Section 8: Conclusion {#conclusion}
+
+The Derivation Step Isolation Rule (DEV_R037) ensures that derivation pipelines remain maintainable, testable, and true to their documentation. By enforcing strict boundaries between steps and prohibiting computation in orchestration scripts, this rule prevents the common anti-patterns of responsibility creep and logic duplication.
+
+Combined with `_implementation_rules.yaml` companion files and MP145 compliance verification, DEV_R037 creates a verifiable contract for derivation module implementation.

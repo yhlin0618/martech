@@ -1,0 +1,594 @@
+---
+
+title: "GUIDE03: Async Programming Patterns in R Shiny"
+subtitle: "Comprehensive guide for implementing asynchronous operations using future, promises, and ExtendedTask"
+chapter: "CH17"
+category: "guide"
+number: "GUIDE03"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "guide"
+law: "Implementation Patterns"
+article-number: "Guide 3"
+related_to:
+  - "DEV_P014_performance_optimization"
+  - "DEV_P021_performance_acceleration"
+  - "MP055_computation_allocation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Overview {#overview}
+
+This guide consolidates async programming patterns for R Shiny applications, covering:
+- Future and promises for parallel processing
+- ExtendedTask for long-running operations
+- Later for deferred execution
+- Mirai as an alternative backend
+
+## Core Async Technologies {#technologies}
+
+### Technology Comparison
+
+| Technology | Use Case | Blocking | UI Updates | Cancellable |
+|------------|----------|----------|------------|-------------|
+| **future** | Parallel computation | Non-blocking | Via promises | No |
+| **promises** | Async chaining | Non-blocking | Yes | No |
+| **ExtendedTask** | Long operations with UI feedback | Non-blocking | Yes | Yes |
+| **later** | Deferred execution | Non-blocking | Yes | Yes |
+| **mirai** | Alternative to future | Non-blocking | Via promises | Yes |
+
+## Future and Promises Pattern {#future-promises}
+
+### Basic Setup
+
+```r
+library(future)
+library(promises)
+library(shiny)
+
+# Configure future plan
+plan(multisession, workers = 4)  # Or multicore on Unix
+
+# Alternative plans
+plan(sequential)     # Synchronous (for debugging)
+plan(cluster)        # For distributed computing
+```
+
+### Future Implementation Pattern
+
+```r
+# Original synchronous code
+output$plot <- renderPlot({
+  data <- expensive_computation(input$params)
+  create_plot(data)
+})
+
+# Converted to async
+output$plot <- renderPlot({
+  future({
+    expensive_computation(input$params)
+  }) %...>% {
+    create_plot(.)
+  }
+})
+```
+
+### Promise Chaining
+
+```r
+# Complex async pipeline
+result <- future({
+  # Step 1: Load data
+  read_large_file("data.csv")
+}) %...>% {
+  # Step 2: Process data
+  process_data(.)
+} %...>% {
+  # Step 3: Generate output
+  create_visualization(.)
+} %...!% {
+  # Error handling
+  showNotification(paste("Error:", .), type = "error")
+  NULL
+}
+```
+
+### Reactive Values with Promises
+
+```r
+server <- function(input, output, session) {
+  # Promise-aware reactive values
+  values <- reactiveValues(
+    data = NULL,
+    loading = FALSE
+  )
+  
+  observeEvent(input$load, {
+    values$loading <- TRUE
+    
+    future({
+      Sys.sleep(2)  # Simulate work
+      read.csv("large_file.csv")
+    }) %...>% {
+      values$data <- .
+      values$loading <- FALSE
+    } %...!% {
+      values$loading <- FALSE
+      showNotification("Failed to load data", type = "error")
+    }
+  })
+  
+  output$status <- renderText({
+    if (values$loading) "Loading..." else "Ready"
+  })
+}
+```
+
+## ExtendedTask Pattern {#extended-task}
+
+### Basic ExtendedTask Implementation
+
+```r
+library(shiny)
+library(bslib)
+
+ui <- page_sidebar(
+  sidebar = sidebar(
+    input_task_button("btn", "Start Task"),
+    textOutput("status")
+  ),
+  plotOutput("plot")
+)
+
+server <- function(input, output, session) {
+  # Create ExtendedTask
+  task <- ExtendedTask$new(function(params) {
+    future({
+      # Long-running computation
+      Sys.sleep(5)
+      compute_result(params)
+    })
+  })
+  
+  # Start task on button click
+  observeEvent(input$btn, {
+    task$invoke(list(
+      n = input$n,
+      method = input$method
+    ))
+  })
+  
+  # Monitor task status
+  output$status <- renderText({
+    if (task$status() == "running") {
+      "Task is running..."
+    } else if (task$status() == "error") {
+      "Task failed!"
+    } else {
+      "Task ready"
+    }
+  })
+  
+  # Use task result
+  output$plot <- renderPlot({
+    task$result()  # Reactive - updates when task completes
+  })
+}
+```
+
+### ExtendedTask with Progress Updates
+
+```r
+server <- function(input, output, session) {
+  # Task with progress reporting
+  task <- ExtendedTask$new(function(n) {
+    future({
+      progress <- progressor(steps = n)
+      
+      result <- numeric(n)
+      for (i in seq_len(n)) {
+        Sys.sleep(0.1)
+        result[i] <- rnorm(1)
+        progress(message = sprintf("Step %d/%d", i, n))
+      }
+      
+      result
+    })
+  })
+  
+  # UI feedback during execution
+  observeEvent(input$start, {
+    showNotification("Task started", id = "task_notif")
+    task$invoke(input$n)
+  })
+  
+  observe({
+    if (task$status() == "idle") {
+      removeNotification("task_notif")
+      showNotification("Task completed!", type = "success")
+    }
+  })
+}
+```
+
+### ExtendedTask with Cancellation
+
+```r
+server <- function(input, output, session) {
+  task <- ExtendedTask$new(function() {
+    future({
+      for (i in 1:100) {
+        # Check for interruption
+        if (isTRUE(getOption("shiny.interrupt"))) {
+          stop("Task cancelled")
+        }
+        Sys.sleep(0.1)
+        # Do work...
+      }
+    })
+  })
+  
+  observeEvent(input$start, {
+    task$invoke()
+  })
+  
+  observeEvent(input$cancel, {
+    # Note: True cancellation requires future plan support
+    # This sets a flag that the task should check
+    options(shiny.interrupt = TRUE)
+    showNotification("Cancellation requested")
+  })
+}
+```
+
+## Later for Deferred Execution {#later}
+
+### Basic Later Usage
+
+```r
+library(later)
+
+# Defer execution by 2 seconds
+later(function() {
+  showNotification("Deferred message")
+}, delay = 2)
+
+# Recurring tasks
+cancel_handle <- later(function() {
+  updateTextInput(session, "time", value = Sys.time())
+  
+  # Reschedule itself
+  later(sys.function(), delay = 1)
+}, delay = 1)
+
+# Cancel recurring task
+later::cancel(cancel_handle)
+```
+
+### Later with Reactive Values
+
+```r
+server <- function(input, output, session) {
+  values <- reactiveValues(
+    queue = list(),
+    processing = FALSE
+  )
+  
+  # Process queue items with delay
+  process_queue <- function() {
+    if (length(values$queue) > 0 && !values$processing) {
+      values$processing <- TRUE
+      item <- values$queue[[1]]
+      values$queue <- values$queue[-1]
+      
+      # Process item
+      later(function() {
+        # Simulate processing
+        Sys.sleep(1)
+        showNotification(paste("Processed:", item))
+        values$processing <- FALSE
+        
+        # Check for more items
+        if (length(values$queue) > 0) {
+          process_queue()
+        }
+      }, delay = 0.1)
+    }
+  }
+  
+  observeEvent(input$add, {
+    values$queue <- append(values$queue, input$item)
+    process_queue()
+  })
+}
+```
+
+## Mirai Alternative Backend {#mirai}
+
+### Mirai Setup
+
+```r
+library(mirai)
+
+# Configure mirai as future backend
+plan(mirai_multisession, workers = 4)
+
+# Or use mirai directly
+m <- mirai({
+  # Long computation
+  Sys.sleep(2)
+  expensive_function()
+})
+
+# Check if complete
+unresolved(m)  # Returns TRUE if still running
+
+# Get result (blocks until ready)
+m$data
+```
+
+### Mirai with Promises
+
+```r
+server <- function(input, output, session) {
+  observeEvent(input$compute, {
+    # Create mirai task
+    m <- mirai({
+      result <- complex_computation()
+      list(success = TRUE, data = result)
+    })
+    
+    # Convert to promise
+    promise <- future_promise({
+      while(unresolved(m)) {
+        Sys.sleep(0.1)
+      }
+      m$data
+    })
+    
+    # Handle result
+    promise %...>% {
+      output$result <- renderText(.$data)
+    } %...!% {
+      showNotification("Computation failed", type = "error")
+    }
+  })
+}
+```
+
+## Real-World Example: Position Analysis Refactor {#example}
+
+### Original Synchronous Code
+
+```r
+output$positionPlot <- renderPlotly({
+  data <- loadPositionData()
+  processed <- processPositions(data)  # Slow!
+  createInteractivePlot(processed)
+})
+```
+
+### Refactored with Future/Promises
+
+```r
+output$positionPlot <- renderPlotly({
+  # Show loading state
+  showNotification("Processing positions...", id = "proc_notif")
+  
+  future({
+    data <- loadPositionData()
+    processPositions(data)  # Now non-blocking
+  }) %...>% {
+    removeNotification("proc_notif")
+    createInteractivePlot(.)
+  } %...!% {
+    removeNotification("proc_notif")
+    showNotification("Failed to process positions", type = "error")
+    NULL
+  }
+})
+```
+
+### Refactored with ExtendedTask
+
+```r
+server <- function(input, output, session) {
+  # Define the task
+  position_task <- ExtendedTask$new(function(filters) {
+    future({
+      data <- loadPositionData()
+      filtered <- applyFilters(data, filters)
+      processPositions(filtered)
+    })
+  })
+  
+  # Trigger on filter change
+  observeEvent(input$filters, {
+    position_task$invoke(input$filters)
+  })
+  
+  # Render when ready
+  output$positionPlot <- renderPlotly({
+    req(position_task$result())
+    createInteractivePlot(position_task$result())
+  })
+  
+  # Show status
+  output$status <- renderUI({
+    if (position_task$status() == "running") {
+      tags$div(
+        class = "spinner-border",
+        "Processing..."
+      )
+    }
+  })
+}
+```
+
+## Best Practices {#best-practices}
+
+### 1. Choose the Right Tool
+
+```r
+# Quick computation (< 1s): Regular reactive
+output$quick <- renderText({
+  quick_calculation(input$x)
+})
+
+# Medium computation (1-5s): Future with promises
+output$medium <- renderText({
+  future({ medium_calculation(input$x) }) %...>% { . }
+})
+
+# Long computation (> 5s): ExtendedTask
+task <- ExtendedTask$new(function(x) {
+  future({ long_calculation(x) })
+})
+```
+
+### 2. Resource Management
+
+```r
+# Limit workers to prevent resource exhaustion
+plan(multisession, workers = min(4, availableCores() - 1))
+
+# Clean up on session end
+onStop(function() {
+  plan(sequential)  # Reset to sequential
+})
+```
+
+### 3. Error Handling
+
+```r
+# Always include error handlers
+future({ risky_operation() }) %...>% {
+  # Success path
+  updateTextInput(session, "result", value = .)
+} %...!% {
+  # Error path
+  showNotification(
+    paste("Error:", conditionMessage(.)),
+    type = "error",
+    duration = NULL
+  )
+  updateTextInput(session, "result", value = "Error occurred")
+}
+```
+
+### 4. UI Feedback
+
+```r
+# Provide clear feedback for async operations
+observeEvent(input$start, {
+  # Immediate feedback
+  shinyjs::disable("start")
+  shinyjs::show("spinner")
+  
+  future({
+    long_operation()
+  }) %...>% {
+    # Success
+    shinyjs::hide("spinner")
+    shinyjs::enable("start")
+    output$result <- renderText(.)
+  } %...!% {
+    # Failure
+    shinyjs::hide("spinner")
+    shinyjs::enable("start")
+  }
+})
+```
+
+## Common Pitfalls {#pitfalls}
+
+### 1. Forgetting to Configure Plan
+
+```r
+# BAD: No plan configured
+future({ expensive_op() })  # Runs sequentially!
+
+# GOOD: Configure plan first
+plan(multisession)
+future({ expensive_op() })  # Runs in parallel
+```
+
+### 2. Capturing Large Objects
+
+```r
+# BAD: Captures entire environment
+large_data <- read.csv("huge.csv")
+future({ process(large_data) })
+
+# GOOD: Minimize captured data
+future({
+  data <- read.csv("huge.csv")  # Load inside future
+  process(data)
+})
+```
+
+### 3. Modifying Reactive Values in Future
+
+```r
+# BAD: Won't work - reactive values not accessible in future
+values <- reactiveValues(x = 1)
+future({ values$x <- 2 })  # Error!
+
+# GOOD: Return value and update in promise
+future({ 2 }) %...>% { values$x <- . }
+```
+
+## Performance Monitoring {#monitoring}
+
+```r
+# Monitor async task performance
+tictoc::tic()
+future({
+  Sys.sleep(2)
+  "result"
+}) %...>% {
+  elapsed <- tictoc::toc(quiet = TRUE)
+  showNotification(
+    sprintf("Task completed in %.2f seconds", elapsed$toc - elapsed$tic)
+  )
+  .
+}
+```
+
+## Testing Async Code {#testing}
+
+```r
+# Test with sequential plan for predictability
+test_that("async function works", {
+  plan(sequential)  # Make deterministic
+  
+  result <- future({ compute() }) %...>% { . }
+  expect_equal(result, expected_value)
+})
+
+# Test with timeout
+test_that("async completes within time limit", {
+  plan(multisession)
+  
+  result <- future({
+    Sys.sleep(1)
+    "done"
+  }, seed = TRUE) %...>% { . }
+  
+  expect_equal(
+    withTimeout(result, timeout = 2),
+    "done"
+  )
+})
+```
+
+---
+
+*This guide provides comprehensive patterns for implementing asynchronous operations in R Shiny applications, improving performance and user experience through non-blocking computation.*

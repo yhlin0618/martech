@@ -1,0 +1,157 @@
+---
+title: "DEV_R022: Module Data Connection Rule"
+subtitle: "Server modules MUST receive data source connections rather than pre-filtered data"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R022"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 22
+  title: "Module Data Connection Rule"
+implements:
+  - "MP017: Separation of Concerns"
+  - "R009: UI-Server-Defaults Triple"
+  - "P073: Server-to-UI Data Flow"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 22: Module Data Connection Rule {#overview}
+
+**Development Methodology Law Article 22 (Module Data Connection Rule)**
+
+This rule establishes that server modules must receive data source connections rather than pre-filtered data.
+
+:::{.callout-important}
+## Core Rule
+Server modules MUST receive data source connections rather than pre-filtered data.
+:::
+
+# Section 1: Description {#description}
+
+This rule establishes that Shiny modules should follow a self-contained data access pattern where the module itself is responsible for selecting, filtering, and processing the data it needs from a central data source connection.
+
+# Section 2: Rationale {#rationale}
+
+## Subsection 1: Separation of Concerns {#separation-of-concerns}
+
+Modules should handle their own data access logic internally.
+
+## Subsection 2: Testability {#testability}
+
+Modules can be tested with different data sources without changing their internal logic.
+
+## Subsection 3: Consistency {#consistency}
+
+Creates a uniform pattern for all modules to follow.
+
+## Subsection 4: Maintainability {#maintainability}
+
+Changes to data selection logic are contained within the module, reducing cross-module dependencies.
+
+## Subsection 5: Performance {#performance}
+
+Allows modules to implement optimized data queries specific to their needs.
+
+# Section 3: Implementation Guide {#implementation-guide}
+
+## Subsection 1: Module Server Function Signature {#module-server-signature}
+
+```r
+moduleNameServer <- function(id, app_data_connection) {
+  moduleServer(id, function(input, output, session) {
+    # Query necessary data from app_data_connection
+    # Filter records as needed
+    # Implement module logic
+  })
+}
+```
+
+## Subsection 2: Connection Types {#connection-types}
+
+The `app_data_connection` parameter can be one of:
+
+1. A database connection object
+2. A connection configuration (like a list of connection parameters)
+3. A reactive data source that provides access to multiple datasets
+4. A function that returns data when called with appropriate parameters
+
+## Subsection 3: Data Selection {#data-selection}
+
+Data selection and filtering MUST occur inside the module:
+
+```r
+# CORRECT implementation
+data <- reactive({
+  req(app_data_connection)
+  
+  # Query or access data from connection
+  df <- app_data_connection$get_data("table_name")
+  
+  # Apply module-specific filtering
+  df %>% filter(some_condition == TRUE)
+})
+```
+
+## Subsection 4: Anti-patterns {#anti-patterns}
+
+```r
+# INCORRECT: Module receives pre-filtered data
+moduleNameServer <- function(id, filtered_data) {
+  moduleServer(id, function(input, output, session) {
+    # Work with already filtered data
+  })
+}
+```
+
+# Section 4: Examples {#examples}
+
+## Subsection 1: Correct Implementation {#correct-implementation}
+
+```r
+# Module receives connection, not data
+customerModuleServer <- function(id, app_data) {
+  moduleServer(id, function(input, output, session) {
+    # Module handles data selection internally
+    customer_data <- reactive({
+      req(app_data)
+      app_data$get_customers() %>%
+        filter(status == "active")
+    })
+    
+    # ...rest of module implementation...
+  })
+}
+```
+
+## Subsection 2: Usage {#usage}
+
+```r
+# Usage in app.R
+app_data <- setup_data_connection()
+customerModuleServer("customer_module", app_data)
+```
+
+# Section 5: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Improve Module Independence**: Each module controls its own data access
+2. **Simplify Testing**: Test data sources can be easily swapped
+3. **Reduce Coupling**: Dependencies between modules are minimized
+4. **Enhance Performance**: Allows for optimized queries specific to needs
+5. **Increase Maintainability**: Data logic changes only affect single modules
+
+---
+
+*Based on: Development Methodology Law Article 22*  
+*Related to: [MP017 Separation of Concerns](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [R009 UI-Server-Defaults Triple](../DEV_R002_ui_server_defaults_triple.qmd)*

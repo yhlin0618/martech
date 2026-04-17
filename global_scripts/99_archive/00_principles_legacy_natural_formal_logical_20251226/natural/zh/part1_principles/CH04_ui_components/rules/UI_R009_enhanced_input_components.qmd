@@ -1,0 +1,200 @@
+---
+title: "UI_R009: 增強型輸入元件規則"
+subtitle: "在整個應用 UI 中，增強型輸入元件（如 selectizeInput、pickerInput）應代替其基本對應元件（如 selectInput、checkboxInput），以確保一致性、更好的使用者體驗和改進的功能"
+chapter: "CH04"
+category: "rule"
+number: "UI_R009"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI元件法"
+article: 
+  number: 9
+  title: "增強型輸入元件規則"
+implements:
+  - "P075: 搜尋輸入優化"
+  - "P072: UI 套件一致性"
+  - "P070: 完整輸入顯示"
+related_to:
+  - "R010: 套件一致性命名"
+  - "P026: 反應式需求驗證"
+  - "P022: CSS 優於條件控制"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第九條：增強型輸入元件規則 {#overview}
+
+**UI元件法第九條（增強型輸入元件規則）**
+
+此規則建立了在應用 UI 中使用增強型輸入元件的標準。
+
+:::{.callout-important}
+## 核心需求
+在整個應用 UI 中，增強型輸入元件（如 selectizeInput、pickerInput）應代替其基本對應元件（如 selectInput、checkboxInput），以確保一致性、更好的使用者體驗和改進的功能。
+:::
+
+# 第一項：實施原則 {#implementation}
+
+## 第一款：選擇元件替代 {#select-substitution}
+
+始終使用增強型選擇元件代替基本元件：
+
+| 代替 | 使用 |
+|------|------|
+| `selectInput()` | `selectizeInput()` |
+| `selectInput(selectize=FALSE)` | `selectizeInput()` |
+| 標準 `<select>` HTML 標籤 | `selectizeInput()` |
+
+```r
+# 錯誤：基本選擇輸入
+selectInput("category", "選擇類別：", choices = categories)
+
+# 正確：增強型選擇輸入
+selectizeInput("category", "選擇類別：", choices = categories)
+```
+
+## 第二款：不同資料集大小的配置 {#dataset-size-configuration}
+
+根據資料集大小（如 P0075 所指定）以不同方式配置 selectizeInput：
+
+### 小型資料集（<100 產品） {#small-datasets}
+
+```r
+selectizeInput(
+  "small_dataset",
+  "選擇產品：",
+  choices = small_dataset,
+  options = list(
+    placeholder = "選擇一個產品...",
+    searchField = c("label", "value"),
+    render = I("{
+      option: function(product, escape) {
+        return '<div>' + escape(product.label) + '</div>';
+      }
+    }")
+  )
+)
+```
+
+### 中型資料集（100-1,000 產品） {#medium-datasets}
+
+```r
+selectizeInput(
+  "medium_dataset",
+  "選擇產品：",
+  choices = medium_dataset,
+  options = list(
+    placeholder = "輸入以搜尋...",
+    maxOptions = 10,
+    searchField = c("label", "value"),
+    render = I("{
+      option: function(product, escape) {
+        return '<div>' + escape(product.label) + '</div>';
+      }
+    }")
+  )
+)
+```
+
+### 大型資料集（>1,000 產品） {#large-datasets}
+
+```r
+selectizeInput(
+  "large_dataset",
+  "選擇產品：",
+  choices = NULL, # 將在伺服器端填充
+  options = list(
+    placeholder = "輸入以搜尋...",
+    loadThrottle = 300,
+    maxOptions = 10,
+    searchField = c("label", "value")
+  )
+)
+
+# 帶伺服器端處理器
+observe({
+  query <- input$large_dataset_search
+  if (is.null(query) || nchar(query) < 2) return()
+  
+  # 搜尋邏輯...
+  results <- search_dataset(query)
+  
+  updateSelectizeInput(session, "large_dataset", choices = results)
+})
+```
+
+## 第三款：必需配置參數 {#required-configuration}
+
+所有 selectizeInput 元件應包含這些基本配置：
+
+```r
+selectizeInput(
+  "input_id",
+  "標籤：",
+  choices = dataset,
+  options = list(
+    placeholder = "描述性占位符...",
+    searchField = c("label", "value"),  # 要搜尋的欄位
+    maxOptions = 10,                    # 限制顯示的選項
+    render = I("{
+      option: function(product, escape) {
+        return '<div>' + escape(product.label) + '</div>';
+      }
+    }")
+  )
+)
+```
+
+## 第四款：其他增強型輸入類型 {#other-enhanced-inputs}
+
+將相同原則應用於其他輸入類型：
+
+| 基本元件 | 增強型替代 |
+|----------|-------------|
+| `checkboxInput()` | `shinyWidgets::prettyCheckbox()` |
+| `radioButtons()` | `shinyWidgets::prettyRadioButtons()` |
+| `sliderInput()` | `shinyWidgets::sliderTextInput()` （適當時）|
+| `dateInput()` | `shinyWidgets::airDatepickerInput()` |
+
+# 第二項：例外情況 {#exceptions}
+
+允許以下例外：
+
+1. **遺留程式碼**：現有程式碼可繼續使用基本輸入，但應逐步更新
+2. **性能關鍵部分**：當性能測試顯示使用簡單元件有顯著優勢時
+3. **特殊需求**：增強型元件缺乏特定所需功能的情況
+4. **預覽/演示版本**：簡單的原型或演示，將在生產前改進
+
+# 第三項：優點 {#benefits}
+
+1. **一致性**：在整個應用中創建一致的使用者體驗
+2. **使用者體驗**：提供更好的搜尋、篩選和選擇功能
+3. **可訪問性**：增強型元件通常具有更好的可訪問性功能
+4. **移動可用性**：在移動和觸控裝置上有更好的體驗
+5. **搜尋性能**：更高效的搜尋，特別是對於大型資料集
+6. **視覺外觀**：更現代和專業的 UI
+
+# 第四項：驗證流程 {#verification-process}
+
+1. **視覺檢查**：審查 UI 元件的符合性
+2. **程式碼審查**：檢查 UI 定義中的輸入元件使用
+3. **原型測試**：驗證大型資料集的性能
+
+# 第五項：其他指導原則 {#additional-guidelines}
+
+1. **文檔化**：在程式碼註釋中記錄任何自訂配置
+2. **輔助函數**：為經常使用的配置創建輔助函數
+3. **標準選項**：維護標準配置選項的中央列表
+4. **樣式一致性**：確保所有增強型輸入遵循相同的樣式指導原則
+
+---
+
+*基於：UI元件法第九條*  
+*相關連結：[P075 搜尋輸入優化](../principles/UI_P075_search_input_optimization.qmd), [P072 UI 套件一致性](../principles/UI_P072_ui_package_consistency.qmd)*

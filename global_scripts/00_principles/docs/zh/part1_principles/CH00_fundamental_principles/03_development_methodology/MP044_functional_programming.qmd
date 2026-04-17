@@ -1,0 +1,325 @@
+---
+title: "MP047: 函數式編程元原則 (Functional Programming Metaprinciple)"
+subtitle: "系統應遵循函數式編程範式，將計算主要視為數學函數的評估，同時避免狀態更改和可變數據"
+author: "Claude"
+date: "2025-04-08"
+date-modified: "2025-08-16"
+categories: [meta-principle, functional-programming, pure-functions, immutability]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+**系統應遵循函數式編程範式，將計算主要視為數學函數的評估，同時避免狀態更改和可變數據。** 代碼應圍繞具有明確輸入和輸出的純函數組織，最小化副作用並強調聲明式而非命令式模式。
+
+## 概念框架
+
+函數式編程元原則建立了代碼組織和行為的基礎方法，該方法：
+
+1. **強調純函數**：對相同輸入產生相同輸出且無副作用的函數
+2. **將函數視為一等公民**：函數可以作為參數傳遞、從其他函數返回並分配給變數
+3. **偏好不可變性**：一旦創建數據結構，就不能修改它們
+4. **採用高階函數**：接受其他函數作為參數或返回函數的函數
+5. **利用聲明式模式**：描述應該完成什麼而不是如何完成
+
+## 理論基礎
+
+### 1. 數學基礎 {#mathematical-foundations}
+
+函數式編程建立在 lambda 演算和範疇論基礎上，將計算視為數學表達式的評估：
+
+- **Lambda 演算**：通過匿名函數表達計算的理論基礎
+- **引用透明性**：表達式可以用其值替換而不改變程序行為的屬性
+- **函數組合**：通過組合簡單函數構建複雜函數
+
+### 2. 核心函數概念 {#core-concepts}
+
+以下概念構成函數式編程實施的基礎：
+
+#### 純函數 {#pure-functions}
+
+函數具有以下特性：
+- 給定相同的輸入，總是返回相同的輸出
+- 沒有副作用（不修改其範圍之外的狀態）
+- 不依賴外部狀態
+
+```r
+# 純函數
+add <- function(a, b) {
+  return(a + b)
+}
+
+# 非純函數（依賴外部狀態）
+impure_add <- function(a) {
+  return(a + global_counter)  # 依賴全域狀態
+}
+```
+
+#### 不可變性 {#immutability}
+
+數據結構創建後不應修改：
+
+```r
+# 非函數式（修改現有向量）
+add_element <- function(vec, element) {
+  vec[length(vec) + 1] <- element
+  return(vec)
+}
+
+# 函數式（創建新向量而不修改原始向量）
+add_element <- function(vec, element) {
+  return(c(vec, element))
+}
+```
+
+#### 高階函數 {#higher-order-functions}
+
+接受函數作為參數或返回函數的函數：
+
+```r
+# 返回函數的函數
+create_multiplier <- function(factor) {
+  function(x) x * factor
+}
+
+double <- create_multiplier(2)
+triple <- create_multiplier(3)
+
+# 接受函數作為參數的函數
+apply_to_list <- function(func, list_products) {
+  lapply(list_products, func)
+}
+```
+
+#### 函數組合 {#function-composition}
+
+通過組合簡單函數構建複雜函數：
+
+```r
+# 個別函數
+add_one <- function(x) x + 1
+double <- function(x) x * 2
+square <- function(x) x^2
+
+# 函數組合
+composed <- function(x) square(double(add_one(x)))
+
+# 使用組合輔助工具
+library(purrr)
+composed <- compose(square, double, add_one)
+```
+
+#### 遞歸優於迭代 {#recursion-over-iteration}
+
+使用遞歸而不是命令式循環：
+
+```r
+# 命令式（使用循環）
+sum_list <- function(list) {
+  total <- 0
+  for (product in list) {
+    total <- total + product
+  }
+  return(total)
+}
+
+# 函數式（使用遞歸）
+sum_list <- function(list) {
+  if (length(list) == 0) return(0)
+  return(list[1] + sum_list(list[-1]))
+}
+
+# 函數式（使用高階函數）
+sum_list <- function(list) {
+  Reduce(`+`, list, 0)
+}
+```
+
+## 實施指南
+
+### 1. 函數設計原則 {#function-design}
+
+函數應該：
+
+1. **接受所有依賴作為參數**：沒有來自全域狀態的隱藏輸入
+2. **返回結果而非修改**：返回新數據而不是修改輸入
+3. **具有明確定義的類型**：輸入和輸出的清晰、一致的介面
+4. **可組合**：設計可以與其他函數組合的函數
+5. **避免副作用**：不要更改函數範圍之外的狀態
+
+```r
+# 錯誤：具有副作用的函數
+plot_data <- function(data) {
+  modified_data <- preprocess(data)
+  global_plot_config$data <- modified_data  # 副作用
+  save_to_file(modified_data, "temp.rds")   # 副作用
+  return(create_plot(modified_data))
+}
+
+# 正確：沒有副作用的純函數
+prepare_plot_data <- function(data, config) {
+  modified_data <- preprocess(data)
+  plot_config <- merge_configs(config, list(data = modified_data))
+  return(list(
+    data = modified_data,
+    config = plot_config,
+    plot = create_plot(modified_data, plot_config)
+  ))
+}
+```
+
+### 2. 數據轉換模式 {#data-transformation}
+
+數據轉換應該：
+
+1. **面向管道**：以清晰的序列鏈接操作
+2. **使用函數應用**：將函數應用於數據而不是修改數據
+3. **保留原始數據**：永遠不要修改原始輸入
+4. **明確結果**：始終返回轉換後的數據
+
+```r
+# 錯誤：命令式數據轉換
+transform_data <- function(data) {
+  # 就地修改
+  data$x <- data$x * 2
+  data$y <- data$y + 10
+  subset <- data[data$z > 5, ]
+  result <- aggregate(subset$value, by=list(subset$group), FUN=sum)
+  return(result)
+}
+
+# 正確：函數式數據轉換管道
+transform_data <- function(data) {
+  data %>%
+    mutate(x = x * 2,
+           y = y + 10) %>%
+    filter(z > 5) %>%
+    group_by(group) %>%
+    summarize(value = sum(value))
+}
+```
+
+### 3. 狀態管理 {#state-management}
+
+當需要狀態時：
+
+1. **隔離狀態更改**：將狀態修改包含在特定、明確標記的函數中
+2. **使用反應式編程**：為 UI 狀態採用反應式模式
+3. **返回狀態轉換**：函數應返回新狀態，而不是修改現有狀態
+4. **維護引用透明性**：具有相同輸入的函數應產生相同的輸出
+
+### 4. 錯誤處理 {#error-handling}
+
+函數式錯誤處理應該：
+
+1. **使用返回值而非例外**：返回錯誤信息而不是拋出例外
+2. **採用 Option/Maybe 類型**：使用 NULL 或選項類型來表示可能缺少值
+3. **鏈接錯誤處理**：啟用與錯誤感知函數的組合
+
+```r
+# 錯誤：基於例外的錯誤處理
+divide <- function(a, b) {
+  if (b == 0) stop("除以零")
+  return(a / b)
+}
+
+# 正確：基於返回值的錯誤處理
+divide <- function(a, b) {
+  if (b == 0) return(list(success = FALSE, error = "除以零"))
+  return(list(success = TRUE, result = a / b))
+}
+
+# 與管道一起使用
+result <- divide(10, 2) %>%
+  { if (.$success) process_result(.$result) else handle_error(.$error) }
+```
+
+### 5. 模組組織 {#module-organization}
+
+模組應圍繞以下組織：
+
+1. **函數組**：對類似數據類型操作的相關函數
+2. **數據轉換**：執行相關轉換的函數集
+3. **純/非純分離**：純函數與具有副作用的函數之間的明確分離
+
+## 語言特定模式
+
+### R 特定的函數式模式 {#r-patterns}
+
+1. **管道運算符的使用**：用於函數組合的 `%>%` 運算符
+2. **向量化**：對整個向量而不是單個元素進行操作
+3. **Apply 系列函數**：使用 `lapply`、`sapply`、`vapply` 而不是循環
+4. **函數式套件**：使用 purrr、functional 和類似的套件
+
+```r
+# 函數式 R 模式
+library(purrr)
+library(dplyr)
+
+# 管道運算符
+result <- data %>%
+  filter(value > threshold) %>%
+  group_by(category) %>%
+  summarize(total = sum(value))
+
+# Map 函數而不是循環
+result <- map(data, ~ .x * 2)
+result <- map_dbl(data, sum, na.rm = TRUE)
+
+# 函數組合
+process <- compose(sum, filter_data, transform_data)
+```
+
+## 實施規則
+
+函數式編程元原則通過特定規則實施：
+
+1. **R67（函數封裝規則）**：所有"類函數"代碼必須封裝為命名函數
+2. **R21（一個函數一個檔案）**：每個函數應在其自己的檔案中定義
+3. **其他規則**：受此元原則影響的其他幾個強制執行函數式模式的規則
+
+## 好處
+
+1. **更容易推理**：具有清晰輸入和輸出的純函數更容易理解
+2. **改進的可測試性**：沒有副作用的函數更容易單獨測試
+3. **增強的並行性**：純函數可以在沒有同步問題的情況下並行化
+4. **減少錯誤**：不可變性和引用透明性減少了與狀態相關的錯誤
+5. **可組合架構**：函數可以以靈活的方式組合
+6. **聲明式風格**：代碼專注於做什麼而不是如何做
+7. **數學基礎**：與形式推理和驗證更緊密的對應
+
+## 限制和例外
+
+雖然函數式編程元原則是基礎性的，但認識到某些例外：
+
+1. **用戶介面代碼**：UI 代碼通常需要管理狀態和副作用
+2. **I/O 操作**：檔案、網絡和資料庫操作本質上涉及副作用
+3. **性能關鍵代碼**：某些算法可能需要可變狀態以提高性能
+4. **與非函數式庫的集成**：使用非函數式庫時
+
+在這些情況下，副作用應該：
+- 清楚地記錄
+- 隔離到特定函數
+- 通過一致的模式管理
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **衍生自 MP0000（公理化系統）**作為計算的基礎方法
+2. **影響 MP0016（模組化）**通過提供函數級模組化
+3. **影響 MP0017（關注點分離）**通過分離純和非純操作
+4. **啟用 MP0018（不要重複自己）**通過函數組合和重用
+
+## 結論
+
+函數式編程元原則建立了基於數學函數、不可變性和聲明式模式的軟體開發綜合方法。通過強調純函數、明確的數據流和組合，此原則創建了更易理解、可測試和可維護的代碼。
+
+在認識到某些環境中的實際限制的同時，該原則提供了一個框架，用於在整個代碼庫中最大化函數式編程的好處，從而導致更健壯和可靠的系統。

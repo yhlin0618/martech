@@ -1,0 +1,815 @@
+---
+title: "API03: Error Handling"
+subtitle: "Standardized Error Handling and Recovery Patterns"
+author: "MAMBA Architecture Team"
+date: "2025-08-27"
+version: "1.0.0"
+---
+
+# API Error Handling
+
+## Error Categories
+
+### 1. Client Errors (4xx)
+
+Errors caused by invalid requests from our side.
+
+```r
+CLIENT_ERROR_CODES <- list(
+  "400" = "Bad Request - Invalid parameters",
+  "401" = "Unauthorized - Invalid credentials",
+  "403" = "Forbidden - Insufficient permissions",
+  "404" = "Not Found - Resource doesn't exist",
+  "409" = "Conflict - Resource state conflict",
+  "422" = "Unprocessable Entity - Validation failed",
+  "429" = "Too Many Requests - Rate limit exceeded"
+)
+```
+
+### 2. Server Errors (5xx)
+
+Errors on the API provider's side.
+
+```r
+SERVER_ERROR_CODES <- list(
+  "500" = "Internal Server Error - Server malfunction",
+  "502" = "Bad Gateway - Invalid upstream response",
+  "503" = "Service Unavailable - Server overloaded or down",
+  "504" = "Gateway Timeout - Request timeout",
+  "507" = "Insufficient Storage - Server storage full"
+)
+```
+
+### 3. Network Errors
+
+Connection and network-related errors.
+
+```r
+NETWORK_ERROR_TYPES <- list(
+  "CONNECTION_REFUSED" = "Server refused connection",
+  "TIMEOUT" = "Request timed out",
+  "DNS_RESOLUTION" = "Failed to resolve hostname",
+  "SSL_ERROR" = "SSL/TLS handshake failed",
+  "CONNECTION_RESET" = "Connection reset by peer"
+)
+```
+
+## Comprehensive Error Handler
+
+### Main Error Handler Class
+
+```r
+APIErrorHandler <- R6Class("APIErrorHandler",
+  public = list(
+    initialize = function(platform_code, logger = NULL) {
+      private$platform_code <- platform_code
+      private$logger <- logger
+      private$error_counts <- new.env(hash = TRUE)
+      private$last_errors <- list()
+    },
+    
+    handle_error = function(error, request_info = NULL, retry_count = 0) {
+      error_details <- private$parse_error(error)
+      
+      # Log error
+      private$log_error(error_details, request_info)
+      
+      # Update error statistics
+      private$update_error_stats(error_details)
+      
+      # Determine recovery strategy
+      recovery_strategy <- private$determine_recovery_strategy(
+        error_details, 
+        retry_count
+      )
+      
+      # Execute recovery
+      return(private$execute_recovery(recovery_strategy, error, request_info))
+    },
+    
+    get_error_statistics = function() {
+      stats <- list()
+      
+      for (error_type in ls(private$error_counts)) {
+        stats[[error_type]] <- private$error_counts[[error_type]]
+      }
+      
+      return(list(
+        total_errors = sum(unlist(stats)),
+        by_type = stats,
+        last_errors = private$last_errors,
+        platform = private$platform_code
+      ))
+    },
+    
+    reset_statistics = function() {
+      private$error_counts <- new.env(hash = TRUE)
+      private$last_errors <- list()
+    }
+  ),
+  
+  private = list(
+    platform_code = NULL,
+    logger = NULL,
+    error_counts = NULL,
+    last_errors = NULL,
+    
+    parse_error = function(error) {
+      details <- list(
+        timestamp = Sys.time(),
+        type = NULL,
+        code = NULL,
+        message = error$message,
+        details = NULL
+      )
+      
+      # HTTP errors
+      if (inherits(error, "http_error")) {
+        response <- error$response
+        details$type <- "HTTP"
+        details$code <- httr::status_code(response)
+        
+        # Try to parse error body
+        tryCatch({
+          content <- httr::content(response, "parsed")
+          details$details <- content
+        }, error = function(e) {
+          details$details <- httr::content(response, "text")
+        })
+        
+      # Network errors
+      } else if (grepl("Could not resolve|Connection refused|Timeout", error$message, ignore.case = TRUE)) {
+        details$type <- "NETWORK"
+        
+        if (grepl("resolve", error$message, ignore.case = TRUE)) {
+          details$code <- "DNS_RESOLUTION"
+        } else if (grepl("refused", error$message, ignore.case = TRUE)) {
+          details$code <- "CONNECTION_REFUSED"
+        } else if (grepl("timeout", error$message, ignore.case = TRUE)) {
+          details$code <- "TIMEOUT"
+        }
+        
+      # Other errors
+      } else {
+        details$type <- "APPLICATION"
+        details$code <- "UNKNOWN"
+      }
+      
+      return(details)
+    },
+    
+    log_error = function(error_details, request_info) {
+      log_entry <- list(
+        timestamp = error_details$timestamp,
+        platform = private$platform_code,
+        error_type = error_details$type,
+        error_code = error_details$code,
+        message = error_details$message,
+        endpoint = if (!is.null(request_info)) request_info$endpoint else NA,
+        method = if (!is.null(request_info)) request_info$method else NA
+      )
+      
+      # Log to console
+      message(sprintf("[%s] API Error: %s %s - %s",
+                     private$platform_code,
+                     error_details$type,
+                     error_details$code,
+                     error_details$message))
+      
+      # Log to file if logger provided
+      if (!is.null(private$logger)) {
+        private$logger$error(jsonlite::toJSON(log_entry, auto_unbox = TRUE))
+      }
+      
+      # Keep last N errors
+      private$last_errors <- append(
+        list(log_entry),
+        private$last_errors
+      )[1:min(10, length(private$last_errors) + 1)]
+    },
+    
+    update_error_stats = function(error_details) {
+      error_key <- paste(error_details$type, error_details$code, sep = "_")
+      
+      if (is.null(private$error_counts[[error_key]])) {
+        private$error_counts[[error_key]] <- 0
+      }
+      
+      private$error_counts[[error_key]] <- private$error_counts[[error_key]] + 1
+    },
+    
+    determine_recovery_strategy = function(error_details, retry_count) {
+      strategy <- list(
+        action = "FAIL",
+        wait_time = 0,
+        max_retries = 3
+      )
+      
+      # Rate limit errors - always retry with backoff
+      if (error_details$code == "429" || error_details$code == 429) {
+        strategy$action <- "RETRY"
+        
+        # Check for Retry-After header
+        if (!is.null(error_details$details$retry_after)) {
+          strategy$wait_time <- as.numeric(error_details$details$retry_after)
+        } else {
+          strategy$wait_time <- 2^retry_count  # Exponential backoff
+        }
+        
+        strategy$max_retries <- 5
+        
+      # Server errors - retry with backoff
+      } else if (error_details$type == "HTTP" && 
+                 as.numeric(error_details$code) >= 500) {
+        strategy$action <- "RETRY"
+        strategy$wait_time <- min(60, 2^retry_count)
+        
+      # Network errors - retry quickly
+      } else if (error_details$type == "NETWORK") {
+        strategy$action <- "RETRY"
+        strategy$wait_time <- min(30, 1 + retry_count * 2)
+        
+      # Auth errors - refresh and retry
+      } else if (error_details$code == "401" || error_details$code == 401) {
+        if (retry_count == 0) {
+          strategy$action <- "REFRESH_AUTH"
+        } else {
+          strategy$action <- "FAIL"
+        }
+        
+      # Client errors - usually don't retry
+      } else if (error_details$type == "HTTP" && 
+                 as.numeric(error_details$code) >= 400 &&
+                 as.numeric(error_details$code) < 500) {
+        strategy$action <- "FAIL"
+      }
+      
+      return(strategy)
+    },
+    
+    execute_recovery = function(strategy, original_error, request_info) {
+      if (strategy$action == "RETRY") {
+        if (strategy$wait_time > 0) {
+          message(sprintf("Waiting %d seconds before retry...", 
+                         ceiling(strategy$wait_time)))
+          Sys.sleep(strategy$wait_time)
+        }
+        
+        return(list(
+          action = "RETRY",
+          wait_time = strategy$wait_time
+        ))
+        
+      } else if (strategy$action == "REFRESH_AUTH") {
+        message("Attempting to refresh authentication...")
+        return(list(action = "REFRESH_AUTH"))
+        
+      } else {
+        # FAIL - propagate error with context
+        stop(sprintf("API Error [%s]: %s\nRequest: %s %s",
+                    private$platform_code,
+                    original_error$message,
+                    request_info$method,
+                    request_info$endpoint))
+      }
+    }
+  )
+)
+```
+
+## Retry Mechanisms
+
+### Smart Retry Wrapper
+
+```r
+retry_with_recovery <- function(
+  fn, 
+  error_handler,
+  max_retries = 3,
+  request_info = NULL
+) {
+  attempt <- 0
+  last_error <- NULL
+  
+  while (attempt <= max_retries) {
+    attempt <- attempt + 1
+    
+    tryCatch({
+      # Attempt the function
+      result <- fn()
+      
+      # Success - reset error counts if configured
+      if (attempt > 1) {
+        message(sprintf("Success after %d attempts", attempt))
+      }
+      
+      return(result)
+      
+    }, error = function(e) {
+      last_error <<- e
+      
+      # Handle the error
+      recovery <- error_handler$handle_error(
+        e, 
+        request_info, 
+        attempt - 1
+      )
+      
+      # Check recovery action
+      if (recovery$action == "RETRY" && attempt <= max_retries) {
+        message(sprintf("Retrying... (attempt %d/%d)", attempt, max_retries))
+      } else if (recovery$action == "REFRESH_AUTH") {
+        # Refresh authentication and retry immediately
+        message("Authentication refreshed, retrying...")
+        attempt <<- attempt - 1  # Don't count auth refresh as attempt
+      } else {
+        # Give up
+        stop(e)
+      }
+    })
+  }
+  
+  # Max retries exceeded
+  stop(sprintf("Max retries (%d) exceeded. Last error: %s", 
+              max_retries, last_error$message))
+}
+```
+
+### Circuit Breaker with Error Tracking
+
+```r
+ErrorAwareCircuitBreaker <- R6Class("ErrorAwareCircuitBreaker",
+  inherit = CircuitBreaker,  # From API02
+  
+  public = list(
+    initialize = function(
+      threshold = 5, 
+      timeout = 60,
+      error_threshold_percentage = 50
+    ) {
+      super$initialize(threshold, timeout)
+      private$error_threshold_percentage <- error_threshold_percentage
+      private$request_count <- 0
+      private$error_count <- 0
+    },
+    
+    call = function(fn, ...) {
+      if (private$state == "OPEN") {
+        if (Sys.time() - private$last_failure_time > private$timeout_seconds) {
+          private$state <- "HALF_OPEN"
+          message("Circuit breaker entering HALF_OPEN state")
+        } else {
+          stop(sprintf("Circuit breaker is OPEN (will retry in %d seconds)",
+                      ceiling(private$timeout_seconds - 
+                             as.numeric(Sys.time() - private$last_failure_time, 
+                                       units = "secs"))))
+        }
+      }
+      
+      private$request_count <- private$request_count + 1
+      
+      tryCatch({
+        result <- fn(...)
+        private$on_success()
+        return(result)
+      }, error = function(e) {
+        private$error_count <- private$error_count + 1
+        private$on_failure(e)
+        stop(e)
+      })
+    },
+    
+    get_status = function() {
+      error_rate <- if (private$request_count > 0) {
+        private$error_count / private$request_count * 100
+      } else {
+        0
+      }
+      
+      return(list(
+        state = private$state,
+        request_count = private$request_count,
+        error_count = private$error_count,
+        error_rate = round(error_rate, 1),
+        consecutive_failures = private$failure_count
+      ))
+    }
+  ),
+  
+  private = list(
+    error_threshold_percentage = NULL,
+    request_count = NULL,
+    error_count = NULL,
+    
+    on_failure = function(error) {
+      super$on_failure()
+      
+      # Check error rate
+      if (private$request_count >= 10) {  # Minimum sample size
+        error_rate <- private$error_count / private$request_count * 100
+        
+        if (error_rate > private$error_threshold_percentage) {
+          message(sprintf("Error rate %.1f%% exceeds threshold, opening circuit",
+                        error_rate))
+          private$state <- "OPEN"
+        }
+      }
+    },
+    
+    reset = function() {
+      super$reset()
+      private$request_count <- 0
+      private$error_count <- 0
+    }
+  )
+)
+```
+
+## Error Response Parsing
+
+### Platform-Specific Error Parsers
+
+```r
+# Cyberbiz error parser
+parse_cbz_error <- function(response) {
+  content <- httr::content(response, "parsed")
+  
+  error_info <- list(
+    code = content$error_code %||% httr::status_code(response),
+    message = content$message %||% content$error_message %||% "Unknown error",
+    details = content$details,
+    request_id = httr::headers(response)$`x-request-id`
+  )
+  
+  # Specific error handling
+  if (error_info$code == "INVALID_API_KEY") {
+    error_info$recovery <- "Check API key configuration"
+  } else if (error_info$code == "RATE_LIMIT_EXCEEDED") {
+    error_info$recovery <- "Implement rate limiting"
+    error_info$retry_after <- content$retry_after
+  }
+  
+  return(error_info)
+}
+
+# eBay error parser
+parse_eby_error <- function(response) {
+  content <- httr::content(response, "parsed")
+  
+  error_info <- list(
+    code = content$errors[[1]]$errorId,
+    message = content$errors[[1]]$message,
+    category = content$errors[[1]]$category,
+    domain = content$errors[[1]]$domain,
+    parameters = content$errors[[1]]$parameters
+  )
+  
+  # eBay specific error codes
+  if (error_info$code == 932) {
+    error_info$recovery <- "Refresh OAuth token"
+  } else if (error_info$code == 918) {
+    error_info$recovery <- "Reduce request rate"
+  }
+  
+  return(error_info)
+}
+
+# Amazon error parser
+parse_amz_error <- function(response) {
+  content <- httr::content(response, "parsed")
+  
+  error_info <- list(
+    code = content$errors[[1]]$code,
+    message = content$errors[[1]]$message,
+    details = content$errors[[1]]$details
+  )
+  
+  # Amazon specific handling
+  if (error_info$code == "QuotaExceeded") {
+    error_info$recovery <- "Wait for quota reset"
+    error_info$quota_reset <- content$errors[[1]]$quotaResetTime
+  }
+  
+  return(error_info)
+}
+
+# Error parser factory
+get_error_parser <- function(platform_code) {
+  switch(platform_code,
+    "CBZ" = parse_cbz_error,
+    "EBY" = parse_eby_error,
+    "AMZ" = parse_amz_error,
+    function(response) {
+      # Generic parser
+      list(
+        code = httr::status_code(response),
+        message = httr::http_status(response)$message,
+        content = httr::content(response, "text")
+      )
+    }
+  )
+}
+```
+
+## Error Recovery Strategies
+
+### Automatic Recovery Actions
+
+```r
+RecoveryManager <- R6Class("RecoveryManager",
+  public = list(
+    initialize = function(platform_code) {
+      private$platform_code <- platform_code
+      private$recovery_actions <- list()
+      private$register_default_actions()
+    },
+    
+    register_recovery = function(error_pattern, action_fn) {
+      private$recovery_actions[[error_pattern]] <- action_fn
+    },
+    
+    attempt_recovery = function(error_details) {
+      # Find matching recovery action
+      for (pattern in names(private$recovery_actions)) {
+        if (private$matches_pattern(error_details, pattern)) {
+          message(sprintf("Attempting recovery for %s", pattern))
+          
+          recovery_result <- private$recovery_actions[[pattern]](error_details)
+          
+          if (recovery_result$success) {
+            message("Recovery successful")
+            return(recovery_result)
+          } else {
+            message("Recovery failed: ", recovery_result$message)
+          }
+        }
+      }
+      
+      return(list(success = FALSE, message = "No recovery action available"))
+    }
+  ),
+  
+  private = list(
+    platform_code = NULL,
+    recovery_actions = NULL,
+    
+    register_default_actions = function() {
+      # Authentication recovery
+      self$register_recovery("AUTH_ERROR", function(error) {
+        message("Refreshing authentication...")
+        
+        tryCatch({
+          auth_manager <- OAuth2Manager$new(private$platform_code)
+          new_token <- auth_manager$get_access_token()
+          
+          return(list(
+            success = TRUE,
+            action = "AUTH_REFRESHED",
+            data = list(token = new_token)
+          ))
+        }, error = function(e) {
+          return(list(
+            success = FALSE,
+            message = e$message
+          ))
+        })
+      })
+      
+      # Rate limit recovery
+      self$register_recovery("RATE_LIMIT", function(error) {
+        wait_time <- error$retry_after %||% 60
+        
+        message(sprintf("Rate limited. Waiting %d seconds...", wait_time))
+        Sys.sleep(wait_time)
+        
+        return(list(
+          success = TRUE,
+          action = "WAITED",
+          data = list(wait_time = wait_time)
+        ))
+      })
+      
+      # Connection recovery
+      self$register_recovery("CONNECTION_ERROR", function(error) {
+        message("Connection error. Checking network...")
+        
+        # Test connectivity
+        test_result <- tryCatch({
+          httr::HEAD("https://www.google.com", timeout = httr::timeout(5))
+          TRUE
+        }, error = function(e) FALSE)
+        
+        if (test_result) {
+          return(list(
+            success = TRUE,
+            action = "NETWORK_OK",
+            message = "Network is accessible, API might be down"
+          ))
+        } else {
+          return(list(
+            success = FALSE,
+            message = "Network connectivity issue detected"
+          ))
+        }
+      })
+    },
+    
+    matches_pattern = function(error_details, pattern) {
+      if (pattern == "AUTH_ERROR") {
+        return(error_details$code %in% c(401, "401", "UNAUTHORIZED"))
+      } else if (pattern == "RATE_LIMIT") {
+        return(error_details$code %in% c(429, "429", "RATE_LIMIT_EXCEEDED"))
+      } else if (pattern == "CONNECTION_ERROR") {
+        return(error_details$type == "NETWORK")
+      }
+      
+      return(FALSE)
+    }
+  )
+)
+```
+
+## Error Monitoring and Alerting
+
+### Error Monitor
+
+```r
+ErrorMonitor <- R6Class("ErrorMonitor",
+  public = list(
+    initialize = function(alert_threshold = 10, window_minutes = 5) {
+      private$alert_threshold <- alert_threshold
+      private$window_minutes <- window_minutes
+      private$error_log <- list()
+      private$alerts_sent <- list()
+    },
+    
+    log_error = function(platform, error_type, error_details) {
+      error_entry <- list(
+        timestamp = Sys.time(),
+        platform = platform,
+        type = error_type,
+        details = error_details
+      )
+      
+      private$error_log <- append(private$error_log, list(error_entry))
+      
+      # Check if alert needed
+      self$check_alert_conditions()
+      
+      # Clean old entries
+      private$clean_old_entries()
+    },
+    
+    check_alert_conditions = function() {
+      recent_errors <- private$get_recent_errors()
+      
+      # Check error rate
+      if (length(recent_errors) >= private$alert_threshold) {
+        self$send_alert("HIGH_ERROR_RATE", sprintf(
+          "%d errors in last %d minutes",
+          length(recent_errors),
+          private$window_minutes
+        ))
+      }
+      
+      # Check for critical errors
+      critical_errors <- Filter(
+        function(e) e$type %in% c("AUTH_ERROR", "SERVICE_DOWN"),
+        recent_errors
+      )
+      
+      if (length(critical_errors) > 0) {
+        self$send_alert("CRITICAL_ERROR", sprintf(
+          "%d critical errors detected",
+          length(critical_errors)
+        ))
+      }
+    },
+    
+    send_alert = function(alert_type, message) {
+      # Avoid duplicate alerts
+      alert_key <- paste(alert_type, format(Sys.Date(), "%Y-%m-%d"))
+      
+      if (!alert_key %in% private$alerts_sent) {
+        message(sprintf("🚨 ALERT [%s]: %s", alert_type, message))
+        
+        # Log alert
+        private$alerts_sent <- append(private$alerts_sent, alert_key)
+        
+        # Send actual alert (email, Slack, etc.)
+        # ... implementation specific to notification system
+      }
+    },
+    
+    get_error_summary = function() {
+      recent_errors <- private$get_recent_errors()
+      
+      if (length(recent_errors) == 0) {
+        return("No recent errors")
+      }
+      
+      by_platform <- table(sapply(recent_errors, function(e) e$platform))
+      by_type <- table(sapply(recent_errors, function(e) e$type))
+      
+      return(list(
+        total_errors = length(recent_errors),
+        by_platform = as.list(by_platform),
+        by_type = as.list(by_type),
+        time_window = sprintf("%d minutes", private$window_minutes)
+      ))
+    }
+  ),
+  
+  private = list(
+    alert_threshold = NULL,
+    window_minutes = NULL,
+    error_log = NULL,
+    alerts_sent = NULL,
+    
+    get_recent_errors = function() {
+      cutoff_time <- Sys.time() - (private$window_minutes * 60)
+      Filter(function(e) e$timestamp > cutoff_time, private$error_log)
+    },
+    
+    clean_old_entries = function() {
+      # Keep only last hour of errors
+      cutoff_time <- Sys.time() - 3600
+      private$error_log <- Filter(
+        function(e) e$timestamp > cutoff_time,
+        private$error_log
+      )
+    }
+  )
+)
+```
+
+## Best Practices
+
+1. **Always Use Error Handlers**: Never make API calls without error handling
+2. **Log Everything**: Record all errors for debugging and monitoring
+3. **Implement Retries**: Use smart retry logic with exponential backoff
+4. **Parse Platform Errors**: Extract platform-specific error information
+5. **Monitor Error Rates**: Track error patterns and set up alerts
+6. **Use Circuit Breakers**: Prevent cascade failures
+7. **Provide Context**: Include request details in error messages
+8. **Test Error Scenarios**: Simulate errors in development
+9. **Document Error Codes**: Maintain a registry of known error codes
+10. **Graceful Degradation**: Have fallback strategies for critical operations
+
+## Testing Error Handling
+
+```r
+test_error_handling <- function() {
+  # Create test error handler
+  handler <- APIErrorHandler$new("TEST")
+  
+  # Test different error types
+  test_errors <- list(
+    http_400 = list(
+      response = structure(list(status_code = 400), class = "response"),
+      message = "Bad Request"
+    ),
+    http_429 = list(
+      response = structure(list(status_code = 429), class = "response"),
+      message = "Rate limit exceeded"
+    ),
+    http_500 = list(
+      response = structure(list(status_code = 500), class = "response"),
+      message = "Internal server error"
+    ),
+    network = list(
+      message = "Could not resolve host"
+    )
+  )
+  
+  results <- list()
+  
+  for (error_name in names(test_errors)) {
+    error <- structure(test_errors[[error_name]], class = c("error", "condition"))
+    
+    recovery <- handler$handle_error(error, list(
+      endpoint = "/test",
+      method = "GET"
+    ))
+    
+    results[[error_name]] <- recovery
+    
+    message(sprintf("Error %s: Recovery = %s", 
+                   error_name, recovery$action))
+  }
+  
+  # Show statistics
+  stats <- handler$get_error_statistics()
+  message("\nError Statistics:")
+  print(stats)
+  
+  return(results)
+}
+```
+
+## Related Documentation
+
+- [API Architecture Overview](API00_architecture_overview.qmd)
+- [Authentication Patterns](API01_authentication_patterns.qmd)
+- [Rate Limiting](API02_rate_limiting.qmd)
+- [Platform APIs](platforms/)

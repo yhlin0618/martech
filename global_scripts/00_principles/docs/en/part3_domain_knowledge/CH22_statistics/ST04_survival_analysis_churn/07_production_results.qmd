@@ -1,0 +1,152 @@
+---
+title: "Section 7: Production Results — The Breakthrough"
+parent: "ST04"
+date-created: "2026-03-03"
+context:
+  company: "D_RACING"
+  platform: "amz (Amazon)"
+  deployment_date: "2026-03-03"
+  issue: "GitHub Issue #211"
+---
+
+# Production Results: Two-Pass Empirical Bayes on D_RACING {#production}
+
+This section documents the actual production deployment of BG/NBD P(alive) on D_RACING's Amazon platform, which resolved GitHub Issue #211 and achieved 100% customer coverage.
+
+## 7.1 The Before: Why Issue #211 Existed
+
+The old logistic model (`nrec ~ f_label + cai`) had a structural defect:
+
+- **CAI coverage**: Only 0.3% of customers had the `cai` (Coefficient of Arrival Irregularity) covariate
+- **Fallback behavior**: The remaining 99.7% received an identical `group_mean_prob` value
+- **Result**: `nrec_prob` had near-zero variance across the customer base
+- **App impact**: The customerRetention module showed **0 high-risk customers** because everyone had the same score
+
+## 7.2 The After: BG/NBD P(alive) Results
+
+### Overall Statistics (N = 18,221)
+
+| Metric | Value |
+|--------|-------|
+| Total customers | 18,221 |
+| P(alive) coverage | 18,221 / 18,221 (**100%**) |
+| NULL values | 0 |
+| Min P(alive) | 0.0000 |
+| Q25 P(alive) | 0.5223 |
+| **Median P(alive)** | **0.7727** |
+| Mean P(alive) | 0.7270 |
+| Max P(alive) | 1.0000 |
+| SD P(alive) | 0.1875 |
+
+### Risk Distribution
+
+| Risk Level | Criterion | Count | Percentage |
+|------------|-----------|-------|------------|
+| **High Risk** | nrec_prob > 0.7 | 1,135 | 6.2% |
+| **Medium Risk** | 0.3 < nrec_prob < 0.7 | 2,544 | 14.0% |
+| **Low Risk** | nrec_prob < 0.3 | 14,542 | 79.8% |
+
+Previously: 0 high-risk customers identified. Now: **1,135** — these are actionable retention targets.
+
+### Per Product Line
+
+| Product Line | N | Median P(alive) | High Risk | Medium | Low Risk | Pass |
+|-------------|---:|----------------:|----------:|-------:|---------:|------|
+| wsg | 5,822 | 0.7974 | 498 | 32 | 5,292 | 2 (fallback) |
+| mnt | 3,098 | 0.7036 | 90 | 1,322 | 1,686 | 1 |
+| wgs | 2,075 | 0.6909 | 120 | 1,162 | 793 | 1 |
+| csg | 2,018 | 0.7362 | 140 | 10 | 1,868 | 1 |
+| acc | 2,013 | 0.7477 | 118 | 6 | 1,889 | 1 |
+| oth | 1,704 | 0.7835 | 98 | 8 | 1,598 | 1 |
+| cgs | 960 | 0.8394 | 49 | 4 | 907 | 1 |
+| all | 310 | 0.8275 | 21 | 0 | 289 | 1 |
+| mil | 166 | 0.9997 | 0 | 0 | 166 | 1 |
+| mrn | 55 | 0.8144 | 1 | 0 | 54 | 2 (fallback) |
+
+**Key observations**:
+
+- **mil** (military): Near-perfect P(alive) = 0.9997 — these are very new customers or have extremely long purchase cycles. The model correctly assigns high survival probability given short observation windows.
+- **mnt** (maintenance) and **wgs** (wipers/glass): Higher medium-risk proportions — these product lines show genuine purchase frequency variation.
+- **wsg** and **mrn**: Required Two-Pass fallback (see §7.3).
+
+### NES Cross-Tabulation
+
+| NES Status | N | Median P(alive) | High Risk | Medium | Low |
+|-----------|---:|----------------:|----------:|-------:|----:|
+| N (New/Normal) | 16,994 | 0.7767 | 0 | 2,478 | 14,516 |
+| E0 (Core) | 311 | 0.1534 | 233 | 57 | 21 |
+| S1 (Sleep 1) | 121 | 0.0820 | 109 | 9 | 3 |
+| S2 (Sleep 2) | 36 | 0.0567 | 36 | 0 | 0 |
+| S3 (Sleep 3) | 759 | 0.0104 | 757 | 0 | 2 |
+
+**Critical validation**: The BTYD P(alive) aligns with NES classification in a meaningful way:
+
+- **S3** (longest sleep): 99.7% high risk — correctly identified as near-dead
+- **S2**: 100% high risk
+- **S1**: 90% high risk
+- **E0** (core, frequent buyers): **75% high risk** — this is the most actionable insight. These are historically valuable customers who are now showing signs of departure. Traditional NES marks them as "core" (good), but BTYD detects their declining P(alive).
+- **N** (normal/new): 0% high risk, 14.6% medium — the bulk of the customer base is healthy
+
+The E0 finding is particularly significant: **core customers at churn risk** are the highest-value retention targets. The old model could not identify them at all.
+
+## 7.3 Two-Pass Empirical Bayes: How It Works in Practice
+
+### Pass 1: Independent MLE
+
+Each of the 10 product line slices runs BG/NBD MLE independently:
+
+| Slice | N | Pass 1 Result | Issue |
+|-------|---:|---------------|-------|
+| mnt | 3,098 | Converged | — |
+| wgs | 2,075 | Converged | — |
+| csg | 2,018 | Converged | — |
+| acc | 2,013 | Converged | — |
+| oth | 1,704 | Converged | — |
+| cgs | 960 | Converged | — |
+| all | 310 | Converged | — |
+| mil | 166 | Converged | — |
+| **wsg** | **5,822** | **Degenerate** | P(alive) $\approx$ 1 for all customers (dropout rate $\to$ 0) |
+| **mrn** | **55** | **Failed** | Too few customers for stable MLE |
+
+**8/10 slices estimated successfully in Pass 1.**
+
+### Pass 2: Fallback with Empirical Priors
+
+From the 8 successful slices, we compute:
+
+```
+fallback_params = median(r, alpha, a, b) across successful slices
+```
+
+These median parameters serve as **informed start values** for re-running BG/NBD on the failed slices. This is a form of empirical Bayes: the population-level parameter distribution (from successful slices) informs the estimation for slices with insufficient data.
+
+For **wsg** (degenerate): Re-estimation with fallback params produces a non-degenerate dropout rate, yielding meaningful P(alive) variation (498 high risk identified).
+
+For **mrn** (too few): With n=55 and informed start values, the optimizer converges to reasonable parameters (1 high risk identified).
+
+### Why This Works
+
+The Two-Pass approach exploits a key structural insight: **product lines within the same company share similar customer behavior patterns**. The purchase rates and churn propensities are not identical across product lines, but they are drawn from a similar meta-distribution. By using the median of successful estimates as start values, we provide the optimizer with a reasonable region of parameter space to search, avoiding the degenerate solutions that occur when the likelihood surface is flat (too few customers or extreme parameter values).
+
+## 7.4 Comparison: Before vs After
+
+| Metric | Before (Logistic) | After (BTYD) | Improvement |
+|--------|-------------------|--------------|-------------|
+| Coverage | 56 / 18,221 (0.3%) | 18,221 / 18,221 (100%) | **33,000%** |
+| Discrimination | Near-zero variance | SD = 0.1875 | **Continuous spectrum** |
+| High-risk identified | 0 | 1,135 | **From nothing** |
+| Product lines covered | 2 / 10 | 10 / 10 | **100%** |
+| Computation time | ~5s (logistic CV) | ~8s (BG/NBD MLE) | Comparable |
+| Required covariates | f_label + cai | x, t_x, T (always available) | **No missing data** |
+
+## 7.5 App Verification
+
+The Shiny App's customerRetention module was verified via `/shiny-debug` on 2026-03-03:
+
+- **Retention Rate**: 95%
+- **Churn Rate**: 5%
+- **At-Risk Customers**: 1,179
+- **Predicted Dormant**: 1,135
+- **Churn Risk Analysis chart**: Shows meaningful High/Medium/Low distribution
+
+All values are non-zero and the risk distribution matches the database query results above, confirming the full 6-Layer pipeline (D01_02 -> cleansed_data -> D01_04 -> app_data -> App) is working correctly.

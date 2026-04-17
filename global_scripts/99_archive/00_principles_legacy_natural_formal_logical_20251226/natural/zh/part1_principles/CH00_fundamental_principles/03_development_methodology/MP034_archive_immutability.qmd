@@ -1,0 +1,100 @@
+---
+title: "MP030: 檔案歸檔不可變性原則"
+type: "meta-principle"
+status: "active"
+created: "2024-08-25"
+updated: "2024-08-25"
+---
+
+# MP030: 檔案歸檔不可變性原則
+
+## 聲明
+
+專案層級結構中任何層級的 `archive/` 目錄內的所有內容，在歸檔後必須保持不可變且不可修改。
+
+## 理由
+
+歸檔作為歷史記錄和稽核軌跡。修改已歸檔的內容將會：
+
+1. 破壞專案的歷史完整性
+2. 無法追溯原則和程式碼的演變過程
+3. 違反稽核和合規要求
+4. 損害歸檔作為永久記錄的目的
+
+## 實施方式
+
+### 絕對規則
+
+1. **禁止編輯**：絕不編輯、重新命名或刪除任何 `archive/` 目錄內的檔案
+2. **禁止重新編號**：重新編號原則或重組結構時，必須跳過所有已歸檔內容
+3. **唯讀存取**：將歸檔目錄視為唯讀，僅供參考
+4. **時間戳記保留**：維持原始時間戳記和目錄結構
+5. **工具限制**：設定自動化工具和腳本排除 `archive/` 路徑
+
+### 範例
+
+::: {.panel-tabset}
+
+## 正確做法
+
+```bash
+# 重新編號時跳過歸檔
+find . -name "MP*.qmd" -not -path "*/archive/*" | while read file; do
+  # 只處理未歸檔的檔案
+done
+```
+
+## 錯誤做法
+
+```bash
+# 在批次操作中包含歸檔
+find . -name "MP*.qmd" | while read file; do  # 這會修改已歸檔的檔案
+  # 處理所有檔案包括已歸檔的
+done
+```
+
+:::
+
+## 例外
+
+無。歸檔不可變性是絕對的。
+
+## 相關原則
+
+- **MP016**：變更追蹤 - 歸檔提供變更的歷史記錄
+- **R028**：歸檔標準 - 定義何時以及如何歸檔內容
+
+## 執行方式
+
+1. Git hooks 應防止對歸檔目錄的修改
+2. 檔案權限應盡可能設定為唯讀
+3. 程式碼審查必須拒絕對已歸檔內容的任何變更
+4. 自動化工具必須有明確的歸檔路徑排除規則
+
+## 合規驗證
+
+```r
+# 驗證歸檔不可變性的函數
+verify_archive_immutability <- function(project_root) {
+  archive_dirs <- list.dirs(
+    path = project_root,
+    pattern = "archive",
+    recursive = TRUE
+  )
+  
+  for (dir in archive_dirs) {
+    # 檢查檔案權限
+    files <- list.files(dir, recursive = TRUE, full.names = TRUE)
+    for (file in files) {
+      info <- file.info(file)
+      if (info$mode != "444") {  # 唯讀
+        warning(paste("檔案非唯讀：", file))
+      }
+    }
+  }
+}
+```
+
+## 備註
+
+此原則是維護專案歷史記錄完整性的基礎。它確保我們始終可以追溯原則、程式碼和決策的演變過程。

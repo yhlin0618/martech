@@ -1,0 +1,339 @@
+---
+title: "UI_P006: UI Package Consistency Principle"
+subtitle: "Applications should maintain UI component consistency by standardizing on a single UI framework package"
+chapter: "CH04"
+category: "principle"
+number: "UI_P006"
+date-created: "2025-04-05"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI Components Law"
+article-number: 
+  number: 6
+  title: "UI Package Consistency Principle"
+related_to:
+  - "CH00.MP074: Package Consistency Naming"
+  - "UI_P001: Natural Language UI"
+  - "UI_P004: Component N-tuple Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 6: UI Package Consistency Principle {#overview}
+
+**UI Components Law Article 6 (UI Package Consistency Principle)**
+
+Applications should maintain UI component consistency by standardizing on a single UI framework package throughout the interface, rather than mixing components from different UI packages or creating custom implementations of already-available components.
+
+:::{.callout-important}
+## Core Principle
+Use components from a single UI framework package consistently throughout the application to ensure visual consistency, developer efficiency, and maintenance simplicity.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Benefits of UI Package Consistency {#benefits}
+
+Adopting a consistent UI package approach provides:
+
+1. **Visual Consistency**: Ensures uniform appearance, behavior, and styling across all UI elements
+2. **Developer Efficiency**: Reduces the cognitive load of switching between different component APIs
+3. **Maintenance Simplicity**: Centralizes dependency management and updates to a single package
+4. **Performance Optimization**: Avoids loading multiple overlapping UI frameworks
+5. **Documentation Clarity**: Makes it easier to onboard new developers who only need to learn one framework
+
+## Subsection 2: Common Problems with Mixed Frameworks {#problems}
+
+Mixing UI frameworks leads to:
+
+- **Inconsistent Visual Language**: Different styling systems create visual discord
+- **Increased Bundle Size**: Multiple frameworks increase application load time
+- **API Confusion**: Developers must remember different parameter structures and naming conventions
+- **Update Conflicts**: Framework updates may conflict with each other
+- **Testing Complexity**: Different testing approaches required for different frameworks
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Primary Framework Selection {#framework-selection}
+
+Choose one primary UI framework based on application requirements:
+
+**For Shiny Dashboard Applications:**
+- `bs4Dash`: Modern dashboard with Bootstrap 4 styling
+- `shinydashboard`: Traditional dashboard layout
+- `shinyMobile`: Mobile-first responsive design
+
+**Selection Criteria:**
+1. **Feature Requirements**: Ensure the framework supports all needed component types
+2. **Visual Design Goals**: Match framework aesthetics to application design requirements
+3. **Performance Needs**: Consider framework overhead and rendering performance
+4. **Team Expertise**: Factor in team familiarity and learning curve
+
+## Subsection 2: Component Usage Guidelines {#component-usage}
+
+### Always Use Framework Native Components {#native-components}
+
+Prefer framework-specific components over generic HTML or custom implementations:
+
+```r
+# ✅ CORRECT: Use bs4Dash native components
+bs4Dash::valueBox(
+  title = "Customer Count",
+  value = 1234,
+  icon = icon("users"),
+  color = "primary"
+)
+
+bs4Dash::box(
+  title = "Analysis Results",
+  status = "primary",
+  solidHeader = TRUE,
+  plotOutput("analysis_plot")
+)
+
+# ❌ INCORRECT: Generic HTML when framework component exists
+div(
+  class = "value-box",
+  h3("Customer Count"),
+  p("1234")
+)
+
+# ❌ INCORRECT: Using different framework components
+shiny::wellPanel(
+  h3("Analysis Results"),
+  plotOutput("analysis_plot")
+)
+```
+
+### Framework-Specific Implementation Examples {#framework-examples}
+
+**bs4Dash Framework:**
+```r
+# Dashboard structure
+bs4DashPage(
+  header = bs4DashNavbar(...),
+  sidebar = bs4DashSidebar(...),
+  body = bs4DashBody(...)
+)
+
+# Content components
+bs4Card(...)         # instead of shiny::div()
+bs4ValueBox(...)     # instead of custom value displays
+bs4InfoBox(...)      # for metric displays
+bs4TabItems(...)     # for tabbed content
+```
+
+**shinydashboard Framework:**
+```r
+# Dashboard structure
+dashboardPage(
+  header = dashboardHeader(...),
+  sidebar = dashboardSidebar(...),
+  body = dashboardBody(...)
+)
+
+# Content components
+box(...)             # instead of shiny::div()
+valueBox(...)        # for metrics
+infoBox(...)         # for information displays
+tabItems(...)        # for tabbed content
+```
+
+## Subsection 3: Mixed Framework Migration {#migration}
+
+When inheriting applications with mixed UI components:
+
+### Incremental Replacement Strategy {#incremental-replacement}
+
+1. **Audit Current Usage**: Document all UI components and their frameworks
+2. **Prioritize High-Impact Areas**: Start with the most visible or frequently used components
+3. **Create Migration Plan**: Map existing components to primary framework equivalents
+4. **Test Thoroughly**: Ensure replacement components maintain functionality
+
+### Component Feature Mapping {#feature-mapping}
+
+Document equivalent components across frameworks:
+
+```r
+# Migration mapping from shinydashboard to bs4Dash
+migration_map <- list(
+  # Old -> New
+  "dashboardPage"    = "bs4DashPage",
+  "dashboardHeader"  = "bs4DashNavbar", 
+  "dashboardSidebar" = "bs4DashSidebar",
+  "dashboardBody"    = "bs4DashBody",
+  "box"              = "bs4Card",
+  "valueBox"         = "bs4ValueBox",
+  "infoBox"          = "bs4InfoBox"
+)
+
+# INCORRECT: Mixing frameworks during migration
+shinydashboard::valueBox(...)  # in one place
+bs4Dash::valueBox(...)         # in another place
+
+# CORRECT: Complete migration to single framework
+bs4Dash::valueBox(...)         # everywhere
+```
+
+# Section 3: Framework-Specific Standards {#framework-standards}
+
+## Subsection 1: bs4Dash Standards {#bs4dash-standards}
+
+When using bs4Dash as the primary framework:
+
+```r
+# Required imports
+library(bs4Dash)
+library(shiny)
+
+# Standard page structure
+ui <- bs4DashPage(
+  title = "Application Title",
+  header = bs4DashNavbar(
+    title = bs4DashBrand("App Name"),
+    rightUi = dropdownMenu(...)
+  ),
+  sidebar = bs4DashSidebar(
+    sidebarMenu(
+      menuItem("Dashboard", tabName = "dashboard"),
+      menuItem("Analytics", tabName = "analytics")
+    )
+  ),
+  body = bs4DashBody(
+    bs4TabItems(
+      bs4TabItem(
+        tabName = "dashboard",
+        fluidRow(
+          bs4Card(...)
+        )
+      )
+    )
+  )
+)
+
+# Consistent component usage
+bs4ValueBox(...)    # for metrics
+bs4InfoBox(...)     # for information
+bs4Card(...)        # for content containers
+bs4Alert(...)       # for notifications
+```
+
+## Subsection 2: Component Consistency Checklist {#consistency-checklist}
+
+Before adding any UI component, verify:
+
+- [ ] Does the primary framework provide this component?
+- [ ] Are you using the framework's namespace (e.g., `bs4Dash::` prefix)?
+- [ ] Does the component follow the framework's parameter naming conventions?
+- [ ] Is the component's styling consistent with the framework's theme?
+
+# Section 4: Exceptions and Special Cases {#exceptions}
+
+## Subsection 1: Authorized Exceptions {#authorized-exceptions}
+
+Limited exceptions are permitted in these cases:
+
+### Missing Components {#missing-components}
+
+When the primary framework lacks a required component:
+
+```r
+# Document the exception and rationale
+# EXCEPTION: bs4Dash doesn't provide a calendar component
+# Using external package until native component is available
+shinyWidgets::airDatepickerInput(
+  inputId = "date_range",
+  label = "Select Date Range",
+  range = TRUE
+)
+```
+
+### Performance-Critical Sections {#performance-critical}
+
+Where framework overhead is demonstrably problematic:
+
+```r
+# EXCEPTION: High-frequency updates require minimal DOM manipulation
+# Using direct HTML for performance in real-time display
+div(
+  id = "realtime-counter",
+  class = "performance-critical",
+  # Minimal HTML for maximum update speed
+)
+```
+
+### Embedded External Applications {#embedded-external}
+
+Self-contained modules from external sources:
+
+```r
+# EXCEPTION: Third-party module with its own UI framework
+# Contained within iframe or isolated namespace
+plotlyOutput("external_chart")  # plotly has its own UI system
+```
+
+## Subsection 2: Exception Documentation {#exception-documentation}
+
+All exceptions must be documented with:
+
+1. **Reason for Exception**: Why the primary framework cannot be used
+2. **Alternative Component**: What is being used instead
+3. **Migration Plan**: How/when the exception will be resolved
+4. **Impact Assessment**: Effect on visual consistency and maintenance
+
+# Section 5: Testing and Validation {#testing}
+
+## Subsection 1: UI Consistency Testing {#ui-testing}
+
+Regular validation of UI consistency:
+
+```r
+# Automated UI framework consistency check
+check_ui_consistency <- function(ui_definition) {
+  # Extract all UI components
+  components <- extract_ui_components(ui_definition)
+  
+  # Identify framework sources
+  frameworks <- identify_frameworks(components)
+  
+  # Report inconsistencies
+  if (length(frameworks) > 1) {
+    warning("Multiple UI frameworks detected: ", paste(frameworks, collapse = ", "))
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+
+# Manual review checklist
+ui_review_checklist <- list(
+  visual_consistency = "All components follow same design language",
+  component_usage = "Framework native components used throughout",
+  documentation = "Exceptions properly documented",
+  performance = "No unnecessary framework loading"
+)
+```
+
+## Subsection 2: Migration Validation {#migration-validation}
+
+When migrating between frameworks:
+
+1. **Functional Testing**: Ensure all features work after component replacement
+2. **Visual Testing**: Compare before/after screenshots for consistency
+3. **Performance Testing**: Measure load times and rendering performance
+4. **User Acceptance Testing**: Validate that user workflows remain intact
+
+# Conclusion {#conclusion}
+
+The UI Package Consistency Principle ensures that applications maintain visual coherence and development efficiency through standardized use of a single UI framework. By avoiding framework mixing and following consistent implementation patterns, applications become more maintainable, performant, and user-friendly.
+
+---
+
+*Based on: UI Components Law Article 6*  
+*Related to: [MP074 Package Consistency Naming](../../CH00_fundamental_principles/05_terminology_standards/MP074_package_consistency_naming.qmd), [UI_P004 Component N-tuple Pattern](UI_P004_component_ntuple_pattern.qmd)*

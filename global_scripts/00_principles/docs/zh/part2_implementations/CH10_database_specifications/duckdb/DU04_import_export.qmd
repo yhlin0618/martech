@@ -1,0 +1,751 @@
+---
+
+title: "DU04: DuckDB Import/Export Guide"
+subtitle: "Comprehensive Guide to Data Import and Export Operations"
+author: "MAMBA Framework"
+date: "2025-08-28"
+categories: [duckdb, import, export, etl]
+---
+
+# DuckDB Import/Export Guide
+
+## Overview
+
+DuckDB provides powerful import/export capabilities for various file formats. This guide covers best practices for data movement in the MAMBA framework.
+
+## Supported File Formats
+
+| Format | Import | Export | Extension Required | Best For |
+|--------|--------|--------|-------------------|----------|
+| CSV | ✅ | ✅ | No | General data exchange |
+| Parquet | ✅ | ✅ | No | Columnar storage, analytics |
+| JSON/NDJSON | ✅ | ✅ | json | Semi-structured data |
+| Arrow | ✅ | ✅ | No | Zero-copy data exchange |
+| Excel | ✅ | ❌ | excel | Spreadsheet data |
+| PostgreSQL | ✅ | ✅ | postgres | Database migration |
+| SQLite | ✅ | ❌ | sqlite | Database migration |
+
+## CSV Import/Export
+
+### Basic CSV Import
+
+```r
+# R: Import CSV files
+library(DBI)
+library(duckdb)
+
+con <- dbConnect(duckdb::duckdb())
+
+# Direct import from file
+dbExecute(con, "
+  CREATE TABLE sales AS 
+  SELECT * FROM read_csv_auto('path/to/sales.csv')
+")
+
+# With specific options
+dbExecute(con, "
+  CREATE TABLE customers AS 
+  SELECT * FROM read_csv(
+    'customers.csv',
+    delim = ',',
+    header = true,
+    columns = {
+      'id': 'INTEGER',
+      'name': 'VARCHAR',
+      'email': 'VARCHAR',
+      'created_at': 'DATE'
+    }
+  )
+")
+```
+
+### Advanced CSV Import Options
+
+```r
+# R: CSV import with all options
+import_csv_advanced <- function(con, file_path, table_name) {
+  query <- sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_csv(
+      '%s',
+      -- Delimiter and quoting
+      delim = ',',
+      quote = '\"',
+      escape = '\"',
+      
+      -- Header and column handling
+      header = true,
+      columns = 'auto',  -- or specify types
+      auto_detect = true,
+      sample_size = 20000,
+      
+      -- Null handling
+      nullstr = ['NA', 'NULL', ''],
+      
+      -- Performance options
+      parallel = true,
+      buffer_size = 1000000,
+      
+      -- Data cleaning
+      normalize_names = true,
+      skip = 0,
+      max_line_size = 1048576,
+      
+      -- Type detection
+      all_varchar = false,
+      dateformat = '%%Y-%%m-%%d',
+      timestampformat = '%%Y-%%m-%%d %%H:%%M:%%S'
+    )
+  ", table_name, file_path)
+  
+  dbExecute(con, query)
+}
+```
+
+### CSV Export
+
+```r
+# R: Export to CSV
+export_csv <- function(con, table_name, file_path, options = list()) {
+  # Basic export
+  dbExecute(con, sprintf("
+    COPY %s TO '%s' (FORMAT CSV, HEADER true)
+  ", table_name, file_path))
+  
+  # Advanced export with options
+  options_str <- paste(
+    sprintf("FORMAT CSV"),
+    sprintf("DELIMITER '%s'", options$delimiter %||% ","),
+    sprintf("HEADER %s", tolower(as.character(options$header %||% TRUE))),
+    sprintf("QUOTE '%s'", options$quote %||% '"'),
+    sprintf("ESCAPE '%s'", options$escape %||% '"'),
+    sprintf("FORCE_QUOTE %s", 
+            if (!is.null(options$force_quote)) 
+              paste0("(", paste(options$force_quote, collapse = ","), ")") 
+            else ""),
+    sep = ", "
+  )
+  
+  dbExecute(con, sprintf("
+    COPY (SELECT * FROM %s) TO '%s' (%s)
+  ", table_name, file_path, options_str))
+}
+```
+
+### Glob Pattern Import
+
+```r
+# R: Import multiple CSV files
+import_csv_glob <- function(con, pattern, table_name) {
+  # Import all matching files
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_csv_auto('%s')
+  ", table_name, pattern))
+  
+  # Example patterns:
+  # 'data/*.csv' - all CSV files in data directory
+  # 'sales_2024*.csv' - all sales files for 2024
+  # 'data/**/*.csv' - recursive search
+}
+
+# Import with file tracking
+import_with_source <- function(con, pattern, table_name) {
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT *, filename FROM read_csv_auto('%s', filename=true)
+  ", table_name, pattern))
+}
+```
+
+## Parquet Import/Export
+
+### Parquet Import
+
+```r
+# R: Import Parquet files
+import_parquet <- function(con, file_path, table_name) {
+  # Basic import
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_parquet('%s')
+  ", table_name, file_path))
+  
+  # Import with column selection
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT id, name, amount 
+    FROM read_parquet('%s')
+    WHERE amount > 0
+  ", table_name, file_path))
+  
+  # Import multiple Parquet files
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_parquet('data/*.parquet')
+  ", table_name))
+}
+
+# Direct query without creating table
+query_parquet <- function(con, file_path) {
+  dbGetQuery(con, sprintf("
+    SELECT 
+      COUNT(*) as row_count,
+      SUM(amount) as total_amount
+    FROM read_parquet('%s')
+  ", file_path))
+}
+```
+
+### Parquet Export
+
+```r
+# R: Export to Parquet
+export_parquet <- function(con, table_name, file_path, options = list()) {
+  # Basic export
+  dbExecute(con, sprintf("
+    COPY %s TO '%s' (FORMAT PARQUET)
+  ", table_name, file_path))
+  
+  # Export with compression
+  dbExecute(con, sprintf("
+    COPY %s TO '%s' (FORMAT PARQUET, COMPRESSION '%s')
+  ", table_name, file_path, options$compression %||% "snappy"))
+  
+  # Export with row group size
+  dbExecute(con, sprintf("
+    COPY %s TO '%s' (
+      FORMAT PARQUET, 
+      COMPRESSION 'zstd',
+      ROW_GROUP_SIZE %d
+    )
+  ", table_name, file_path, options$row_group_size %||% 122880))
+}
+
+# Partitioned Parquet export
+export_partitioned_parquet <- function(con, table_name, base_path, partition_cols) {
+  dbExecute(con, sprintf("
+    COPY (SELECT * FROM %s) 
+    TO '%s' 
+    (FORMAT PARQUET, PARTITION_BY (%s))
+  ", table_name, base_path, paste(partition_cols, collapse = ", ")))
+  
+  # Creates structure like:
+  # base_path/year=2024/month=01/data.parquet
+  # base_path/year=2024/month=02/data.parquet
+}
+```
+
+## JSON Import/Export
+
+### JSON Import
+
+```r
+# R: Import JSON data
+import_json <- function(con, file_path, table_name) {
+  # Install and load JSON extension
+  dbExecute(con, "INSTALL json; LOAD json;")
+  
+  # Auto-detect schema
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_json_auto('%s')
+  ", table_name, file_path))
+  
+  # With specific options
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_json(
+      '%s',
+      columns = {
+        id: 'INTEGER',
+        name: 'VARCHAR',
+        data: 'JSON',
+        tags: 'VARCHAR[]'
+      },
+      format = 'auto',  -- auto, newline_delimited, array
+      records = 'auto',
+      compression = 'auto',
+      maximum_depth = -1,
+      maximum_object_size = 16777216
+    )
+  ", table_name, file_path))
+}
+
+# Handle nested JSON
+process_nested_json <- function(con, file_path, table_name) {
+  # Flatten nested structure
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT 
+      json_extract(data, '$.id')::INTEGER as id,
+      json_extract(data, '$.user.name')::VARCHAR as user_name,
+      json_extract(data, '$.user.email')::VARCHAR as user_email,
+      json_extract(data, '$.items')::JSON as items_json,
+      json_array_length(json_extract(data, '$.items')) as item_count
+    FROM (
+      SELECT * FROM read_json_auto('%s') as data
+    )
+  ", table_name, file_path))
+}
+```
+
+### JSON Export
+
+```r
+# R: Export to JSON
+export_json <- function(con, table_name, file_path) {
+  # Export as JSON array
+  dbExecute(con, sprintf("
+    COPY (
+      SELECT * FROM %s
+    ) TO '%s' (FORMAT JSON, ARRAY true)
+  ", table_name, file_path))
+  
+  # Export as newline-delimited JSON
+  dbExecute(con, sprintf("
+    COPY %s TO '%s.ndjson' (FORMAT JSON, ARRAY false)
+  ", table_name, file_path))
+}
+```
+
+## Database-to-Database Transfer
+
+### PostgreSQL Integration
+
+```r
+# R: PostgreSQL import/export
+postgres_integration <- function(duckdb_con) {
+  # Install PostgreSQL extension
+  dbExecute(duckdb_con, "INSTALL postgres; LOAD postgres;")
+  
+  # Attach PostgreSQL database
+  dbExecute(duckdb_con, "
+    ATTACH 'host=localhost user=postgres password=secret dbname=mydb' 
+    AS postgres_db (TYPE POSTGRES)
+  ")
+  
+  # Query PostgreSQL directly
+  result <- dbGetQuery(duckdb_con, "
+    SELECT * FROM postgres_db.public.customers
+  ")
+  
+  # Copy from PostgreSQL to DuckDB
+  dbExecute(duckdb_con, "
+    CREATE TABLE local_customers AS 
+    SELECT * FROM postgres_db.public.customers
+  ")
+  
+  # Copy from DuckDB to PostgreSQL
+  dbExecute(duckdb_con, "
+    INSERT INTO postgres_db.public.new_table
+    SELECT * FROM local_table
+  ")
+  
+  return(result)
+}
+```
+
+### SQLite Integration
+
+```r
+# R: SQLite import
+sqlite_integration <- function(duckdb_con, sqlite_path) {
+  # Install SQLite extension
+  dbExecute(duckdb_con, "INSTALL sqlite; LOAD sqlite;")
+  
+  # Attach SQLite database
+  dbExecute(duckdb_con, sprintf("
+    ATTACH '%s' AS sqlite_db (TYPE SQLITE)
+  ", sqlite_path))
+  
+  # List SQLite tables
+  tables <- dbGetQuery(duckdb_con, "
+    SELECT name FROM sqlite_db.sqlite_master 
+    WHERE type='table'
+  ")
+  
+  # Import all tables
+  for (table in tables$name) {
+    dbExecute(duckdb_con, sprintf("
+      CREATE TABLE %s AS 
+      SELECT * FROM sqlite_db.%s
+    ", table, table))
+  }
+}
+```
+
+## Bulk Data Loading
+
+### High-Performance Loading
+
+```r
+# R: Optimized bulk loading
+bulk_load_data <- function(con, file_pattern, table_name) {
+  # Disable constraints temporarily
+  dbExecute(con, "SET disable_checkpoint_on_shutdown=true")
+  dbExecute(con, "SET checkpoint_threshold='1GB'")
+  
+  # Create table from first file to get schema
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_csv_auto('%s') 
+    LIMIT 0
+  ", table_name, file_pattern))
+  
+  # Bulk insert with minimal logging
+  dbExecute(con, sprintf("
+    INSERT INTO %s 
+    SELECT * FROM read_csv_auto('%s', parallel=true)
+  ", table_name, file_pattern))
+  
+  # Re-enable constraints and checkpoint
+  dbExecute(con, "CHECKPOINT")
+  dbExecute(con, "SET disable_checkpoint_on_shutdown=false")
+}
+```
+
+### Chunked Loading for Large Files
+
+```r
+# R: Load large files in chunks
+chunked_load <- function(con, file_path, table_name, chunk_size = 100000) {
+  # Get total rows (approximate)
+  row_count <- dbGetQuery(con, sprintf("
+    SELECT COUNT(*) as n FROM read_csv_auto('%s', sample_size=1000)
+  ", file_path))$n * 1000  # Rough estimate
+  
+  # Process in chunks
+  for (offset in seq(0, row_count, by = chunk_size)) {
+    dbExecute(con, sprintf("
+      INSERT INTO %s 
+      SELECT * FROM read_csv_auto('%s') 
+      LIMIT %d OFFSET %d
+    ", table_name, file_path, chunk_size, offset))
+    
+    # Periodic checkpoint
+    if (offset %% (chunk_size * 10) == 0) {
+      dbExecute(con, "CHECKPOINT")
+    }
+  }
+}
+```
+
+## Data Transformation During Import/Export
+
+### Transform on Import
+
+```r
+# R: Apply transformations during import
+import_with_transformation <- function(con, file_path, table_name) {
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT 
+      -- Type conversions
+      id::INTEGER as id,
+      UPPER(TRIM(name)) as name_normalized,
+      
+      -- Date parsing
+      strptime(date_string, '%%Y-%%m-%%d')::DATE as date,
+      
+      -- Conditional logic
+      CASE 
+        WHEN amount > 1000 THEN 'high'
+        WHEN amount > 100 THEN 'medium'
+        ELSE 'low'
+      END as amount_category,
+      
+      -- JSON extraction
+      json_extract(metadata, '$.source')::VARCHAR as source,
+      
+      -- Array operations
+      list_transform(string_split(tags, ','), x -> TRIM(x)) as tag_list
+      
+    FROM read_csv_auto('%s')
+    WHERE amount > 0  -- Filter during import
+  ", table_name, file_path))
+}
+```
+
+### Transform on Export
+
+```r
+# R: Apply transformations during export
+export_with_transformation <- function(con, table_name, file_path) {
+  dbExecute(con, sprintf("
+    COPY (
+      SELECT 
+        id,
+        name,
+        ROUND(amount, 2) as amount,
+        DATE_FORMAT(created_at, '%%Y-%%m-%%d') as date,
+        list_aggregate(tags, 'string_agg', ',') as tags_csv
+      FROM %s
+      WHERE active = true
+      ORDER BY created_at DESC
+    ) TO '%s' (FORMAT CSV, HEADER true)
+  ", table_name, file_path))
+}
+```
+
+## Import/Export Utilities
+
+### Schema Detection
+
+```r
+# R: Detect schema from file
+detect_schema <- function(con, file_path, format = "csv") {
+  # Get schema without loading data
+  schema_query <- switch(format,
+    csv = sprintf("DESCRIBE SELECT * FROM read_csv_auto('%s') LIMIT 0", file_path),
+    parquet = sprintf("DESCRIBE SELECT * FROM read_parquet('%s') LIMIT 0", file_path),
+    json = sprintf("DESCRIBE SELECT * FROM read_json_auto('%s') LIMIT 0", file_path)
+  )
+  
+  schema <- dbGetQuery(con, schema_query)
+  return(schema)
+}
+
+# Generate CREATE TABLE statement
+generate_create_table <- function(con, file_path, table_name) {
+  schema <- detect_schema(con, file_path)
+  
+  columns <- paste(
+    sprintf("%s %s", schema$column_name, schema$column_type),
+    collapse = ",\n  "
+  )
+  
+  create_statement <- sprintf(
+    "CREATE TABLE %s (\n  %s\n)",
+    table_name, columns
+  )
+  
+  return(create_statement)
+}
+```
+
+### Data Validation
+
+```r
+# R: Validate imported data
+validate_import <- function(con, table_name) {
+  validations <- list()
+  
+  # Row count
+  validations$row_count <- dbGetQuery(con, 
+    sprintf("SELECT COUNT(*) as n FROM %s", table_name))$n
+  
+  # Check for nulls
+  validations$null_counts <- dbGetQuery(con, sprintf("
+    SELECT 
+      %s
+    FROM %s
+  ", paste(sprintf("SUM(CASE WHEN %s IS NULL THEN 1 ELSE 0 END) as %s_nulls",
+                  names(dbGetQuery(con, sprintf("SELECT * FROM %s LIMIT 1", table_name))),
+                  names(dbGetQuery(con, sprintf("SELECT * FROM %s LIMIT 1", table_name)))),
+          collapse = ", "), table_name))
+  
+  # Data type verification
+  validations$types <- dbGetQuery(con, 
+    sprintf("DESCRIBE %s", table_name))
+  
+  # Basic statistics
+  validations$stats <- dbGetQuery(con, sprintf("
+    SELECT 
+      MIN(created_at) as earliest_date,
+      MAX(created_at) as latest_date,
+      COUNT(DISTINCT customer_id) as unique_customers
+    FROM %s
+  ", table_name))
+  
+  return(validations)
+}
+```
+
+## Performance Optimization
+
+### Parallel Import
+
+```r
+# R: Parallel file import
+parallel_import <- function(con, files, table_name) {
+  library(future)
+  library(furrr)
+  
+  plan(multisession, workers = 4)
+  
+  # Create table from first file
+  dbExecute(con, sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_csv_auto('%s') LIMIT 0
+  ", table_name, files[1]))
+  
+  # Import files in parallel
+  future_walk(files, function(file) {
+    # Each worker gets its own connection
+    local_con <- dbConnect(duckdb::duckdb(), 
+                          dbdir = ":memory:")
+    
+    # Load data
+    temp_data <- dbGetQuery(local_con, 
+      sprintf("SELECT * FROM read_csv_auto('%s')", file))
+    
+    # Insert into main table (synchronized)
+    dbAppendTable(con, table_name, temp_data)
+    
+    dbDisconnect(local_con)
+  })
+}
+```
+
+### Memory-Efficient Export
+
+```r
+# R: Stream large exports
+stream_export <- function(con, query, file_path, chunk_size = 100000) {
+  # Open file connection
+  file_con <- file(file_path, "w")
+  
+  # Write header
+  result <- dbSendQuery(con, query)
+  chunk <- dbFetch(result, n = 1)
+  write.csv(chunk[0,], file_con, row.names = FALSE)
+  
+  # Stream data in chunks
+  dbClearResult(result)
+  result <- dbSendQuery(con, query)
+  
+  while (!dbHasCompleted(result)) {
+    chunk <- dbFetch(result, n = chunk_size)
+    write.table(chunk, file_con, sep = ",", 
+               row.names = FALSE, col.names = FALSE, 
+               append = TRUE)
+  }
+  
+  dbClearResult(result)
+  close(file_con)
+}
+```
+
+## Common Import/Export Patterns
+
+### Daily Data Import
+
+```r
+# R: Daily import pattern
+daily_import <- function(con, date = Sys.Date()) {
+  file_pattern <- sprintf("data/sales_%s*.csv", 
+                         format(date, "%Y%m%d"))
+  
+  table_name <- sprintf("sales_%s", 
+                       format(date, "%Y%m%d"))
+  
+  # Import today's files
+  dbExecute(con, sprintf("
+    CREATE OR REPLACE TABLE %s AS 
+    SELECT 
+      *,
+      '%s'::DATE as import_date,
+      CURRENT_TIMESTAMP as import_timestamp
+    FROM read_csv_auto('%s')
+  ", table_name, date, file_pattern))
+  
+  # Update master table
+  dbExecute(con, sprintf("
+    INSERT INTO sales_master 
+    SELECT * FROM %s
+  ", table_name))
+}
+```
+
+### Export for Reporting
+
+```r
+# R: Export pattern for reports
+export_for_report <- function(con, report_date) {
+  # Create summary
+  dbExecute(con, sprintf("
+    CREATE TEMPORARY TABLE report_data AS
+    SELECT 
+      DATE_TRUNC('day', order_date) as date,
+      product_category,
+      COUNT(*) as orders,
+      SUM(amount) as revenue,
+      AVG(amount) as avg_order_value
+    FROM orders
+    WHERE order_date >= '%s'::DATE - INTERVAL '30 days'
+      AND order_date < '%s'::DATE
+    GROUP BY 1, 2
+  ", report_date, report_date))
+  
+  # Export to multiple formats
+  dbExecute(con, sprintf("
+    COPY report_data 
+    TO 'reports/summary_%s.csv' 
+    (FORMAT CSV, HEADER true)
+  ", report_date))
+  
+  dbExecute(con, sprintf("
+    COPY report_data 
+    TO 'reports/summary_%s.parquet' 
+    (FORMAT PARQUET)
+  ", report_date))
+}
+```
+
+## Error Handling
+
+### Import Error Recovery
+
+```r
+# R: Robust import with error handling
+safe_import <- function(con, file_path, table_name) {
+  tryCatch({
+    # Try import
+    dbExecute(con, sprintf("
+      CREATE TABLE %s AS 
+      SELECT * FROM read_csv_auto('%s')
+    ", table_name, file_path))
+    
+    message(sprintf("Successfully imported %s", file_path))
+    
+  }, error = function(e) {
+    if (grepl("Could not convert", e$message)) {
+      # Type conversion error - try all varchar
+      warning("Type detection failed, importing as all VARCHAR")
+      dbExecute(con, sprintf("
+        CREATE TABLE %s AS 
+        SELECT * FROM read_csv('%s', all_varchar=true)
+      ", table_name, file_path))
+      
+    } else if (grepl("No files found", e$message)) {
+      stop(sprintf("File not found: %s", file_path))
+      
+    } else if (grepl("Permission denied", e$message)) {
+      stop(sprintf("Permission denied accessing: %s", file_path))
+      
+    } else {
+      # Unknown error
+      stop(e$message)
+    }
+  })
+}
+```
+
+## Best Practices
+
+1. **Use native readers** (read_csv_auto, read_parquet) for best performance
+2. **Specify types explicitly** when schema is known
+3. **Use parallel=true** for large file imports
+4. **Enable compression** for Parquet exports
+5. **Validate data** after import
+6. **Use transactions** for multi-step operations
+7. **Monitor memory usage** during large imports
+8. **Clean up temporary files** after processing
+
+## Related Documentation
+
+- [DuckDB CSV Documentation](https://duckdb.org/docs/data/csv)
+- [DuckDB Parquet Documentation](https://duckdb.org/docs/data/parquet)
+- [ETL Pipelines](../CH12_etl_pipelines/)
+- [Data Type Handling](DU08_data_type_handling.qmd)

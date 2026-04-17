@@ -1,0 +1,505 @@
+---
+id: "DM_R037"
+title: "Company-Specific ETL Naming Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2025-08-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 37
+implements:
+  - "MP104": "ETL Data Flow Separation Principle"
+  - "MP092": "Platform ID Standard"
+related_to:
+  - "DM_R028": "ETL Data Type Separation Rule"
+  - "DM_R022": "Platform Numbering Convention Rule"
+  - "MP064": "ETL-Derivation Separation Principle"
+---
+
+# DM_R037: Company-Specific ETL Naming Rule
+
+## Rule Statement
+
+**When ETL scripts contain company-specific customizations, they MUST append the company identifier using triple underscores**: ETL scripts that connect to company-owned databases, use custom processing logic, or implement proprietary data flows must follow the pattern `{platform}_ETL_{datatype}_{phase}___{company}.R`.
+
+## Core Requirements
+
+### 1. When to Use Company Identifiers
+
+**REQUIRED** when ETL scripts have:
+
+```yaml
+company_specific_indicators:
+  custom_databases:
+    description: "Company owns the database server (not platform standard)"
+    example: "MAMBA's eBay SQL Server at 125.227.84.85"
+    
+  proprietary_connections:
+    description: "Uses company-specific SSH tunnels or VPNs"
+    example: "SSH tunnel to 220.128.138.146 for MAMBA's setup"
+    
+  custom_processing:
+    description: "Implements company-specific business logic"
+    example: "MAMBA's unique product categorization rules"
+    
+  private_apis:
+    description: "Connects to company's internal APIs"
+    example: "MAMBA's internal inventory system API"
+    
+  special_transformations:
+    description: "Applies company-specific data transformations"
+    example: "MAMBA's custom SKU mapping logic"
+```
+
+### 2. Naming Pattern Requirements
+
+**Standard Pattern**: `{platform}_ETL_{datatype}_{phase}.R`
+**Company-Specific Pattern**: `{platform}_ETL_{datatype}_{phase}___{company}.R`
+
+```yaml
+naming_examples:
+  # Generic platform ETLs (standard API/database)
+  standard_etls:
+    - "eby_ETL_sales_0IM.R"        # Standard eBay API
+    - "amz_ETL_products_1ST.R"     # Standard Amazon MWS
+    - "cbz_ETL_customers_2TR.R"    # Standard Cyberbiz API
+  
+  # Company-specific ETLs (custom implementations)
+  company_specific_etls:
+    - "eby_ETL_sales_0IM___MAMBA.R"     # MAMBA's eBay SQL Server
+    - "amz_ETL_orders_1ST___ACME.R"     # ACME's custom Amazon setup
+    - "cbz_ETL_products_2TR___WIDGET.R" # WIDGET's Cyberbiz instance
+    
+  # Real example: MAMBA's eBay setup
+  mamba_ebay_pipeline:
+    - "eby_ETL_sales_0IM___MAMBA.R"     # From 125.227.84.85 SQL Server
+    - "eby_ETL_sales_1ST___MAMBA.R"     # MAMBA-specific staging rules
+    - "eby_ETL_sales_2TR___MAMBA.R"     # MAMBA business transformations
+```
+
+### 3. Company Code Standards
+
+**MANDATORY Requirements**:
+
+```yaml
+company_code_requirements:
+  format:
+    - "UPPERCASE letters only"
+    - "3-10 characters maximum"
+    - "No special characters or numbers"
+    - "Must be unique identifier for company"
+    
+  examples:
+    valid:
+      - "MAMBA"    # ✅ Valid company code
+      - "ACME"     # ✅ Valid company code
+      - "WIDGET"   # ✅ Valid company code
+      - "ABC"      # ✅ Valid company code
+      
+    invalid:
+      - "mamba"    # ❌ Must be uppercase
+      - "MAMBA-1"  # ❌ No special characters
+      - "MB"       # ⚠️  Too short (discouraged)
+      - "VERYLONGCOMPANYNAME" # ❌ Too long
+```
+
+### 4. Triple Underscore Separator
+
+**CRITICAL**: Must use exactly three underscores (`___`) to separate company code
+
+```r
+# ✅ CORRECT: Triple underscore separator
+"eby_ETL_sales_0IM___MAMBA.R"
+
+# ❌ WRONG: Single underscore
+"eby_ETL_sales_0IM_MAMBA.R"
+
+# ❌ WRONG: Double underscore  
+"eby_ETL_sales_0IM__MAMBA.R"
+
+# ❌ WRONG: Dash separator
+"eby_ETL_sales_0IM-MAMBA.R"
+
+# ❌ WRONG: No separator
+"eby_ETL_sales_0IMMAMBA.R"
+```
+
+## Implementation Guidelines
+
+### 1. MAMBA's eBay Example
+
+MAMBA has their own eBay SQL Server setup that differs from standard eBay:
+
+```yaml
+mamba_ebay_configuration:
+  database_server:
+    type: "SQL Server"
+    host: "125.227.84.85"
+    database: "ebay_mamba_db"
+    
+  ssh_tunnel:
+    host: "220.128.138.146"
+    port: 22
+    local_port: 1433
+    
+  data_flow:
+    import: "eby_ETL_sales_0IM___MAMBA.R"
+    staging: "eby_ETL_sales_1ST___MAMBA.R"
+    transform: "eby_ETL_sales_2TR___MAMBA.R"
+```
+
+Implementation structure:
+
+```r
+# eby_ETL_sales_0IM___MAMBA.R
+# ==============================================================================
+# MAMBA-SPECIFIC EBAY SALES IMPORT
+# Connects to MAMBA's own eBay SQL Server at 125.227.84.85
+# Via SSH tunnel through 220.128.138.146
+# ==============================================================================
+
+mamba_eby_sales_import <- function() {
+  # MAMBA-specific connection
+  con <- establish_mamba_ssh_tunnel(
+    ssh_host = "220.128.138.146",
+    db_host = "125.227.84.85",
+    db_name = "ebay_mamba_db"
+  )
+  
+  # MAMBA's custom SQL query
+  sales_query <- "
+    SELECT * FROM mamba_ebay_sales 
+    WHERE transaction_date >= '2024-01-01'
+    AND mamba_status = 'ACTIVE'
+  "
+  
+  sales_data <- dbGetQuery(con, sales_query)
+  
+  # Apply MAMBA-specific processing
+  processed_sales <- apply_mamba_sales_rules(sales_data)
+  
+  # Write to standardized raw data table (framework-agnostic)
+  write_to_raw_data("df_eby_sales___raw", processed_sales)
+  
+  close_mamba_connection(con)
+}
+```
+
+### 2. Directory Organization
+
+Company-specific ETLs should be organized clearly:
+
+```
+scripts/update_scripts/
+├── generic/                      # Standard platform ETLs
+│   ├── eby_ETL_sales_0IM.R
+│   ├── eby_ETL_sales_1ST.R
+│   └── eby_ETL_sales_2TR.R
+│
+└── company_specific/            # Company-specific ETLs
+    └── MAMBA/
+        ├── eby_ETL_sales_0IM___MAMBA.R
+        ├── eby_ETL_sales_1ST___MAMBA.R
+        └── eby_ETL_sales_2TR___MAMBA.R
+```
+
+### 3. Configuration Management
+
+Store company-specific configurations separately:
+
+```yaml
+# config/companies/MAMBA/ebay_config.yaml
+mamba_ebay:
+  connection:
+    type: "custom_sql_server"
+    ssh_tunnel:
+      host: "220.128.138.146"
+      port: 22
+      user: "mamba_ssh"
+    database:
+      host: "125.227.84.85"
+      port: 1433
+      database: "ebay_mamba_db"
+      driver: "ODBC Driver 17 for SQL Server"
+      
+  custom_processing:
+    - "apply_mamba_sku_mapping"
+    - "calculate_mamba_commissions"
+    - "filter_mamba_territories"
+    
+  output_tables:
+    raw: "df_eby_sales___raw"
+    staged: "df_eby_sales___staged"
+    transformed: "df_eby_sales___transformed"
+```
+
+### 4. Function Naming Convention
+
+Company-specific functions should include the company identifier:
+
+```r
+# Generic functions (used by standard ETLs)
+process_eby_sales_import()
+validate_eby_sales_schema()
+transform_eby_sales_data()
+
+# Company-specific functions  
+process_eby_sales_import_MAMBA()
+apply_MAMBA_business_rules()
+validate_MAMBA_eby_requirements()
+```
+
+## Data Artifacts Are Framework-Agnostic
+
+### CRITICAL: Company Suffix Scope Limitation
+
+**MANDATORY RULE**: The `___COMPANY` suffix applies ONLY to script filenames, NOT to data artifacts (tables, databases, files).
+
+```yaml
+correct_scope_application:
+  # ✅ CORRECT: Company suffix in script names
+  script_names:
+    - "eby_ETL_sales_0IM___MAMBA.R"      # Company-specific script
+    - "eby_ETL_sales_1ST___MAMBA.R"      # Company-specific script
+    - "eby_ETL_sales_2TR___MAMBA.R"      # Company-specific script
+  
+  # ✅ CORRECT: Framework-agnostic data artifacts
+  data_artifacts:
+    tables:
+      - "df_eby_sales___raw"            # NO company suffix
+      - "df_eby_sales___staged"          # NO company suffix
+      - "df_eby_sales___transformed"     # NO company suffix
+    databases:
+      - "raw_data.duckdb"               # NO company suffix
+      - "staged_data.duckdb"            # NO company suffix
+      - "transformed_data.duckdb"        # NO company suffix
+    files:
+      - "eby_sales_export.csv"           # NO company suffix
+      - "eby_customers_backup.parquet"   # NO company suffix
+
+rationale:
+  data_compatibility: "Data output must be usable across different company implementations"
+  portability: "Tables and files should not be tied to specific company frameworks"
+  maintenance: "Reduces naming confusion and ensures data interoperability"
+  standards: "ETL output represents standardized data regardless of input source"
+```
+
+## Validation Functions
+
+### 1. Validate Company-Specific Naming
+
+```r
+# Function: validate_company_specific_etl_naming
+validate_company_specific_etl_naming <- function(script_path) {
+  filename <- basename(script_path)
+  
+  # Check for company-specific pattern
+  company_pattern <- "^([a-z]{3})_ETL_([a-z_]+)_(0IM|1ST|2TR)___([A-Z]{3,10})\\.R$"
+  standard_pattern <- "^([a-z]{3})_ETL_([a-z_]+)_(0IM|1ST|2TR)\\.R$"
+  
+  if (grepl(company_pattern, filename)) {
+    # Extract company-specific components
+    matches <- regmatches(filename, regexec(company_pattern, filename))[[1]]
+    
+    components <- list(
+      platform = matches[2],
+      datatype = matches[3],
+      phase = matches[4],
+      company = matches[5],
+      type = "company_specific"
+    )
+    
+    # Validate company code
+    if (!grepl("^[A-Z]{3,10}$", components$company)) {
+      stop(sprintf("VIOLATION DM_R037: Invalid company code '%s'", 
+                   components$company))
+    }
+    
+    message(sprintf("✅ DM_R037: Valid company-specific ETL: %s", filename))
+    
+  } else if (grepl(standard_pattern, filename)) {
+    # Standard ETL (no company code)
+    matches <- regmatches(filename, regexec(standard_pattern, filename))[[1]]
+    
+    components <- list(
+      platform = matches[2],
+      datatype = matches[3],
+      phase = matches[4],
+      company = NA,
+      type = "standard"
+    )
+    
+    message(sprintf("✅ DM_R037: Valid standard ETL: %s", filename))
+    
+  } else {
+    stop(sprintf("VIOLATION DM_R037: Invalid ETL naming: %s", filename))
+  }
+  
+  return(components)
+}
+```
+
+### 2. Check for Missing Company Identifiers
+
+```r
+# Function: check_company_identifier_requirement
+check_company_identifier_requirement <- function(script_path) {
+  script_content <- readLines(script_path)
+  
+  # Indicators that suggest company-specific implementation
+  company_indicators <- c(
+    "ssh_tunnel",
+    "custom_server",
+    "proprietary",
+    "company_specific",
+    "125\\.227\\.84\\.85",  # MAMBA's SQL Server
+    "220\\.128\\.138\\.146"  # MAMBA's SSH tunnel
+  )
+  
+  has_company_specific <- any(sapply(company_indicators, function(pattern) {
+    any(grepl(pattern, script_content, ignore.case = TRUE))
+  }))
+  
+  # Check if filename has company identifier
+  components <- validate_company_specific_etl_naming(script_path)
+  
+  if (has_company_specific && components$type == "standard") {
+    warning(sprintf("DM_R037 WARNING: Script '%s' appears to have company-specific logic but lacks company identifier", 
+                    basename(script_path)))
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+## Migration Strategy
+
+### 1. Identify Company-Specific ETLs
+
+```r
+# Audit existing ETLs for company-specific logic
+identify_company_specific_etls <- function(script_directory) {
+  scripts <- list.files(script_directory, pattern = ".*_ETL_.*\\.R$", 
+                        full.names = TRUE)
+  
+  company_specific <- map_dfr(scripts, function(script) {
+    # Check for company-specific indicators
+    needs_company_id <- !check_company_identifier_requirement(script)
+    
+    if (needs_company_id) {
+      return(data.frame(
+        script = basename(script),
+        path = script,
+        needs_company_id = TRUE,
+        stringsAsFactors = FALSE
+      ))
+    }
+    return(NULL)
+  })
+  
+  return(company_specific)
+}
+```
+
+### 2. Generate Migration Plan
+
+```r
+# Create renaming plan for company-specific ETLs
+create_company_migration_plan <- function(company_specific_list, company_code) {
+  migration_plan <- company_specific_list %>%
+    mutate(
+      new_name = str_replace(script, "\\.R$", 
+                             sprintf("___%s.R", company_code)),
+      command = sprintf("mv '%s' '%s'", 
+                       file.path(dirname(path), script),
+                       file.path(dirname(path), new_name))
+    )
+  
+  return(migration_plan)
+}
+```
+
+### 3. Execute Migration
+
+```r
+# Apply company identifiers to ETLs
+execute_company_etl_migration <- function(migration_plan) {
+  for (i in seq_len(nrow(migration_plan))) {
+    old_path <- migration_plan$path[i]
+    new_name <- migration_plan$new_name[i]
+    new_path <- file.path(dirname(old_path), new_name)
+    
+    # Rename file
+    file.rename(old_path, new_path)
+    
+    # Update internal references if needed
+    update_script_references(new_path)
+    
+    message(sprintf("Migrated: %s → %s", 
+                   basename(old_path), new_name))
+  }
+}
+```
+
+## Compliance Checklist
+
+- [ ] Company-specific ETL scripts use `___COMPANY` suffix
+- [ ] Company code is UPPERCASE, 3-10 characters
+- [ ] Triple underscore separator is used consistently
+- [ ] Data artifacts (tables, databases, files) do NOT include company suffix
+- [ ] Configuration files document company customizations
+- [ ] Functions include company identifiers where appropriate
+- [ ] Directory structure separates generic from company-specific
+- [ ] Validation functions pass for all ETL scripts
+- [ ] Documentation explains why company-specific implementation exists
+
+## Examples: When to Use Company Identifiers
+
+### ✅ REQUIRES Company Identifier
+
+```yaml
+requires_company_id:
+  mamba_ebay:
+    reason: "Own SQL Server database at 125.227.84.85"
+    scripts:
+      - "eby_ETL_sales_0IM___MAMBA.R"
+      - "eby_ETL_customers_0IM___MAMBA.R"
+      
+  acme_amazon:
+    reason: "Custom data warehouse integration"
+    scripts:
+      - "amz_ETL_orders_0IM___ACME.R"
+      - "amz_ETL_products_1ST___ACME.R"
+```
+
+### ❌ Does NOT Require Company Identifier
+
+```yaml
+standard_implementations:
+  generic_ebay:
+    reason: "Uses standard eBay API"
+    scripts:
+      - "eby_ETL_sales_0IM.R"  # Standard eBay Marketplace API
+      
+  generic_amazon:
+    reason: "Uses standard Amazon MWS/SP-API"
+    scripts:
+      - "amz_ETL_products_0IM.R"  # Standard Amazon API
+```
+
+## Conclusion
+
+DM_R037 ensures clear distinction between generic platform ETLs and company-specific implementations. By appending company identifiers with triple underscores, the system maintains compatibility with existing naming patterns while clearly marking customized data flows.
+
+This rule is essential for:
+- **Clarity**: Immediately identifies company-specific logic in script names
+- **Maintenance**: Easier to manage custom implementations while keeping data standardized
+- **Portability**: Generic ETLs remain reusable; data output is framework-agnostic
+- **Debugging**: Clear separation of standard vs. custom logic at script level
+- **Scalability**: Multiple companies can have their own implementations with shared data formats
+- **Interoperability**: Data artifacts work across different company implementations
+
+The triple underscore pattern (`___`) provides clear visual separation in scripts while maintaining data compatibility. **Critical**: Company suffixes apply only to script identification, not data content.

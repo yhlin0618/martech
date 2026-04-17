@@ -1,0 +1,459 @@
+---
+title: "FN_analysis_dna"
+subtitle: "Customer DNA Analysis - Comprehensive Behavioral Metrics"
+author: "MAMBA Team"
+date: "2025-01-25"
+categories: ["Functions", "Customer Analytics", "DNA Analysis", "NSQL"]
+---
+
+# analysis_dna() - Customer DNA Analysis Function
+
+## Overview
+
+`analysis_dna()` performs comprehensive customer behavior analysis by computing multiple behavioral metrics that form a customer's "DNA profile". This function implements sophisticated RFM analysis, Customer Activity Index (CAI), Customer Lifetime Value (CLV), churn prediction, and other advanced metrics using NSQL-based data transformations.
+
+## Core Purpose
+
+The function transforms transactional data into a comprehensive customer profile containing:
+- **RFM Metrics**: Recency, Frequency, Monetary value analysis
+- **Activity Metrics**: Customer Activity Index (CAI), regularity patterns
+- **Value Metrics**: Past Customer Value (PCV), Customer Lifetime Value (CLV)
+- **Predictive Metrics**: Next Expected Sale (NES), churn probability
+- **Behavioral Metrics**: Customer Regularity Index (CRI), purchase patterns
+
+## Input Requirements
+
+### Primary Inputs
+
+#### 1. df_sales_by_customer (Customer-level aggregated data)
+```nsql
+-- Required structure: One row per customer
+SCHEMA df_sales_by_customer {
+  customer_id: INTEGER PRIMARY KEY,
+  ipt: NUMERIC REQUIRED,  -- Inter-purchase time (lowercase only)
+  ni: INTEGER REQUIRED,    -- Number of purchases
+  total_spent: NUMERIC,    -- Or alternatives: sum_sales_by_customer, total_amount
+  times: INTEGER           -- Or alternatives: sum_transactions_by_customer
+}
+```
+
+#### 2. df_sales_by_customer_by_date (Transaction-level data)
+```nsql
+-- Required structure: Multiple rows per customer (one per date)
+SCHEMA df_sales_by_customer_by_date {
+  customer_id: INTEGER,
+  payment_time: DATETIME,  -- Or alternatives: min_time_by_date, min_time
+  total_spent: NUMERIC,    -- Transaction amount
+  -- Optional geographic fields
+  zipcode: VARCHAR OPTIONAL,
+  state: VARCHAR OPTIONAL,
+  lat: NUMERIC OPTIONAL,
+  lng: NUMERIC OPTIONAL
+}
+```
+
+### Optional Parameters
+- `skip_within_subject`: BOOLEAN (default FALSE) - Skip churn modeling for performance
+- `verbose`: BOOLEAN (default TRUE) - Display progress messages
+- `global_params`: LIST - Override default parameters (thresholds, breaks, labels)
+
+## Core Transformations in NSQL
+
+### 1. RFM Calculation
+```nsql
+-- Calculate Recency, Frequency, Monetary metrics
+TRANSFORM df_sales_by_customer_by_date
+  MERGE WITH df_sales_by_customer ON customer_id
+  LET time_now = MAX(payment_time) OVER ALL
+  GROUP BY customer_id
+  COMPUTE {
+    -- Recency: Days since last purchase
+    r_value = DAYS_BETWEEN(time_now, MAX(payment_time)),
+    r_ecdf = CUME_DIST(r_value),
+    r_label = CUT(r_ecdf, r_breaks, labels = text_r_label),
+    
+    -- Frequency: Number of transactions
+    f_value = COUNT(*),
+    f_ecdf = CUME_DIST(f_value),
+    f_label = CUT(f_value, f_breaks, labels = text_f_label),
+    
+    -- Monetary: Total spending value
+    m_value = SUM(total_spent),
+    m_ecdf = CUME_DIST(m_value),
+    m_label = CUT(m_ecdf, m_breaks, labels = text_m_label)
+  }
+INTO rfm_metrics
+```
+
+### 2. NES (Next Expected Sale) Calculation
+```nsql
+-- Calculate Next Expected Sale timing
+TRANSFORM df_sales_by_customer_by_date
+  MERGE WITH ipt_table ON customer_id
+  GROUP BY customer_id
+  COMPUTE {
+    -- Get most recent transaction
+    last_payment = MAX(payment_time),
+    difftime = DAYS_BETWEEN(time_now, last_payment),
+    
+    -- Calculate NES ratio
+    nes_ratio = difftime / ipt_mean,
+    nes_median = 1.7,  -- Domain-specific constant
+    
+    -- Categorize NES status
+    nes_status = CASE
+      WHEN nes_ratio < nes_median THEN 'E0'
+      WHEN nes_ratio < 2 * nes_median THEN 'S1'
+      WHEN nes_ratio < 2.5 * nes_median THEN 'S2'
+      ELSE 'S3'
+    END
+  }
+INTO nes_metrics
+```
+
+### 3. CAI (Customer Activity Index) Calculation
+```nsql
+-- Calculate Customer Activity Index
+TRANSFORM df_sales_by_customer_by_date
+  WHERE ni >= ni_threshold
+  GROUP BY customer_id
+  COMPUTE {
+    -- Maximum Likelihood Estimate
+    mle = SUM(ipt * (1/(ni-1))),
+    
+    -- Weighted Maximum Likelihood Estimate
+    wmle = SUM(ipt * ((times-1) / SUM(times-1))),
+    
+    -- Activity Index
+    cai = (mle - wmle) / mle,
+    cai_ecdf = ECDF(cai),
+    cai_label = CUT(cai_ecdf, cai_breaks, labels = text_cai_label)
+  }
+INTO cai_metrics
+```
+
+### 4. PCV (Past Customer Value) Calculation
+```nsql
+-- Calculate time-discounted Past Customer Value
+TRANSFORM df_sales_by_customer_by_date
+  LET delta = 0.0001  -- Discount factor
+  GROUP BY customer_id
+  COMPUTE {
+    difftime = DAYS_BETWEEN(time_now, payment_time),
+    -- Apply time-based discounting
+    pcv = SUM(total_spent * POWER(1 + delta, difftime))
+  }
+INTO pcv_metrics
+```
+
+### 5. CLV (Customer Lifetime Value) Calculation
+```nsql
+-- Calculate projected Customer Lifetime Value
+TRANSFORM df_sales_by_customer
+  LET discount_rate = 0.9
+  LET delta = 0.0001
+  GROUP BY customer_id
+  COMPUTE {
+    -- Purchase intensity function over 10 years
+    pif_values = GENERATE_SERIES(0, 10) 
+      |> MAP(t => IF(t < 5, 
+                    (4*t^2 + 20)/20, 
+                    (120 + 80*(1 - EXP(5-t)))/20)),
+    
+    -- Apply discount factors
+    discount_factors = GENERATE_SERIES(0, 10)
+      |> MAP(t => POWER(discount_rate, t) / POWER(1 + delta*4, t)),
+    
+    -- Calculate CLV
+    clv = SUM(total_spent * pif_values * discount_factors)
+  }
+INTO clv_metrics
+```
+
+### 6. CRI (Customer Regularity Index) Calculation
+```nsql
+-- Calculate Customer Regularity Index using Bayesian estimation
+TRANSFORM df_sales_by_customer
+  WHERE ni > 1
+  LET alpha = AVG(ni) OVER ALL
+  LET theta = SUM(1/ipt_mean) / (alpha * COUNT(*))
+  LET ge = 1 / ((alpha - 1) * theta)
+  GROUP BY customer_id
+  COMPUTE {
+    -- Individual estimate
+    ie = ipt_mean,
+    
+    -- Bayesian estimate
+    be = (ni / (ni + alpha - 1)) * ipt_mean + 
+         ((alpha - 1) / (ni + alpha - 1)) * ge,
+    
+    -- Regularity index
+    cri = ABS(ipt_mean - be) / ABS(ipt_mean - ge),
+    cri_ecdf = ECDF(cri)
+  }
+INTO cri_metrics
+```
+
+### 7. Churn Prediction (nrec) Calculation
+```nsql
+-- Predict customer churn using logistic regression
+TRANSFORM df_sales_by_customer_by_date
+  LET trace_month = -3
+  LET cutoff_date = ADD_MONTHS(time_now, trace_month)
+  
+  -- Create training data
+  WHERE payment_time < cutoff_date
+  GROUP BY customer_id
+  COMPUTE {
+    -- Label: Did customer return after cutoff?
+    nrec = IF(EXISTS(payment_time > cutoff_date), 'rec', 'nrec'),
+    
+    -- Features for prediction
+    f_label = f_label,
+    cai = cai_value
+  }
+  
+  -- Train logistic regression model
+  FIT MODEL logistic_regression {
+    TARGET nrec ~ f_label + cai,
+    METHOD = 'glm',
+    FAMILY = 'binomial',
+    CROSS_VALIDATION = 10
+  }
+  
+  -- Apply predictions
+  PREDICT nrec_prob, nrec_class
+INTO churn_predictions
+```
+
+## Output Structure
+
+### data_by_customer (Customer DNA Profile)
+```nsql
+SCHEMA data_by_customer {
+  -- Identifiers
+  customer_id: INTEGER PRIMARY KEY,
+  
+  -- RFM Metrics
+  r_value: NUMERIC,        -- Days since last purchase
+  r_ecdf: NUMERIC[0,1],    -- Recency percentile
+  r_label: FACTOR,         -- Recency category
+  f_value: INTEGER,        -- Transaction count
+  f_ecdf: NUMERIC[0,1],    -- Frequency percentile
+  f_label: FACTOR,         -- Frequency category
+  m_value: NUMERIC,        -- Total monetary value
+  m_ecdf: NUMERIC[0,1],    -- Monetary percentile
+  m_label: FACTOR,         -- Monetary category
+  
+  -- Activity Metrics
+  cai_value: NUMERIC[-1,1], -- Customer Activity Index
+  cai_ecdf: NUMERIC[0,1],   -- CAI percentile
+  cai_label: FACTOR,        -- Activity category
+  cri: NUMERIC,             -- Customer Regularity Index
+  cri_ecdf: NUMERIC[0,1],   -- CRI percentile
+  
+  -- Value Metrics
+  pcv: NUMERIC,             -- Past Customer Value
+  clv: NUMERIC,             -- Customer Lifetime Value
+  e0t: NUMERIC,             -- Core customer average purchase
+  
+  -- Predictive Metrics
+  nes_ratio: NUMERIC,       -- Next Expected Sale ratio
+  nes_value: NUMERIC,       -- NES value (alias)
+  nes_status: FACTOR,       -- NES category (E0, S1, S2, S3)
+  nrec_prob: NUMERIC[0,1],  -- Churn probability
+  nrec: FACTOR,             -- Churn prediction (rec/nrec)
+  
+  -- Statistical Metrics
+  ipt: NUMERIC,             -- Inter-purchase time
+  ipt_mean: NUMERIC,        -- Mean IPT
+  ni: INTEGER,              -- Number of purchases
+  be: NUMERIC,              -- Bayesian estimate
+  be2: NUMERIC,             -- Alternative Bayesian estimate
+  
+  -- Time Metrics
+  time_first: DATETIME,     -- First purchase time
+  time_first_to_now: NUMERIC, -- Days since first purchase
+  
+  -- Geographic (Optional)
+  zipcode: VARCHAR,
+  state: VARCHAR,
+  lat: NUMERIC,
+  lng: NUMERIC
+}
+```
+
+### nrec_accu (Model Accuracy)
+```nsql
+SCHEMA nrec_accu {
+  nrec_accu: VARCHAR  -- Format: "Accuracy: XX.XX%"
+}
+```
+
+## Usage Examples
+
+### Basic Usage
+```r
+# Load required data
+df_customer <- tbl2(con, "df_sales_by_customer") %>% collect()
+df_transactions <- tbl2(con, "df_sales_by_customer_by_date") %>% collect()
+
+# Run DNA analysis
+results <- analysis_dna(
+  df_sales_by_customer = df_customer,
+  df_sales_by_customer_by_date = df_transactions
+)
+
+# Access results
+customer_profiles <- results$data_by_customer
+model_accuracy <- results$nrec_accu
+```
+
+### Performance Optimization
+```r
+# Skip churn modeling for faster processing
+results <- analysis_dna(
+  df_sales_by_customer = df_customer,
+  df_sales_by_customer_by_date = df_transactions,
+  skip_within_subject = TRUE,
+  verbose = FALSE
+)
+```
+
+### Custom Parameters
+```r
+# Override default thresholds and breaks
+custom_params <- list(
+  ni_threshold = 3,
+  delta = 0.0002,
+  cai_breaks = c(0, 0.2, 0.8, 1),
+  text_cai_label = c("Inactive", "Normal", "Active"),
+  f_breaks = c(0, 2, 5, Inf),
+  text_f_label = c("Low", "Med", "High")
+)
+
+results <- analysis_dna(
+  df_sales_by_customer = df_customer,
+  df_sales_by_customer_by_date = df_transactions,
+  global_params = custom_params
+)
+```
+
+## Related Principles
+
+### Core Principles
+- **MP045**: Automatic Data Availability Detection - Handles optional fields gracefully
+- **D01**: DNA Analysis Framework - Implements comprehensive customer profiling
+- **P82**: Data Processing Method Selection - Optimizes transformation strategies
+
+### Implementation Rules
+- **R091**: Universal Data Access - Uses tbl2() for database operations
+- **R092**: Universal DBI Approach - Supports multiple database backends
+- **R119**: Memory Resident Parameters - Efficient parameter management
+
+## Performance Considerations
+
+### Optimization Strategies
+1. **Pre-aggregation**: Input data should be pre-aggregated at customer and date levels
+2. **Indexing**: Ensure customer_id is indexed in both input tables
+3. **Memory Management**: Use data.table for efficient in-memory operations
+4. **Parallel Processing**: CAI and CRI calculations can be parallelized
+
+### Typical Performance Metrics
+- 10K customers: ~2-3 seconds
+- 100K customers: ~15-20 seconds
+- 1M customers: ~2-3 minutes
+
+## Error Handling
+
+### Common Issues and Solutions
+
+1. **Missing IPT Field**
+```r
+# Error: ipt field is missing in df_sales_by_customer_id
+# Solution: Ensure IPT is pre-calculated in customer aggregation
+df_customer <- df_customer %>%
+  group_by(customer_id) %>%
+  mutate(ipt = mean(diff(payment_time)))
+```
+
+2. **Duplicate Customer IDs**
+```r
+# Error: customer_id must be unique in df_sales_by_customer_id
+# Solution: Aggregate to ensure one row per customer
+df_customer <- df_customer %>%
+  group_by(customer_id) %>%
+  summarise(across(everything(), first))
+```
+
+3. **Missing Time Fields**
+```r
+# Error: No suitable time field found
+# Solution: Ensure payment_time or alternatives exist
+# Acceptable fields: payment_time, min_time_by_date, min_time
+```
+
+## Implementation Notes
+
+### Field Name Requirements
+- All field names must be **lowercase** (e.g., `ipt` not `IPT`)
+- The function automatically handles common field variations
+- Geographic fields are optional and filled with NA if missing
+
+### Data Integrity Rules
+1. **One row per customer**: df_sales_by_customer must have unique customer_id
+2. **Time consistency**: All datetime fields must be comparable
+3. **Numeric fields**: Monetary values must be numeric, not character
+
+### Integration with Shiny Apps
+```r
+# In server.R
+observeEvent(input$analyze, {
+  withProgress(message = "Analyzing customer DNA...", {
+    results <- analysis_dna(
+      df_sales_by_customer = reactive_customer_data(),
+      df_sales_by_customer_by_date = reactive_transaction_data()
+    )
+    
+    output$dna_table <- renderDT({
+      datatable(results$data_by_customer,
+        options = list(pageLength = 25))
+    })
+  })
+})
+```
+
+## File Locations
+
+### Main Files
+- **Implementation**: `scripts/global_scripts/04_utils/fn_analysis_dna.R`
+- **Dependencies**: 
+  - `scripts/global_scripts/04_utils/fn_left_join_remove_duplicate2.R`
+  - `scripts/global_scripts/04_utils/fn_fct_na_value_to_level.R`
+- **Documentation**: Current file
+
+### Test Files
+- `tests/test_analysis_dna.R` - Unit tests
+- `tests/test_dna_performance.R` - Performance benchmarks
+
+## Version History
+
+### v2.0.0 (Current)
+- ✅ Refactored parameter handling for clarity
+- ✅ Improved field detection with multiple alternatives
+- ✅ Enhanced error messages and validation
+- ✅ Added comprehensive NSQL documentation
+
+### v1.5.0
+- ✅ Added skip_within_subject parameter
+- ✅ Improved performance for large datasets
+- ✅ Enhanced geographic field handling
+
+### v1.0.0
+- ✅ Initial implementation of DNA analysis
+- ✅ Core RFM, CAI, CLV calculations
+- ✅ Basic churn prediction model
+
+---
+
+*This documentation follows the MAMBA/WISER function documentation standards and uses NSQL to describe data transformations for clarity and precision.*

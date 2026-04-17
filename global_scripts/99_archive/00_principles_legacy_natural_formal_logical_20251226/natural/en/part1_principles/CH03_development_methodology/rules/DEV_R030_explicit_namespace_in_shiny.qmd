@@ -1,0 +1,235 @@
+---
+title: "DEV_R030: Explicit Namespace in Shiny Applications Rule"
+subtitle: "All functions from external packages in Shiny applications must be prefixed with their explicit namespace qualifier (package::function()), regardless of whether the package has been loaded with library() or not"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R030"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 30
+  title: "Explicit Namespace in Shiny Applications Rule"
+related_to:
+  - "MP58: Namespace Conflict Avoidance"
+  - "R109: bs4Dash Namespace Rule"
+  - "R95: Import Requirements Rule"
+  - "MP19: Package Consistency"
+  - "R10: Package Consistency Naming"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 30: Explicit Namespace in Shiny Applications Rule {#overview}
+
+**Development Methodology Law Article 30 (Explicit Namespace in Shiny Applications Rule)**
+
+This rule mandates the consistent and explicit use of namespace prefixes for all package functions in Shiny applications, eliminating any reliance on implicit namespace resolution through package loading order.
+
+:::{.callout-important}
+## Rule Definition
+All functions from external packages in Shiny applications must be prefixed with their explicit namespace qualifier (`package::function()`), regardless of whether the package has been loaded with library() or not.
+:::
+
+# Section 1: Requirements {#requirements}
+
+## Subsection 1: Universal Application {#universal-application}
+
+This rule applies to all external package functions in Shiny applications, with the exception noted in subsection 6.
+
+## Subsection 2: Explicit Over Implicit {#explicit-over-implicit}
+
+Always use explicit namespace prefixes, even when:
+- The package has been loaded with library() or require()
+- No apparent conflicts exist in the current environment
+- The function name appears to be unique
+
+## Subsection 3: Common Shiny Packages {#common-shiny-packages}
+
+Apply namespaces to functions from all packages, including but not limited to:
+- `shiny::` for all Shiny functions (e.g., `shiny::renderUI`, `shiny::reactive`)
+- `shinyjs::` for ShinyJS functions (e.g., `shinyjs::useShinyjs`, `shinyjs::hidden`)
+- `bs4Dash::` for bs4Dash functions (see R109 for specifics)
+- `DT::` for data table functions (e.g., `DT::renderDataTable`, `DT::dataTableOutput`)
+- `plotly::` for plotly functions (e.g., `plotly::renderPlotly`, `plotly::plotlyOutput`)
+- `dplyr::` for dplyr functions (e.g., `dplyr::filter`, `dplyr::mutate`)
+
+## Subsection 4: Documentation Code {#documentation-code}
+
+Include namespace prefixes in all examples and documentation code.
+
+## Subsection 5: Consistency {#consistency}
+
+Apply this approach consistently throughout the entire application codebase.
+
+## Subsection 6: Core Shiny Exception {#core-shiny-exception}
+
+As a pragmatic exception, core `shiny` package functions may omit the `shiny::` prefix if all of these conditions are met:
+- The shiny package is explicitly loaded with `library(shiny)` at the start of the script
+- The function is commonly used across the application (e.g., UI elements, renderUI, observe)
+- There is a team-wide agreement to consistently omit shiny prefixes
+- There is no risk of namespace conflict with other packages in the project
+
+This exception acknowledges that in Shiny-centric applications, requiring `shiny::` prefixes for every HTML element and core function can reduce readability. However, note that for maximum safety, using the `shiny::` prefix is still recommended even for core functions.
+
+# Section 2: Implementation Pattern {#implementation-pattern}
+
+## Subsection 1: BS4DASH Example {#bs4dash-example}
+
+```r
+# CORRECT:
+ui <- shiny::fluidPage(
+  bs4Dash::dashboardPage(
+    header = bs4Dash::dashboardHeader(title = "My App"),
+    sidebar = bs4Dash::dashboardSidebar(),
+    body = bs4Dash::dashboardBody(
+      shinyjs::useShinyjs(),
+      shiny::h1("My Application"),
+      shiny::fluidRow(
+        shiny::column(
+          width = 6,
+          DT::dataTableOutput("table")
+        ),
+        shiny::column(
+          width = 6,
+          plotly::plotlyOutput("plot")
+        )
+      )
+    )
+  )
+)
+```
+
+## Subsection 2: BSLIB Example {#bslib-example}
+
+```r
+# CORRECT:
+ui <- bslib::page_fillable(
+  shinyjs::useShinyjs(),
+  bslib::layout_sidebar(
+    sidebar = bslib::sidebar(
+      shiny::h4("Settings"),
+      shiny::sliderInput("n", "Number of points", 10, 100, 50)
+    ),
+    bslib::navset_card_tab(
+      bslib::nav_panel(
+        title = "Data",
+        icon = shiny::icon("table"),
+        DT::dataTableOutput("table")
+      ),
+      bslib::nav_panel(
+        title = "Visualization",
+        icon = shiny::icon("chart-bar"),
+        plotly::plotlyOutput("plot")
+      ),
+      bslib::nav_panel(
+        title = "Analysis",
+        icon = shiny::icon("calculator"),
+        bslib::card(
+          bslib::card_header("Statistical Summary"),
+          shiny::verbatimTextOutput("summary")
+        )
+      )
+    )
+  )
+)
+```
+
+## Subsection 3: Server Function Example {#server-example}
+
+```r
+server <- function(input, output, session) {
+  data <- shiny::reactive({
+    dplyr::tibble(
+      x = 1:input$n,
+      y = stats::rnorm(input$n)
+    )
+  })
+  
+  output$table <- DT::renderDataTable({
+    DT::datatable(data())
+  })
+  
+  output$plot <- plotly::renderPlotly({
+    plotly::plot_ly(data(), x = ~x, y = ~y, type = "scatter", mode = "markers")
+  })
+  
+  output$summary <- shiny::renderPrint({
+    stats::summary(data()$y)
+  })
+}
+```
+
+# Section 3: Common Packages and Functions to Watch {#common-packages-functions}
+
+## Subsection 1: Shiny Functions {#shiny-functions}
+
+- `fluidPage`, `navbarPage`, `tagList`, `div`, `h1`-`h6`, `p` should be `shiny::`
+- All render functions (`renderText`, `renderPlot`) should be `shiny::`
+- All input/output functions (`textInput`, `plotOutput`) should be `shiny::`
+
+## Subsection 2: ShinyJS Functions {#shinyjs-functions}
+
+- `useShinyjs`, `hidden`, `show`, `hide`, `toggle` should be `shinyjs::`
+
+## Subsection 3: Modern Shiny UI Packages {#modern-shiny-ui}
+
+- `page_fillable`, `layout_columns`, `card` should be `bslib::`
+- `nav_panel`, `nav_product`, `nav_menu` should be `bslib::`
+- `input_switch`, `input_slider`, `accordion` should be `bslib::`
+
+## Subsection 4: Table/Plot Packages {#table-plot-packages}
+
+- `renderDataTable`, `dataTableOutput` should be `DT::`
+- `renderPlotly`, `plotlyOutput` should be `plotly::`
+- `renderHighchart`, `highchartOutput` should be `highcharter::`
+
+## Subsection 5: Data Manipulation {#data-manipulation}
+
+- `filter`, `select`, `mutate`, `group_by` should be `dplyr::`
+
+# Section 4: Related Principles {#related-principles}
+
+- MP58: Namespace Conflict Avoidance
+- R109: bs4Dash Namespace Rule
+- R95: Import Requirements Rule
+- MP19: Package Consistency
+- R10: Package Consistency Naming
+
+# Section 5: Notes {#notes}
+
+Consistently using explicit namespaces in Shiny applications provides significant benefits:
+
+1. **Reliability**: Applications behave consistently regardless of which packages are loaded or their loading order.
+
+2. **Maintainability**: Code is self-documenting regarding which package each function comes from.
+
+3. **Error Prevention**: Prevents subtle bugs caused by namespace conflicts or masked functions.
+
+4. **Learning**: Helps developers learn which functions come from which packages.
+
+5. **Stability**: Protects against future package updates that might introduce new functions with conflicting names.
+
+6. **Selective Omission**: The exception for core shiny functions acknowledges the balance between safety and readability:
+   - Pure Shiny apps with few other packages may reasonably omit `shiny::` prefixes
+   - Applications with many packages or complex dependencies should always use explicit prefixes
+   - All non-shiny packages should always use explicit prefixes regardless of context
+
+7. **Recommended Team Practice**: Agree on one of these approaches team-wide:
+   - **Strict mode**: Use `shiny::` for all functions from all packages with no exceptions
+   - **Balanced mode**: Omit `shiny::` for core HTML/UI elements only, use prefixes for everything else
+   - **Pragmatic mode**: Omit `shiny::` for most common functions, but explicitly document this decision
+
+While it may seem verbose initially, the benefits in reliability and maintainability far outweigh the minor additional typing required. This approach also allows for more granular control of package dependencies, as you can use specific functions from packages without loading the entire package namespace.
+
+---
+
+*Based on: Development Methodology Law Article 30*  
+*Related to: [R109 bs4Dash Namespace Rule](../../CH04_ui_components/rules/UI_R017_bs4dash_namespace.qmd), [MP58 Namespace Conflict Avoidance](../../CH00_fundamental_principles/meta_principles/MP058_namespace_conflict_avoidance.qmd)*

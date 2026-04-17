@@ -1,0 +1,393 @@
+---
+
+title: "ETL Independence Implementation Guide"
+subtitle: "Practical Guide to Implementing MP107 - ETL Pipeline Independence"
+category: "ETL Pipelines - Independence"
+level: "CH11.05"
+status: "Active"
+created: "2025-08-29"
+modified: "2025-12-24"
+version: "2.0"
+principle_refs:
+  - "MP107: ETL Pipeline Independence - CORE REQUIREMENT"
+  - "MP108: ETL Phase Sequence Principle"
+  - "MP104: ETL Data Flow Separation Principle"
+  - "DM_R028: ETL Data Type Separation Rule"
+---
+
+# ETL Independence Implementation Guide
+
+## Executive Summary
+
+**ETL Independence (MP107) is THE FOUNDATION of MAMBA's scalability**. This guide provides practical patterns and tests to ensure every ETL complies with the independence principle.
+
+## The Independence Mandate
+
+### The Golden Rule Test
+
+```
+"Can I run this ETL right now, by itself, without running anything else first?"
+
+If NO  → The ETL violates MP107 and MUST be fixed
+If YES → The ETL complies with MP107
+```
+
+### Core Requirements
+
+Every ETL MUST be:
+
+| Requirement | Description |
+|-------------|-------------|
+| **Self-Initializing** | Contains its own `autoinit()` |
+| **Self-Contained** | Has all resources it needs internally |
+| **Standalone Executable** | Can run without any other ETL |
+| **Parallel-Ready** | Can run simultaneously with all other ETLs |
+| **Selectively Runnable** | Can be skipped without breaking anything |
+
+## Two-Dimensional Execution Model
+
+### MP107 + MP108 Architecture
+
+```
+HORIZONTAL (MP107): ETL Independence
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  cbz_sales ←→ cbz_customers ←→ cbz_orders
+     Can run in ANY order or SIMULTANEOUSLY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+VERTICAL (MP108): Phase Sequence
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│ cbz_sales   │  │cbz_customers│  │ cbz_orders  │
+├─────────────┤  ├─────────────┤  ├─────────────┤
+│    0IM      │  │    0IM      │  │    0IM      │
+│     ↓       │  │     ↓       │  │     ↓       │
+│    1ST      │  │    1ST      │  │    1ST      │
+│     ↓       │  │     ↓       │  │     ↓       │
+│    2TR      │  │    2TR      │  │    2TR      │
+└─────────────┘  └─────────────┘  └─────────────┘
+```
+
+**Key Understanding:**
+- **MP107**: Different ETLs can run in parallel (horizontal independence)
+- **MP108**: Within each ETL, phases run sequentially (vertical sequence)
+
+## Implementation Patterns
+
+### Pattern 1: Self-Contained ETL Template
+
+```r
+# {platform}_ETL_{datatype}_{phase}.R
+
+# ==============================================================================
+# SELF-CONTAINED INITIALIZATION (MP107 Required)
+# ==============================================================================
+autoinit(verbose = TRUE)  # Own database connections
+
+# Load configuration independently
+config <- load_etl_config()
+
+# Establish own connections (never assume they exist)
+raw_data <- dbConnectDuckdb(db_path_list$raw_data)
+staged_data <- dbConnectDuckdb(db_path_list$staged_data)
+
+# ==============================================================================
+# MAIN EXECUTION (No dependencies on other ETLs)
+# ==============================================================================
+main_execution <- function() {
+  tryCatch({
+    # Direct source access - NEVER read from another ETL's output
+    if (phase == "0IM") {
+      data <- fetch_from_source(config)  # NOT from another ETL
+    } else {
+      data <- read_from_database(conn, table_name)
+    }
+
+    # Process data
+    processed <- process_data(data)
+
+    # Write to standard location
+    write_to_database(conn, processed, output_table)
+
+    return(TRUE)
+
+  }, error = function(e) {
+    log_error(sprintf("ETL failed: %s", e$message))
+    return(FALSE)
+  })
+}
+
+# Execute
+result <- main_execution()
+
+# ==============================================================================
+# CLEAN TERMINATION (MP107 Required)
+# ==============================================================================
+autodeinit()  # Close own connections - MUST be final statement
+```
+
+### Pattern 2: Parallel Execution Framework
+
+```r
+# Leveraging ETL Independence for Parallelization
+execute_parallel_etls <- function() {
+  library(future)
+  plan(multisession, workers = availableCores())
+
+  # Define independent ETL functions
+  etl_functions <- list(
+    cbz_sales_0IM = cbz_ETL_sales_0IM,
+    cbz_customers_0IM = cbz_ETL_customers_0IM,
+    cbz_orders_0IM = cbz_ETL_orders_0IM,
+    eby_sales_0IM = eby_ETL_sales_0IM
+  )
+
+  # Execute ALL simultaneously (MP107 enables this)
+  futures <- lapply(etl_functions, function(etl_fn) {
+    future({ etl_fn() })
+  })
+
+  # Collect results
+  results <- lapply(futures, value)
+
+  return(results)
+}
+```
+
+### Pattern 3: Selective Execution
+
+```r
+# Run only what's needed - MP107 enables this
+run_selected_etls <- function(selection) {
+  results <- list()
+
+  for (etl_name in selection) {
+    message(sprintf("Running %s independently", etl_name))
+
+    etl_function <- get(etl_name)
+
+    results[[etl_name]] <- tryCatch({
+      etl_function()
+      list(status = "success", etl = etl_name)
+    }, error = function(e) {
+      list(status = "failed", etl = etl_name, error = e$message)
+    })
+  }
+
+  return(results)
+}
+
+# Examples
+run_selected_etls(c("cbz_ETL_sales_0IM", "eby_ETL_sales_0IM"))
+```
+
+## Anti-Patterns to Avoid
+
+### ❌ VIOLATION: Sequential Dependencies
+
+```r
+# WRONG: ETL depends on another ETL's execution
+cbz_ETL_orders_0IM <- function() {
+  # ❌ VIOLATION: Assumes sales ETL ran first
+  if (!file.exists("temp/sales_processed.rds")) {
+    stop("Run sales ETL first!")  # BREAKS MP107
+  }
+
+  # ❌ VIOLATION: Reads another ETL's output
+  sales_data <- readRDS("temp/sales_processed.rds")
+}
+```
+
+### ❌ VIOLATION: Shared State
+
+```r
+# WRONG: ETLs share global state
+cbz_ETL_sales_0IM <- function() {
+  global_etl_state <<- list(sales_complete = TRUE)  # ❌ VIOLATION
+}
+
+cbz_ETL_customers_0IM <- function() {
+  if (!global_etl_state$sales_complete) {  # ❌ VIOLATION
+    stop("Sales ETL must complete first!")
+  }
+}
+```
+
+### ❌ VIOLATION: Numbered Scripts Implying Order
+
+```bash
+# WRONG: File naming implies sequence
+01_cbz_ETL_sales.R       # ❌ Implies run first
+02_cbz_ETL_customers.R   # ❌ Implies run second
+03_cbz_ETL_orders.R      # ❌ Implies run third
+
+# CORRECT: Flat structure without sequence
+cbz_ETL_sales_0IM.R      # ✅ No implied order
+cbz_ETL_customers_0IM.R  # ✅ Can run anytime
+cbz_ETL_orders_0IM.R     # ✅ Independent unit
+```
+
+## Testing for Independence
+
+### Test 1: Random Order Execution
+
+```r
+test_etl_independence_random_order <- function() {
+  etl_functions <- list(
+    cbz_ETL_sales_0IM,
+    cbz_ETL_customers_0IM,
+    cbz_ETL_orders_0IM
+  )
+
+  # Test 10 random execution orders
+  for (i in 1:10) {
+    random_order <- sample(etl_functions)
+
+    results <- lapply(random_order, function(etl) {
+      tryCatch(etl(), error = function(e) FALSE)
+    })
+
+    if (!all(unlist(results))) {
+      stop("VIOLATION: ETLs failed in random order!")
+    }
+  }
+
+  message("✅ PASSED: All ETLs are order-independent")
+}
+```
+
+### Test 2: Parallel Stress Test
+
+```r
+test_etl_parallel_execution <- function() {
+  library(future)
+  plan(multisession, workers = 10)
+
+  # Run each ETL multiple times in parallel
+  etl_functions <- rep(list(
+    cbz_ETL_sales_0IM,
+    cbz_ETL_customers_0IM,
+    cbz_ETL_orders_0IM
+  ), 3)
+
+  futures <- lapply(etl_functions, function(etl) {
+    future(etl())
+  })
+
+  results <- lapply(futures, value)
+
+  if (!all(unlist(results))) {
+    stop("VIOLATION: ETLs failed under parallel execution!")
+  }
+
+  message("✅ PASSED: All ETLs handle parallel execution")
+}
+```
+
+### Test 3: Dependency Detection
+
+```r
+detect_etl_dependencies <- function(script_path) {
+  code <- readLines(script_path)
+
+  # Check for sequential patterns
+  sequential_patterns <- c(
+    "source.*ETL",          # Sources another ETL
+    "readRDS.*ETL",         # Reads ETL output file
+    "depends_on",           # Explicit dependency
+    "run.*first",           # Sequential requirement
+    "global.*etl.*state",   # Global state sharing
+    "<<-.*etl"              # Global assignment
+  )
+
+  violations <- list()
+  for (pattern in sequential_patterns) {
+    matches <- grep(pattern, code, ignore.case = TRUE)
+    if (length(matches) > 0) {
+      violations[[pattern]] <- matches
+    }
+  }
+
+  if (length(violations) > 0) {
+    warning(sprintf("POTENTIAL MP107 VIOLATIONS in %s", script_path))
+    return(FALSE)
+  }
+
+  message(sprintf("✅ %s appears to be independent", basename(script_path)))
+  return(TRUE)
+}
+```
+
+## Migration Checklist
+
+Converting dependent ETLs to independent:
+
+- [ ] **Remove all sequential dependencies**
+  - [ ] No references to other ETL outputs
+  - [ ] No shared temp files
+  - [ ] No global state variables
+
+- [ ] **Add self-initialization**
+  - [ ] Each ETL has `autoinit()`
+  - [ ] Each ETL loads its own config
+  - [ ] Each ETL creates its own connections
+
+- [ ] **Ensure self-containment**
+  - [ ] All resources obtained internally
+  - [ ] Error handling is isolated
+  - [ ] Clean termination with `autodeinit()`
+
+- [ ] **Test independence**
+  - [ ] Passes random order test
+  - [ ] Passes parallel execution test
+  - [ ] Passes isolation test
+
+- [ ] **Update file naming**
+  - [ ] Remove sequential numbering
+  - [ ] Follow flat structure pattern
+
+## Quick Reference Card
+
+```yaml
+MP107_INDEPENDENCE_REQUIREMENTS:
+  MUST_HAVE:
+    - Self-initialization with autoinit()
+    - Self-contained resource acquisition
+    - No dependencies on other ETLs
+    - Clean termination with autodeinit()
+    - Ability to run in any order
+    - Ability to run in parallel
+    - Ability to run selectively
+
+  MUST_NOT_HAVE:
+    - Sequential dependencies
+    - Shared temp files
+    - Global state variables
+    - References to other ETL outputs
+    - Numbered file names implying order
+    - Wait or synchronization logic
+    - Cross-ETL transactions
+
+  GOLDEN_RULE_TEST:
+    question: "Can I run this ETL right now, by itself?"
+    if_no: "ETL violates MP107 - FIX IMMEDIATELY"
+    if_yes: "ETL complies with MP107 - GOOD TO GO"
+```
+
+## Benefits of Independence
+
+Independence enables:
+- **Unlimited scalability** through parallelization
+- **Operational flexibility** through selective execution
+- **System resilience** through failure isolation
+- **Development velocity** through team independence
+
+## Related Documentation
+
+- [index.qmd](index.qmd) - CH11 Overview
+- [01_sales_pipeline.qmd](01_sales_pipeline.qmd) - Sales patterns
+- MP107: ETL Pipeline Independence Principle
+- MP108: ETL Phase Sequence Principle
+
+---
+
+*Consolidated from `ETL_INDEPENDENCE_GUIDE.qmd` on 2025-12-24*

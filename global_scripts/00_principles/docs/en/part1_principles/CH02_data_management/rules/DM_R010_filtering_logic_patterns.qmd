@@ -1,0 +1,245 @@
+---
+title: "DM_R010: Filtering Logic Patterns"
+subtitle: "Filtering logic for special categories, especially 'ALL', must follow standard patterns that optimize for both performance and code clarity, with explicit handling of special ID values"
+chapter: "CH02"
+category: "rule"
+number: "DM_R010"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 10
+  title: "Filtering Logic Pattern Rules"
+related_to:
+  - "MP034: Special Treatment of ALL Category"
+  - "DM_R009: Special ID Conventions"
+  - "UI_R008: Default Selection Conventions"
+  - "DM_P001: Data Integrity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 10: Filtering Logic Pattern Rules {#overview}
+
+**Data Management Law Article 10 (Filtering Logic Pattern Rules)**
+
+This rule establishes standard patterns for handling filtering logic with special categories.
+
+:::{.callout-important}
+## Core Rule
+Filtering logic for special categories, especially "ALL", must follow standard patterns that optimize for both performance and code clarity, with explicit handling of special ID values.
+:::
+
+# Section 1: Implementation Patterns {#implementation-patterns}
+
+## Subsection 1: Filter Bypassing Pattern {#filter-bypassing}
+
+When "ALL" is selected, bypass filtering entirely rather than applying a filter that matches everything:
+
+```r
+# Essential Pattern: ALL Bypasses Filter
+filter_data <- function(data, category_id) {
+  if (category_id == "000") {  # ALL category
+    return(data)  # Return full dataset without filtering
+  } else {
+    return(data[data$category == category_id, ])
+  }
+}
+```
+
+## Subsection 2: SQL Query Pattern {#sql-query-pattern}
+
+In SQL queries, use a conditional clause that evaluates to TRUE for special categories:
+
+```sql
+-- Pattern 1: OR condition for ALL
+SELECT * FROM products 
+WHERE (:category_id = '000' OR category_id = :category_id)
+
+-- Pattern 2: CASE expression for multiple special categories
+SELECT * FROM products 
+WHERE CASE 
+  WHEN :category_id = '000' THEN TRUE  -- ALL category
+  WHEN :category_id = '999' THEN category_id IS NULL  -- OTHER category
+  ELSE category_id = :category_id  -- Standard category
+END
+```
+
+## Subsection 3: Multi-Level Filtering Pattern {#multi-level-filtering}
+
+For hierarchical filtering, handle "ALL" at each level independently:
+
+```r
+# Multi-level filtering with ALL handling
+filter_products <- function(data, category_id, subcategory_id) {
+  # Start with all data
+  filtered_data <- data
+  
+  # Apply category filter if not ALL
+  if (category_id != "000") {
+    filtered_data <- filtered_data[filtered_data$category_id == category_id, ]
+  }
+  
+  # Apply subcategory filter if not ALL
+  if (subcategory_id != "000") {
+    filtered_data <- filtered_data[filtered_data$subcategory_id == subcategory_id, ]
+  }
+  
+  return(filtered_data)
+}
+```
+
+# Section 2: Reactive Dependency Patterns {#reactive-patterns}
+
+## Subsection 1: Shiny Reactive Optimization {#shiny-reactive}
+
+In Shiny, optimize reactive expressions to avoid unnecessary recalculation:
+
+```r
+# In server.R
+
+# Define base data only once
+all_data <- reactive({
+  load_all_products()
+})
+
+# First-level filtered data
+category_filtered <- reactive({
+  req(input$category_id)
+  
+  # If ALL is selected, return base data without filtering
+  if (input$category_id == "000") {
+    return(all_data())
+  }
+  
+  # Otherwise filter by category
+  all_data()[all_data()$category_id == input$category_id, ]
+})
+
+# Second-level filtered data
+fully_filtered <- reactive({
+  req(input$subcategory_id)
+  
+  # Get the appropriate base data based on category selection
+  base_data <- category_filtered()
+  
+  # If ALL subcategory is selected, return category-filtered data without further filtering
+  if (input$subcategory_id == "000") {
+    return(base_data)
+  }
+  
+  # Otherwise apply subcategory filter
+  base_data[base_data$subcategory_id == input$subcategory_id, ]
+})
+```
+
+## Subsection 2: Multiple Value Filtering Pattern {#multiple-value-filtering}
+
+For multi-select inputs, handle special cases:
+
+```r
+# Multi-select filtering with ALL handling
+filter_by_multiple_categories <- function(data, selected_categories) {
+  # If ALL is among selected categories, return all data
+  if ("000" %in% selected_categories) {
+    return(data)
+  }
+  
+  # If no categories selected, return empty dataset
+  if (length(selected_categories) == 0) {
+    return(data[0, ])
+  }
+  
+  # Standard filtering for multiple selection
+  data[data$category_id %in% selected_categories, ]
+}
+```
+
+# Section 3: Performance Considerations {#performance}
+
+## Subsection 1: Caching Strategy {#caching-strategy}
+
+Cache results for common filters, especially the full dataset for "ALL":
+
+```r
+# Cache implementation
+category_cache <- new.env(parent = emptyenv())
+
+get_filtered_data <- function(category_id) {
+  cache_key <- paste("category", category_id, sep = "_")
+  
+  # Check if result is in cache
+  if (exists(cache_key, envir = category_cache)) {
+    return(get(cache_key, envir = category_cache))
+  }
+  
+  # Not in cache, compute result
+  if (category_id == "000") {
+    result <- get_all_data()
+  } else {
+    result <- filter_data_by_category(category_id)
+  }
+  
+  # Store in cache
+  assign(cache_key, result, envir = category_cache)
+  return(result)
+}
+```
+
+## Subsection 2: Large Dataset Optimization {#large-dataset-optimization}
+
+For large datasets, consider pre-aggregation or data subsetting:
+
+```r
+# Pre-aggregate data for common groupings
+precompute_aggregations <- function() {
+  # Aggregation for ALL category (total summary)
+  all_summary <- aggregate_all_data()
+  
+  # Aggregations per category
+  category_summaries <- lapply(unique(data$category_id), function(cat_id) {
+    aggregate_by_category(cat_id)
+  })
+  
+  # Store for later use
+  assign("precomputed_aggregations", list(
+    all = all_summary,
+    by_category = setNames(category_summaries, unique(data$category_id))
+  ), envir = .GlobalEnv)
+}
+```
+
+# Section 4: Implementation Checklist {#checklist}
+
+When implementing filtering logic patterns:
+
+1. ☐ Identify all special ID values (000, 999, etc.)
+2. ☐ Implement filter bypass logic
+3. ☐ Optimize SQL query patterns
+4. ☐ Handle multi-level filtering
+5. ☐ Set up reactive dependencies
+6. ☐ Implement caching strategy
+7. ☐ Test edge cases
+8. ☐ Verify performance
+
+# Section 5: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Improve performance**: Avoid unnecessary data processing
+2. **Code clarity**: Explicit handling of special cases
+3. **Maintainability**: Consistent filtering patterns
+4. **Scalability**: Easy to add new special categories
+5. **User experience**: Fast response times
+
+---
+
+*Based on: Data Management Law Article 10*  
+*Related to: [MP034 Special Treatment of ALL Category](../../CH00_fundamental_principles/meta_principles/MP034_special_treatment_all.qmd), [DM_R009 Special ID Conventions](DM_R009_special_id_conventions.qmd)*

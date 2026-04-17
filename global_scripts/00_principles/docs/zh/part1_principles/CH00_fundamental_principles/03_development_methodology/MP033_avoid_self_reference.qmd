@@ -1,0 +1,143 @@
+---
+title: "MP028: 避免自我引用元原則 (Avoid Self-Reference Unless Necessary)"
+subtitle: "防止代碼直接或間接引用自身以維護系統穩定性"
+author: "System"
+date: "2025-04-04"
+date-modified: "2025-08-16"
+categories: [meta-principle, architecture, dependencies, best-practices]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則
+
+**代碼不應直接或間接引用或載入自身，除非絕對必要並且經過仔細控制。**
+
+## 說明
+
+自我引用發生在一段代碼依賴於自身時，創建循環依賴。這可能導致無限遞歸、不可預測的行為和初始化問題。雖然在罕見情況下需要受控的自我引用（例如，遞歸函數），但在系統架構中通常應該避免。
+
+### 自我引用的問題 {#problems}
+
+1. **無限循環**：載入自身的代碼可能創建無限載入循環
+2. **不可預測的狀態**：部分初始化模組的狀態變得不可預測
+3. **順序依賴**：創建對操作確切順序的脆弱依賴
+4. **調試困難**：使追蹤執行流程變得極具挑戰性
+5. **初始化失敗**：可能阻止系統正確初始化
+6. **降低可維護性**：創建複雜、交織的依賴關係
+
+## 範例
+
+### 有問題的自我引用 {#problematic-self-reference}
+
+```r
+# 在檔案：db_utils.R
+source_directory <- function(dir_path) {
+  r_files <- list.files(path = dir_path, pattern = "\\.R$")
+  for(file in r_files) source(file.path(dir_path, file))
+}
+
+# 當被調用時，這將導致自我引用！
+source_directory(dirname(sys.frame(1)$ofile))
+```
+
+當上述代碼運行時，它將嘗試載入其目錄中的所有檔案，包括自身，導致無限遞歸。
+
+### 更好的方法 {#better-approach}
+
+```r
+# 在初始化檔案中（不在目標目錄中）
+source_directory <- function(dir_path, exclude_pattern = NULL) {
+  r_files <- list.files(path = dir_path, pattern = "\\.R$")
+  if(!is.null(exclude_pattern)) {
+    r_files <- r_files[!grepl(exclude_pattern, r_files)]
+  }
+  for(file in r_files) source(file.path(dir_path, file))
+}
+
+# 從目標目錄外部調用
+source_directory("path/to/db_utils")
+```
+
+## 實施指南
+
+1. **適當放置實用函數**：
+   - 目錄載入實用程式應在初始化檔案中定義，而不是在它們將載入的目錄中
+
+2. **使用模式排除**：
+   - 載入目錄時，提供排除某些檔案（如實用程式檔案）的機制
+
+3. **謹慎遞歸**：
+   - 實施遞歸函數時，確保適當的終止條件
+
+4. **明確依賴**：
+   - 使依賴清晰明確，避免隱藏的循環引用
+
+5. **初始化順序**：
+   - 建立清晰的初始化步驟順序以防止循環依賴
+
+## 特殊情況
+
+在罕見情況下，可能需要受控的自我引用：
+
+1. **遞歸算法**：使用基本情況正確實施
+2. **插件系統**：組件向核心系統註冊自己
+3. **熱重載**：在運行時更新自己的系統
+
+即使在這些情況下，也要實施保護措施以防止無限循環或遞歸。
+
+## 避免自我引用的好處
+
+- **可預測的初始化**：系統組件以清晰、可靠的順序初始化
+- **更好的可維護性**：依賴關係明確且有方向性
+- **更容易調試**：堆疊追蹤和執行流程保持清晰合理
+- **系統穩定性**：減少循環依賴導致的意外失敗
+- **更清潔的架構**：強制更好的關注點分離
+
+## 實際實施
+
+與其創建載入自己目錄的實用程式檔案，不如直接在初始化檔案中實施目錄載入：
+
+```r
+# 在 000g_initialization_update_mode.R 中
+
+# 載入 db_utils 目錄中的所有 R 檔案
+db_utils_dir <- file.path("update_scripts", "global_scripts", "02_db_utils")
+if(dir.exists(db_utils_dir)) {
+  r_files <- list.files(
+    path = db_utils_dir, 
+    pattern = "\\.R$", 
+    full.names = TRUE
+  )
+  
+  # 排序檔案以確保一致的載入順序
+  r_files <- sort(r_files)
+  
+  # 載入每個檔案
+  for(file in r_files) {
+    tryCatch({
+      source(file)
+      message("Sourced: ", basename(file))
+    }, error = function(e) {
+      warning("Error sourcing ", basename(file), ": ", e$message)
+    })
+  }
+}
+```
+
+這種方法將目錄載入功能保留在其所屬的初始化檔案中，避免自我引用問題。
+
+## 相關原則
+
+此原則與以下原則協同工作：
+
+- **R21（一個函數一個檔案）**：鼓勵將函數正確組織到單獨的檔案中
+- **R45（僅初始化導入）**：確保初始化檔案不定義函數
+- **R46（載入目錄而非個別檔案）**：正確實施時，避免自我引用問題
+- **MP0029（無假數據）**：兩個原則都專注於維護系統完整性和可靠性

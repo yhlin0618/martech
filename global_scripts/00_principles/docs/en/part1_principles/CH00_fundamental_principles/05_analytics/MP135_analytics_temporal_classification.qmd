@@ -1,0 +1,647 @@
+---
+title: "MP135: Analytics Temporal Classification Principle"
+subtitle: "Fundamental Meta-Principle for Analytics Architecture"
+date: "2025-11-13"
+author: "MAMBA Development Team"
+version: "2.0.0"
+status: "Active"
+category: "Meta-Principle"
+applies_to:
+  - "All Analytics Components"
+  - "DRV Scripts"
+  - "UI Components"
+  - "ETL Pipelines"
+replaces: "MP135 v1.0 (Pre-Computed Analytics Principle)"
+related_principles:
+  - "UI_R022: Component Period Selector Contract"
+  - "DM_R120: ETL Period Standardization"
+  - "UI_R024: Metadata Display for Steady-State Analytics"
+  - "MP029: No Fake Data Principle"
+  - "MP109: Information Flow Transparency"
+---
+
+## Purpose
+
+This meta-principle establishes a **fundamental classification system** for all analytics components, determining whether they require temporal filtering (period selectors) or should use cumulative all-time data.
+
+### Why Classification Matters
+
+**Wrong classification causes**:
+- Statistical unreliability (insufficient sample sizes)
+- User confusion (volatile metrics that should be stable)
+- Implementation waste (4 weeks of unnecessary work)
+- Storage bloat (5× data redundancy)
+- Computational inefficiency (re-computing stable estimates)
+
+**Correct classification provides**:
+- Statistical validity (appropriate sample sizes)
+- User clarity (stable metrics stay stable)
+- Development efficiency (2 days vs 4 weeks for Type B)
+- Resource optimization (80% storage savings)
+- Better business decisions (reliable insights)
+
+---
+
+## The Three Types of Analytics
+
+### Type A: Time-Varying Analytics
+
+**Definition**: Analytics where results represent **time-series trends** and period comparison is the PRIMARY business insight.
+
+**Core Question**: *"Do users need to know how this metric changes over time?"*
+
+#### Characteristics
+
+| Aspect | Description |
+|--------|-------------|
+| **Nature** | Results change significantly and meaningfully over time |
+| **Business Value** | Temporal patterns ARE the insight ("Are we growing?") |
+| **Data Requirement** | Historical snapshots for each period |
+| **User Need** | Compare periods: "last month vs this month" |
+| **Statistical Model** | Time-series analysis, trend detection |
+
+#### Examples
+
+- **Sales Trends**: "Revenue grew 15% last quarter"
+- **Customer Growth**: "Active users increased 10% month-over-month"
+- **Seasonal Patterns**: "Summer sales are 30% higher than winter"
+- **Campaign Performance**: "Last week's campaign outperformed previous by 25%"
+- **Financial Reports**: "Q3 profits exceeded Q2 by 18%"
+
+#### Implementation Requirements
+
+```yaml
+data_storage:
+  periods:
+    - all_time     # Complete history
+    - 30d          # Last 30 days
+    - 90d          # Last 90 days
+    - 180d         # Last 180 days
+    - 365d         # Last 365 days
+  update_frequency: "Daily or with each ETL run"
+  deduplication: "Delete old period data before inserting new"
+
+ui_components:
+  period_selector:
+    required: true
+    type: "dropdown or radio buttons"
+    default: "90d"
+  metadata_display:
+    - selected_period
+    - date_range
+    - data_points_count
+
+drv_script:
+  pattern: |
+    for (period in standard_periods) {
+      data_filtered <- filter_by_period(data, period)
+      results <- compute_analysis(data_filtered)
+      results$period <- period
+      save_with_period_key(results, period)
+    }
+```
+
+#### Decision Indicators
+
+**Strong YES if**:
+- Users explicitly ask "How did X change over time?"
+- Comparison phrases: "vs last month", "year-over-year", "trend"
+- Management reports need temporal breakdowns
+- Seasonality is expected and meaningful
+
+**Strong NO if**:
+- Results should be stable (coefficients, positioning)
+- More data improves reliability (not temporal comparison)
+- Users ask "What is X?" not "How is X changing?"
+
+---
+
+### Type B: Steady-State Analytics
+
+**Definition**: Analytics where results are **stable cumulative estimates** representing fundamental market/product characteristics.
+
+**Core Question**: *"Should this estimate be MORE reliable with MORE data?"*
+
+#### Characteristics
+
+| Aspect | Description |
+|--------|-------------|
+| **Nature** | Results are stable features requiring large datasets |
+| **Business Value** | Fundamental insights ("What drives sales?") |
+| **Data Requirement** | Maximum available cumulative data |
+| **User Need** | "Current best estimate based on all evidence" |
+| **Statistical Model** | Parameter estimation, regression, positioning |
+
+#### Examples
+
+- **Poisson Coefficients**: "Fast delivery increases sales by 23% (based on 10,000 transactions)"
+- **Market Positioning**: "Our brand is positioned as premium quality (stable market map)"
+- **Attribute Importance**: "Price is the #1 factor (regression coefficient)"
+- **Customer DNA**: "Market has 4 stable segments (cluster analysis)"
+- **Product Features**: "Color matters more than size (conjoint analysis)"
+
+#### Why Periods Don't Make Sense
+
+**Statistical Perspective**:
+- Regression coefficients represent **population parameters**
+- Larger samples → Better estimates (not different estimates)
+- Period-to-period variation is **sampling noise**, not true change
+- If coefficients truly vary by time, model is **misspecified**
+
+**Business Perspective**:
+- ❌ "Fast delivery increased sales 18% last month but 27% this month" → Confusing!
+- ✅ "Fast delivery increases sales 23% (based on all data)" → Clear!
+- Users trust stable estimates over volatile ones
+
+**Example: Poisson Regression**
+```
+All data (n=10,000): β_delivery = 0.23, SE = 0.02, p < 0.001
+Last 30d (n=300):    β_delivery = 0.18, SE = 0.08, p = 0.03
+Last 90d (n=900):    β_delivery = 0.27, SE = 0.05, p < 0.001
+
+Interpretation:
+- NOT "Delivery importance is decreasing!"
+- CORRECT: "Estimates vary due to sample size, all consistent with β ≈ 0.23"
+```
+
+#### Implementation Requirements
+
+```yaml
+data_storage:
+  periods:
+    - all_time ONLY  # No period variants
+  update_frequency: "Weekly or bi-weekly (not daily)"
+  deduplication: "Simple overwrite (no period key needed)"
+
+ui_components:
+  period_selector:
+    required: false  # MUST NOT EXIST
+    prohibition_reason: "Confusing and statistically misleading"
+  metadata_display:
+    - computed_at      # When analysis ran
+    - data_version     # Latest data included (e.g., "through 2025-11-13")
+    - sample_size      # Number of observations
+    - staleness_warning  # If data > 30 days old
+
+drv_script:
+  pattern: |
+    # Simple pattern - NO period loops!
+    all_data <- load_all_historical_data()
+    results <- compute_analysis(all_data)
+
+    # Add metadata
+    results$computed_at <- Sys.time()
+    results$data_version <- max(all_data$date_column)
+    results$sample_size <- nrow(all_data)
+
+    # Simple overwrite
+    dbWriteTable(conn, table_name, results, overwrite = TRUE)
+```
+
+#### Decision Indicators
+
+**Strong YES if**:
+- Results are regression coefficients, effect sizes, or parameters
+- More data makes estimates MORE reliable (not different)
+- Users ask "What is the effect of X?" not "How has effect changed?"
+- Statistical model estimates population parameters
+- Business needs stable reference points
+
+**Strong NO if**:
+- Results genuinely change over time (market shifts, seasonality)
+- Users need period comparisons for decision-making
+- Temporal patterns are the business insight
+
+---
+
+### Type C: Snapshot Analytics
+
+**Definition**: Analytics representing **current state** at query time, with no pre-computation needed.
+
+**Core Question**: *"Does this just query what's in the database right now?"*
+
+#### Characteristics
+
+| Aspect | Description |
+|--------|-------------|
+| **Nature** | Live queries of current state |
+| **Business Value** | Operational awareness ("What's happening now?") |
+| **Data Requirement** | Current database state |
+| **User Need** | "What is the current situation?" |
+| **Statistical Model** | None - direct queries |
+
+#### Examples
+
+- **Current Inventory**: "2,483 units in stock"
+- **Active Users**: "1,247 users online now"
+- **Today's Sales**: "$45,231 revenue today"
+- **Pending Orders**: "89 orders awaiting fulfillment"
+- **System Status**: "Database: OK, API: OK, Queue: 23 jobs"
+
+#### Implementation Requirements
+
+```yaml
+data_storage:
+  pre_computation: false
+  live_query: true
+  caching:
+    optional: true
+    duration: "5-60 minutes"
+    purpose: "Performance optimization only"
+
+ui_components:
+  period_selector:
+    required: false
+  metadata_display:
+    - as_of_timestamp  # "As of 14:32:15"
+    - refresh_button   # Let user re-query
+
+component_server:
+  pattern: |
+    current_data <- reactive({
+      # Direct database query
+      data <- dbGetQuery(con, "SELECT * FROM table WHERE status = 'active'")
+
+      # Optional caching
+      cache_key <- paste0("snapshot_", format(Sys.time(), "%Y%m%d_%H%M"))
+      cached <- get_cache(cache_key, ttl = 300)  # 5 min TTL
+      if (!is.null(cached)) return(cached)
+
+      set_cache(cache_key, data)
+      return(data)
+    })
+```
+
+#### Decision Indicators
+
+**Strong YES if**:
+- No computation needed (just SELECT queries)
+- Users want "right now" not "historical trend"
+- Data updates frequently (real-time or near real-time)
+- Operational dashboards, monitoring
+
+**Strong NO if**:
+- Requires complex computation (regression, clustering)
+- Historical comparison needed
+- Results should be stable reference points
+
+---
+
+## Classification Decision Tree
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ START: New Analytics Component                          │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+                      ▼
+        ┌─────────────────────────────┐
+        │ Q1: Does this represent a   │
+        │ time-series TREND?          │
+        │ (Users need period          │
+        │  comparison?)               │
+        └──────┬──────────────┬───────┘
+               │              │
+          YES  │              │ NO
+               │              │
+               ▼              ▼
+    ┌──────────────────┐   ┌─────────────────────────────┐
+    │ TYPE A           │   │ Q2: Are results cumulative  │
+    │ Time-Varying     │   │ statistical ESTIMATES?      │
+    │                  │   │ (More data = more reliable?)│
+    │ Examples:        │   └──────┬──────────────┬───────┘
+    │ • Sales trends   │          │              │
+    │ • Growth rates   │     YES  │              │ NO
+    │ • Seasonality    │          │              │
+    └──────────────────┘          ▼              ▼
+            │           ┌──────────────────┐   ┌──────────────────┐
+            │           │ TYPE B           │   │ TYPE C           │
+            │           │ Steady-State     │   │ Snapshot         │
+            │           │                  │   │                  │
+            │           │ Examples:        │   │ Examples:        │
+            │           │ • Coefficients   │   │ • Inventory      │
+            │           │ • Positioning    │   │ • Active users   │
+            │           │ • DNA clusters   │   │ • Live metrics   │
+            │           └──────────────────┘   └──────────────────┘
+            │                   │                      │
+            ▼                   ▼                      ▼
+    ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+    │ IMPLEMENTATION:  │ │ IMPLEMENTATION:  │ │ IMPLEMENTATION:  │
+    │                  │ │                  │ │                  │
+    │ ✅ Multiple       │ │ ✅ all_time ONLY  │ │ ✅ Direct queries │
+    │    periods       │ │ ❌ NO periods     │ │ ❌ NO periods     │
+    │ ✅ Period selector│ │ ❌ NO selector    │ │ ❌ NO selector    │
+    │ ✅ Period metadata│ │ ✅ Metadata only  │ │ ✅ Timestamp only │
+    │                  │ │                  │ │                  │
+    │ DRV: 4 weeks     │ │ DRV: 2 days      │ │ No DRV needed    │
+    │ Storage: 5×      │ │ Storage: 1×      │ │ Storage: 0× (pre)│
+    └──────────────────┘ └──────────────────┘ └──────────────────┘
+```
+
+---
+
+## Common Mistakes and Anti-Patterns
+
+### Anti-Pattern 1: "Everything needs periods"
+
+**Mistake**: Assuming all analytics need period selector because some do.
+
+**Consequence**:
+- Type B components get confusing volatile results
+- Wasted implementation time (4 weeks → 2 days for Type B)
+- Storage bloat (5× data for no benefit)
+
+**Correct Approach**: Use decision tree to classify BEFORE implementing.
+
+### Anti-Pattern 2: "Poisson by period"
+
+**Mistake**: Computing Poisson regression for each period (30d, 90d, etc.).
+
+**Why Wrong**:
+- Statistical: Insufficient sample size → Unreliable coefficients
+- Business: Coefficients should be stable → Period variance is confusing
+- Interpretation: If coefficients truly vary by time, model needs time interactions
+
+**Correct Approach**:
+- Type B: all_time only
+- If temporal effects suspected: Add time as predictor in model (still Type B)
+- If need to track coefficient changes: Type B with monthly batch updates (not user-selectable periods)
+
+### Anti-Pattern 3: "User might want to see periods later"
+
+**Mistake**: "Let's implement periods just in case users want it later."
+
+**Consequence**:
+- Over-engineering
+- Confusing UI
+- Misleading results
+
+**Correct Approach**:
+- Implement Type B (all_time only)
+- If users genuinely need period comparison: Re-classify to Type A (rare)
+- Better: Educate users on why stable estimates are more valuable
+
+### Anti-Pattern 4: "Real-time Type B"
+
+**Mistake**: Computing Type B analytics (coefficients) every hour or with every ETL run.
+
+**Why Wrong**:
+- Type B should be stable → Doesn't need frequent updates
+- Computational waste → Regression on 1M rows repeatedly
+- False precision → Coefficients won't change significantly day-to-day
+
+**Correct Approach**:
+- Weekly or bi-weekly updates for Type B
+- Only update when data accumulation is significant (e.g., +10% more data)
+
+---
+
+## Testing and Validation
+
+### How to Verify Correct Classification
+
+#### Type A Validation Checklist
+
+- [ ] Results genuinely change over time (not just sampling variance)
+- [ ] Users can articulate business value of period comparison
+- [ ] Each period has sufficient data for reliable analysis
+- [ ] Temporal patterns are interpretable and actionable
+- [ ] Documentation explains what each period represents
+
+#### Type B Validation Checklist
+
+- [ ] Results stable when using 80% vs 100% of data (< 10% change)
+- [ ] More data improves precision (smaller standard errors)
+- [ ] Business team understands "based on all historical data"
+- [ ] No user requests for "show me last month's coefficient"
+- [ ] Statistical model estimates population parameters
+
+#### Type C Validation Checklist
+
+- [ ] Results reflect current database state
+- [ ] No complex computation needed (< 1 second query)
+- [ ] Users understand "as of timestamp" meaning
+- [ ] Refresh button works correctly
+- [ ] Caching (if used) has appropriate TTL
+
+### Red Flags Indicating Wrong Classification
+
+| Red Flag | Likely Issue |
+|----------|--------------|
+| Type B results highly volatile period-to-period | Misclassified - should be Type A OR insufficient data |
+| Type A results identical across periods | Misclassified - should be Type B |
+| Type B with period selector but no one uses it | Over-engineered - confirm Type B |
+| Users confused why Type B changes weekly | Poor communication - emphasize "more data = better estimate" |
+| Type C queries take > 5 seconds | Should be Type A or B with pre-computation |
+
+---
+
+## Migration Guide
+
+### Changing Classification
+
+If a component needs reclassification:
+
+#### Type A → Type B
+
+**Scenario**: Realized coefficients should be stable, not period-varying.
+
+**Steps**:
+1. Verify Type B criteria (statistical stability, business value)
+2. Remove period loops from DRV script
+3. Remove period selector from UI
+4. Add Type B metadata display
+5. Document reasoning in component file
+6. Archive old period tables (don't delete immediately)
+7. Monitor user feedback for 2 weeks
+
+**Backward Compatibility**:
+- Keep old tables for 1 month (read-only)
+- Add notice: "Switched to all-time estimation for better reliability"
+- Provide ADR explaining change
+
+#### Type B → Type A
+
+**Scenario**: Discovered genuine temporal effects, need period comparison.
+
+**Steps**:
+1. Validate that temporal patterns are signal, not noise
+2. Add period computation loops to DRV
+3. Add period selector to UI
+4. Update documentation
+5. Create migration script: `all_time` table → period tables
+6. Communicate change to users
+
+**Data Migration**:
+```r
+# Duplicate all_time data into initial period tables
+all_time_data <- dbReadTable(conn, "component_results")
+
+for (period in standard_periods) {
+  period_data <- all_time_data
+  period_data$period <- period
+  dbWriteTable(conn, "component_results_by_period",
+               period_data, append = TRUE)
+}
+```
+
+---
+
+## Examples and Case Studies
+
+### Case Study 1: Poisson Regression (Type B)
+
+**Component**: `poissonFeatureAnalysis`
+
+**Initial Assumption**: Type A (computed for all periods)
+
+**Problem**:
+- 30-day period: Only 300 transactions → Coefficient SE = 0.08 (unreliable)
+- 90-day period: 900 transactions → Coefficient = 0.27
+- 180-day period: 1,800 transactions → Coefficient = 0.21
+- Users confused: "Why does fast delivery importance keep changing?"
+
+**Reclassification**: Type B (all_time only)
+
+**Solution**:
+- All data: 10,000 transactions → Coefficient = 0.23, SE = 0.02
+- UI: "基於全部歷史數據 (10,000 筆交易)"
+- Update: Weekly (not daily)
+
+**Outcome**:
+- Implementation time: 4 weeks → 2 days (83% reduction)
+- User confusion: Eliminated
+- Statistical reliability: Greatly improved
+
+### Case Study 2: Sales Trends (Type A)
+
+**Component**: `macroTrend`
+
+**Classification**: Type A from start
+
+**Reasoning**:
+- Users explicitly ask: "Are sales growing?"
+- Period comparison is core business value
+- Management reports need month-over-month metrics
+- Seasonality is meaningful insight
+
+**Implementation**:
+- Periods: all_time, 30d, 90d, 180d, 365d
+- UI: Period selector with clear date ranges
+- DRV: Daily updates for all periods
+- Storage: 5× data (justified by business value)
+
+**Validation**:
+- ✅ Users actively use period selector (80% usage rate)
+- ✅ Period comparisons drive business decisions
+- ✅ Temporal patterns are clear and actionable
+
+### Case Study 3: Market Positioning (Type B)
+
+**Component**: `positionDNAPlotly`
+
+**Classification**: Type B
+
+**Reasoning**:
+- Market position is stable structure
+- More data improves map reliability
+- Users need "where are we positioned?" not "how has position changed?"
+- Slow-moving market dynamics (quarterly at fastest)
+
+**Implementation**:
+- Compute: Monthly (market structure doesn't change weekly)
+- Storage: all_time snapshot only
+- UI: "基於最近 12 個月數據 (5,000 筆交易)"
+- Metadata: computed_at, data_window
+
+**Note on "12 months"**:
+- This is NOT a period selector (user can't choose "last 6 months")
+- This is data window for analysis (technical constraint)
+- Type B because users see ONE stable map, not multiple period versions
+
+---
+
+## Related Principles
+
+### Implements
+
+- **MP029: No Fake Data** - Type B needs large real datasets
+- **MP109: Information Flow Transparency** - Clear metadata for all types
+
+### Informs
+
+- **UI_R022: Component Period Selector Contract** - Only Type A
+- **DM_R120: ETL Period Standardization** - Only Type A
+- **UI_R024: Metadata Display for Steady-State Analytics** - Type B/C
+
+### Related
+
+- **MP051: Test Data Design** - Minimum sample sizes for Type B
+- **MP073: Interactive Visualization Preference** - Applies to all types
+- **R091: Universal Data Access Pattern** - Applies to all types
+
+---
+
+## Principle Hierarchy
+
+```
+MP135: Analytics Temporal Classification (META-PRINCIPLE)
+  │
+  ├─ Type A: Time-Varying Analytics
+  │    ├─ UI_R022: Component Period Selector Contract
+  │    ├─ DM_R120: ETL Period Standardization
+  │    └─ Implementation: Full period management
+  │
+  ├─ Type B: Steady-State Analytics
+  │    ├─ UI_R024: Metadata Display for Steady-State Analytics
+  │    ├─ Statistical principle: Maximum sample size
+  │    └─ Implementation: all_time only
+  │
+  └─ Type C: Snapshot Analytics
+       ├─ Performance: Caching strategies
+       └─ Implementation: Direct queries
+```
+
+---
+
+## Approval and Maintenance
+
+**Version**: 2.0.0
+**Approved by**: Product Management + Engineering Architecture
+**Date**: 2025-11-13
+**Status**: Active
+
+**Supersedes**: MP135 v1.0 (Pre-Computed Analytics Principle)
+
+**Review Cycle**: Annually or when major analytics patterns emerge
+
+**Change Log**:
+- 2025-11-13 v2.0.0: Complete redesign based on temporal classification insight
+- 2025-08-20 v1.0.0: Initial version (pre-computation principle)
+
+---
+
+## Summary
+
+**Key Takeaway**: Not all analytics need temporal filtering. Classification determines implementation complexity, statistical validity, and user experience.
+
+**Decision Framework**: Use 2-question decision tree to classify every analytics component BEFORE implementation.
+
+**Implementation Efficiency**:
+- Type A: 4 weeks, 5× storage (justified for trends)
+- Type B: 2 days, 1× storage (coefficients, positioning)
+- Type C: Hours, 0× pre-storage (live queries)
+
+**Statistical Quality**:
+- Type A: Period-specific insights
+- Type B: Maximum reliability with all data
+- Type C: Current state accuracy
+
+**User Experience**:
+- Type A: Period selector for comparison
+- Type B: Stable estimates build trust
+- Type C: Real-time awareness
+
+---
+
+*This principle is fundamental to MAMBA analytics architecture. All new analytics MUST be classified using this framework before implementation.*

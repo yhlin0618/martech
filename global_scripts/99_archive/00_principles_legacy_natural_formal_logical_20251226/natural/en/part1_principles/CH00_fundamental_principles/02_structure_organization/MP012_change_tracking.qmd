@@ -1,0 +1,182 @@
+---
+title: "MP014: Change Tracking Principle"
+subtitle: "Meta-principle for system design and implementation"
+author: "Claude"
+date: "2025-04-02"
+date-modified: "2025-08-17"
+categories: [meta-principle, version-control, audit]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Concept
+
+All code, configuration, principle, and data changes within the precision marketing system must be tracked, versioned, and recoverable through appropriate version control mechanisms. This enables comprehensive audit trails and recovery capabilities, makes collaboration possible, ensures system integrity, and prevents irreversible loss of work.
+
+## Multi-Level Version Control Framework
+
+### 1. Hierarchical Version Control Structure
+
+The system implements a dual-layer version control framework operating based on the nature and purpose of content:
+
+| Content Type | Storage Location | Version Control Mechanism | Recovery Capability | Synchronization |
+|-------------|-----------------|--------------------------|-------------------|----------------|
+| **Code & Principles** | Global Scripts Repository | Git | Complete history with commit-level granularity | Push/pull with remote repositories |
+| **Project Data & Configuration** | Dropbox | Dropbox Version History | 30/180 day version history (depending on plan) | Automatic cloud sync |
+| **Local Development** | Local Environment | Local Git + Project .gitignore | Fine-grained commits before pushing | Manual sync via git |
+| **Change Documentation** | CHANGELOG Directory | Git + Structured Folders | Permanent retention of all changes | Version controlled with code |
+
+### 2. CHANGELOG Directory Organization
+
+#### 2.1 Mandatory CHANGELOG Structure
+
+All principle reviews, modifications, and system changes MUST be documented in the CHANGELOG directory:
+
+```
+CHANGELOG/
+├── reviews/              # Audit reports and principle reviews
+│   └── YYYY-MM-DD_topic/ # Date-stamped review sessions
+├── decisions/            # Architectural and design decisions
+├── improvements/         # Proposed enhancements
+│   ├── PROPOSED/
+│   ├── APPROVED/
+│   └── IMPLEMENTED/
+├── issues/              # Problem tracking
+│   ├── OPEN/
+│   ├── IN_PROGRESS/
+│   └── RESOLVED/
+├── releases/            # Version release notes
+│   └── archive/         # Historical releases
+└── archive/             # Archived materials
+```
+
+#### 2.2 Prohibited in Root Directory
+
+The following files must NEVER be placed in the principles root directory:
+
+- `PRINCIPLE_*.md` files (audit reports, amendments, etc.)
+- `CHAPTER_*.md` files (organizational documents)
+- `MP_*.md`, `P_*.md`, `R_*.md` review documents
+- Any temporary review or working documents
+- Migration guides and consolidation plans
+
+### 3. Version Control Scope
+
+#### 3.1 Content Under Version Control
+
+All of the following must be under appropriate version control:
+
+1. **Code**
+   - All scripts, functions, and modules
+   - Application components and UI elements
+   - Configuration scripts and utilities
+
+2. **Documentation**
+   - All principles (MP, P, R documents)
+   - Module and sequence documentation
+   - Implementation guides and README files
+   - CHANGELOG entries and review documents
+
+3. **Configuration**
+   - YAML configuration files
+   - Database connection parameters (excluding credentials)
+   - Environment and mode settings
+
+4. **Processed Data Assets**
+   - Generated analysis outputs
+   - Data transformations
+   - Visualization templates
+
+## Implementation Guidelines
+
+### 1. Change Documentation Requirements
+
+#### 1.1 For Principle Modifications
+
+1. Create a dated folder in `CHANGELOG/reviews/` (e.g., `2025-08-25_constitutional_alignment/`)
+2. Document the review process and findings
+3. Create amendment proposals with clear rationale
+4. Track implementation status
+5. Never place review documents in the root directory
+
+#### 1.2 For System Changes
+
+1. Document architectural decisions in `CHANGELOG/decisions/`
+2. Track issues in `CHANGELOG/issues/` with proper status folders
+3. Record improvements through the PROPOSED → APPROVED → IMPLEMENTED workflow
+4. Maintain release notes in `CHANGELOG/releases/`
+
+### 2. Git Implementation for Code and Principles
+
+#### 2.1 Commit Guidelines
+
+1. **Atomic Commits**: Each commit should represent a single logical change
+2. **Descriptive Messages**: Commit messages must clearly describe:
+   - What was changed
+   - Why it was changed
+   - References to relevant principles or issues
+3. **Regular Cadence**: Commits should be made at natural completion points
+4. **Test Before Push**: Code should be tested before pushing to shared repositories
+
+#### 2.2 Branch Strategy
+
+1. **Main Branch**: Represents the stable, production-ready state of the system
+2. **Development Branches**: Feature or fix-specific branches for ongoing work
+3. **Release Branches**: For preparing and testing specific releases
+4. **Company-Specific Branches**: For company-specific implementations
+
+### 3. Audit Requirements
+
+#### 3.1 Change Audit Trail
+
+1. **Who**: Identify who made each change
+2. **What**: Document what was changed
+3. **When**: Timestamp of the change
+4. **Why**: Document the purpose for significant changes
+5. **Where**: All documentation in appropriate CHANGELOG subdirectory
+
+#### 3.2 Retention Policy
+
+1. **Code History**: Permanently retain all code change history
+2. **Principle Changes**: Permanently retain all principle version history in CHANGELOG
+3. **Configuration Changes**: Minimum 3-year retention for configuration changes
+4. **Development Artifacts**: Minimum 1-year retention for development artifacts
+
+## Related Principles
+
+- **MP000 (Axiomatization System)**: Ensures evolution of the axiomatic system itself is tracked
+- **MP013 (Statute Law Analogy)**: Provides "legislative history" crucial for legal interpretation
+- **P002 (Data Integrity)**: Strengthens data integrity through change tracking and auditing
+- **P008 (Deployment Patterns)**: Manages how versioned code is deployed to environments
+- **R125 (CHANGELOG Organization)**: Specific rules for CHANGELOG directory structure
+
+## Benefits
+
+1. **Recoverability**: Ability to recover from errors or data corruption
+2. **Accountability**: Clear documentation of who made what changes when
+3. **Collaboration**: Enables multiple developers to work on the same system
+4. **Knowledge Retention**: Preserves institutional knowledge over time
+5. **Compliance**: Helps meet regulatory requirements for change management
+6. **Experimentation**: Provides safety net for experimental changes
+7. **Clean Organization**: Keeps root directory clean and navigable
+
+## Implementation Checklist
+
+- [ ] CHANGELOG directory structure is created and maintained
+- [ ] All principle reviews are in CHANGELOG/reviews/ with date stamps
+- [ ] No review documents exist in the root directory
+- [ ] Git is configured for code and principle tracking
+- [ ] Commit messages follow descriptive guidelines
+- [ ] Audit trail captures who, what, when, why for all changes
+- [ ] Retention policies are documented and enforced
+- [ ] Team is trained on CHANGELOG usage requirements
+
+## Conclusion
+
+By establishing comprehensive change tracking at all system levels and mandating the use of the CHANGELOG directory for all review and modification documentation, this meta-principle ensures the precision marketing system maintains complete auditability, recoverability, and collaborative capabilities. The CHANGELOG directory serves as the single source of truth for all system evolution, while keeping the root directory clean and focused on current active principles. This creates a solid foundation for continuous development, prevents data loss, and ensures the system can evolve while maintaining a complete history of its development.

@@ -1,0 +1,205 @@
+---
+title: "SO_R012: 路徑修改原則"
+subtitle: "建立修改、創建或更改檔案路徑和目錄結構的關鍵指導原則，確保所有路徑相關變更都遵循明確原則"
+chapter: "CH01"
+category: "rule"
+number: "SO_R012"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article: 
+  number: 12
+  title: "路徑修改規則"
+related_to:
+  - "SO_R001: 目錄結構"
+  - "SO_R002: 檔案命名約定"
+  - "SO_R007: 一個函數一個檔案"
+  - "SO_R009: 兩層目錄結構"
+  - "MP002: 結構藍圖"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十二條：路徑修改規則 {#overview}
+
+**結構組織法第十二條（路徑修改規則）**
+
+此規則建立修改、創建或更改系統內檔案路徑和目錄結構的關鍵指導原則。所有路徑相關變更必須遵循明確原則而非臨時決定。
+
+:::{.callout-important}
+## 核心規則
+所有檔案路徑變更、目錄結構修改或檔案系統更改必須遵守已建立的原則、文件化的約定和明確的要求。
+:::
+
+# 第一項：問題背景 {#rationale}
+
+## 第一款：臨時變更的危害 {#adhoc-harms}
+
+檔案和目錄結構構成任何軟體系統的基礎架構。臨時或未計劃的結構變更可能導致：
+
+1. **不一致的組織**：阻礙可維護性
+2. **破壞的引用和依賴**：系統功能失效
+3. **安全漏洞**：不當的路徑處理
+4. **工具和工作流程不相容**：現有系統無法運作
+5. **新團隊成員入職困難**：學習曲線陡峭
+6. **版本控制衝突**：合併和同步問題
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：諮詢現有原則 {#consult-principles}
+
+在任何路徑修改之前：
+
+- 審查相關路徑組織原則
+- 檢查類似路徑的現有約定
+- 識別相關目錄中的任何既定模式
+- 驗證與平台中立路徑要求的相容性
+
+```r
+# 錯誤：不諮詢原則就創建路徑
+new_dir <- file.path(base_dir, "data", "new_folder")
+dir.create(new_dir)
+
+# 正確：應用既定路徑原則
+new_dir <- construct_path_from_convention("data", "new_folder")
+if (should_create_directory(new_dir)) {
+  dir.create(new_dir)
+}
+```
+
+## 第二款：路徑構建 {#path-construction}
+
+構建路徑時：
+
+- 使用平台中立方法以確保相容性
+- 遵循一致的命名約定
+- 尊重階層組織規則
+- 應用適當的安全約束
+
+```r
+# 錯誤：具有平台特定分隔符的硬編碼路徑
+data_path <- "C:\\Users\\data\\raw\\"
+
+# 正確：平台中立路徑構建
+data_path <- file.path("data", "raw")
+```
+
+## 第三款：變更理由 {#change-justification}
+
+對於每個路徑修改：
+
+- 基於原則記錄理由
+- 解釋與現有系統的相容性
+- 注意對相關組件的預期影響
+- 引用指導變更的原則
+
+## 第四款：路徑操作安全 {#path-operation-safety}
+
+在路徑上執行操作時：
+
+- 在讀取之前驗證存在性
+- 在寫入之前確認權限
+- 在任何操作之前驗證路徑合法性
+- 應用適當的清理以防止注入攻擊
+
+```r
+# 錯誤：不安全的路徑操作
+system(paste("mkdir -p", user_supplied_path))
+
+# 正確：安全的路徑處理
+sanitized_path <- sanitize_path(user_supplied_path)
+if (is_valid_path(sanitized_path)) {
+  dir.create(sanitized_path, recursive = TRUE)
+}
+```
+
+# 第三項：目錄結構修改指導原則 {#directory-modification}
+
+## 第一款：原則優先方法 {#principle-first}
+
+修改目錄結構時：
+
+1. **諮詢相關組織原則**：確保符合既定規範
+2. **遵循既定命名約定**：保持一致性
+3. **保留階層關係**：維護邏輯結構
+
+## 第二款：影響評估 {#impact-assessment}
+
+1. **分析依賴系統**：識別受影響的組件
+2. **檢查硬編碼路徑引用**：尋找潛在破壞點
+3. **先在開發環境測試變更**：確保安全性
+
+## 第三款：文件更新 {#documentation-updates}
+
+1. **更新相關文件**：保持文件同步
+2. **通知利害關係人變更**：確保團隊知情
+3. **如需要提供遷移指導**：協助順利過渡
+
+# 第四項：實施範例 {#examples}
+
+## 第一款：錯誤方法 {#incorrect-approach}
+
+```r
+# 錯誤：不遵循原則指導就創建目錄
+if (!file.exists("new_feature_data")) {
+  dir.create("new_feature_data")
+}
+```
+
+## 第二款：正確方法 {#correct-approach}
+
+```r
+# 正確：應用目錄結構原則
+module_path <- file.path(get_module_base_dir(), MODULE_NAME)
+structure_definition <- get_module_structure(MODULE_NAME)
+
+# 基於原則創建結構
+if (!directory_structure_exists(module_path, structure_definition)) {
+  create_directory_structure(module_path, structure_definition)
+  log_structure_creation(module_path, "遵循 R0007 模組結構原則創建")
+}
+```
+
+# 第五項：合規驗證 {#compliance-verification}
+
+## 第一款：程式碼審查檢查項目 {#review-checklist}
+
+在程式碼審查期間，驗證：
+
+1. **路徑修改遵循既定原則**：符合規範
+2. **目錄創建有適當文件和理由**：可追溯性
+3. **路徑操作使用安全、平台中立方法**：可移植性
+4. **一致應用命名約定**：一致性
+5. **路徑相關變更有適當錯誤處理**：健壯性
+
+# 第六項：與其他原則整合 {#integration}
+
+此原則應與以下原則一起應用：
+
+- **SO_R001**：目錄結構規則
+- **SO_R007**：一個函數一個檔案
+- **SO_R009**：兩層目錄結構
+- **MP002**：結構藍圖
+- 任何平台特定的檔案組織原則
+
+# 第七項：優點 {#benefits}
+
+透過遵守此原則，我們確保：
+
+1. **一致的檔案系統組織**：易於導航和維護
+2. **安全的路徑操作**：防止安全漏洞
+3. **平台可移植性**：跨不同系統運作
+4. **可維護的架構**：清晰的結構和文件
+5. **團隊協作效率**：共同理解和標準
+
+---
+
+*基於：結構組織法第十二條*  
+*相關連結：[SO_R001 目錄結構](SO_R001_directory_structure.qmd), [SO_R009 兩層目錄結構](SO_R009_two_tier_directory_structure.qmd)*

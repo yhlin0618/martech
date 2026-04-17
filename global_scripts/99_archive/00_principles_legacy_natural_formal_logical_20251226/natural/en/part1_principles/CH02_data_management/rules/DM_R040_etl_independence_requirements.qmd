@@ -1,0 +1,340 @@
+---
+id: "DM_R040"
+title: "ETL Independence Requirements Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-08-29"
+date_modified: "2025-08-29"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 40
+implements:
+  - "MP107": "ETL Pipeline Independence Principle"
+  - "MP104": "ETL Data Flow Separation Principle"
+  - "MP103": "AutoDeinit Behavior Principle"
+related_to:
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+  - "DM_R039": "Database Connection Pattern Rule"
+  - "DM_R036": "ETL Return Values Rule"
+---
+
+# DM_R040: ETL Independence Requirements Rule
+
+## Rule Statement
+
+Every ETL pipeline script MUST meet the following independence requirements to ensure complete autonomy, parallel execution capability, and failure isolation.
+
+## Mandatory Requirements
+
+### 1. Self-Contained Initialization
+
+```r
+# REQUIRED: Every ETL must initialize itself
+etl_function <- function() {
+  # ✅ CORRECT: Self-initialization
+  autoinit(verbose = TRUE)
+  
+  # ✅ CORRECT: Own configuration loading
+  config <- yaml::read_yaml("config/etl_config.yaml")
+  
+  # ❌ INCORRECT: Assuming external initialization
+  # Assumes someone else called autoinit()
+  
+  # ... ETL logic ...
+  
+  # ✅ CORRECT: Clean termination
+  autodeinit()
+}
+```
+
+### 2. No Inter-ETL Dependencies
+
+```r
+# ❌ FORBIDDEN: Reading another ETL's output
+bad_pattern <- function() {
+  # Never read temporary files from other ETLs
+  data <- read.csv("/tmp/other_etl_output.csv")
+  
+  # Never depend on global variables set by other ETLs
+  if (exists("etl_state_from_other")) {
+    process(etl_state_from_other)
+  }
+}
+
+# ✅ CORRECT: Read only from standard sources
+good_pattern <- function() {
+  # Read from database tables
+  con <- autoinit()
+  data <- tbl2(con, "standard_table") %>% collect()
+  
+  # Or read from APIs/external sources
+  data <- fetch_from_api()
+}
+```
+
+### 3. Isolated Resource Management
+
+```r
+# Each ETL manages its own resources
+etl_with_resources <- function() {
+  # Create own connections
+  con <- dbConnect(duckdb::duckdb(), "etl_specific.db")
+  
+  # Use ETL-specific temp files if needed
+  temp_file <- tempfile(pattern = "etl_sales_", fileext = ".csv")
+  
+  # Clean up own resources
+  on.exit({
+    dbDisconnect(con)
+    if (file.exists(temp_file)) unlink(temp_file)
+  })
+  
+  # Process data...
+}
+```
+
+### 4. Standard Table Output
+
+```r
+# ETLs write to standard, documented tables
+write_etl_output <- function(data, platform, data_type, phase) {
+  # Standard table naming pattern
+  table_name <- sprintf("df_%s_%s___%s", 
+                       platform, 
+                       data_type,
+                       phase)
+  
+  # Write to database, not temporary files
+  dbWriteTable(con, table_name, data, overwrite = TRUE)
+  
+  # Never write to locations other ETLs depend on
+  # ❌ write.csv(data, "/shared/etl_output.csv")
+}
+```
+
+## Testing Requirements
+
+### Independence Test Suite
+
+Every ETL must pass these tests:
+
+```r
+# Test 1: Standalone Execution
+test_standalone_execution <- function(etl_function) {
+  # ETL must succeed without any other ETL running
+  result <- etl_function()
+  testthat::expect_true(result)
+}
+
+# Test 2: Parallel Safety
+test_parallel_safety <- function(etl_function) {
+  library(future)
+  plan(multisession, workers = 2)
+  
+  # Run same ETL twice in parallel (different params)
+  f1 <- future(etl_function(date = "2024-01-01"))
+  f2 <- future(etl_function(date = "2024-01-02"))
+  
+  # Both should succeed
+  testthat::expect_true(value(f1))
+  testthat::expect_true(value(f2))
+}
+
+# Test 3: No Residual State
+test_no_residual_state <- function(etl_function) {
+  # Capture environment before
+  env_before <- ls(envir = .GlobalEnv)
+  
+  # Run ETL
+  etl_function()
+  
+  # Environment should be unchanged
+  env_after <- ls(envir = .GlobalEnv)
+  testthat::expect_equal(env_before, env_after)
+}
+
+# Test 4: Clean Termination
+test_clean_termination <- function(etl_function) {
+  # Count connections before
+  cons_before <- length(dbListConnections(duckdb::duckdb()))
+  
+  # Run ETL
+  etl_function()
+  
+  # Connections should be same
+  cons_after <- length(dbListConnections(duckdb::duckdb()))
+  testthat::expect_equal(cons_before, cons_after)
+}
+```
+
+## Implementation Checklist
+
+### Required Elements
+
+```yaml
+etl_independence_checklist:
+  initialization:
+    ✓ autoinit_call: "Has autoinit() at start"
+    ✓ config_loading: "Loads own configuration"
+    ✓ error_handling: "Has tryCatch blocks"
+  
+  dependencies:
+    ✓ no_etl_sourcing: "Doesn't source other ETL scripts"
+    ✓ no_temp_sharing: "No shared temp files"
+    ✓ no_global_vars: "No global variable dependencies"
+    ✓ no_order_requirements: "No execution order needs"
+  
+  resources:
+    ✓ own_connections: "Creates own DB connections"
+    ✓ own_temp_files: "Uses unique temp file names"
+    ✓ cleanup_on_exit: "Has on.exit() cleanup"
+  
+  output:
+    ✓ standard_tables: "Writes to documented tables"
+    ✓ no_side_effects: "No undocumented outputs"
+    ✓ return_status: "Returns TRUE/FALSE status"
+  
+  termination:
+    ✓ autodeinit_call: "Has autodeinit() at end"
+    ✓ connection_closing: "Closes all connections"
+    ✓ temp_file_cleanup: "Removes temp files"
+```
+
+## Common Violations and Fixes
+
+### Violation 1: Sequential Coupling
+
+```r
+# ❌ VIOLATION: Assumes another ETL ran first
+cbz_orders_etl <- function() {
+  # Depends on sales ETL creating this file
+  if (!file.exists("/tmp/sales_processed.flag")) {
+    stop("Run sales ETL first!")
+  }
+}
+
+# ✅ FIX: Remove coupling
+cbz_orders_etl <- function() {
+  autoinit()
+  # Directly fetch what you need
+  orders <- fetch_orders_from_source()
+  # Process independently
+  process_orders(orders)
+  autodeinit()
+}
+```
+
+### Violation 2: Shared State
+
+```r
+# ❌ VIOLATION: Uses global state
+etl_with_state <- function() {
+  # Reads global variable
+  last_run <- global_etl_timestamp
+  
+  # Modifies global state
+  global_etl_counter <<- global_etl_counter + 1
+}
+
+# ✅ FIX: Use persistent storage
+etl_with_storage <- function() {
+  con <- autoinit()
+  
+  # Read from database
+  last_run <- tbl2(con, "etl_metadata") %>%
+    filter(etl_name == "sales") %>%
+    pull(last_run_timestamp)
+  
+  # Update database
+  update_etl_metadata(con, "sales", Sys.time())
+  
+  autodeinit()
+}
+```
+
+### Violation 3: Resource Leaks
+
+```r
+# ❌ VIOLATION: Doesn't clean up
+leaky_etl <- function() {
+  con <- dbConnect(duckdb::duckdb())
+  temp_file <- tempfile()
+  
+  process_data()
+  # Forgets to disconnect and clean up
+}
+
+# ✅ FIX: Proper cleanup
+clean_etl <- function() {
+  con <- dbConnect(duckdb::duckdb())
+  temp_file <- tempfile()
+  
+  on.exit({
+    dbDisconnect(con)
+    if (file.exists(temp_file)) unlink(temp_file)
+  })
+  
+  process_data()
+}
+```
+
+## Enforcement
+
+### Automated Validation
+
+```r
+# Validate ETL independence
+validate_etl_independence <- function(etl_script_path) {
+  code <- readLines(etl_script_path)
+  
+  violations <- list()
+  
+  # Check for autoinit
+  if (!any(grepl("autoinit\\(", code))) {
+    violations$no_autoinit <- "Missing autoinit() call"
+  }
+  
+  # Check for autodeinit
+  if (!any(grepl("autodeinit\\(", code))) {
+    violations$no_autodeinit <- "Missing autodeinit() call"
+  }
+  
+  # Check for sourcing other ETLs
+  if (any(grepl("source.*ETL", code))) {
+    violations$sources_etl <- "Sources another ETL script"
+  }
+  
+  # Check for global assignments
+  if (any(grepl("<<-", code))) {
+    violations$global_assign <- "Uses global assignment"
+  }
+  
+  # Check for shared temp files
+  if (any(grepl("/tmp/.*ETL", code))) {
+    violations$shared_temp <- "Uses shared temp location"
+  }
+  
+  if (length(violations) > 0) {
+    stop(paste("ETL independence violations found:",
+               paste(names(violations), violations, sep = ": ", collapse = "\n")))
+  }
+  
+  message("✅ ETL passes independence validation")
+  return(TRUE)
+}
+```
+
+## Benefits of Compliance
+
+1. **Parallel Execution**: All ETLs can run simultaneously
+2. **Selective Running**: Run only the ETLs you need
+3. **Failure Isolation**: One failure doesn't affect others
+4. **Easy Testing**: Test each ETL in isolation
+5. **Simple Debugging**: Debug one ETL at a time
+6. **Flexible Deployment**: Deploy ETLs independently
+7. **Resource Efficiency**: Optimize each ETL separately
+
+## Conclusion
+
+This rule ensures that every ETL pipeline in the MAMBA framework is truly independent, enabling maximum scalability, reliability, and maintainability. Compliance with these requirements is mandatory for all ETL implementations.

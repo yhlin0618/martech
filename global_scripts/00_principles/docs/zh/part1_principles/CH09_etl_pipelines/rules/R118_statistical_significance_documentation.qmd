@@ -1,0 +1,465 @@
+---
+id: "R118"
+title: "統計顯著性文件化規則"
+type: "rule"
+category: "etl_pipelines"
+date_created: "2025-11-12"
+date_modified: "2025-11-12"
+author: "principle-product-manager"
+status: "active"
+version: "1.0"
+weight: 118
+implements:
+  - "MP029": "禁止假資料原則"
+  - "MP051": "測試資料設計原則"
+  - "MP109": "DRV 時間序列衍生"
+related_to:
+  - "R116": "ETL 1ST 階段貨幣標準化"
+  - "R117": "時間序列填補透明度"
+  - "DM_R006": "跨平台資料結構"
+---
+
+# R118: 統計顯著性文件化規則
+
+## 規則聲明
+
+**所有統計模型輸出必須在係數旁包含顯著性指標 (p 值、信賴區間、顯著性標記)。僅呈現係數而不包含顯著性違反 MP029，會對因子重要性產生誤導性印象。**
+
+## 核心要求
+
+### 1. 何時需要統計顯著性文件化
+
+**強制性** 適用於所有迴歸/統計模型輸出：
+
+```yaml
+requires_significance_documentation:
+  regression_models:
+    description: "線性迴歸、邏輯迴歸、卜瓦松迴歸等"
+    outputs: "係數必須包含 p 值和顯著性標記"
+    example: "特徵重要性分析的卜瓦松模型"
+
+  hypothesis_tests:
+    description: "T 檢定、卡方檢定、變異數分析等"
+    outputs: "檢定統計量必須包含 p 值"
+    example: "測試客戶群組間的平均值差異"
+
+  correlation_analysis:
+    description: "皮爾森、斯皮爾曼相關矩陣"
+    outputs: "相關性必須包含 p 值或信賴區間"
+    example: "特徵相關性熱圖"
+
+  effect_size_estimates:
+    description: "Cohen's d、勝算比、風險比等"
+    outputs: "效應量必須包含信賴區間"
+    example: "客戶群組轉換的勝算比"
+```
+
+### 2. 必需的輸出欄位
+
+**強制性** 欄位適用於所有統計模型輸出：
+
+```yaml
+required_statistical_output_columns:
+  coefficient:
+    type: "DOUBLE"
+    description: "迴歸係數或效應量估計"
+    example: "0.324"
+    note: "僅此不足 - 違反 R118"
+
+  std_error:
+    type: "DOUBLE"
+    description: "係數估計的標準誤"
+    example: "0.082"
+    usage: "用於計算信賴區間"
+
+  p_value:  # ⭐ 關鍵 - 必須始終存在
+    type: "DOUBLE"
+    description: "觀察到的效應由隨機產生的機率"
+    example: "0.0023"
+    interpretation: "p < 0.05 通常被認為是顯著的"
+
+  significance_flag:  # ⭐ 關鍵 - 使用者友好的顯著性標記
+    type: "VARCHAR(20)"
+    description: "人類可讀的顯著性指標"
+    allowed_values:
+      - "***": "p < 0.001 (高度顯著)"
+      - "**": "p < 0.01 (非常顯著)"
+      - "*": "p < 0.05 (顯著)"
+      - "NOT SIGNIFICANT": "p >= 0.05 (不顯著)"
+    display: "始終在 UI 中與係數一起顯示"
+
+  confidence_interval_lower:
+    type: "DOUBLE"
+    description: "95% 信賴區間的下限"
+    example: "0.163"
+
+  confidence_interval_upper:
+    type: "DOUBLE"
+    description: "95% 信賴區間的上限"
+    example: "0.485"
+```
+
+### 3. UI 顯示要求
+
+**強制性** 適用於所有顯示統計結果的儀表板/報告：
+
+```yaml
+ui_display_requirements:
+  coefficient_display:
+    requirement: "絕不單獨顯示係數"
+    correct: "係數: 0.324 (p=0.002) ***"
+    incorrect: "係數: 0.324"  # ❌ 缺少顯著性
+
+  sorting_and_filtering:
+    requirement: "允許使用者按顯著性過濾"
+    implementation: |
+      - 過濾: "僅顯示顯著結果 (p < 0.05)"
+      - 排序: "按 p 值排序 (最顯著的優先)"
+
+  visual_indicators:
+    requirement: "使用視覺提示表示顯著性等級"
+    implementation: |
+      - 顏色編碼: 綠色 (***)、黃色 (**)、橙色 (*)、灰色 (不顯著)
+      - 字體粗細: 顯著的加粗，不顯著的正常
+      - 星號符號: 0.324*** 清楚標記顯著性
+
+  warning_messages:
+    requirement: "警告使用者不顯著的結果"
+    example: "⚠️ 此因子不顯著 (p=0.423)。高係數可能是隨機產生。"
+```
+
+## 原理說明
+
+### 1. 憲法依據 (MP029 - 禁止假資料)
+
+呈現不含顯著性的係數會產生**誤導性印象**：
+
+```r
+# ❌ 違反 MP029: 高係數看起來重要，但實際上不顯著
+poisson_results <- data.frame(
+  feature = c("Price", "Rating", "Reviews", "Shipping"),
+  coefficient = c(0.85, 0.12, 0.08, 0.45)  # ❌ 沒有 p 值!
+)
+
+# 使用者看到:
+# "Price 的係數是 0.85 - 一定非常重要!"
+# "Shipping 的係數是 0.45 - 也很重要!"
+
+# 實際情況 (有 p 值):
+# Price: 係數 = 0.85, p = 0.001 *** (真正重要)
+# Shipping: 係數 = 0.45, p = 0.682 不顯著 (隨機雜訊!)
+
+# ✅ 正確: 包含 p 值和顯著性標記
+poisson_results_complete <- data.frame(
+  feature = c("Price", "Rating", "Reviews", "Shipping"),
+  coefficient = c(0.85, 0.12, 0.08, 0.45),
+  p_value = c(0.001, 0.034, 0.156, 0.682),
+  significance_flag = c("***", "*", "不顯著", "不顯著")
+)
+
+# 現在使用者正確理解:
+# Price: 0.85*** - 高度顯著，真正重要
+# Shipping: 0.45 (p=0.682) - 不顯著，可能是隨機雜訊
+```
+
+### 2. MP051 對齊 (測試資料設計)
+
+適當的顯著性測試需要：
+
+```yaml
+mp051_test_data_requirements:
+  sample_size:
+    - "統計檢定力的足夠樣本大小"
+    - "在模型元資料中記錄樣本大小"
+    - "如果樣本大小不足以可靠的 p 值則警告"
+
+  test_assumptions:
+    - "檢查模型假設 (常態性、同質性等)"
+    - "記錄假設違反"
+    - "如果假設違反則調整顯著性解釋"
+
+  multiple_testing_correction:
+    - "如果測試多個假設則應用 Bonferroni 或 FDR 校正"
+    - "記錄使用的校正方法"
+    - "報告原始和調整後的 p 值"
+```
+
+### 3. 學術嚴謹性和透明度
+
+統計最佳實踐需要完整報告：
+
+```yaml
+academic_standards:
+  apa_style:
+    - "報告檢定統計量、自由度和確切的 p 值"
+    - "包含效應量估計和信賴區間"
+    - "例如: t(98) = 3.45, p = .001, d = 0.68, 95% CI [0.29, 1.07]"
+
+  reproducibility:
+    - "其他研究人員可以驗證發現"
+    - "統計顯著性實現後設分析"
+
+  transparency:
+    - "防止選擇性報告有利結果"
+    - "讀者可以評估證據品質"
+```
+
+## 實作指南
+
+### 1. 卜瓦松迴歸實作
+
+卜瓦松模型的標準實作：
+
+```r
+# Function: run_poisson_feature_analysis
+# Location: scripts/global_scripts/04_utils/fn_poisson_analysis.R
+
+run_poisson_feature_analysis <- function(data, formula, reference_levels = NULL) {
+  # 擬合卜瓦松迴歸模型
+  model <- glm(formula, data = data, family = poisson(link = "log"))
+
+  # 提取完整統計資訊的係數
+  coef_summary <- summary(model)$coefficients %>%
+    as.data.frame() %>%
+    rownames_to_column("feature") %>%
+    rename(
+      coefficient = Estimate,
+      std_error = `Std. Error`,
+      z_value = `z value`,
+      p_value = `Pr(>|z|)`  # ⭐ P 值始終包含
+    )
+
+  # 新增顯著性標記 (R118 要求)
+  coef_summary <- coef_summary %>%
+    mutate(
+      significance_flag = case_when(
+        p_value < 0.001 ~ "***",
+        p_value < 0.01 ~ "**",
+        p_value < 0.05 ~ "*",
+        TRUE ~ "不顯著"
+      )
+    )
+
+  # 計算 95% 信賴區間
+  conf_intervals <- confint(model, level = 0.95) %>%
+    as.data.frame() %>%
+    rownames_to_column("feature") %>%
+    rename(
+      conf_int_lower = `2.5 %`,
+      conf_int_upper = `97.5 %`
+    )
+
+  # 合併所有統計資訊
+  full_results <- coef_summary %>%
+    left_join(conf_intervals, by = "feature")
+
+  # === R118 驗證 ===
+  validate_statistical_output(full_results)
+
+  return(full_results)
+}
+
+# R118 合規的驗證函數
+validate_statistical_output <- function(results) {
+  required_cols <- c("coefficient", "std_error", "p_value", "significance_flag")
+  missing_cols <- setdiff(required_cols, names(results))
+
+  if (length(missing_cols) > 0) {
+    stop(sprintf("違反 R118: 缺少必需欄位: %s",
+                paste(missing_cols, collapse = ", ")))
+  }
+
+  # 檢查 p 值有效
+  invalid_p <- results %>%
+    filter(is.na(p_value) | p_value < 0 | p_value > 1)
+
+  if (nrow(invalid_p) > 0) {
+    stop(sprintf("違反 R118: %d 個特徵有無效的 p 值", nrow(invalid_p)))
+  }
+
+  # 檢查顯著性標記與 p 值匹配
+  mismatched <- results %>%
+    mutate(
+      expected_flag = case_when(
+        p_value < 0.001 ~ "***",
+        p_value < 0.01 ~ "**",
+        p_value < 0.05 ~ "*",
+        TRUE ~ "不顯著"
+      )
+    ) %>%
+    filter(significance_flag != expected_flag)
+
+  if (nrow(mismatched) > 0) {
+    stop(sprintf("違反 R118: %d 個特徵的顯著性標記不匹配",
+                nrow(mismatched)))
+  }
+
+  message("✅ R118 驗證: 統計輸出包含所有必需的顯著性指標")
+  return(TRUE)
+}
+```
+
+### 2. DRV 卜瓦松分析實作
+
+來自精準行銷 DRV 的範例：
+
+```r
+# precision_DRV_poisson_analysis.R
+# 階段: DRV 3RD - 統計分析
+# 目的: 特徵重要性的卜瓦松迴歸
+
+precision_poisson_analysis_drv <- function() {
+  # 載入準備好的時間序列資料
+  time_series_data <- tbl2(con_drv, "df_precision_time_series___complete") %>%
+    collect()
+
+  # === 卜瓦松迴歸 (R118 合規) ===
+
+  # 執行包含完整統計輸出的卜瓦松模型
+  poisson_results <- run_poisson_feature_analysis(
+    data = time_series_data,
+    formula = sales_quantity ~ price_usd + rating + review_count + category + country_iso,
+    reference_levels = list(
+      category = "air_filter",
+      country_iso = "US"
+    )
+  )
+
+  # === R118 必需輸出 ===
+  # poisson_results 包含:
+  # - coefficient: 迴歸係數
+  # - std_error: 標準誤
+  # - p_value: 確切的 p 值 ⭐
+  # - significance_flag: "***", "**", "*", 或 "不顯著" ⭐
+  # - conf_int_lower: 95% 信賴區間下限
+  # - conf_int_upper: 95% 信賴區間上限
+
+  # === 驗證 (R118) ===
+  validate_statistical_output(poisson_results)
+
+  # === 輸出 ===
+
+  # 寫入 DRV 資料庫
+  dbWriteTable(
+    conn = con_drv,
+    name = "df_precision_poisson_coefficients",
+    value = poisson_results,
+    overwrite = TRUE
+  )
+
+  # 創建使用者友好的摘要
+  significant_features <- poisson_results %>%
+    filter(significance_flag != "不顯著") %>%
+    arrange(p_value)
+
+  non_significant_features <- poisson_results %>%
+    filter(significance_flag == "不顯著")
+
+  # 記錄摘要
+  message(sprintf("✅ R118: 卜瓦松分析完成，包含完整的顯著性文件"))
+  message(sprintf("  - 顯著特徵: %d", nrow(significant_features)))
+  message(sprintf("  - 不顯著特徵: %d", nrow(non_significant_features)))
+  message(sprintf("  - 所有結果包含 p 值和顯著性標記"))
+
+  # 回傳結果
+  return(list(
+    all_results = poisson_results,
+    significant_only = significant_features,
+    non_significant = non_significant_features
+  ))
+}
+```
+
+## 常見錯誤避免
+
+### ❌ 錯誤 1: 報告不含 P 值的係數
+
+```r
+# 錯誤: 輸出表格缺少 p 值
+poisson_output <- model_results %>%
+  select(feature, coefficient, std_error)  # ❌ 沒有 p 值!
+
+# 正確: 包含所有 R118 必需欄位
+poisson_output <- model_results %>%
+  select(
+    feature, coefficient, std_error,
+    p_value, significance_flag,  # ⭐ 必需
+    conf_int_lower, conf_int_upper
+  )
+```
+
+### ❌ 錯誤 2: 按係數大小排序
+
+```r
+# 錯誤: 按係數大小對特徵排名
+top_features <- poisson_results %>%
+  arrange(desc(abs(coefficient))) %>%  # ❌ 忽略顯著性!
+  head(10)
+
+# 不顯著的係數 0.85 可能排名高於
+# 顯著的係數 0.15 - 這是誤導
+
+# 正確: 首先按顯著性排名，然後按係數
+top_features <- poisson_results %>%
+  filter(p_value < 0.05) %>%  # ✅ 僅顯著特徵
+  arrange(p_value, desc(abs(coefficient))) %>%  # ✅ 最顯著的優先
+  head(10)
+```
+
+### ❌ 錯誤 3: 僅顯示顯著結果
+
+```r
+# 錯誤: 隱藏不顯著結果
+display_results <- poisson_results %>%
+  filter(p_value < 0.05)  # ❌ 不顯著結果隱藏
+
+# 問題: 使用者不知道測試了什麼並發現不顯著
+# 這是選擇性報告 - 違反透明度
+
+# 正確: 顯示所有結果，但清楚標記顯著性
+display_results <- poisson_results %>%
+  mutate(
+    display_text = sprintf("%s: %.3f %s (p=%.3f)",
+                          feature, coefficient, significance_flag, p_value)
+  ) %>%
+  arrange(p_value)  # ✅ 所有結果可見，按顯著性排序
+```
+
+### ❌ 錯誤 4: 忽略多重測試
+
+```r
+# 錯誤: 測試 50 個特徵而不校正
+# 如果在 p<0.05 測試 50 個特徵，預期約 2.5 個偽陽性!
+
+poisson_results <- run_many_tests(features)  # ❌ 沒有校正
+
+# 正確: 應用多重測試校正
+poisson_results <- run_many_tests(features) %>%
+  mutate(p_value_adjusted = p.adjust(p_value, method = "bonferroni"))
+```
+
+## 合規檢查清單
+
+- [ ] 所有統計模型輸出包含 `p_value` 欄位
+- [ ] 所有統計模型輸出包含 `significance_flag` 欄位
+- [ ] 顯著性標記使用標準符號 (***/**/*/"不顯著")
+- [ ] P 值在 UI/報告中與係數一起顯示
+- [ ] 使用者可以按顯著性等級過濾
+- [ ] 不顯著結果不隱藏或誤報為重要
+- [ ] 測試多個假設時應用多重測試校正
+- [ ] 效應量包含信賴區間
+- [ ] 記錄樣本大小以進行統計檢定力評估
+- [ ] 驗證函數在輸出前確認 R118 合規
+
+## 結論
+
+R118 確保所有統計模型輸出包含完整的顯著性文件，防止誤導性係數呈現違反 MP029。通過要求 p 值、顯著性標記和信賴區間，系統實現對統計結果的知情解釋。
+
+此規則對以下方面至關重要：
+- **準確性**: 防止對不顯著發現的誤解
+- **透明度**: 使用者理解證據強度，而非僅效應大小
+- **合規性**: 滿足 MP029 (禁止假資料) 和 MP051 (測試資料設計)
+- **學術嚴謹性**: 符合統計報告標準
+- **決策品質**: 基於統計上可靠證據的業務決策
+
+**關鍵提醒**: 統計顯著性文件化是 DRV 層中所有迴歸和假設檢定輸出的**強制性要求**。絕不單獨呈現係數 - 始終包含 p 值和顯著性標記，以防止對因子重要性的誤導性印象。

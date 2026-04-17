@@ -1,0 +1,247 @@
+---
+title: "DM_R036: ETL Script Return Value Patterns"
+date: "2025-08-28"
+author: "Claude Code"
+categories: ["Rules", "ETL", "Data Management", "Resource Cleanup"]
+tags: ["etl", "return-values", "autodeinit", "pipeline-orchestration", "cleanup"]
+---
+
+## Rule Statement
+
+**ETL scripts that need to return values for pipeline orchestration MUST use the five-part script structure (DEV_R032), which elegantly separates SUMMARIZE from DEINITIALIZE, enabling full variable access for reporting before cleanup.**
+
+## Rationale
+
+The `autodeinit()` function removes ALL user-created variables from the global environment. Any attempt to reference variables after `autodeinit()` will fail with "object not found" errors. The five-part structure solves this by separating reporting/return value preparation (SUMMARIZE) from cleanup (DEINITIALIZE).
+
+## Implementation Pattern
+
+### Mandatory Five-Part Structure
+
+The five-part script structure (DEV_R032) is the required standard that completely eliminates autodeinit() problems:
+
+```r
+# ✅ BEST PRACTICE: Five-part structure with clean separation
+# ... ETL processing in MAIN ...
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+# All variables still accessible for reporting and return prep
+final_metrics <- list(
+  success = !main_error && test_passed,
+  rows_processed = nrow(df_sales),
+  execution_time = as.numeric(Sys.time() - start_time, units = "secs")
+)
+
+message(sprintf("📊 Processed %d rows", final_metrics$rows_processed))
+
+# Prepare return value (variables still exist)
+final_return_status <- final_metrics$success
+
+# Optional: Save to disk for external monitoring
+saveRDS(final_metrics, "etl_metrics.rds")
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+# Only cleanup, no variable access needed
+autodeinit()  # Safe as the last statement
+```
+
+**Key Benefits:**
+- ✅ **Architecturally Correct** - Complete separation of concerns
+- ✅ **Full Variable Access** - All variables available in SUMMARIZE
+- ✅ **Clean Code** - Maintainable and self-documenting
+- ✅ **Universal Solution** - Works for all ETL patterns
+- ✅ **No Workarounds Needed** - Natural solution, not a hack
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Variable Reference After autodeinit()
+
+```r
+# ❌ INCORRECT: Will always fail
+final_status <- compute_status()
+autodeinit()
+return(final_status)  # ERROR: final_status doesn't exist
+```
+
+### Anti-Pattern 2: Capturing Before But Using After
+
+```r
+# ❌ INCORRECT: Misleading - appears correct but fails
+# Capture before cleanup
+return_value <- df_sales$status[1]
+
+# Cleanup
+autodeinit()
+
+# Try to return
+invisible(return_value)  # ERROR: return_value was removed
+```
+
+### Anti-Pattern 3: Conditional Return After autodeinit()
+
+```r
+# ❌ INCORRECT: Both branches will fail
+autodeinit()
+
+if (success_flag) {  # ERROR: success_flag doesn't exist
+  return(TRUE)
+} else {
+  return(FALSE)
+}
+```
+
+## Implementation Requirements
+
+All ETL scripts MUST:
+
+1. Use the five-part structure (DEV_R032)
+2. Place all return value preparation in SUMMARIZE (Part 4)
+3. Keep DEINITIALIZE (Part 5) for cleanup only
+4. Ensure autodeinit() is the absolute last statement
+
+## Integration with Other Principles
+
+### DEV_R032 (Script Structure Standard Rule)
+The five-part structure is the mandatory standard for all ETL scripts. It provides the only architecturally correct solution by separating SUMMARIZE from DEINITIALIZE.
+
+### MP103 (autodeinit Behavior)
+This rule implements the ETL-specific guidance from MP103, providing concrete patterns for handling the complete variable cleanup behavior.
+
+### MP064 (ETL Derivation Separation)
+ETL scripts in the 0IM/1ST/2TR pattern must choose appropriate cleanup based on their role in the pipeline.
+
+### MP102 (ETL Output Standardization)
+Standardized outputs must be preserved using the SUMMARIZE section when autodeinit() is needed.
+
+## Validation
+
+```r
+# Function to check ETL script compliance
+validate_etl_cleanup <- function(script_path) {
+  lines <- readLines(script_path)
+  
+  # Check for five-part structure
+  parts <- c("INITIALIZE", "MAIN", "TEST", "SUMMARIZE", "DEINITIALIZE")
+  found_parts <- sapply(parts, function(p) {
+    any(grepl(sprintf("PART [1-5]: %s", p), lines))
+  })
+  
+  if (!all(found_parts)) {
+    return(list(
+      status = "ERROR",
+      message = "Must use five-part structure",
+      missing = parts[!found_parts]
+    ))
+  }
+  
+  # Find autodeinit calls
+  autodeinit_lines <- grep("autodeinit\\(\\)", lines)
+  
+  if (length(autodeinit_lines) == 0) {
+    return(list(status = "WARNING", message = "No autodeinit() found"))
+  }
+  
+  # Check for return/invisible after last autodeinit
+  last_autodeinit <- max(autodeinit_lines)
+  remaining_lines <- lines[(last_autodeinit + 1):length(lines)]
+  
+  has_return <- any(grepl("^\\s*(return|invisible)\\s*\\(", remaining_lines))
+  has_var_ref <- any(grepl("\\w+", remaining_lines[!grepl("^\\s*#|^\\s*$", remaining_lines)]))
+  
+  if (has_return || has_var_ref) {
+    return(list(
+      status = "ERROR",
+      message = "Found return/variable reference after autodeinit()",
+      line = last_autodeinit
+    ))
+  }
+  
+  return(list(status = "OK", message = "Correct cleanup pattern"))
+}
+```
+
+## Example: Complete ETL Script
+
+```r
+#!/usr/bin/env Rscript
+# cbz_ETL_sales_processing.R
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+source("scripts/global_scripts/22_initializations/sc_initialization_etl_mode.R")
+con <- DBI::dbConnect(duckdb::duckdb(), "sales.duckdb")
+main_error <- FALSE
+test_passed <- FALSE
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+tryCatch({
+  df_raw <- DBI::dbReadTable(con, "raw_sales")
+  df_processed <- process_sales_data(df_raw)
+  DBI::dbWriteTable(con, "processed_sales", df_processed, overwrite = TRUE)
+}, error = function(e) {
+  message("Error in MAIN: ", e$message)
+  main_error <- TRUE
+})
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+if (!main_error) {
+  test_passed <- DBI::dbExistsTable(con, "processed_sales")
+}
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+# Prepare return values and metrics
+final_metrics <- list(
+  success = test_passed && !main_error,
+  rows_processed = if(exists("df_processed")) nrow(df_processed) else 0,
+  timestamp = Sys.time()
+)
+
+# Save for pipeline orchestration
+saveRDS(final_metrics, "etl_status.rds")
+message(sprintf("ETL completed: %s", ifelse(final_metrics$success, "SUCCESS", "FAILED")))
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+DBI::dbDisconnect(con)
+autodeinit()
+```
+
+## Compliance Checklist
+
+- [ ] Using five-part structure (DEV_R032)
+- [ ] SUMMARIZE (Part 4) contains all reporting and return prep
+- [ ] DEINITIALIZE (Part 5) contains ONLY cleanup
+- [ ] autodeinit() is the last statement in DEINITIALIZE
+- [ ] No variable references after autodeinit()
+- [ ] Return values prepared in SUMMARIZE before cleanup
+
+## Changelog
+
+### 2025-08-28: Simplified to Current Standard Only
+- Removed all legacy workaround patterns per MP105
+- Focused solely on five-part structure as mandatory standard
+- Updated references from DEV_R033 to DEV_R032
+- Cleaned up decision tree and compliance requirements
+
+### 2025-08-28: Initial Creation
+- Created rule to address systematic autodeinit() misuse in ETL scripts
+- Documented five-part structure as the solution
+- Added validation function for compliance checking
+
+---
+
+**Priority**: CRITICAL - Affects all ETL pipeline scripts
+**Scope**: All ETL scripts MUST use five-part structure
+**Validation**: Five-part structure required for deployment

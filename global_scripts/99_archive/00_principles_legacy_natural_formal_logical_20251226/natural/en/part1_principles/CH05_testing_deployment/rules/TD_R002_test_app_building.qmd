@@ -1,0 +1,440 @@
+---
+title: "TD_R002: Test App Building Rule"
+subtitle: "Comprehensive approach for building test applications for Shiny components"
+chapter: "CH05"
+category: "rule"
+number: "TD_R002"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Testing & Deployment Law Implementation Rules"
+article: "Article 2"
+derives_from:
+  - "CH00.MP051: Test Data Design"
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+  - "TD_R001: Shiny Test Data"
+  - "TD_R075: Test Script Initialization"
+  - "CH01.SO_R076: Module Data Connection Rule"
+  - "CH02.DM_R002: Universal Data Access Pattern"
+  - "CH03.DEV_P076: Error Handling Patterns"
+  - "CH03.DEV_P077: Performance Optimization"
+influences:
+  - "CH01.SO_P003: App Construction Principles"
+  - "CH01.SO_P016: Component Testing"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Testing & Deployment Law Implementation Rules Article 2 (Test App Building Rule)**
+
+This article establishes principles for building test applications for Shiny components with a consistent, comprehensive approach that tests both unit functionality and integration capabilities.
+
+:::{.callout-important}
+## Core Rule
+Test applications for Shiny components must be designed with a consistent, comprehensive approach that tests both unit functionality and integration capabilities. Each test script should verify all component functions, support multiple data access patterns, and provide both automated validation and interactive testing modes.
+:::
+
+# Section 1: Implementation Guidelines {#implementation}
+
+## Subsection 1: Comprehensive Function Testing {#function-testing}
+
+- Each test script must validate all exported functions from the component being tested
+- Components must be tested as-is without reimplementation or manual rebuilding of functionality
+- All interface variants (UI, server, component factory) must be individually verified
+
+## Subsection 2: Universal Data Access Compatibility {#data-access}
+
+Test scripts must validate the component against all supported connection types:
+
+:::{.callout-note}
+## Connection Types to Test
+- List-based connections (direct data access)
+- Function-based connections (get_* function patterns)
+- Mixed connections (combination of direct and functional access)
+- DBI database connections (real database when available)
+- Reactive expressions (Shiny-specific wrappers)
+:::
+
+## Subsection 3: Test Data Structure {#test-data}
+
+Include multiple data scenarios to verify error handling and edge cases:
+
+- **Complete data**: Ideal case with all fields
+- **Partial data**: Subset of records but complete fields
+- **Incomplete fields**: Missing some expected fields
+- **Alternative field names**: Testing field name mapping logic
+- **Empty datasets**: Zero rows but proper structure
+- **NULL data**: Complete absence of data
+
+## Subsection 4: Dual-Mode Testing Approach {#dual-mode}
+
+- **Automated Testing Mode**: Run non-interactive unit tests with testthat
+- **Interactive Demo Mode**: Launch a Shiny app for visual verification and manual testing
+- Support conditional execution based on environment (DEMO_MODE, interactive(), etc.)
+
+## Subsection 5: Self-Contained Execution {#self-contained}
+
+- Test scripts must work correctly regardless of working directory
+- Include project root detection logic that works across environments
+- Automatically source required dependencies with informative error handling
+- Check for and handle missing package dependencies gracefully
+
+## Subsection 6: Interactive Test App Structure {#interactive-structure}
+
+- Provide controls for switching between connection types at runtime
+- Enable toggling between different test data scenarios
+- Include detailed debug information that can be shown/hidden
+- Implement real-time response to configuration changes
+
+# Section 2: Test Script Structure {#script-structure}
+
+## Subsection 1: Standard Template {#standard-template}
+
+A compliant test script should follow this general structure:
+
+```r
+# 1. Configuration & Environment Setup
+DEMO_MODE <- TRUE/FALSE
+find_project_root <- function() { ... }
+project_root <- find_project_root()
+
+# 2. Load Dependencies
+suppressPackageStartupMessages({
+  library(shiny)
+  library(testthat)
+  # Additional required packages
+})
+
+# 3. Source Component Files
+source(file.path(project_root, "path/to/component.R"))
+
+# 4. Test Data Generation
+generate_test_data <- function() {
+  # Create all test scenarios
+  return(list(
+    scenarios = list(
+      complete = list(...),
+      partial = list(...),
+      incomplete_fields = list(...),
+      alt_field_names = list(...),
+      empty = list(...),
+      null_data = list(...)
+    )
+  ))
+}
+test_data <- generate_test_data()
+
+# 5. Connection Factory Functions
+create_test_connection <- function(scenario_data, connection_type = "list") {
+  # Create connections of different types using the same data
+}
+
+# 6. Unit Test Functions
+test_component_functions <- function() {
+  # Test each individual function in the component
+}
+
+# 7. Interactive Test App
+create_test_app <- function() {
+  # Create a Shiny app with type/scenario switchers
+  ui <- fluidPage(...)
+  server <- function(input, output, session) {...}
+  shinyApp(ui, server)
+}
+
+# 8. Test Execution Logic
+if (!DEMO_MODE) {
+  # Run automated tests
+} else {
+  # Launch interactive test app
+}
+```
+
+# Section 3: Test App Requirements {#app-requirements}
+
+## Subsection 1: UI Controls {#ui-controls}
+
+The interactive test application must include:
+
+- Connection type selector
+- Test scenario selector
+- Debug information toggle
+- Refresh/reset capability
+
+## Subsection 2: Visualization Areas {#visualization}
+
+- Component UI rendering space
+- Connection information display
+- Data state visualization
+- Error message display area
+
+## Subsection 3: Consistent Styling {#styling}
+
+- Clear visual hierarchy with proper headings
+- Separation between control and display areas
+- Consistent color scheme and typography
+- Responsive layout for different screen sizes
+
+# Section 4: Practical Implementation {#practical}
+
+## Subsection 1: Applicable Components {#applicable-components}
+
+This test file structure should be used for all Shiny components, especially those that:
+
+1. Implement the Universal Data Access Pattern (DM_R002)
+2. Are designed for reuse across multiple applications
+3. Handle complex user interactions or data operations
+4. Need verification across multiple data scenarios
+
+## Subsection 2: File Naming Convention {#naming}
+
+The test app should be stored alongside the component file, using the naming convention `[component_name]_test.R`.
+
+# Section 5: User Validation Requirements {#user-validation}
+
+## Subsection 1: Human Validation as Ultimate Criterion {#human-validation}
+
+While automated tests and technical metrics are valuable, the ultimate criterion for test app success is human validation:
+
+:::{.callout-important}
+## User-Centered Validation Requirements
+1. **User-Centered Validation**: The final determination of whether a component functions properly must be made by a human user through interactive testing, not solely by automated checks.
+
+2. **Visual Inspection**: Components must be visually inspected for proper rendering, layout, and responsiveness.
+
+3. **Interactive Validation**: All user interactions (clicks, inputs, selections) must be manually tested to ensure expected behavior.
+
+4. **Cross-Connection Testing**: Users should verify component functionality across all connection types, with particular attention to the most common use cases in production.
+
+5. **Error State Validation**: Users must evaluate how gracefully the component handles error states, missing data, and edge cases.
+
+6. **Acceptance Criteria**: A component is considered successfully tested only when a human user has verified its behavior in the target environment with typical usage patterns.
+:::
+
+This human validation step is non-negotiable regardless of automated test coverage and serves as the final sign-off prior to component integration.
+
+# Section 6: Example Implementation {#example}
+
+## Subsection 1: Complete Test App Example {#complete-example}
+
+```r
+# microCustomer_test.R
+# Test app for microCustomer component
+
+# Configuration
+DEMO_MODE <- interactive()
+
+# Find project root
+find_project_root <- function() {
+  current <- getwd()
+  while (!file.exists(file.path(current, ".git")) && 
+         current != dirname(current)) {
+    current <- dirname(current)
+  }
+  return(current)
+}
+project_root <- find_project_root()
+
+# Load dependencies
+suppressPackageStartupMessages({
+  library(shiny)
+  library(bs4Dash)
+  library(DBI)
+  library(testthat)
+})
+
+# Source component
+source(file.path(project_root, 
+       "scripts/global_scripts/10_rshinyapp_components/micro/microCustomer/microCustomer.R"))
+
+# Generate test data
+generate_test_data <- function() {
+  # Use standard test data block
+  source(file.path(project_root, 
+         "scripts/global_scripts/00_principles/test_data_blocks.R"))
+  
+  customer_data <- customer_test_block(
+    n_customers = 20,
+    dna_coverage_pct = 70,
+    include_edge_cases = TRUE
+  )
+  
+  return(list(
+    scenarios = list(
+      complete = customer_data,
+      partial = list(
+        df_customer_profile = customer_data$df_customer_profile[1:10, ],
+        df_dna_by_customer = customer_data$df_dna_by_customer[1:5, ]
+      ),
+      empty = list(
+        df_customer_profile = customer_data$df_customer_profile[0, ],
+        df_dna_by_customer = customer_data$df_dna_by_customer[0, ]
+      ),
+      null_data = list(
+        df_customer_profile = NULL,
+        df_dna_by_customer = NULL
+      )
+    )
+  ))
+}
+
+# Create test connection
+create_test_connection <- function(scenario_data, connection_type = "list") {
+  switch(connection_type,
+    "list" = scenario_data,
+    "function" = list(
+      get_df_customer_profile = function() scenario_data$df_customer_profile,
+      get_df_dna_by_customer = function() scenario_data$df_dna_by_customer
+    ),
+    "reactive" = list(
+      df_customer_profile = reactive(scenario_data$df_customer_profile),
+      df_dna_by_customer = reactive(scenario_data$df_dna_by_customer)
+    )
+  )
+}
+
+# Create interactive test app
+create_test_app <- function() {
+  ui <- bs4DashPage(
+    header = bs4DashNavbar(title = "microCustomer Test App"),
+    sidebar = bs4DashSidebar(
+      selectInput("connection_type", "Connection Type:",
+                  choices = c("list", "function", "reactive")),
+      selectInput("scenario", "Test Scenario:",
+                  choices = c("complete", "partial", "empty", "null_data")),
+      actionButton("refresh", "Refresh", class = "btn-primary"),
+      br(), br(),
+      checkboxInput("show_debug", "Show Debug Info", value = FALSE)
+    ),
+    body = bs4DashBody(
+      fluidRow(
+        column(width = 12,
+          conditionalPanel(
+            condition = "input.show_debug",
+            box(
+              title = "Debug Information",
+              width = NULL,
+              verbatimTextOutput("debug_info")
+            )
+          ),
+          box(
+            title = "Component Display",
+            width = NULL,
+            microCustomerUI("test")
+          )
+        )
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    # Get test data
+    test_data <- generate_test_data()
+    
+    # Create reactive connection
+    current_connection <- reactive({
+      input$refresh
+      scenario_data <- test_data$scenarios[[input$scenario]]
+      create_test_connection(scenario_data, input$connection_type)
+    })
+    
+    # Initialize component
+    observe({
+      microCustomerServer("test", 
+                         app_data_connection = current_connection())
+    })
+    
+    # Debug output
+    output$debug_info <- renderPrint({
+      list(
+        connection_type = input$connection_type,
+        scenario = input$scenario,
+        data_structure = str(current_connection())
+      )
+    })
+  }
+  
+  shinyApp(ui, server)
+}
+
+# Execute based on mode
+if (!DEMO_MODE) {
+  # Run automated tests
+  test_that("microCustomer functions exist", {
+    expect_true(exists("microCustomerUI"))
+    expect_true(exists("microCustomerServer"))
+    expect_true(exists("microCustomerDefaults"))
+  })
+  
+  test_that("microCustomer handles all connection types", {
+    test_data <- generate_test_data()
+    for (type in c("list", "function", "reactive")) {
+      conn <- create_test_connection(test_data$scenarios$complete, type)
+      expect_true(!is.null(conn))
+    }
+  })
+} else {
+  # Launch interactive test app
+  create_test_app()
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Test App Building Checklist
+
+When building test applications, verify:
+
+**Structure:**
+- [ ] Configuration section with DEMO_MODE flag
+- [ ] Project root detection logic
+- [ ] Dependency loading with error handling
+- [ ] Component file sourcing
+- [ ] Test data generation function
+- [ ] Connection factory function
+- [ ] Unit test functions
+- [ ] Interactive test app creation
+- [ ] Conditional execution logic
+
+**Test Coverage:**
+- [ ] All exported functions tested
+- [ ] All connection types supported
+- [ ] All data scenarios included
+- [ ] Automated tests implemented
+- [ ] Interactive demo available
+
+**User Interface:**
+- [ ] Connection type selector
+- [ ] Scenario selector
+- [ ] Debug toggle
+- [ ] Refresh capability
+- [ ] Clear visual hierarchy
+- [ ] Error display area
+
+**Validation:**
+- [ ] Visual inspection completed
+- [ ] Interactive testing performed
+- [ ] Cross-connection verified
+- [ ] Error states validated
+- [ ] User acceptance obtained
+:::
+
+# Conclusion {#conclusion}
+
+The Test App Building Rule ensures comprehensive testing of Shiny components through both automated and interactive validation. By following this structured approach, we guarantee that components work correctly across all supported data access patterns and handle edge cases gracefully. The emphasis on human validation ensures that components meet real-world usability standards beyond technical requirements.
+
+---
+
+*Based on: Testing & Deployment Law Implementation Rules Article 2*  
+*Derives from: [MP051 Test Data Design](../../CH00_fundamental_principles/MP051_test_data_design.qmd), [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd), [TD_R001 Shiny Test Data](TD_R001_shiny_test_data.qmd)*  
+*Influences: [SO_P003 App Construction Principles](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd), [SO_P016 Component Testing](../../CH01_structure_organization/principles/SO_P016_component_testing.qmd)*

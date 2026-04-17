@@ -1,0 +1,245 @@
+---
+title: "MP008: Terminology Axiomatization"
+subtitle: "Formal definitions of key terms and their relationships"
+chapter: "CH00"
+category: "MP"
+number: "008"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP000: Axiomatization System"
+  - "MP001: Primitive Terms and Definitions"
+extends:
+  - "MP006: Data Source Hierarchy"
+influences:
+  - "R004: YAML Configuration"
+  - "R009: UI-Server-Defaults Triple Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Core Concept {#core-concept}
+
+Precise terminology is the foundation of system design. By formally defining key terms and their relationships, we create an axiomatized system where all participants share a common understanding of core concepts, reducing ambiguity and implementation errors.
+
+:::{.callout-important}
+## Terminology Precision
+This principle establishes clear definitions for key terms throughout the precision marketing application, ensuring consistent understanding and implementation.
+:::
+
+# Terminology Hierarchy {#terminology-hierarchy}
+
+## Data Origin Terms {#data-origin-terms}
+
+:::{.panel-tabset}
+
+### Platform
+The source system or channel from which raw data is collected (e.g., "Amazon", "Official Website"). Platforms are defined in `app_data/scd_type1/source.xlsx` and accessed through `source_dictionary` in brand-specific parameters.
+
+:::{.callout-note}
+## Historical Note
+Historically referred to as "source" in the codebase
+:::
+
+### Raw Data
+Unprocessed data collected directly from platforms, stored in `raw_data/` directory in its original form with minimal modification.
+
+### Raw Data Folder
+The directory containing raw data organized by platform (`../rawdata_WISER`).
+
+:::
+
+## Data Processing Terms {#data-processing-terms}
+
+| Term | Definition | Storage Location |
+|------|------------|------------------|
+| **Processed Data** | Data that has been transformed, cleaned, and integrated | `processed_data/` |
+| **Cleansed Data** | Subset of processed data that has undergone data cleansing operations to remove errors, inconsistencies, and invalid values | `cleansed_data/` |
+| **Intermediate Data** | Data in transitional states between raw and final processed forms | `intermediate_data/` |
+
+## Data Access Terms {#data-access-terms}
+
+:::{.callout-note}
+## Key Terms
+- **Data Source**: A named reference to a specific dataset used by application components, representing accessible data regardless of physical storage location
+- **Data Table**: A structured collection of records that can be queried, filtered, and manipulated as a unit
+- **View**: A virtual data table defined by a query that presents data from one or more underlying tables or data sources
+:::
+
+## Component Data Terms {#component-data-terms}
+
+:::{.panel-tabset}
+
+### Parameters
+Configuration values that control component behavior, distinct from data sources. Parameters don't contain records but rather settings like `show_kpi: true`.
+
+### Role
+The functional purpose of a data source within a component in multi-source configurations (e.g., "primary", "history", "reference").
+
+### Data Role
+The specific relationship between a data source and a component (e.g., "primary" data role might represent the main dataset for a component).
+
+:::
+
+## Navigation & Component Organization Terms {#navigation-terms}
+
+```{mermaid}
+%%| fig-cap: "Navigation Hierarchy Structure"
+%%| fig-align: "center"
+
+graph TD
+    TL[Top-Level Navigation]
+    SL[Second-Level Navigation]
+    C[Component]
+    U[Union]
+    
+    TL --> SL
+    SL --> C
+    C --> U
+    
+    style TL fill:#e6ffe6
+    style SL fill:#e6f3ff
+    style C fill:#fff0e6
+    style U fill:#ffe6f3
+```
+
+- **Top-Level Navigation**: Primary navigation structure of the application, typically implemented as tabs or buttons in the main header
+- **Second-Level Navigation**: Navigation within a top-level section, typically implemented as a navigation row at the top of the display area
+- **Component**: Self-contained module with UI (filters and display), server logic, and defaults
+- **Union**: Composite component created by combining multiple components
+
+# Term Relationship Axioms {#term-axioms}
+
+:::{.callout-important}
+## Fundamental Relationships
+
+1. **Platform-Data Relationship**: Platforms generate raw data, raw data transforms into processed data
+2. **Data Source-Component Relationship**: Components consume data sources, data sources represent accessible versions of processed data
+3. **Role-Component Relationship**: When a component uses multiple data sources, each source has a specific role defining its purpose within the component
+4. **Parameter-Component Relationship**: Parameters configure component behavior but don't provide record-level data
+5. **Navigation-Directory Relationship**: Application navigation levels correspond to its directory structure
+6. **Component-Union Relationship**: Multiple components can be combined through unions to form composite components
+:::
+
+# Implementation in YAML Configuration {#yaml-implementation}
+
+The YAML configuration principle establishes patterns for implementing these terminology relationships:
+
+```yaml
+# Pattern 1: Simple string format - direct data source reference
+component_name: data_source_name
+
+# Pattern 3: Object format with roles - multiple data sources with specific roles
+component_name:
+  role1: data_source1
+  role2: data_source2
+
+# Pattern 4a: Single data source with parameters
+component_name:
+  data_source: data_source_name  # Data source providing records
+  parameters:                    # Configuration values (not record data)
+    param1: value1
+```
+
+# Platform vs Data Source Distinction {#platform-vs-datasource}
+
+:::{.callout-warning}
+## Critical Distinction
+
+There is a critical distinction between **Platform** and **Data Source**:
+
+- **Platform**: The origin system where data is collected from (e.g., Amazon, Official Website)
+- **Data Source**: The processed, accessible data used by application components, typically after ETL processes
+
+### Example
+- **Platform** might be "Amazon" (stored in `source.xlsx`, historically called "source")
+- **Data Source** might be "sales_by_customer_dta" (a processed table or file containing data from one or more platforms)
+:::
+
+# Usage Examples {#usage-examples}
+
+```r
+# Access platform information (raw data origin)
+# Note: File historically called "source.xlsx" but contains platform info
+platform_info <- read_excel(file.path("app_data", "scd_type1", "source.xlsx"))
+
+# Map platforms to readable names
+# Note: Variable historically named "source" but represents platform
+platform_dictionary <- as.list(setNames(
+  source_dtah$source, 
+  source_dtah[[paste0("source_", language)]]
+))
+
+# Access data source (processed data used by components)
+data <- read_from_app_data("sales_by_customer_dta.rds")
+
+# YAML configuration referencing data sources
+# components:
+#   micro: sales_by_customer_dta  # 'sales_by_customer_dta' is a data source, not a platform
+```
+
+# Best Practices {#best-practices}
+
+:::{.callout-tip}
+## Terminology Usage Guidelines
+
+1. **Clarity**: Always use precise terms to refer to concepts
+2. **Consistent Naming**: Use consistent naming patterns
+   - Platform names: lowercase without spaces (e.g., `amazon`, `officialwebsite`)
+   - Data source names: snake_case and descriptive of content (e.g., `sales_by_customer_dta`)
+   - Component names: camelCase and descriptive of function (e.g., `microCustomer`, `macroOverview`)
+3. **Navigation-based Organization**: Organize components according to navigation hierarchy
+4. **Documentation**: When introducing new terms, document their relationship to existing terms
+5. **Cross-reference**: When documenting data sources, reference which platform(s) their data originates from
+6. **Avoid Overloading**: Don't use the same term to mean different concepts in different contexts
+7. **Legacy Awareness**: Be aware that historical code uses "source" to refer to what we now call "platform"
+8. **Component Structure Consistency**: All components should follow the UI-Server-Defaults triple rule
+:::
+
+# Relationships with Other Principles {#relationships}
+
+This principle formalizes terminology used across other principles:
+
+```{mermaid}
+%%| fig-cap: "Terminology Axiomatization Relationship Network"
+%%| fig-align: "center"
+
+graph LR
+    MP008[MP008: Terminology Axiomatization]
+    MP006[MP006: Data Source Hierarchy]
+    R004[R004: YAML Configuration]
+    P004[P004: Application Construction]
+    R009[R009: UI-Server-Defaults]
+    MP056[MP056: Connected Components]
+    
+    MP008 --> MP006
+    MP008 --> R004
+    MP008 --> P004
+    MP008 --> R009
+    MP008 --> MP056
+    
+    style MP008 fill:#ffd700,stroke:#333,stroke-width:3px
+```
+
+1. **Data Source Hierarchy Principle** (MP006): Clarifies where different types of data sources fit in the system hierarchy
+2. **YAML Configuration Principle** (R004): Establishes patterns for specifying data sources in configuration
+3. **Application Construction Principle** (P004): Uses standardized terminology for application components
+4. **UI-Server-Defaults Triple Rule** (R009): Defines the standard structure of components
+5. **Connected Components Principle** (MP056): Establishes how components should be structured to enable connectivity
+6. **Union Pattern** (Union.md): Defines how to combine components while maintaining structure
+
+# Conclusion {#conclusion}
+
+By axiomatizing our terminology, we create a shared understanding of key concepts, reduce ambiguity, improve communication, and ensure consistent implementation throughout the system. This foundation enables precise discussions about system design and rapid onboarding of new team members.
+
+:::{.callout-important}
+## Key Takeaway
+Precise terminology is the cornerstone of effective system design and implementation. By establishing and maintaining clear definitions, we ensure all stakeholders can communicate effectively and build the system consistently.
+:::

@@ -1,0 +1,317 @@
+# ========================================
+# CH05: Testing & Deployment Principles
+# Version: 1.0
+# Last Updated: 2026-01-25
+#
+# Contains: TD_P001-TD_P003 (3 principles) + TD_R001-TD_R006 (6 rules)
+# Total: 9 principles
+# ========================================
+
+chapter: "CH05_testing"
+description: "Testing & Deployment Principles and Rules"
+principle_count: 9
+
+principles:
+
+  # ====================
+  # TD_P PRINCIPLES (3)
+  # ====================
+
+  - id: TD_P001
+    type: principle
+    name: deployment_patterns
+    display_name: "Deployment Patterns"
+    one_liner: "Follow standardized deployment patterns for consistency"
+    file_path: "CH05_testing_deployment/principles/TD_P001_deployment_patterns.qmd"
+
+    rule_natural: |
+      Deployment must follow patterns:
+      - Use manifest.json for dependencies
+      - Configure via app_config.yaml
+      - Environment variables for secrets
+      - Test before deploy
+      - Document deployment requirements
+      Symlink projects (MP122) require dual-repo deployment:
+      - Dev repo (symlinks) cannot be deployed directly
+      - Deploy repo (real files via rsync -avL) is the deployment source
+      - Makefile targets: deploy-init, deploy-sync, deploy-diff, deploy-push
+      - Verify no residual symlinks in deploy repo before push (find . -type l)
+      - Posit Connect Cloud supports private repos via GitHub OAuth
+
+    rule_formal: |
+      RULE TD_P001_DEPLOY:
+      deployment requires:
+        manifest.json (dependencies)
+        app_config.yaml (configuration)
+        env_vars (secrets)
+        pre_deploy_tests
+        documentation
+
+      RULE TD_P001_DUAL_REPO:
+      when symlink_architecture(MP122):
+        deploy_via dual_repo_pattern
+        sync_command = "rsync -avL"
+        verify no_symlinks_in_deploy_repo
+        workflow: make deploy-sync -> deploy-diff -> deploy-push
+
+    violations:
+      - "Manual dependency installation"
+      - "Secrets in code"
+      - "No pre-deploy testing"
+      - "Deploying symlink-based dev repo directly to Posit Connect"
+    compliant:
+      - "manifest.json with all packages"
+      - "Environment variables for API keys"
+      - "Test suite passes before deploy"
+      - "make deploy-sync resolves symlinks before deployment"
+
+  - id: TD_P002
+    type: principle
+    name: dual_testing_approach
+    display_name: "Dual Testing Approach"
+    one_liner: "Test both components and integration"
+    file_path: "CH05_testing_deployment/principles/TD_P002_dual_testing_approach.qmd"
+
+    rule_natural: |
+      Testing requires two levels:
+      - Unit tests for individual functions
+      - Integration tests for components together
+      - Both must pass for deployment
+      - Automated test execution
+
+    rule_formal: |
+      RULE TD_P002_DUAL:
+      test_suite = {
+        unit_tests: test_individual_functions,
+        integration_tests: test_component_interaction
+      }
+      both_must_pass()
+
+    violations:
+      - "Only unit tests, no integration"
+      - "Manual testing only"
+    compliant:
+      - "Automated unit and integration tests"
+
+  - id: TD_P003
+    type: principle
+    name: component_testing
+    display_name: "Component Testing"
+    one_liner: "Test Shiny components in isolation"
+    file_path: "CH05_testing_deployment/principles/TD_P003_component_testing.qmd"
+
+    rule_natural: |
+      Component testing approach:
+      - Test UI rendering separately
+      - Test server logic independently
+      - Use testServer() for module testing
+      - Mock dependencies when needed
+
+    rule_formal: |
+      RULE TD_P003_COMPONENT:
+      component_test = {
+        test_ui_rendering,
+        test_server_logic,
+        use_testServer(),
+        mock_dependencies
+      }
+
+    violations:
+      - "Only full-app testing"
+      - "No module-level tests"
+    compliant:
+      - "testServer() for each module"
+
+  # ====================
+  # TD_R RULES (6)
+  # ====================
+
+  - id: TD_R001
+    type: rule
+    name: shiny_test_data
+    display_name: "Shiny Test Data"
+    one_liner: "Use realistic test data for Shiny testing"
+    file_path: "CH05_testing_deployment/rules/TD_R001_shiny_test_data.qmd"
+
+    rule_natural: |
+      Test data requirements:
+      - Use sample of real production data
+      - Cover edge cases (empty, null, large)
+      - Document test data sources
+      - Refresh periodically
+
+    rule_formal: |
+      RULE TD_R001_TEST_DATA:
+      test_data:
+        source = sample(production_data)
+        covers_edge_cases
+        is_documented
+        refreshed_periodically
+
+    violations:
+      - "Completely synthetic test data"
+      - "No edge case coverage"
+    compliant:
+      - "Anonymized production sample"
+      - "Edge case test fixtures"
+
+  - id: TD_R002
+    type: rule
+    name: test_app_building
+    display_name: "Test App Building"
+    one_liner: "Build minimal test apps for component testing"
+    file_path: "CH05_testing_deployment/rules/TD_R002_test_app_building.qmd"
+
+    rule_natural: |
+      Test app construction:
+      - Create minimal app for testing
+      - Include only component under test
+      - Mock external dependencies
+      - Use test configuration
+
+    rule_formal: |
+      RULE TD_R002_TEST_APP:
+      test_app = minimal_app(
+        component_under_test,
+        mocked_dependencies,
+        test_configuration
+      )
+
+    violations:
+      - "Testing in full production app"
+      - "No dependency mocking"
+    compliant:
+      - "Minimal test app with mocks"
+
+  - id: TD_R003
+    type: rule
+    name: test_script_initialization
+    display_name: "Test Script Initialization"
+    one_liner: "Initialize test scripts properly"
+    file_path: "CH05_testing_deployment/rules/TD_R003_test_script_initialization.qmd"
+
+    rule_natural: |
+      Test initialization:
+      - Set working directory correctly
+      - Source required functions
+      - Initialize test fixtures
+      - Set test-specific options
+
+    rule_formal: |
+      RULE TD_R003_TEST_INIT:
+      test_script_structure = [
+        set_working_directory,
+        source_dependencies,
+        load_test_fixtures,
+        set_test_options,
+        run_tests
+      ]
+
+    violations:
+      - "Assuming working directory"
+      - "Missing dependency sourcing"
+    compliant:
+      - "Explicit init with setwd and source"
+
+  - id: TD_R004
+    type: rule
+    name: standard_mock_database
+    display_name: "Standard Mock Database"
+    one_liner: "Use standardized mock database for testing"
+    file_path: "CH05_testing_deployment/rules/TD_R004_standard_mock_database.qmd"
+
+    rule_natural: |
+      Mock database setup:
+      - Use DuckDB for local testing
+      - Load standard test fixtures
+      - Provide consistent test data
+      - Reset between tests
+
+    rule_formal: |
+      RULE TD_R004_MOCK_DB:
+      mock_db = DuckDB(":memory:")
+      load_standard_fixtures()
+      reset_between_tests()
+
+    violations:
+      - "Testing against production"
+      - "Inconsistent test data"
+    compliant:
+      - "In-memory DuckDB with fixtures"
+
+  - id: TD_R005
+    type: rule
+    name: docker_deployment_standard
+    display_name: "Docker Deployment Standard"
+    one_liner: "Use Docker for consistent deployment"
+    file_path: "CH05_testing_deployment/rules/TD_R005_docker_deployment_standard.qmd"
+
+    rule_natural: |
+      Docker deployment rules:
+      - Dockerfile defines environment
+      - docker-compose for multi-container
+      - Environment variables for config
+      - Health checks included
+
+    rule_formal: |
+      RULE TD_R005_DOCKER:
+      deployment uses:
+        Dockerfile for_environment
+        docker-compose for_orchestration
+        env_vars for_config
+        health_checks
+
+    violations:
+      - "Direct deployment without container"
+      - "No environment isolation"
+    compliant:
+      - "Docker-based deployment"
+
+  - id: TD_R006
+    type: rule
+    name: deployment_driver_orchestration
+    display_name: "Deployment Driver Orchestration"
+    one_liner: "Use deployment drivers to enforce sync → deploy order"
+    file_path: "CH05_testing_deployment/rules/TD_R006_deployment_driver_orchestration.qmd"
+
+    rule_natural: |
+      Deployment driver requirements:
+      - Use a driver script when deployment depends on data sync
+      - Enforce order: data sync → deployment assets → deploy
+      - Stop on any failure
+      - Avoid drv_ naming or DRV directory placement
+
+    rule_formal: |
+      RULE TD_R006_DEPLOY_DRIVER:
+      driver_required_when(deploy_depends_on_data_sync)
+      sequence = [data_sync, deployment_assets, deploy]
+      fail_fast_on_error()
+      prohibit_prefix("drv_")
+      prohibit_path("update_scripts/DRV/")
+
+    violations:
+      - "Manual upload without driver"
+      - "Driver named drv_* or placed in DRV/"
+    compliant:
+      - "deploy_app_driver.R orchestrates upload and manifest update"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: TD_R001
+    to: TD_P002
+    reason: "Test data supports dual testing approach"
+
+  - from: TD_R002
+    to: TD_P003
+    reason: "Test apps enable component testing"
+
+  - from: TD_R004
+    to: TD_R001
+    reason: "Mock database provides test data"
+
+  - from: TD_R006
+    to: TD_P001
+    reason: "Drivers enforce standardized deployment patterns"

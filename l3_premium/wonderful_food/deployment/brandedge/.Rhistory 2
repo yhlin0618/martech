@@ -1,0 +1,512 @@
+timeout_sec= 60) {
+req <- request(api_url) |>
+req_method("POST") |>
+req_headers(
+Authorization = paste("Bearer", api_key),
+`Content-Type` = "application/json"
+) |>
+req_body_json(list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)) |>
+# 先設定超時，再設定重試條件
+req_timeout(timeout_sec) |>
+req_retry(
+max_tries = max_tries,
+backoff   = backoff_exponential(base = 1),
+is_transient = ~ resp_status(.) == 429
+)
+resp <- req_perform(req)
+# 解析回傳
+content(resp) |> resp_body_json() -> jw
+trimws(jw$choices[[1]]$message$content)
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+chat_api <- function(messages,
+model      = "o4-mini",
+api_url    = "https://api.openai.com/v1/chat/completions",
+api_key    = Sys.getenv("OPENAI_API_KEY_LIN"),
+max_tries  = 5,
+timeout_sec= 60) {
+req <- request(api_url) |>
+req_method("POST") |>
+req_headers(
+Authorization = paste("Bearer", api_key),
+`Content-Type` = "application/json"
+) |>
+req_body_json(list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)) |>
+# 先設定超時，再設定重試條件
+req_timeout(timeout_sec) |>
+req_retry(
+max_tries = max_tries,
+backoff   = backoff_exponential(base = 1),
+is_transient = ~ resp_status(.) == 429
+)
+resp <- req_perform(req)
+# 解析回傳
+content(resp) |> resp_body_json() -> jw
+trimws(jw$choices[[1]]$message$content)
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+chat_api <- function(messages,
+model      = "gpt-o4-mini",
+api_url    = "https://api.openai.com/v1/chat/completions",
+api_key    = Sys.getenv("OPENAI_API_KEY_LIN"),
+max_tries  = 5,
+timeout_sec= 60) {
+cat(jsonlite::toJSON(
+list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+), auto_unbox = TRUE, pretty = TRUE
+))
+req <- request(api_url) |>
+req_method("POST") |>
+req_headers(
+Authorization = paste("Bearer", api_key),
+`Content-Type` = "application/json"
+) |>
+req_body_json(list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)) |>
+# 先設定超時，再設定重試條件
+req_timeout(timeout_sec) |>
+req_retry(
+max_tries = max_tries,
+backoff   = backoff_exponential(base = 1),
+is_transient = ~ resp_status(.) == 429
+)
+resp <- req_perform(req)
+# 解析回傳
+content(resp) |> resp_body_json() -> jw
+trimws(jw$choices[[1]]$message$content)
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+chat_api <- function(messages,
+model       = Sys.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
+api_key     = Sys.getenv("OPENAI_API_KEY_LIN"),
+api_url     = "https://api.openai.com/v1/chat/completions",
+timeout_sec = 60) {
+if (!nzchar(api_key)) stop("🔑 OPENAI_API_KEY is missing")
+# Debug: 印出 body
+body <- list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)
+cat("Request body:\n", jsonlite::toJSON(body, auto_unbox=TRUE, pretty=TRUE), "\n")
+req <- request(api_url) |>
+req_auth_bearer_token(api_key) |>
+req_headers(`Content-Type`="application/json") |>
+req_body_json(body) |>
+req_timeout(timeout_sec)
+resp <- req_perform(req)
+# 如果非 2xx，就印詳細錯誤
+if (resp_status(resp) >= 400) {
+err <- resp_body_string(resp)
+stop(sprintf("Chat API error %s:\n%s", resp_status(resp), err))
+}
+content <- resp_body_json(resp)
+return(trimws(content$choices[[1]]$message$content))
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+cat("GPT 回覆：", result, "\n")
+chat_api <- function(messages,
+model       = "gpt-3.5-turbo",
+api_key     = Sys.getenv("OPENAI_API_KEY_LIN"),
+api_url     = "https://api.openai.com/v1/chat/completions",
+timeout_sec = 60) {
+if (!nzchar(api_key)) stop("🔑 OPENAI_API_KEY is missing")
+# Debug: 印出 body
+body <- list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)
+cat("Request body:\n", jsonlite::toJSON(body, auto_unbox=TRUE, pretty=TRUE), "\n")
+req <- request(api_url) |>
+req_auth_bearer_token(api_key) |>
+req_headers(`Content-Type`="application/json") |>
+req_body_json(body) |>
+req_timeout(timeout_sec)
+resp <- req_perform(req)
+# 如果非 2xx，就印詳細錯誤
+if (resp_status(resp) >= 400) {
+err <- resp_body_string(resp)
+stop(sprintf("Chat API error %s:\n%s", resp_status(resp), err))
+}
+content <- resp_body_json(resp)
+return(trimws(content$choices[[1]]$message$content))
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+cat("GPT 回覆：", result, "\n")
+library(shiny); runApp('full_app_v13.R')
+runApp('full_app_v13.R')
+runApp('full_app_v13.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+runApp('full_app_v14.R')
+chat_api <- function(messages,
+model       = "gpt-4o-mini",
+api_key     = Sys.getenv("OPENAI_API_KEY_LIN"),
+api_url     = "https://api.openai.com/v1/chat/completions",
+timeout_sec = 60) {
+if (!nzchar(api_key)) stop("🔑 OPENAI_API_KEY is missing")
+# Debug: 印出 body
+body <- list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)
+cat("Request body:\n", jsonlite::toJSON(body, auto_unbox=TRUE, pretty=TRUE), "\n")
+req <- request(api_url) |>
+req_auth_bearer_token(api_key) |>
+req_headers(`Content-Type`="application/json") |>
+req_body_json(body) |>
+req_timeout(timeout_sec)
+resp <- req_perform(req)
+# 如果非 2xx，就印詳細錯誤
+if (resp_status(resp) >= 400) {
+err <- resp_body_string(resp)
+stop(sprintf("Chat API error %s:\n%s", resp_status(resp), err))
+}
+content <- resp_body_json(resp)
+return(trimws(content$choices[[1]]$message$content))
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+cat("GPT 回覆：", result, "\n")
+chat_api <- function(messages,
+model       = "gpt-4o-mini",
+api_key     = Sys.getenv("OPENAI_API_KEY_LIN"),
+api_url     = "https://api.openai.com/v1/chat/completions",
+timeout_sec = 60) {
+if (!nzchar(api_key)) stop("🔑 OPENAI_API_KEY is missing")
+# Debug: 印出 body
+body <- list(
+model       = model,
+messages    = messages,
+temperature = 0.3,
+max_tokens  = 512
+)
+cat("Request body:\n", jsonlite::toJSON(body, auto_unbox=TRUE, pretty=TRUE), "\n")
+req <- request(api_url) |>
+req_auth_bearer_token(api_key) |>
+req_headers(`Content-Type`="application/json") |>
+req_body_json(body) |>
+req_timeout(timeout_sec)
+resp <- req_perform(req)
+# 如果非 2xx，就印詳細錯誤
+if (resp_status(resp) >= 400) {
+err <- resp_body_string(resp)
+stop(sprintf("Chat API error %s:\n%s", resp_status(resp), err))
+}
+content <- resp_body_json(resp)
+return(trimws(content$choices[[1]]$message$content))
+}
+# 4. 準備測試訊息
+messages <- list(
+list(role="system", content="You are a helpful assistant."),
+list(role="user",   content="Hello, what is 2 + 2?")
+)
+# 5. 呼叫並印出結果
+result <- chat_api(messages)
+cat("GPT 回覆：", result, "\n")
+runApp('full_app_v14.R')
+library(shiny); runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+# connect and load raw data
+db <- dbConnect(duckdb(), dbdir = "D:/新增資料夾/Dropbox/Precision Marketing_KitchenMAMA/precision_marketing_app/app_data.duckdb", read_only = TRUE)
+position_dta <- tbl(db, "position_dta") %>%
+collect() %>%
+filter(product_line_id == "001")
+position_dta
+# connect and load raw data
+db <- dbConnect(duckdb(), dbdir = "D:/新增資料夾/Dropbox/Precision Marketing_KitchenMAMA/precision_marketing_app/app_data.duckdb", read_only = TRUE)
+position_dta <- tbl(db, "position_dta") %>%
+collect() %>%
+filter(product_line_id == "001") %>% select(-product_line_id) %>% select(-c("rating","sales")) %>% select_if(~sum(!is.na(.)) > 0)
+position_dta
+position_dta <- position_dta %>% select(-brand)
+# pivot 成长表
+dta_brand_log <- position_dta %>%
+pivot_longer(
+cols = -c("asin"),
+names_to = "attribute",
+values_to = "score"
+) %>%
+arrange(asin, attribute)
+dta_brand_log
+# # 保持属性顺序
+# dta_brand_log$attribute <- factor(
+#   dta_brand_log$attribute,
+#   levels = unique(dta_brand_log$attribute)
+# )
+#
+asin_groups <- split(dta_brand_log, dta_brand_log$asin)
+dta_brand_log$attribute <- as.factor(dta_brand_log$attribute)
+fac_lis <-  dta_brand_log$attribute
+asin_groups[[2]]
+p <- plot_ly()
+# 为每个brand添加一条线
+for (asin_data in asin_groups) {
+brand <- unique(asin_data$brand)
+p <- add_trace(p,data=asin_data, x = ~levels(fac_lis), y = ~score,
+color=~asin, type = 'scatter', mode = 'lines+markers', name = asin,
+text = ~asin, hoverinfo = 'text',
+marker = list(size = 10),  # 设置点的大小
+line = list(width = 2),     # 设置线的宽度
+visible = "legendonly"  # 默认隐藏所有内容
+)
+}
+warnings()
+p <- plot_ly()
+# 为每个brand添加一条线
+for (asin_data in asin_groups) {
+asin <- unique(asin_data$asin)
+p <- add_trace(p,data=asin_data, x = ~levels(fac_lis), y = ~score,
+color=~asin, type = 'scatter', mode = 'lines+markers', name = asin,
+text = ~asin, hoverinfo = 'text',
+marker = list(size = 10),  # 设置点的大小
+line = list(width = 2),     # 设置线的宽度
+visible = "legendonly"  # 默认隐藏所有内容
+)
+}
+p <- layout(p,
+#title = "brand DNA",
+xaxis = list(
+title = list(
+text = "Attribute",
+font = list(size = 20)  # 设置x轴标题字体大小
+),
+tickangle = -45  # 旋转x轴文本
+),
+yaxis = list(
+title = "Score",font = list(size = 20)
+)
+#           legend = list(
+#   itemclick = 'toggleothers', # 点击图例时，切换其他图例
+#   traceorder = 'normal'       # 图例的显示顺序
+# )
+)
+p
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+library(shiny); runApp('full_app_v15.R')
+runApp('html_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+runApp('gpt_out_test.R')
+a <-  "```markdown\n### 關鍵因素總結\n\n1. **易用性**：Variation B0000CGQD4得分5，顯示其在易用性方面表現優異。\n2. **清潔方便**：Variation B000CRV48I得分5，顯示其在清潔方面的優勢。\n3. **耐用性**：Variation B000CRV48I得分4，顯示其耐用性良好。\n4. **價格合理**：Variation B0000CGQD4得分3，顯示其價格的競爭力。\n\n### 未來強化的關鍵因素\n\n- **設計**：兩個Variation均顯示設計不良，需加強設計以提升整體吸引力。\n\n### 廣告建議\n\n針對設計不良的問題，建議在廣告中強調產品的易用性和清潔方便性，並展示改進後的設計樣式。可透過視覺化的方式，讓潛在客戶感受到產品的實用性與美觀，吸引更多消費者的注意。\n```"
+a
+strip_code_fence <- function(x) {
+# 去掉開頭 ```xxx 與結尾 ```
+sub("^```[A-Za-z0-9]*\\s*\\n([\\s\\S]*)\\n```\\s*$", "\\1", x)
+}
+strip_code_fence(a)
+strip_code_fence <- function(txt) {
+str_replace_all(
+txt,
+regex("^```[A-Za-z0-9]*[ \\t]*\\r?\\n|\\r?\\n```[ \\t]*$", multiline = TRUE),
+""
+)
+}
+strip_code_fence(a)
+runApp('gpt_out_test.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+runApp('full_app_v15.R')
+library(shinycssloaders) # withSpinner()
+install.packages("shinycssloaders")
+runApp('gpt_out_test.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+runApp('full_app_v16.R')
+library(shiny); runApp('full_app_v16.R')
+library(shiny); runApp('full_app_v17.R')
+library(DBI)
+library(RMariaDB)
+library(RPostgres)
+dotenv::load_dot_env(file = ".env")
+get_con <- function() {
+# ➊ 建立連線
+con <- dbConnect(
+Postgres(),
+host     = Sys.getenv("PGHOST"),
+port     = as.integer(Sys.getenv("PGPORT", 5432)),
+user     = Sys.getenv("PGUSER"),
+password = Sys.getenv("PGPASSWORD"),
+dbname   = Sys.getenv("PGDATABASE"),
+sslmode  = Sys.getenv("PGSSLMODE", "require") # DO 版一定要 require
+)
+# ➋ 建表（若不存在）
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS users (
+id           SERIAL PRIMARY KEY,
+username     TEXT UNIQUE,
+hash         TEXT,
+role         TEXT DEFAULT 'user',
+login_count  INTEGER DEFAULT 0
+);
+")
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS rawdata (
+id           SERIAL PRIMARY KEY,
+user_id      INTEGER REFERENCES users(id),
+uploaded_at  TIMESTAMPTZ DEFAULT now(),
+json         JSONB
+);
+")
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS processed_data (
+id            SERIAL PRIMARY KEY,
+user_id       INTEGER REFERENCES users(id),
+processed_at  TIMESTAMPTZ DEFAULT now(),
+json          JSONB
+);
+")
+con
+}
+con <- get_con()
+tbl(cn,"users")
+library(duckdb)
+tbl(cn,"users")
+library(DBI)
+library(DBI)
+tbl(cn,"users")
+library(duckdb)
+tbl(cn,"users")
+library(dbplyr)
+library(tidyverse)
+tbl(con,"users")
+tbl(con,"rawdata")
+library(DBI)
+library(RPostgres)
+library(tidyverse)
+get_con <- function() {
+# ➊ 建立連線
+con <- dbConnect(
+Postgres(),
+host     = Sys.getenv("PGHOST"),
+port     = as.integer(Sys.getenv("PGPORT", 5432)),
+user     = Sys.getenv("PGUSER"),
+password = Sys.getenv("PGPASSWORD"),
+dbname   = Sys.getenv("PGDATABASE"),
+sslmode  = Sys.getenv("PGSSLMODE", "require") # DO 版一定要 require
+)
+# ➋ 建表（若不存在）
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS users (
+id           SERIAL PRIMARY KEY,
+username     TEXT UNIQUE,
+hash         TEXT,
+role         TEXT DEFAULT 'user',
+login_count  INTEGER DEFAULT 0
+);
+")
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS rawdata (
+id           SERIAL PRIMARY KEY,
+user_id      INTEGER REFERENCES users(id),
+uploaded_at  TIMESTAMPTZ DEFAULT now(),
+json         JSONB
+);
+")
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS processed_data (
+id            SERIAL PRIMARY KEY,
+user_id       INTEGER REFERENCES users(id),
+processed_at  TIMESTAMPTZ DEFAULT now(),
+json          JSONB
+);
+")
+con
+}
+con <- get_con()
+tbl(con,"users")
+dbDisconnect(con)
+??withSpinner
+?shinycssloaders
+??shinycssloaders

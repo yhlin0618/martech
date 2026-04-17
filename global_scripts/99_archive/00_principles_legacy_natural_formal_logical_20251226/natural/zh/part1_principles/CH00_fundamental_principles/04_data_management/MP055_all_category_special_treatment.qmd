@@ -1,0 +1,134 @@
+---
+title: "MP034: 「全部」類別特殊處理元原則 (Special Treatment of 'ALL' Category)"
+subtitle: "將「全部」作為元類別而非標準類別的特殊處理原則"
+author: "System"
+date: "2025-04-06"
+date-modified: "2025-08-16"
+categories: [meta-principle, data-management, UI-design, query-optimization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心概念
+
+在任何過濾、選擇或分類系統中，「全部」類別需要特殊處理，作為一個獨特的元類別而不是標準類別。這種區別影響數據結構、查詢優化、UI 呈現和使用者流程的實施。
+
+## 理由
+
+「全部」選項在語義和行為上與標準類別根本不同：
+
+1. **語義差異**：「全部」代表沒有過濾而不是額外的過濾器
+2. **查詢行為**：「全部」通常完全繞過過濾器而不是添加條件
+3. **UI 突出性**：「全部」在使用者流程中既是預設又是逃生路線
+4. **數據表示**：「全部」是代表整個集合的元值，而不是子集
+5. **性能影響**：「全部」可能完全繞過複雜的過濾操作
+
+## 實施指南
+
+### 數據表示 {#data-representation}
+
+1. **ID 慣例**：為「全部」使用獨特的 ID 模式
+   - 基於零：`"000"`、`0`、`"all"`
+   - 保留命名空間：`"__all__"`、`":all"`、`"*"`
+   - 負索引：`-1`（當零和正數用於標準類別時）
+
+2. **數據庫實施**：
+   - 避免將「全部」作為常規類別存儲在維度表中
+   - 通過應用程式邏輯而非查詢約束處理「全部」選擇
+   - 對「全部」選擇使用 NULL 約束或查詢繞過
+
+### UI 呈現 {#ui-presentation}
+
+1. **位置**：始終將「全部」放在選擇列表的第一位
+2. **視覺區別**：
+   - 考慮細微的視覺區別（不同的背景、邊框或圖標）
+   - 可能用分隔線與其他選項分開
+3. **預設選擇**：「全部」通常應該是預設選擇
+4. **持久性**：記住使用者何時明確選擇非「全部」選項
+
+### 查詢優化 {#query-optimization}
+
+1. **繞過策略**：
+   ```sql
+   SELECT * FROM data WHERE 
+     (:category_id = '000' OR category_id = :category_id)
+   ```
+
+2. **邏輯流程策略**：
+   ```r
+   if (category_id == "000") {
+     # 完全跳過過濾
+     result <- get_all_data()
+   } else {
+     # 應用正常過濾
+     result <- filter_data_by_category(category_id)
+   }
+   ```
+
+3. **性能考慮**：
+   - 「全部」選擇可能需要不同的執行路徑
+   - 考慮為「全部」與特定類別預先計算聚合
+   - 對於大型數據集，「全部」可能需要謹慎處理
+
+### 語義清晰度 {#semantic-clarity}
+
+1. **標籤**：使用清晰、適合語言環境的術語
+   - 英語：「All」、「All Categories」、「Everything」
+   - 在所有支援的語言中適當本地化
+2. **描述**：可能包括計數/總計：「All Categories (243)」
+3. **圖標**：考慮使用通用符號，如「*」或「∀」（全稱量詞）
+
+## 實施範例
+
+### 產品類別選擇
+
+```r
+# 在 Excel 參數檔案中：product_line.xlsx
+# 第一行：
+# | product_line_id | product_line_name_english | product_line_name_chinese |
+# | "000"           | "All Products"            | "所有產品"                |
+
+# 在 UI 代碼中：
+pickerInput(
+  inputId = "product_category",
+  label = "產品類別",
+  choices = product_line_dictionary,
+  selected = product_line_dictionary[[1]],  # "000" - 所有產品
+  width = "100%"
+)
+
+# 在查詢邏輯中：
+observe({
+  selected_category <- input$product_category
+  
+  filtered_data <- reactive({
+    if (selected_category == "000") {
+      # 特殊情況：全部 - 不過濾返回所有內容
+      return(all_products)
+    } else {
+      # 正常過濾
+      return(all_products[all_products$category == selected_category, ])
+    }
+  })
+})
+```
+
+## 好處
+
+1. **性能優化**：避免對「全部」選擇進行不必要的過濾
+2. **語義清晰度**：明確區分「所有東西」和「特定某物」
+3. **一致的 UX**：為使用者在整個應用程式中創建可預測的模式
+4. **優化機會**：允許對常見的「全部」情況進行專門處理
+5. **架構清晰度**：將「全部」的元概念與標準類別分離
+
+## 相關原則
+
+- P18（雙參數來源）
+- MP0011（合理預設值）
+- MP0017（關注點分離）

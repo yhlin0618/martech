@@ -1,0 +1,772 @@
+---
+title: "MP094: Platform API Architecture"
+subtitle: "Establishes the standardized organization, naming conventions, and implementation patterns for platform APIs, ensuring consistent integration of diverse data sources through a unified interface architecture"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP094"
+date-created: "2025-08-27"
+date-modified: "2025-08-27"
+author: "Claude"
+type: "meta-principle"
+law: "Fundamental Law"
+article: 
+  number: 94
+  title: "Platform API Architecture"
+related_to:
+  - "MP092: Platform ID Standard"
+  - "MP065: Platform Configuration Management"
+  - "MP064: ETL Derivation Separation"
+  - "SO_R001: Directory Structure"
+  - "DM_R022: Platform Numbering Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 94: Platform API Architecture {#overview}
+
+**Fundamental Law Article 94 (Platform API Architecture)**
+
+This meta-principle establishes the canonical architecture for organizing, implementing, and managing platform APIs across the system, ensuring consistent access patterns for diverse data sources including APIs, CSV exports, databases, and manual data entry.
+
+:::{.callout-critical}
+## Absolute Requirement
+All platform integrations MUST follow the standardized API architecture defined herein. Platform-specific code must be organized in designated directories using three-letter platform_ids, with consistent naming conventions and configuration patterns. This ensures maintainability, reusability, and systematic integration across all data sources.
+:::
+
+# Section 1: Directory Organization {#directory-organization}
+
+## Subsection 1: Platform API Structure {#api-structure}
+
+Platform APIs shall be organized in a dedicated directory within global_scripts:
+
+```
+global_scripts/
+├── 26_platform_apis/              # Platform API implementations
+│   ├── README.md                  # Architecture documentation
+│   ├── api_registry.yaml          # Registry of all platform APIs
+│   ├── common/                    # Shared API utilities
+│   │   ├── fn_api_rate_limiter.R
+│   │   ├── fn_api_error_handler.R
+│   │   ├── fn_api_authenticator.R
+│   │   ├── fn_api_cache_manager.R
+│   │   └── fn_api_response_parser.R
+│   ├── cbz/                       # Cyberbiz platform
+│   │   ├── api_config.yaml       # Platform-specific configuration
+│   │   ├── fn_cbz_connect.R      # Connection management
+│   │   ├── fn_cbz_authenticate.R # Authentication
+│   │   ├── fn_cbz_get_customers.R
+│   │   ├── fn_cbz_get_orders.R
+│   │   ├── fn_cbz_get_products.R
+│   │   ├── fn_cbz_get_inventory.R
+│   │   └── tests/                # Platform-specific tests
+│   ├── eby/                       # eBay platform
+│   │   ├── api_config.yaml
+│   │   ├── fn_eby_connect.R
+│   │   ├── fn_eby_authenticate.R
+│   │   ├── fn_eby_get_listings.R
+│   │   ├── fn_eby_get_orders.R
+│   │   └── fn_eby_get_analytics.R
+│   ├── amz/                       # Amazon platform
+│   │   ├── api_config.yaml
+│   │   ├── fn_amz_connect.R
+│   │   └── fn_amz_get_sales.R
+│   ├── web/                       # Official website
+│   │   ├── api_config.yaml
+│   │   └── fn_web_connect_db.R
+│   └── csv/                       # CSV import handlers
+│       ├── api_config.yaml
+│       ├── fn_csv_import_sales.R
+│       └── fn_csv_validate_format.R
+```
+
+## Subsection 2: Configuration File Structure {#config-structure}
+
+Each platform must have an `api_config.yaml` file:
+
+```yaml
+# api_config.yaml template
+platform:
+  code: "cbz"  # Three-letter platform_id
+  name: "Cyberbiz"
+  version: "2.0"
+  
+api:
+  base_url: "https://api.cyberbiz.com/v2"
+  auth_type: "api_key"  # oauth2, api_key, basic, signature
+  
+  endpoints:
+    customers:
+      path: "/customers"
+      method: "GET"
+      rate_limit: 100  # requests per minute
+      cache_ttl: 3600  # seconds
+      
+    orders:
+      path: "/orders"
+      method: "GET"
+      rate_limit: 60
+      pagination:
+        type: "offset"  # offset, cursor, page
+        limit: 100
+        
+    products:
+      path: "/products"
+      method: "GET"
+      rate_limit: 120
+      
+authentication:
+  api_key:
+    header: "X-API-Key"
+    env_var: "CYBERBIZ_API_KEY"
+    
+  oauth2:
+    auth_url: "https://auth.cyberbiz.com/oauth/authorize"
+    token_url: "https://auth.cyberbiz.com/oauth/token"
+    scope: "read:all"
+    
+rate_limiting:
+  strategy: "token_bucket"  # token_bucket, sliding_window
+  max_requests: 5000
+  per_period: 3600  # seconds
+  retry_after: true
+  
+error_handling:
+  retry_count: 3
+  backoff_strategy: "exponential"  # linear, exponential
+  timeout: 30  # seconds
+  
+data_mapping:
+  customers:
+    id: "customer_id"
+    email: "email_address"
+    name: "full_name"
+    
+  orders:
+    id: "order_number"
+    date: "order_date"
+    total: "total_amount"
+```
+
+# Section 2: Naming Conventions {#naming-conventions}
+
+## Subsection 1: Function Naming Pattern {#function-naming}
+
+All platform API functions must follow the pattern:
+
+```
+fn_{platform_code}_{action}_{object}.R
+```
+
+Examples:
+```r
+# Connection and authentication
+fn_cbz_connect.R           # Establish connection
+fn_cbz_authenticate.R       # Handle authentication
+fn_cbz_disconnect.R         # Clean disconnect
+
+# Data retrieval
+fn_cbz_get_customers.R     # Get customer data
+fn_cbz_get_orders.R         # Get order data
+fn_cbz_get_products.R       # Get product catalog
+
+# Data manipulation
+fn_cbz_update_inventory.R  # Update inventory levels
+fn_cbz_create_order.R       # Create new order
+fn_cbz_delete_product.R     # Remove product
+
+# Specialized operations
+fn_cbz_sync_catalog.R       # Synchronize product catalog
+fn_cbz_calculate_metrics.R  # Platform-specific calculations
+```
+
+## Subsection 2: Common Function Interface {#common-interface}
+
+All data retrieval functions must implement a consistent interface:
+
+```r
+fn_{platform}_get_{object} <- function(
+  connection = NULL,
+  filters = list(),
+  fields = NULL,
+  limit = NULL,
+  offset = NULL,
+  config = NULL,
+  cache = TRUE,
+  verbose = FALSE
+) {
+  # Standard implementation pattern
+  
+  # 1. Validate connection
+  if (is.null(connection)) {
+    connection <- fn_{platform}_connect(config = config)
+    on.exit(fn_{platform}_disconnect(connection))
+  }
+  
+  # 2. Build request
+  request <- build_request(
+    endpoint = get_endpoint("{object}"),
+    filters = filters,
+    fields = fields,
+    limit = limit,
+    offset = offset
+  )
+  
+  # 3. Check cache
+  if (cache) {
+    cached <- check_cache(request)
+    if (!is.null(cached)) return(cached)
+  }
+  
+  # 4. Apply rate limiting
+  wait_for_rate_limit(connection$rate_limiter)
+  
+  # 5. Execute request with error handling
+  response <- tryCatch({
+    execute_request(connection, request)
+  }, error = function(e) {
+    handle_api_error(e, connection, request)
+  })
+  
+  # 6. Parse response
+  data <- parse_response(response, object = "{object}")
+  
+  # 7. Cache if enabled
+  if (cache) {
+    cache_response(request, data)
+  }
+  
+  # 8. Return standardized format
+  return(data)
+}
+```
+
+# Section 3: Unified Data Access Layer {#unified-access}
+
+## Subsection 1: Platform Abstraction {#platform-abstraction}
+
+Create a unified interface for all platforms:
+
+```r
+# fn_platform_get_data.R
+fn_platform_get_data <- function(
+  platform_code,
+  data_type,
+  filters = list(),
+  config = NULL
+) {
+  # Validate platform_id
+  validate_platform_code(platform_code)
+  
+  # Load platform-specific function
+  fn_name <- paste0("fn_", platform_code, "_get_", data_type)
+  
+  if (!exists(fn_name)) {
+    stop(paste("Function", fn_name, "not found for platform", platform_code))
+  }
+  
+  # Call platform-specific function
+  fn <- get(fn_name)
+  return(fn(filters = filters, config = config))
+}
+
+# Usage examples
+customers_cbz <- fn_platform_get_data("cbz", "customers")
+orders_eby <- fn_platform_get_data("eby", "orders")
+products_all <- fn_platform_get_data("all", "products")
+```
+
+## Subsection 2: Multi-Source Integration {#multi-source}
+
+Support different data source types per platform:
+
+```r
+fn_get_platform_data_source <- function(platform_code) {
+  config <- load_platform_config(platform_code)
+  
+  data_source <- switch(
+    config$data$source_type,
+    "api" = {
+      list(
+        type = "api",
+        connect = get(paste0("fn_", platform_code, "_connect")),
+        get = get(paste0("fn_", platform_code, "_get"))
+      )
+    },
+    "csv" = {
+      list(
+        type = "csv",
+        import = fn_csv_import,
+        validate = fn_csv_validate
+      )
+    },
+    "database" = {
+      list(
+        type = "database",
+        connect = fn_db_connect,
+        query = fn_db_query
+      )
+    },
+    "manual" = {
+      list(
+        type = "manual",
+        form = fn_manual_entry_form,
+        validate = fn_manual_validate
+      )
+    },
+    stop("Unknown data source type: ", config$data$source_type)
+  )
+  
+  return(data_source)
+}
+```
+
+# Section 4: Implementation Standards {#implementation-standards}
+
+## Subsection 1: Authentication Management {#authentication}
+
+Each platform must implement secure authentication:
+
+```r
+# fn_{platform}_authenticate.R template
+fn_cbz_authenticate <- function(config = NULL) {
+  if (is.null(config)) {
+    config <- yaml::read_yaml("api_config.yaml")
+  }
+  
+  auth_type <- config$api$auth_type
+  
+  credentials <- switch(
+    auth_type,
+    "api_key" = {
+      key <- Sys.getenv(config$authentication$api_key$env_var)
+      if (key == "") {
+        stop("API key not found in environment variable: ", 
+             config$authentication$api_key$env_var)
+      }
+      list(
+        type = "api_key",
+        header = config$authentication$api_key$header,
+        value = key
+      )
+    },
+    "oauth2" = {
+      fn_oauth2_authenticate(
+        auth_url = config$authentication$oauth2$auth_url,
+        token_url = config$authentication$oauth2$token_url,
+        scope = config$authentication$oauth2$scope
+      )
+    },
+    "basic" = {
+      fn_basic_authenticate(
+        username = Sys.getenv(paste0(toupper(platform_code), "_USERNAME")),
+        password = Sys.getenv(paste0(toupper(platform_code), "_PASSWORD"))
+      )
+    },
+    stop("Unsupported authentication type: ", auth_type)
+  )
+  
+  return(credentials)
+}
+```
+
+## Subsection 2: Rate Limiting {#rate-limiting}
+
+Implement rate limiting for API calls:
+
+```r
+# common/fn_api_rate_limiter.R
+fn_create_rate_limiter <- function(config) {
+  limiter <- list(
+    max_requests = config$rate_limiting$max_requests,
+    per_period = config$rate_limiting$per_period,
+    requests = list(),
+    strategy = config$rate_limiting$strategy
+  )
+  
+  class(limiter) <- "rate_limiter"
+  return(limiter)
+}
+
+fn_check_rate_limit <- function(limiter) {
+  current_time <- Sys.time()
+  
+  # Remove old requests outside the window
+  cutoff_time <- current_time - limiter$per_period
+  limiter$requests <- limiter$requests[
+    sapply(limiter$requests, function(x) x > cutoff_time)
+  ]
+  
+  # Check if limit exceeded
+  if (length(limiter$requests) >= limiter$max_requests) {
+    wait_time <- as.numeric(
+      min(limiter$requests) + limiter$per_period - current_time,
+      units = "secs"
+    )
+    
+    if (wait_time > 0) {
+      message("Rate limit reached. Waiting ", round(wait_time, 1), " seconds...")
+      Sys.sleep(wait_time)
+    }
+  }
+  
+  # Record new request
+  limiter$requests <- c(limiter$requests, list(current_time))
+  
+  return(limiter)
+}
+```
+
+## Subsection 3: Error Handling {#error-handling}
+
+Standardized error handling across platforms:
+
+```r
+# common/fn_api_error_handler.R
+fn_handle_api_error <- function(error, connection, request, config = NULL) {
+  error_class <- class(error)[1]
+  
+  # Log error
+  log_api_error(
+    platform = connection$platform_code,
+    endpoint = request$endpoint,
+    error = error,
+    timestamp = Sys.time()
+  )
+  
+  # Determine if retry is appropriate
+  should_retry <- error_class %in% c(
+    "http_500", "http_502", "http_503", "http_504",
+    "timeout_error", "connection_error"
+  )
+  
+  if (should_retry && request$retry_count > 0) {
+    # Exponential backoff
+    wait_time <- 2^(config$error_handling$retry_count - request$retry_count)
+    message("Retrying after ", wait_time, " seconds...")
+    Sys.sleep(wait_time)
+    
+    # Retry with decremented count
+    request$retry_count <- request$retry_count - 1
+    return(execute_request(connection, request))
+  }
+  
+  # Transform error for user
+  user_error <- switch(
+    error_class,
+    "http_401" = "Authentication failed. Please check credentials.",
+    "http_403" = "Access forbidden. Insufficient permissions.",
+    "http_404" = "Resource not found.",
+    "http_429" = "Rate limit exceeded. Please try again later.",
+    paste("API error:", error$message)
+  )
+  
+  stop(user_error, call. = FALSE)
+}
+```
+
+# Section 5: Migration Path {#migration}
+
+## Subsection 1: From Archive to Production {#archive-migration}
+
+Steps to migrate existing API code:
+
+```r
+# Migration helper script
+fn_migrate_api_from_archive <- function(
+  archive_path,
+  platform_code,
+  target_dir = "scripts/global_scripts/26_platform_apis"
+) {
+  # 1. Create platform directory
+  platform_dir <- file.path(target_dir, platform_code)
+  if (!dir.exists(platform_dir)) {
+    dir.create(platform_dir, recursive = TRUE)
+  }
+  
+  # 2. Identify API functions in archive
+  archive_files <- list.files(
+    archive_path, 
+    pattern = "\\.R$", 
+    recursive = TRUE,
+    full.names = TRUE
+  )
+  
+  # 3. Rename and organize functions
+  for (file in archive_files) {
+    content <- readLines(file)
+    
+    # Extract function name
+    fn_pattern <- "^\\s*([a-zA-Z_][a-zA-Z0-9_.]*)\\s*<-\\s*function"
+    fn_matches <- grep(fn_pattern, content, value = TRUE)
+    
+    if (length(fn_matches) > 0) {
+      old_name <- sub(fn_pattern, "\\1", fn_matches[1])
+      
+      # Determine new name based on function purpose
+      new_name <- determine_new_function_name(old_name, platform_code)
+      
+      # Update function name in content
+      content <- gsub(old_name, new_name, content)
+      
+      # Write to new location
+      new_file <- file.path(platform_dir, paste0(new_name, ".R"))
+      writeLines(content, new_file)
+      
+      message("Migrated: ", basename(file), " -> ", basename(new_file))
+    }
+  }
+  
+  # 4. Generate api_config.yaml
+  generate_platform_config(platform_code, platform_dir)
+  
+  # 5. Update references in ETL scripts
+  update_etl_references(platform_code)
+  
+  message("Migration complete for platform: ", platform_code)
+}
+```
+
+## Subsection 2: ETL Script Updates {#etl-updates}
+
+Update ETL scripts to use new API structure:
+
+```r
+# Before migration (in update_scripts/cbz_ETL01_0IM.R)
+source("archive/MAMBA/cyberbiz_api/api_functions.R")
+data <- get_cyberbiz_data()
+
+# After migration
+source("scripts/global_scripts/26_platform_apis/cbz/fn_cbz_connect.R")
+source("scripts/global_scripts/26_platform_apis/cbz/fn_cbz_get_orders.R")
+
+connection <- fn_cbz_connect()
+data <- fn_cbz_get_orders(connection = connection)
+fn_cbz_disconnect(connection)
+```
+
+# Section 6: Testing Requirements {#testing}
+
+## Subsection 1: Platform API Tests {#api-tests}
+
+Each platform must have comprehensive tests:
+
+```r
+# cbz/tests/test_cbz_api.R
+test_that("Cyberbiz connection works", {
+  config <- load_test_config()
+  connection <- fn_cbz_connect(config = config)
+  
+  expect_true(is.list(connection))
+  expect_equal(connection$platform_code, "cbz")
+  expect_true(connection$authenticated)
+  
+  fn_cbz_disconnect(connection)
+})
+
+test_that("Cyberbiz customer retrieval works", {
+  mock_connection <- create_mock_connection("cbz")
+  customers <- fn_cbz_get_customers(
+    connection = mock_connection,
+    limit = 10
+  )
+  
+  expect_true(is.data.frame(customers))
+  expect_true("customer_id" %in% names(customers))
+  expect_true(nrow(customers) <= 10)
+})
+
+test_that("Rate limiting is enforced", {
+  limiter <- fn_create_rate_limiter(
+    list(
+      rate_limiting = list(
+        max_requests = 2,
+        per_period = 1
+      )
+    )
+  )
+  
+  # First two requests should pass quickly
+  start_time <- Sys.time()
+  limiter <- fn_check_rate_limit(limiter)
+  limiter <- fn_check_rate_limit(limiter)
+  
+  # Third request should wait
+  limiter <- fn_check_rate_limit(limiter)
+  elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+  
+  expect_true(elapsed >= 1)
+})
+```
+
+## Subsection 2: Integration Tests {#integration-tests}
+
+Test cross-platform functionality:
+
+```r
+test_that("Multi-platform data aggregation works", {
+  # Get data from multiple platforms
+  data_cbz <- fn_platform_get_data("cbz", "orders")
+  data_eby <- fn_platform_get_data("eby", "orders")
+  
+  # Combine using standard format
+  all_orders <- bind_rows(
+    data_cbz %>% mutate(platform_code = "cbz"),
+    data_eby %>% mutate(platform_code = "eby")
+  )
+  
+  expect_true("platform_code" %in% names(all_orders))
+  expect_true(all(all_orders$platform_code %in% c("cbz", "eby")))
+})
+```
+
+# Section 7: Documentation Requirements {#documentation}
+
+## Subsection 1: API Registry {#api-registry}
+
+Maintain a central registry of all platform APIs:
+
+```yaml
+# api_registry.yaml
+platforms:
+  cbz:
+    name: "Cyberbiz"
+    status: "active"
+    data_sources: ["api", "csv"]
+    implemented_functions:
+      - fn_cbz_connect
+      - fn_cbz_get_customers
+      - fn_cbz_get_orders
+      - fn_cbz_get_products
+    last_updated: "2025-08-27"
+    maintainer: "platform_team"
+    
+  eby:
+    name: "eBay"
+    status: "active"
+    data_sources: ["api"]
+    implemented_functions:
+      - fn_eby_connect
+      - fn_eby_get_listings
+      - fn_eby_get_orders
+    last_updated: "2025-08-27"
+    
+  amz:
+    name: "Amazon"
+    status: "planned"
+    data_sources: ["api", "csv"]
+    implemented_functions: []
+    notes: "Awaiting MWS to SP-API migration"
+```
+
+## Subsection 2: Function Documentation {#function-docs}
+
+Each function must be documented:
+
+```r
+#' Get Customer Data from Cyberbiz
+#'
+#' Retrieves customer information from the Cyberbiz platform API.
+#'
+#' @param connection API connection object from fn_cbz_connect()
+#' @param filters list of filters to apply (e.g., list(created_after = "2024-01-01"))
+#' @param fields character vector of fields to retrieve (NULL for all)
+#' @param limit maximum number of records to retrieve
+#' @param offset number of records to skip
+#' @param config optional configuration override
+#' @param cache logical, whether to use cached results
+#' @param verbose logical, whether to print progress messages
+#'
+#' @return data.frame with customer information
+#' 
+#' @examples
+#' \dontrun{
+#' conn <- fn_cbz_connect()
+#' customers <- fn_cbz_get_customers(
+#'   connection = conn,
+#'   filters = list(created_after = "2024-01-01"),
+#'   limit = 100
+#' )
+#' fn_cbz_disconnect(conn)
+#' }
+#'
+#' @export
+fn_cbz_get_customers <- function(
+  connection = NULL,
+  filters = list(),
+  fields = NULL,
+  limit = NULL,
+  offset = NULL,
+  config = NULL,
+  cache = TRUE,
+  verbose = FALSE
+) {
+  # Implementation
+}
+```
+
+# Section 8: Compliance and Enforcement {#compliance}
+
+## Subsection 1: Validation Rules {#validation-rules}
+
+All platform API implementations must pass validation:
+
+```r
+fn_validate_platform_api <- function(platform_code) {
+  platform_dir <- file.path(
+    "scripts/global_scripts/26_platform_apis",
+    platform_code
+  )
+  
+  # Check directory structure
+  expect_true(dir.exists(platform_dir))
+  expect_true(file.exists(file.path(platform_dir, "api_config.yaml")))
+  
+  # Check naming conventions
+  api_files <- list.files(platform_dir, pattern = "^fn_.*\\.R$")
+  for (file in api_files) {
+    expect_true(
+      grepl(paste0("^fn_", platform_code, "_"), file),
+      info = paste("File", file, "doesn't follow naming convention")
+    )
+  }
+  
+  # Check required functions
+  required_functions <- c("connect", "disconnect", "authenticate")
+  for (fn in required_functions) {
+    fn_file <- paste0("fn_", platform_code, "_", fn, ".R")
+    expect_true(
+      fn_file %in% api_files,
+      info = paste("Missing required function:", fn_file)
+    )
+  }
+  
+  # Check configuration validity
+  config <- yaml::read_yaml(file.path(platform_dir, "api_config.yaml"))
+  expect_equal(config$platform$code, platform_code)
+  expect_true(config$platform$code %in% get_valid_platform_codes())
+  
+  return(TRUE)
+}
+```
+
+## Subsection 2: Migration Timeline {#migration-timeline}
+
+| Phase | Timeline | Action |
+|-------|----------|--------|
+| **Immediate** | Now | Create 26_platform_apis directory structure |
+| **Week 1** | Days 1-7 | Migrate Cyberbiz API from archive |
+| **Week 2** | Days 8-14 | Migrate eBay API and create common utilities |
+| **Week 3** | Days 15-21 | Update all ETL scripts to use new API structure |
+| **Week 4** | Days 22-28 | Add comprehensive tests and documentation |
+| **Ongoing** | Continuous | Add new platforms following this architecture |
+
+---
+
+*Based on: Fundamental Law Article 94*  
+*Related to: [MP092 Platform ID Standard](MP092_platform_code_standard.qmd), [MP065 Platform Configuration](MP065_platform_configuration_management.qmd)*  
+*Implements: Unified platform API architecture for multi-source data integration*

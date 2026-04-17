@@ -1,0 +1,68 @@
+---
+title: "TD_R005: Docker 部署標準規則"
+subtitle: "使用 Docker 建立一致且可重現的部署環境"
+chapter: "CH05"
+category: "rule"
+number: "TD_R005"
+date-created: "2025-05-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "測試部署法實施規則"
+article-number:
+  number: 5
+  title: "Docker 部署標準規則"
+related_to:
+  - "TD_P001: Deployment Patterns"
+  - "CH07.SEC_R001: Credential Management"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第五條：Docker 部署標準規則 {#overview}
+
+**測試部署法實施規則第五條（Docker 部署標準規則）**
+
+所有需要一致部署環境的服務，應使用 Docker 建立標準化、可重現的部署流程。
+
+:::{.callout-important}
+## 核心規則
+部署必須以 Dockerfile 描述環境，並以 docker-compose（如需）管理多容器依賴與設定。
+:::
+
+# 第一項：必要檔案 {#required-files}
+
+- **Dockerfile**：完整描述執行環境
+- **docker-compose.yml**（可選）：多容器服務整合
+- **.env**：僅本地使用，部署時改用平台環境變數
+
+# 第二項：環境變數與密鑰 {#secrets}
+
+- 禁止寫入明文密鑰
+- 所有敏感值必須由平台環境變數注入
+
+# 第三項：健康檢查 {#health-checks}
+
+建議加入健康檢查以監控服務可用性：
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:3838/"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+```
+
+# 第四項：部署流程 {#deployment-flow}
+
+- 建置映像 → 測試 → 推送/部署
+- 嚴格區分 dev / staging / prod 設定
+
+# 結語 {#conclusion}
+
+Docker 部署標準可確保環境一致、降低部署風險，並提升可維護性。

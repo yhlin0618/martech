@@ -1,0 +1,285 @@
+---
+title: "DEV_R009: 初始化載入規則"
+subtitle: "所有組件載入、函式庫載入和初始化應在應用程式的初始化腳本中執行，而不是在主 app.R 檔案中。初始化過程應該是全面的，載入所有必需的組件，以便主應用程式檔案可以專注於應用程式邏輯和結構"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R009"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 9
+  title: "初始化載入規則"
+related_to:
+  - "MP018: 不要重複自己原則"
+  - "MP017: 關注點分離原則"
+  - "DEV_R008: 最小修改規則"
+  - "SO_P007: app.R 是全域原則"
+  - "SO_R005: 應用程式 YAML 配置規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第九條：初始化載入規則 {#overview}
+
+**開發方法法第九條（初始化載入規則）**
+
+所有組件載入、函式庫載入和初始化應在應用程式的初始化腳本中執行，而不是在主 app.R 檔案中。初始化過程應該是全面的，載入所有必需的組件，以便主應用程式檔案可以專注於應用程式邏輯和結構。
+
+:::{.callout-important}
+## 核心要求
+透過將所有初始化任務移至專門的腳本，此規則簡化了主應用程式檔案，提高了可維護性、一致性和可重用性。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：初始化腳本職責 {#initialization-script-responsibilities}
+
+**初始化腳本必須處理：**
+
+1. **組件載入**：透過 source() 呼叫載入所有 UI 和伺服器組件
+2. **函式庫載入**：透過 library() 呼叫載入所有必需的套件
+3. **實用函數**：設置應用程式所需的輔助函數
+4. **環境設置**：建立環境變數和應用程式狀態
+5. **配置載入**：載入和處理配置檔案
+6. **預設值**：設置預設值和備用選項
+
+## 第二款：App.R 檔案邊界 {#app-r-file-boundaries}
+
+**主 app.R 檔案應限於：**
+
+1. **觸發初始化**：呼叫初始化腳本
+2. **UI 定義**：使用預載入的組件定義高階 UI 結構
+3. **伺服器邏輯**：使用預載入的函數實施核心伺服器邏輯
+4. **應用程式啟動**：呼叫 shinyApp() 來啟動應用程式
+
+## 第三款：組件組織 {#component-organization}
+
+**組件應遵循以下原則組織：**
+
+1. **基於模組的組織**：按模組分組相關的 UI、伺服器和預設檔案
+2. **一致的檔案命名**：為組件檔案使用清晰、一致的命名慣例
+3. **目錄結構**：在反映應用程式架構的目錄結構中組織組件
+4. **關注點分離**：分離 UI、伺服器和資料預設組件
+
+# 第二項：初始化序列 {#initialization-sequence}
+
+## 第一款：初始化過程順序 {#initialization-process-order}
+
+**初始化過程應遵循此順序：**
+
+1. **環境設置**：設置操作模式和環境變數
+2. **配置載入**：載入配置檔案並驗證設定
+3. **函式庫載入**：載入所有必需的函式庫
+4. **實用函數載入**：載入實用和輔助函數
+5. **組件載入**：載入所有 UI 和伺服器組件
+6. **驗證**：驗證所有必需的組件都已載入
+7. **就緒狀態**：設置指示初始化完成的標誌
+
+# 第三項：實施範例 {#implementation-examples}
+
+## 第一款：正確的初始化結構 {#proper-initialization-structure}
+
+**初始化腳本 (sc_initialization_app_mode.R)：**
+```r
+# 設置環境變數
+Sys.setenv(APP_ENV = "production")
+
+# 載入必需的函式庫
+library(shiny)
+library(bslib)
+library(dplyr)
+library(DT)
+
+# 載入實用函數
+source(file.path("update_scripts", "global_scripts", "04_utils", "fn_load_app_config.R"))
+source(file.path("update_scripts", "global_scripts", "04_utils", "fn_clean_column_names.R"))
+
+# 載入應用程式組件
+# UI 組件
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "micro", "microCustomer", "microCustomerUI.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebarHybrid", "sidebarHybridUI.R"))
+
+# 伺服器組件
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "micro", "microCustomer", "microCustomerServer.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebarHybrid", "sidebarHybridServer.R"))
+
+# 預設組件
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "micro", "microCustomer", "microCustomerDefaults.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebarHybrid", "sidebarHybridDefaults.R"))
+
+# 指示初始化完成
+INITIALIZATION_COMPLETED <- TRUE
+message("初始化成功完成")
+```
+
+**主應用程式檔案 (app.R)：**
+```r
+# 初始化 APP_MODE 環境
+if(exists("INITIALIZATION_COMPLETED")) {
+  # 重置初始化標誌以允許重新初始化
+  rm(INITIALIZATION_COMPLETED, envir = .GlobalEnv)
+}
+
+# 載入初始化腳本
+init_script_path <- file.path("update_scripts", "global_scripts", "00_principles", 
+                            "sc_initialization_app_mode.R")
+source(init_script_path)
+
+# 載入配置
+config <- readYamlConfig("app_config.yaml")
+
+# UI 定義
+ui <- page_sidebar(
+  title = config$title,
+  sidebar = sidebarHybridUI("app_sidebar", active_module = "micro"),
+  microCustomerUI("customer_module")
+)
+
+# 伺服器邏輯
+server <- function(input, output, session) {
+  # 初始化側邊欄
+  sidebarHybridServer("app_sidebar", active_module = "micro", data_source = reactive({...}))
+  
+  # 初始化微觀客戶模組
+  microCustomerServer("customer_module", data_source = reactive({...}))
+}
+
+# 執行應用程式
+shinyApp(ui = ui, server = server)
+```
+
+## 第二款：不當的直接載入（錯誤做法）{#improper-direct-sourcing}
+
+```r
+# 直接在 app.R 中載入函式庫（錯誤做法）
+library(shiny)
+library(bslib)
+library(dplyr)
+library(DT)
+
+# 直接在 app.R 中載入組件（錯誤做法）
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "micro", "microCustomer", "microCustomerUI.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "micro", "microCustomer", "microCustomerServer.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "micro", "microCustomer", "microCustomerDefaults.R"))
+
+# 直接在 app.R 中載入新的側邊欄組件（錯誤做法）
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebarHybrid", "sidebarHybridUI.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebarHybrid", "sidebarHybridServer.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebarHybrid", "sidebarHybridDefaults.R"))
+
+# UI 定義
+ui <- page_sidebar(...)
+
+# 伺服器邏輯
+server <- function(input, output, session) {
+  ...
+}
+
+# 執行應用程式
+shinyApp(ui = ui, server = server)
+```
+
+# 第四項：常見錯誤和解決方案 {#common-errors}
+
+## 第一款：在 app.R 中漸進式組件載入 {#error-incremental-sourcing}
+
+**問題**：當新組件添加到應用程式時，在 app.R 中添加 source() 呼叫。
+
+**解決方案**：
+- 改為將組件載入添加到初始化腳本中
+- 創建新組件時更新初始化腳本
+- 保持 app.R 僅專注於應用程式邏輯和結構
+
+## 第二款：不一致的函式庫載入 {#error-inconsistent-library}
+
+**問題**：在初始化中載入某些函式庫，在 app.R 中直接載入其他函式庫。
+
+**解決方案**：
+- 將所有函式庫載入整合到初始化腳本中
+- 組織函式庫載入以反映依賴關係
+- 在初始化腳本中記錄函式庫要求
+
+## 第三款：重複載入 {#error-duplicated-sourcing}
+
+**問題**：在多個地方載入相同的組件，導致潛在衝突。
+
+**解決方案**：
+- 實施組件註冊表以追蹤已載入的組件
+- 使用條件載入檢查現有定義
+- 在初始化腳本中集中所有載入
+
+## 第四款：缺少組件驗證 {#error-missing-verification}
+
+**問題**：在啟動應用程式之前未能驗證所有必需的組件都已載入。
+
+**解決方案**：
+- 在初始化腳本中添加驗證步驟
+- 檢查關鍵函數和物件的存在
+- 為缺少的組件實施有意義的錯誤訊息
+
+# 第五項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與不要重複自己原則的關聯（MP018）{#relation-to-dry}
+
+此規則透過以下方式支援 DRY：
+1. **集中載入**：為組件載入提供單一位置
+2. **一致的初始化**：確保所有組件一致地初始化
+3. **減少重複**：防止組件的重複載入
+4. **標準化模式**：建立標準組件初始化模式
+
+## 第二款：與關注點分離原則的關聯（MP017）{#relation-to-separation-of-concerns}
+
+此規則透過以下方式支援關注點分離：
+1. **清晰邊界**：將初始化與應用程式邏輯分離
+2. **專注的檔案**：保持主 app.R 檔案專注於其主要目的
+3. **模組化組織**：支援組件組織的模組化方法
+4. **責任分配**：清楚分配初始化的責任
+
+## 第三款：與 app.R 是全域原則的關聯（SO_P007）{#relation-to-app-r-global}
+
+此規則透過以下方式補充 app.R 是全域：
+1. **支援簡潔性**：透過在其他地方處理初始化使 app.R 保持簡單
+2. **組件可用性**：確保所有組件在 app.R 使用它們之前可用
+3. **一致的環境**：為應用程式提供一致的環境
+4. **關注點分離**：保持初始化與應用程式結構分離
+
+# 第六項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **簡化的應用程式檔案**：主 app.R 檔案保持乾淨和專注
+2. **改善的可維護性**：集中式初始化使更新更容易
+3. **一致的載入**：所有組件以一致的方式載入
+4. **可重用的模式**：初始化模式可以在應用程式間重用
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **清晰的依賴關係**：依賴關係在初始化腳本中清楚記錄
+2. **更容易排錯**：初始化問題與應用程式邏輯隔離
+3. **改善的可攜性**：應用程式在不同環境間更具可攜性
+4. **減少重複**：防止重複載入和不一致的初始化
+
+---
+
+*基於：開發方法法第九條*  
+*相關連結：[MP018 不要重複自己原則](../../CH00_fundamental_principles/meta_principles/MP018_dry.qmd), [SO_P007 app.R 是全域原則](../../CH01_structure_organization/principles/SO_P007_app_r_is_global.qmd)*

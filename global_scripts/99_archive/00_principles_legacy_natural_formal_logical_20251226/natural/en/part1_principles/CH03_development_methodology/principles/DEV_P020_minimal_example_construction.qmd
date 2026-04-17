@@ -1,0 +1,1026 @@
+---
+title: "DEV_P020: Minimal Example Construction Principle"
+subtitle: "Development should begin with the construction of a minimal working example that demonstrates core functionality before expanding to full feature implementation. This approach enables faster validation of concepts, easier debugging, and clearer communication of design patterns"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P020"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article: 
+  number: 20
+  title: "Minimal Example Construction Principle"
+related_to:
+  - "MP017: Modularity Principle"
+  - "MP031: Initialization First Principle"
+  - "DEV_P014: Performance Optimization Principle"
+  - "UI_P010: Minimal CSS Usage Principle"
+  - "DEV_P018: Defensive Error Handling Principle"
+  - "DEV_P019: Consistent Component State Principle"
+  - "UI_R001: UI-Server-Defaults Triple Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 20: Minimal Example Construction Principle {#overview}
+
+**Development Methodology Law Article 20 (Minimal Example Construction Principle)**
+
+Development should begin with the construction of a minimal working example that demonstrates core functionality before expanding to full feature implementation. This approach enables faster validation of concepts, easier debugging, and clearer communication of design patterns.
+
+:::{.callout-important}
+## Core Principle
+By starting with the simplest possible implementation before expanding to more complex features, developers can validate core concepts quickly, establish clear patterns, and build a solid foundation for expansion.
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Start With Core Functionality {#start-with-core}
+
+**Core Functionality First Standards:**
+
+- Begin by implementing the simplest version that demonstrates the primary purpose
+- Include only essential components, props, and state management
+- Focus on the critical path that demonstrates the main functionality
+- Omit error handling, edge cases, and optional features initially
+
+**Implementation Example:**
+
+```r
+# Minimal functionality example - Simple counter
+create_minimal_counter <- function(id) {
+  # Only essential reactive values
+  count <- reactiveVal(0)
+  
+  # Minimal UI - only basics
+  ui <- function() {
+    div(
+      h4("Simple Counter"),
+      actionButton(NS(id, "increment"), "Increment"),
+      textOutput(NS(id, "display"))
+    )
+  }
+  
+  # Minimal server logic
+  server <- function(input, output, session) {
+    observeEvent(input$increment, {
+      count(count() + 1)
+    })
+    
+    output$display <- renderText({
+      paste("Count:", count())
+    })
+  }
+  
+  return(list(ui = ui, server = server, value = count))
+}
+
+# Usage example
+if (interactive()) {
+  library(shiny)
+  
+  counter <- create_minimal_counter("counter1")
+  
+  ui <- fluidPage(
+    counter$ui()
+  )
+  
+  server <- function(input, output, session) {
+    counter$server(input, output, session)
+  }
+  
+  shinyApp(ui, server)
+}
+```
+
+## Subsection 2: Incremental Expansion {#incremental-expansion}
+
+**Incremental Expansion Standards:**
+
+- Gradually add features only after the minimal example works correctly
+- Test each addition before moving to the next feature
+- Document each step of expansion to preserve the development path
+- Maintain working versions at each significant milestone
+
+**Implementation Example:**
+
+```r
+# Step 1: Minimal implementation
+create_step1_component <- function(id) {
+  value <- reactiveVal("")
+  
+  ui <- function() {
+    div(
+      textInput(NS(id, "input"), "Enter text"),
+      textOutput(NS(id, "output"))
+    )
+  }
+  
+  server <- function(input, output, session) {
+    observe({
+      value(input$input)
+    })
+    
+    output$output <- renderText({
+      paste("You entered:", value())
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# Step 2: Add validation
+create_step2_component <- function(id) {
+  # Build on step 1
+  base <- create_step1_component(id)
+  value <- reactiveVal("")
+  is_valid <- reactiveVal(TRUE)
+  
+  ui <- function() {
+    div(
+      base$ui(),
+      # Add new UI elements
+      uiOutput(NS(id, "validation_msg"))
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # Extend server logic
+    observe({
+      value(input$input)
+      # Add validation logic
+      is_valid(nchar(input$input) >= 3)
+    })
+    
+    output$output <- renderText({
+      if (is_valid()) {
+        paste("Valid input:", value())
+      } else {
+        "Input must be at least 3 characters"
+      }
+    })
+    
+    output$validation_msg <- renderUI({
+      if (!is_valid() && nchar(value()) > 0) {
+        div(
+          class = "text-danger",
+          icon("exclamation-circle"),
+          "Input too short"
+        )
+      }
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# Step 3: Add persistence
+create_step3_component <- function(id) {
+  # Build on step 2
+  base <- create_step2_component(id)
+  saved_values <- reactiveVal(list())
+  
+  ui <- function() {
+    div(
+      base$ui(),
+      # Add save functionality
+      actionButton(NS(id, "save"), "Save", class = "btn-success"),
+      hr(),
+      h5("Saved values:"),
+      verbatimTextOutput(NS(id, "saved_list"))
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # Call base server
+    base$server(input, output, session)
+    
+    # Add save functionality
+    observeEvent(input$save, {
+      if (nchar(input$input) >= 3) {
+        current_list <- saved_values()
+        saved_values(c(current_list, input$input))
+        updateTextInput(session, "input", value = "")
+      }
+    })
+    
+    output$saved_list <- renderPrint({
+      if (length(saved_values()) > 0) {
+        saved_values()
+      } else {
+        "No saved values yet"
+      }
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+```
+
+# Section 2: Component Isolation {#component-isolation}
+
+## Subsection 1: Self-Contained Examples {#self-contained-examples}
+
+**Component Isolation Standards:**
+
+- Create self-contained examples for each major component
+- Minimize dependencies between components during initial development
+- Use placeholder data/functions before implementing complex integrations
+- Keep external dependencies to a minimum in early versions
+
+**Implementation Example:**
+
+```r
+# Isolated data input component (no external dependencies)
+create_isolated_input <- function(id) {
+  # Internal state management
+  .data <- reactiveVal(NULL)
+  
+  ui <- function() {
+    div(
+      class = "isolated-component",
+      h4("Data Input (Isolated)"),
+      textInput(NS(id, "name"), "Name"),
+      numericInput(NS(id, "age"), "Age", value = 25, min = 0, max = 150),
+      selectInput(NS(id, "category"), "Category",
+        choices = c("A", "B", "C"),
+        selected = "A"
+      ),
+      actionButton(NS(id, "submit"), "Submit", class = "btn-primary")
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # Update internal state on submit
+    observeEvent(input$submit, {
+      .data(list(
+        name = input$name,
+        age = input$age,
+        category = input$category,
+        timestamp = Sys.time()
+      ))
+      
+      # Clear form
+      updateTextInput(session, "name", value = "")
+      updateNumericInput(session, "age", value = 25)
+      updateSelectInput(session, "category", selected = "A")
+      
+      showNotification("Data submitted", type = "success")
+    })
+    
+    # Return data accessor
+    return(list(
+      get_data = function() .data()
+    ))
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# Isolated data display component (with mock data option)
+create_isolated_display <- function(id) {
+  ui <- function() {
+    div(
+      class = "isolated-component",
+      h4("Data Display (Isolated)"),
+      actionButton(NS(id, "use_mock"), "Use Mock Data", class = "btn-info"),
+      tableOutput(NS(id, "data_table")),
+      plotOutput(NS(id, "data_plot"))
+    )
+  }
+  
+  server <- function(input, output, session, data_source = NULL) {
+    # Internal mock data
+    mock_data <- reactive({
+      data.frame(
+        Name = c("Alice", "Bob", "Charlie"),
+        Age = c(25, 30, 35),
+        Category = c("A", "B", "C"),
+        stringsAsFactors = FALSE
+      )
+    })
+    
+    # Decide which data to use
+    display_data <- reactive({
+      if (input$use_mock > 0 || is.null(data_source)) {
+        mock_data()
+      } else if (is.function(data_source)) {
+        data <- data_source()
+        if (!is.null(data)) {
+          data.frame(
+            Name = data$name,
+            Age = data$age,
+            Category = data$category,
+            stringsAsFactors = FALSE
+          )
+        } else {
+          mock_data()
+        }
+      } else {
+        mock_data()
+      }
+    })
+    
+    # Display table
+    output$data_table <- renderTable({
+      display_data()
+    })
+    
+    # Display plot
+    output$data_plot <- renderPlot({
+      data <- display_data()
+      if (nrow(data) > 0) {
+        barplot(
+          data$Age,
+          names.arg = data$Name,
+          main = "Age Distribution",
+          xlab = "Name",
+          ylab = "Age",
+          col = rainbow(nrow(data))
+        )
+      }
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+```
+
+## Subsection 2: Minimal Dependency Testing {#minimal-dependency-testing}
+
+**Minimal Dependency Testing Implementation:**
+
+```r
+# Create testable component with minimal dependencies
+create_testable_component <- function(id, options = list()) {
+  # Default options
+  defaults <- list(
+    use_mock_data = TRUE,
+    enable_logging = FALSE,
+    auto_refresh = FALSE
+  )
+  
+  # Merge options
+  opts <- modifyList(defaults, options)
+  
+  # Component state
+  state <- reactiveValues(
+    data = NULL,
+    status = "ready",
+    error = NULL
+  )
+  
+  ui <- function() {
+    div(
+      id = NS(id, "container"),
+      conditionalPanel(
+        condition = "true",
+        ns = NS(id),
+        
+        # Status indicator
+        div(
+          id = NS(id, "status"),
+          class = "status-indicator",
+          textOutput(NS(id, "status_text"))
+        ),
+        
+        # Main content
+        div(
+          id = NS(id, "content"),
+          if (opts$use_mock_data) {
+            div(
+              class = "alert alert-info",
+              "Using mock data mode"
+            )
+          },
+          
+          # Controls
+          actionButton(NS(id, "refresh"), "Refresh"),
+          if (opts$enable_logging) {
+            verbatimTextOutput(NS(id, "log"))
+          },
+          
+          # Data display
+          tableOutput(NS(id, "display"))
+        )
+      )
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # Logging
+    log_message <- function(msg) {
+      if (opts$enable_logging) {
+        message(sprintf("[%s] %s: %s", Sys.time(), id, msg))
+      }
+    }
+    
+    # Load data (mock or real)
+    load_data <- reactive({
+      log_message("Loading data")
+      
+      if (opts$use_mock_data) {
+        # Use mock data for isolated testing
+        Sys.sleep(0.5)  # Simulate delay
+        data.frame(
+          ID = 1:5,
+          Value = rnorm(5),
+          Status = sample(c("Active", "Inactive"), 5, replace = TRUE)
+        )
+      } else {
+        # Actual data loading logic
+        tryCatch({
+          # Real data loading code here
+          NULL
+        }, error = function(e) {
+          state$error <- e$message
+          NULL
+        })
+      }
+    })
+    
+    # Refresh handler
+    observeEvent(input$refresh, {
+      state$status <- "loading"
+      state$data <- load_data()
+      state$status <- if(is.null(state$data)) "error" else "ready"
+      log_message(paste("Status:", state$status))
+    })
+    
+    # Auto refresh
+    if (opts$auto_refresh) {
+      observe({
+        invalidateLater(5000)  # Every 5 seconds
+        state$data <- load_data()
+        log_message("Auto refresh")
+      })
+    }
+    
+    # Initial load
+    observe({
+      if (is.null(state$data)) {
+        state$data <- load_data()
+      }
+    })
+    
+    # Outputs
+    output$status_text <- renderText({
+      switch(state$status,
+        ready = "Ready",
+        loading = "Loading...",
+        error = paste("Error:", state$error)
+      )
+    })
+    
+    output$display <- renderTable({
+      state$data
+    })
+    
+    if (opts$enable_logging) {
+      output$log <- renderPrint({
+        paste("Status:", state$status)
+        paste("Data rows:", nrow(state$data))
+        paste("Last update:", Sys.time())
+      })
+    }
+    
+    # Return public API
+    return(list(
+      get_data = function() state$data,
+      get_status = function() state$status,
+      refresh = function() {
+        state$data <- load_data()
+      }
+    ))
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# Test isolated component
+test_component <- function() {
+  # Test with mock data
+  comp1 <- create_testable_component("test1", list(
+    use_mock_data = TRUE,
+    enable_logging = TRUE
+  ))
+  
+  ui <- fluidPage(
+    h3("Component Isolated Test"),
+    comp1$ui()
+  )
+  
+  server <- function(input, output, session) {
+    comp1$server(input, output, session)
+  }
+  
+  shinyApp(ui, server)
+}
+```
+
+# Section 3: Documentation Through Example {#documentation-through-example}
+
+## Subsection 1: Minimal Examples in Documentation {#minimal-examples-in-docs}
+
+**Documentation Example Standards:**
+
+- Include minimal examples in component documentation
+- Use the simplest possible syntax to illustrate usage patterns
+- Demonstrate both basic and advanced use cases with minimal examples
+- Show the evolution from simple to complex implementations
+
+**Documentation Example:**
+
+```r
+#' Create collapsible panel component
+#' 
+#' @description
+#' Creates a panel component with collapse/expand functionality
+#' 
+#' @examples
+#' # Example 1: Most basic usage
+#' panel <- create_collapsible_panel("panel1")
+#' ui <- panel$ui()
+#' server <- function(input, output, session) {
+#'   panel$server(input, output, session)
+#' }
+#' 
+#' # Example 2: Custom title and content
+#' panel <- create_collapsible_panel("panel2")
+#' ui <- panel$ui(
+#'   title = "Custom Title",
+#'   content = div("Custom content")
+#' )
+#' 
+#' # Example 3: Programmatic control
+#' panel <- create_collapsible_panel("panel3")
+#' server <- function(input, output, session) {
+#'   api <- panel$server(input, output, session)
+#'   
+#'   # Programmatically expand/collapse
+#'   observeEvent(input$external_trigger, {
+#'     api$toggle()
+#'   })
+#' }
+create_collapsible_panel <- function(id) {
+  # Minimal implementation
+  is_collapsed <- reactiveVal(TRUE)
+  
+  ui <- function(title = "Panel Title", content = div("Panel content")) {
+    div(
+      class = "collapsible-panel",
+      
+      # Header bar
+      div(
+        class = "panel-header",
+        style = "cursor: pointer; padding: 10px; background: #f0f0f0;",
+        actionLink(
+          NS(id, "toggle"),
+          label = NULL,
+          icon = icon("chevron-right"),
+          class = "toggle-icon"
+        ),
+        span(title)
+      ),
+      
+      # Content area
+      conditionalPanel(
+        condition = "false",  # Initially hidden
+        ns = NS(id),
+        div(
+          id = NS(id, "content"),
+          class = "panel-content",
+          style = "padding: 10px; display: none;",
+          content
+        )
+      )
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # Toggle handler
+    observeEvent(input$toggle, {
+      is_collapsed(!is_collapsed())
+      
+      if (is_collapsed()) {
+        shinyjs::hide("content", anim = TRUE)
+        shinyjs::removeClass(selector = ".toggle-icon i", class = "fa-chevron-down")
+        shinyjs::addClass(selector = ".toggle-icon i", class = "fa-chevron-right")
+      } else {
+        shinyjs::show("content", anim = TRUE)
+        shinyjs::removeClass(selector = ".toggle-icon i", class = "fa-chevron-right")
+        shinyjs::addClass(selector = ".toggle-icon i", class = "fa-chevron-down")
+      }
+    })
+    
+    # Return control API
+    return(list(
+      toggle = function() {
+        is_collapsed(!is_collapsed())
+      },
+      expand = function() {
+        is_collapsed(FALSE)
+      },
+      collapse = function() {
+        is_collapsed(TRUE)
+      },
+      is_collapsed = function() {
+        is_collapsed()
+      }
+    ))
+  }
+  
+  return(list(ui = ui, server = server))
+}
+```
+
+## Subsection 2: Evolution Path Documentation {#evolution-path-documentation}
+
+**Evolution Path Demonstration:**
+
+```r
+# Documentation: Component Evolution Path
+# 
+# Version 1: Minimal implementation (2 lines)
+# - Basic button click counting
+#
+# Version 2: Add reset (+3 lines)
+# - Add reset button
+#
+# Version 3: Add persistence (+8 lines)
+# - Save to local storage
+#
+# Version 4: Add history (+15 lines)
+# - Track click history
+
+# Version 1: Minimal implementation
+create_v1_counter <- function() {
+  ui <- actionButton("btn", "Click me")
+  server <- function(input, output) {
+    observeEvent(input$btn, {
+      print(paste("Clicks:", input$btn))
+    })
+  }
+  list(ui = ui, server = server)
+}
+
+# Version 2: Add reset
+create_v2_counter <- function() {
+  ui <- tagList(
+    actionButton("btn", "Click me"),
+    actionButton("reset", "Reset")  # Added
+  )
+  server <- function(input, output, session) {
+    count <- reactiveVal(0)  # Added
+    
+    observeEvent(input$btn, {
+      count(count() + 1)
+      print(paste("Clicks:", count()))
+    })
+    
+    observeEvent(input$reset, {  # Added
+      count(0)
+      print("Counter reset")
+    })
+  }
+  list(ui = ui, server = server)
+}
+
+# Version 3: Add persistence
+create_v3_counter <- function() {
+  ui <- tagList(
+    actionButton("btn", "Click me"),
+    actionButton("reset", "Reset"),
+    actionButton("save", "Save"),  # Added
+    actionButton("load", "Load")   # Added
+  )
+  
+  server <- function(input, output, session) {
+    count <- reactiveVal(0)
+    
+    observeEvent(input$btn, {
+      count(count() + 1)
+    })
+    
+    observeEvent(input$reset, {
+      count(0)
+    })
+    
+    observeEvent(input$save, {  # Added
+      saveRDS(count(), "counter_state.rds")
+      showNotification("Saved", type = "success")
+    })
+    
+    observeEvent(input$load, {  # Added
+      if (file.exists("counter_state.rds")) {
+        count(readRDS("counter_state.rds"))
+        showNotification("Loaded", type = "info")
+      }
+    })
+  }
+  list(ui = ui, server = server)
+}
+```
+
+# Section 4: Benefits Analysis {#benefits-analysis}
+
+## Subsection 1: Development Efficiency {#development-efficiency}
+
+**Efficiency Improvements:**
+
+1. **Quicker Iteration Cycles**: Faster iteration cycles during early development
+2. **Easier Issue Identification**: Easier to identify and fix issues in simpler implementations
+3. **Clear Milestones**: Provides clear milestones for incremental testing
+4. **Reduced Waste**: Reduces wasted effort by validating concepts early
+
+## Subsection 2: Knowledge Transfer and Maintenance {#knowledge-transfer-maintenance}
+
+**Knowledge Transfer Advantages:**
+
+1. **Team Communication**: Minimal examples are easier to explain to team members
+2. **Beginner Friendly**: New developers can understand core functionality faster
+3. **Self-Evident Patterns**: Usage patterns become self-evident through simple demonstrations
+4. **Reference Implementation**: Creates usable reference implementations for future development
+
+**Maintainability Advantages:**
+
+1. **Cleaner Foundation**: Simpler initial implementations create cleaner foundation code
+2. **Easier Refactoring**: Easier to refactor when core functionality is well-defined
+3. **Separation of Concerns**: Better separation of concerns from the beginning
+4. **Modular Architecture**: More modular architecture emerges naturally
+
+# Section 5: Complete Implementation Example {#complete-implementation}
+
+## Subsection 1: Complete Minimal Example Application {#complete-minimal-app}
+
+**Application Implementation:**
+
+```r
+# minimal_app.R - Complete minimal example application
+library(shiny)
+library(bs4Dash)
+
+# Phase 1: Minimal runnable app
+create_minimal_app_v1 <- function() {
+  ui <- fluidPage(
+    titlePanel("Minimal App v1"),
+    sidebarLayout(
+      sidebarPanel(
+        sliderInput("n", "Number", 1, 100, 50)
+      ),
+      mainPanel(
+        plotOutput("plot")
+      )
+    )
+  )
+  
+  server <- function(input, output) {
+    output$plot <- renderPlot({
+      hist(rnorm(input$n))
+    })
+  }
+  
+  shinyApp(ui, server)
+}
+
+# Phase 2: Add basic interaction
+create_minimal_app_v2 <- function() {
+  ui <- fluidPage(
+    titlePanel("Minimal App v2"),
+    sidebarLayout(
+      sidebarPanel(
+        sliderInput("n", "Number", 1, 100, 50),
+        selectInput("color", "Color",  # Added
+          choices = c("Blue" = "blue", "Red" = "red", "Green" = "green")
+        ),
+        actionButton("update", "Update")  # Added
+      ),
+      mainPanel(
+        plotOutput("plot"),
+        verbatimTextOutput("summary")  # Added
+      )
+    )
+  )
+  
+  server <- function(input, output) {
+    # Use eventReactive for controlled updates
+    data <- eventReactive(input$update, {
+      rnorm(input$n)
+    }, ignoreNULL = FALSE)
+    
+    output$plot <- renderPlot({
+      hist(data(), col = input$color, main = "Histogram")
+    })
+    
+    output$summary <- renderPrint({
+      summary(data())
+    })
+  }
+  
+  shinyApp(ui, server)
+}
+
+# Phase 3: Add state management and modularity
+create_minimal_app_v3 <- function() {
+  # Modular component
+  histogramModule <- function(id) {
+    ns <- NS(id)
+    
+    ui <- function() {
+      tagList(
+        plotOutput(ns("plot")),
+        verbatimTextOutput(ns("stats"))
+      )
+    }
+    
+    server <- function(input, output, session, data, color) {
+      output$plot <- renderPlot({
+        req(data())
+        hist(data(), col = color(), main = "Modular Histogram")
+      })
+      
+      output$stats <- renderPrint({
+        req(data())
+        list(
+          mean = mean(data()),
+          sd = sd(data()),
+          n = length(data())
+        )
+      })
+    }
+    
+    list(ui = ui, server = server)
+  }
+  
+  # Main app
+  ui <- bs4DashPage(
+    title = "Minimal App v3",
+    
+    header = bs4DashNavbar(
+      title = "Minimal Example App"
+    ),
+    
+    sidebar = bs4DashSidebar(
+      bs4SidebarMenu(
+        bs4SidebarMenuItem(
+          text = "Home",
+          tabName = "home",
+          icon = icon("home")
+        ),
+        bs4SidebarMenuItem(
+          text = "Settings",
+          tabName = "settings",
+          icon = icon("cog")
+        )
+      )
+    ),
+    
+    body = bs4DashBody(
+      bs4TabItems(
+        bs4TabItem(
+          tabName = "home",
+          fluidRow(
+            column(4,
+              bs4Card(
+                title = "Controls",
+                status = "primary",
+                solidHeader = TRUE,
+                sliderInput("n", "Sample Size", 10, 500, 100),
+                selectInput("dist", "Distribution",
+                  choices = c("Normal" = "norm", "Uniform" = "unif", "Exponential" = "exp")
+                ),
+                selectInput("color", "Color",
+                  choices = c("Blue" = "blue", "Red" = "red", "Green" = "green")
+                ),
+                actionButton("generate", "Generate", class = "btn-success")
+              )
+            ),
+            column(8,
+              bs4Card(
+                title = "Visualization",
+                status = "info",
+                solidHeader = TRUE,
+                histogramModule("hist")$ui()
+              )
+            )
+          )
+        ),
+        
+        bs4TabItem(
+          tabName = "settings",
+          bs4Card(
+            title = "Settings",
+            status = "warning",
+            solidHeader = TRUE,
+            h4("Application Settings"),
+            checkboxInput("auto_update", "Auto Update", FALSE),
+            numericInput("seed", "Random Seed", value = 123),
+            actionButton("apply_settings", "Apply", class = "btn-primary")
+          )
+        )
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    # State management
+    app_state <- reactiveValues(
+      data = NULL,
+      settings = list(
+        auto_update = FALSE,
+        seed = 123
+      )
+    )
+    
+    # Data generation
+    generate_data <- reactive({
+      input$generate
+      
+      isolate({
+        set.seed(app_state$settings$seed)
+        n <- input$n
+        
+        data <- switch(input$dist,
+          norm = rnorm(n),
+          unif = runif(n),
+          exp = rexp(n)
+        )
+        
+        return(data)
+      })
+    })
+    
+    # Update data
+    observeEvent(input$generate, {
+      app_state$data <- generate_data()
+      showNotification("Data generated", type = "success")
+    })
+    
+    # Auto update
+    observe({
+      if (app_state$settings$auto_update) {
+        invalidateLater(2000)
+        app_state$data <- generate_data()
+      }
+    })
+    
+    # Apply settings
+    observeEvent(input$apply_settings, {
+      app_state$settings$auto_update <- input$auto_update
+      app_state$settings$seed <- input$seed
+      showNotification("Settings applied", type = "info")
+    })
+    
+    # Histogram module
+    hist_module <- histogramModule("hist")
+    callModule(
+      hist_module$server,
+      "hist",
+      data = reactive(app_state$data),
+      color = reactive(input$color)
+    )
+    
+    # Initial data
+    app_state$data <- generate_data()
+  }
+  
+  shinyApp(ui, server)
+}
+
+# Run different versions
+if (interactive()) {
+  # Choose version to run
+  version <- 3  # 1, 2, or 3
+  
+  switch(version,
+    "1" = create_minimal_app_v1(),
+    "2" = create_minimal_app_v2(),
+    "3" = create_minimal_app_v3()
+  )
+}
+```
+
+# Section 6: Principle Relationships {#principle-relationships}
+
+## Subsection 1: Extending Relationships {#extending-relationships}
+
+This principle:
+
+1. **Implements MP017 (Modularity Principle)** by promoting modularity through minimal modules
+2. **Implements MP031 (Initialization First)** ensuring components initialize properly from simplest state
+3. **Builds Upon DEV_P014 (Performance Optimization)** as minimal implementations naturally optimize performance
+4. **Supports UI_P010 (Minimal CSS Usage)** encouraging minimal styling approach
+5. **Prepares DEV_P018 (Defensive Error Handling)** establishing core functionality before adding error handling
+6. **Simplifies DEV_P019 (Consistent Component State)** starting with simple state models
+
+---
+
+*Based on: Development Methodology Law Article 20*  
+*Related to: [MP017 Modularity Principle](../../CH00_fundamental_principles/meta_principles/MP017_modularity.qmd), [MP031 Initialization First Principle](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd)*

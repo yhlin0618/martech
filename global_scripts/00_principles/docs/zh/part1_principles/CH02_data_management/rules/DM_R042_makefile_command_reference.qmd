@@ -1,0 +1,248 @@
+---
+id: DM_R042
+title: "Makefile Command Reference"
+subtitle: "Quick reference for Pipeline execution commands"
+category: "Data Management"
+type: "Rule"
+status: "Active"
+version: "1.0"
+created: "2025-12-26"
+last_updated: "2025-12-26"
+related_principles: [MP140, MP141, MP142, SO_P016]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+## Statement
+
+All Pipeline operations MUST be executed via Makefile commands from the `scripts/update_scripts/` directory. This ensures consistent execution, proper dependency resolution, and adherence to the three-layer configuration architecture.
+
+## Working Directory
+
+```bash
+cd /path/to/MAMBA/scripts/update_scripts/
+```
+
+All `make` commands must be run from this directory. The Makefile will NOT work from other locations.
+
+## Quick Start
+
+```bash
+# First-time setup
+make config-full        # Merge configs and validate
+
+# Check what will run
+make run-dry           # Dry run (no execution)
+
+# Execute pipeline
+make run               # Run all platforms
+make run PLATFORM=cbz  # Run specific platform
+```
+
+## Command Reference
+
+### Execution Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `make run` | Execute full pipeline (all enabled platforms) | `make run` |
+| `make run PLATFORM=cbz` | Execute specific platform only | `make run PLATFORM=eby` |
+| `make run TARGET=cbz_D04_02` | Execute specific target with its dependencies | `make run TARGET=amz_D01_03` |
+| `make run LAYER=etl` | Execute ETL layer only | `make run LAYER=drv` |
+| `make run-dry` | Dry run - show what would execute | `make run-dry` |
+
+### Platform Shortcuts
+
+| Command | Equivalent |
+|---------|------------|
+| `make run-cbz` | `make run PLATFORM=cbz` |
+| `make run-eby` | `make run PLATFORM=eby` |
+| `make run-amz` | `make run PLATFORM=amz` |
+| `make run-all-platforms` | `make run PLATFORM=all` |
+
+### Layer Shortcuts
+
+| Command | Equivalent |
+|---------|------------|
+| `make run-etl` | `make run LAYER=etl` |
+| `make run-drv` | `make run LAYER=drv` |
+
+### Status and Monitoring Commands
+
+| Command | Description |
+|---------|-------------|
+| `make status` | Check pipeline progress and target states |
+| `make vis` | Open dependency DAG visualization in browser |
+| `make logs` | List recent log files (last 10) |
+
+### Configuration Commands
+
+| Command | Description | When to Use |
+|---------|-------------|-------------|
+| `make config-validate` | Validate `_targets_config.yaml` | After manual edits |
+| `make config-merge` | Merge base + company configs | After modifying `app_config.yaml` |
+| `make config-scan` | Scan ETL/DRV directories for scripts | After adding new scripts |
+| `make config-full` | Full config: merge + scan + validate | First-time setup or major changes |
+
+### Maintenance Commands
+
+| Command | Description |
+|---------|-------------|
+| `make clean` | Destroy targets cache and rebuild |
+| `make clean-logs` | Remove log files older than 30 days |
+
+### Scheduling Commands (macOS launchd)
+
+| Command | Description |
+|---------|-------------|
+| `make schedule` | Set up weekly execution (Sunday 2:00 AM) |
+| `make schedule-status` | Check if scheduled job is active |
+| `make unschedule` | Disable scheduled execution |
+| `make schedule-logs` | View scheduled job logs |
+
+## Parameters
+
+| Parameter | Valid Values | Default | Description |
+|-----------|-------------|---------|-------------|
+| `PLATFORM` | `cbz`, `eby`, `amz`, `all` | `all` | Target platform to execute |
+| `LAYER` | `etl`, `drv`, `both` | `both` | Pipeline layer to execute |
+| `TARGET` | Any valid target name | (empty) | Specific target with dependencies |
+
+### Parameter Combinations
+
+```bash
+# Execute only ETL for Cyberbiz
+make run PLATFORM=cbz LAYER=etl
+
+# Execute specific DRV target
+make run TARGET=cbz_D04_02
+
+# Dry run for eBay DRV layer
+make run-dry PLATFORM=eby LAYER=drv
+```
+
+## Configuration Workflow
+
+Following the three-layer configuration architecture (SO_P016):
+
+```
+Layer 1 (Universal)    global_scripts/templates/_targets_config.base.yaml
+        ↓                      (shared via subrepo)
+Layer 2 (Company)      app_config.yaml > pipeline: section
+        ↓                      (company-specific overrides)
+Layer 3 (Generated)    _targets_config.yaml
+                              (final merged config)
+```
+
+### Recommended Workflow
+
+```bash
+# 1. After modifying app_config.yaml
+make config-merge
+
+# 2. After adding new ETL/DRV scripts
+make config-scan
+
+# 3. Full refresh (combines all steps)
+make config-full
+
+# 4. Validate before execution
+make config-validate
+
+# 5. Preview execution plan
+make run-dry
+
+# 6. Execute
+make run
+```
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "No targets to run" | Config not generated | Run `make config-full` |
+| "Config file not found" | Missing `_targets_config.yaml` | Run `make config-merge` |
+| "Target not found" | Invalid target name | Check `make status` for valid names |
+| "Permission denied" | File permission issues | Check R/W permissions on data directories |
+| "Database locked" | Concurrent access | Close other R sessions or DuckDB connections |
+| "Package not found" | Missing R package | Install via `install.packages()` |
+
+### Debugging Steps
+
+1. **Check configuration**:
+   ```bash
+   make config-validate
+   ```
+
+2. **View current state**:
+   ```bash
+   make status
+   ```
+
+3. **Visualize dependencies**:
+   ```bash
+   make vis
+   ```
+
+4. **Check logs**:
+   ```bash
+   make logs
+   tail -f logs/run_*.log
+   ```
+
+5. **Clean rebuild**:
+   ```bash
+   make clean
+   make config-full
+   make run
+   ```
+
+## Log Files
+
+Logs are stored in `scripts/update_scripts/logs/`:
+
+```
+logs/
+├── run_20251226_140532.log   # Execution logs
+├── run_20251226_093015.log
+└── ...
+```
+
+Format: `run_YYYYMMDD_HHMMSS.log`
+
+## Related Principles
+
+| Principle | Topic |
+|-----------|-------|
+| MP140 | Pipeline Orchestration - Declarative dependency markers |
+| MP141 | Scheduled Execution Pattern - Manual + scheduled modes |
+| MP142 | Configuration-Driven Pipeline - Three-layer YAML config |
+| SO_P016 | Configuration Scope Hierarchy - Universal/Company/Application |
+| MP064 | ETL-Derivation Separation |
+| MP107 | ETL Pipeline Independence |
+| MP108 | ETL Phase Sequence |
+
+## Implementation Notes
+
+The Makefile wraps the `{targets}` R package for pipeline orchestration. Key files:
+
+- `_targets.R` - Main pipeline definition
+- `ETL/_targets_etl.R` - ETL layer targets
+- `DRV/_targets_drv.R` - DRV layer targets
+- `_targets_config.yaml` - Generated configuration
+
+Each script must include dependency markers (per MP140):
+
+```r
+#####
+# CONSUMES: df_cbz_sales_transformed
+# PRODUCES: df_cbz_poisson_analysis_all
+# DEPENDS_ON_ETL: cbz_ETL_sales_2TR
+# DEPENDS_ON_DRV: cbz_D04_01
+#####
+```

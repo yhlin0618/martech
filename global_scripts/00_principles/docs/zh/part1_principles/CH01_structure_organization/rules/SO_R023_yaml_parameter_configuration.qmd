@@ -1,0 +1,285 @@
+---
+title: "SO_R006: YAML 參數配置規則"
+subtitle: "應用程式參數（可配置值）必須在 YAML 配置檔案中指定，專注於應用程式之間變化的定位、連接和行為。當 YAML 中未指定參數時，應預設為空而不是使用 app.R 或 server 程式碼中的硬編碼值。組件必須使用其 Defaults 組件優雅地處理未定義的參數"
+chapter: "CH01"
+category: "rule"
+number: "SO_R006"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 6
+  title: "YAML 參數配置規則"
+related_to:
+  - "SO_P007: app.R 是全域原則"
+  - "SO_R005: App YAML 配置規則"
+  - "UI_R006: 三元組預設值規則"
+  - "DEV_R009: 初始化來源規則"
+  - "MP017: 關注點分離原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第六條：YAML 參數配置規則 {#overview}
+
+**結構組織法第六條（YAML 參數配置規則）**
+
+應用程式參數（可配置值）必須在 YAML 配置檔案中指定，專注於應用程式之間變化的定位、連接和行為。當 YAML 中未指定參數時，應預設為空而不是使用 app.R 或 server 程式碼中的硬編碼值。組件必須使用其 Defaults 組件優雅地處理未定義的參數。
+
+:::{.callout-important}
+## 核心要求
+透過建立清晰的配置策略，此規則確保應用程式可以純粹透過配置進行自訂，同時保持組件的獨立性和韌性。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：YAML 參數範圍 {#yaml-parameter-scope}
+
+**YAML 配置應指定：**
+
+1. **定位參數**：布局、順序和結構關係
+2. **連接參數**：資料來源連接、API 和整合點
+3. **行為參數**：應用程式之間變化的可配置行為
+4. **外觀參數**：主題、樣式和視覺配置
+5. **模組選擇**：啟用/停用或包含的模組
+6. **整合參數**：組件如何相互連接
+
+## 第二款：參數省略處理 {#parameter-omission-handling}
+
+**當 YAML 中省略參數時：**
+
+1. **空預設值**：參數應預設為空（NULL、空字串等）
+2. **三元組預設值**：組件應回退到其 Defaults 組件的值
+3. **優雅處理**：組件必須在缺少參數的情況下合理運作
+4. **無硬編碼備援**：app.R 或 server 程式碼中不得有硬編碼備援
+
+## 第三款：YAML 結構 {#yaml-structure}
+
+**YAML 配置應該結構化為：**
+
+1. **階層式**：遵循應用程式的組件階層
+2. **基於組件**：按組件而不是按功能組織
+3. **環境感知**：支援不同環境（開發、測試、生產）
+4. **模組化**：支援部分應用配置
+5. **驗證**：根據架構或由初始化程式碼驗證
+
+## 第四款：配置載入 {#configuration-loading}
+
+**配置應該載入：**
+
+1. **提早**：在組件初始化之前
+2. **驗證**：驗證必需參數
+3. **環境特定**：具有環境特定的覆蓋
+4. **集中化**：從單一真實來源
+5. **快取**：在適當時快取以提高效能
+
+# 第二項：實施範例 {#implementation-examples}
+
+## 第一款：正確的 YAML 參數配置 {#proper-yaml-configuration}
+
+**app_config.yaml：**
+```yaml
+title: "精準行銷應用程式"
+theme:
+  version: 5
+  bootswatch: "cerulean"
+
+components:
+  micro:
+    sidebar_data:
+      # 指定參數位置，如果為空則資料將來自組件預設值
+      position: "left"
+      width: "300px"
+    
+    customer_profile:
+      # 連接參數
+      data_source: "customer_db"
+      table: "customer_profiles"
+      
+    # 注意：YAML 中未指定預設值
+      
+  macro:
+    sidebar_data:
+      position: "left"
+      width: "300px"
+    
+    trends:
+      # 行為參數
+      parameters:
+        refresh_interval: 300  # 秒
+        # 注意：省略其他參數，將使用三元組的預設值
+
+environments:
+  development:
+    parameters:
+      debug: true
+  production:
+    parameters:
+      debug: false
+```
+
+**使用配置的組件：**
+```r
+# 使用配置參數的 Server 組件
+sidebarServer <- function(id, data_source = NULL, config = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 取得預設值 - 始終在三元組中定義預設值
+    defaults <- sidebarDefaults()
+    
+    # 如果可用則使用配置參數，否則使用預設值
+    position <- if (!is.null(config) && !is.null(config$position)) {
+      config$position
+    } else {
+      defaults$position  # 來自三元組預設值
+    }
+    
+    width <- if (!is.null(config) && !is.null(config$width)) {
+      config$width
+    } else {
+      defaults$width  # 來自三元組預設值
+    }
+    
+    # 使用 position 和 width 的組件實施
+    # ...
+  })
+}
+```
+
+**App.R 使用配置：**
+```r
+# 載入配置
+config <- readYamlConfig("app_config.yaml")
+
+# Server 邏輯 - 將配置傳遞給組件，app.R 中無預設值
+server <- function(input, output, session) {
+  # 使用配置參數初始化側邊欄
+  sidebarServer("app_sidebar", 
+               data_source = reactive({ getDataSource() }),
+               config = config$components$micro$sidebar_data)  # 可能為 NULL
+  
+  # app.R 中無硬編碼預設值
+}
+```
+
+## 第二款：錯誤的參數處理（違反規則）{#incorrect-parameter-handling}
+
+```r
+# 錯誤：app.R 中的硬編碼預設值
+server <- function(input, output, session) {
+  # app.R 中的硬編碼備援值（違反規則）
+  sidebar_config <- config$components$micro$sidebar_data
+  if (is.null(sidebar_config)) {
+    # 錯誤：預設值應該在三元組中，而不是這裡
+    sidebar_config <- list(
+      position = "left",
+      width = "300px"
+    )
+  }
+  
+  # 錯誤：如果不在配置中則預設參數
+  if (is.null(sidebar_config$position)) {
+    sidebar_config$position <- "left"  # 應來自三元組預設值
+  }
+  
+  # 使用可能修改過的配置初始化側邊欄
+  sidebarServer("app_sidebar", 
+               data_source = reactive({ getDataSource() }),
+               config = sidebar_config)
+}
+```
+
+# 第三項：常見錯誤和解決方案 {#common-errors}
+
+## 第一款：app.R 中的硬編碼參數預設值 {#error-hardcoded-defaults}
+
+**問題**：當 YAML 中未指定參數時在 app.R 中設置預設參數值。
+
+**解決方案**：
+- 當參數不在 YAML 中時讓其預設為空（NULL）
+- 依賴三元組的 Defaults 組件來處理未定義的參數
+- 保持 app.R 無預設值
+- 設計組件以處理缺少的參數
+
+## 第二款：過於具體的 YAML 配置 {#error-overly-specific}
+
+**問題**：YAML 配置包含應該在組件預設值中的細節。
+
+**解決方案**：
+- 保持 YAML 專注於應用程式之間變化的參數
+- 將實施細節留給組件的 Defaults
+- 不要在 YAML 中複製預設值
+- 將定位/連接與實施細節分離
+
+## 第三款：不一致的參數處理 {#error-inconsistent-handling}
+
+**問題**：跨組件處理缺少參數的不同方法。
+
+**解決方案**：
+- 標準化所有組件的參數處理
+- 創建參數提取的輔助函數，並帶有預設值
+- 記錄預期的參數結構
+- 使用指定和未指定的參數測試組件
+
+## 第四款：預設值的複雜條件邏輯 {#error-complex-logic}
+
+**問題**：處理各種參數配置的複雜條件邏輯。
+
+**解決方案**：
+- 設計參數簡單且正交
+- 使用參數轉換函數處理複雜情況
+- 避免深層嵌套的參數結構
+- 創建參數正規化的輔助函數
+
+# 第四項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與 app.R 是全域原則的關聯（SO_P007）{#relation-to-app-r-global}
+
+此規則透過以下方式支援 app.R 是全域：
+1. **配置驅動**：在不修改 app.R 的情況下啟用配置驅動的自訂
+2. **可攜結構**：保持 app.R 無實施細節和預設值
+3. **模板角色**：允許 app.R 在應用程式間作為模板
+4. **靈活性**：透過 YAML 支援靈活的應用程式自訂
+
+## 第二款：與三元組預設值規則的關聯（UI_R006）{#relation-to-defaults-from-triple}
+
+此規則透過以下方式補充三元組預設值：
+1. **清晰邊界**：在參數（YAML）和預設值（三元組）之間建立清晰邊界
+2. **責任分配**：將參數配置分配給 YAML，預設值分配給三元組
+3. **一致策略**：為配置和預設值提供一致的策略
+4. **優雅降級**：當參數未定義時支援優雅降級
+
+## 第三款：與關注點分離原則的關聯（MP017）{#relation-to-separation-of-concerns}
+
+此規則透過以下方式支援關注點分離：
+1. **配置與實施**：分離配置與實施
+2. **參數與預設值**：分離參數與預設值
+3. **應用程式與組件**：分離應用程式關注點與組件關注點
+4. **結構與行為**：分離結構關注點與行為關注點
+
+# 第五項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **更乾淨的應用程式碼**：app.R 和 server 程式碼保持無預設值
+2. **清晰的參數策略**：參數指定的清晰策略
+3. **組件獨立性**：組件可以在有或沒有配置的情況下獨立運作
+4. **配置靈活性**：應用程式可以純粹透過配置進行自訂
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **一致的參數處理**：跨組件的參數處理方法一致
+2. **可維護的配置**：配置更容易理解和維護
+3. **韌性組件**：組件可以處理缺少或部分配置
+4. **測試簡單性**：組件可以在有或沒有配置的情況下測試
+
+---
+
+*基於：結構組織法第六條*  
+*相關連結：[SO_P007 app.R 是全域原則](../principles/SO_P007_app_r_is_global.qmd), [UI_R006 三元組預設值規則](../../CH04_ui_components/rules/UI_R006_defaults_from_triple.qmd)*

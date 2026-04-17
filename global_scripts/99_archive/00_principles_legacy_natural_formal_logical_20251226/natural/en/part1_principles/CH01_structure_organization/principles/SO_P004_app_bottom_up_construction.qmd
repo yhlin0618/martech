@@ -1,0 +1,311 @@
+---
+title: "SO_P004: App Bottom-Up Construction"
+subtitle: "Bottom-up approach for building Shiny applications"
+chapter: "CH01"
+category: "principle"
+number: "SO_P004"
+date-created: "2025-03-15"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "結構組織法 (Structure & Organization Law)"
+article: "第4條"
+derives_from:
+  - "CH01.SO_P003: App Construction Principles"
+influences:
+  - "CH01.SO_R004: App YAML Configuration"
+related_to:
+  - "TD_P001: Deployment Patterns"
+  - "DEV_P002: Authentic Context Testing"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**結構組織法第4條（應用程式由下而上建構）**
+
+本條建立 Shiny 應用程式的由下而上建構方法，強調從資料組件開始的漸進式開發，確保應用程式的健壯性、可維護性和可測試性。
+
+:::{.callout-important}
+## 核心概念
+應用程式建構應遵循由下而上的方法：
+1. 首先建立資料來源和處理
+2. 隔離建構和測試個別組件
+3. 逐步將組件整合到完整應用程式中
+4. 在核心功能建立後反覆優化
+:::
+
+# 第一項：建構流程 {#construction-process}
+
+## 第一階段：資料基礎 {#phase-1-data}
+
+### 第一款：定義資料需求 {#define-data}
+
+- 識別所需的資料來源
+- 定義關鍵資料結構
+- 規劃反應式資料流
+
+### 第二款：創建資料組件 {#create-data-components}
+
+- 實作 `ui_data_source.R` 和 `server_data_source.R`
+- 專注於可靠的資料載入和處理
+- 包含缺失或格式錯誤資料的錯誤處理
+
+### 第三款：測試資料組件 {#test-data-components}
+
+- 驗證資料載入正確運作
+- 檢查反應式資料集適當更新
+- 確認過濾器如預期運作
+
+## 第二階段：建構個別組件 {#phase-2-components}
+
+### 第一款：從最高優先級組件開始 {#highest-priority}
+
+- 從最關鍵的功能開始
+- 分別實作 UI 和伺服器組件
+- 保持組件專注於單一職責
+
+### 第二款：隔離測試每個組件 {#test-isolation}
+
+- 為每個組件創建小型測試應用程式
+- 如需要使用模擬資料
+- 驗證組件的所有功能正確運作
+
+### 第三款：對每個組件重複 {#repeat-components}
+
+- 按重要性優先排序組件
+- 一次開發和測試一個組件
+- 記錄組件介面和相依性
+
+## 第三階段：整合 {#phase-3-integration}
+
+### 第一款：創建最小應用程式模板 {#minimal-template}
+
+- 從資料來源和一個功能組件開始
+- 確保它們正確協作
+- 解決任何整合問題
+
+### 第二款：漸進式添加組件 {#incremental-addition}
+
+- 一次納入一個組件
+- 每次添加後測試
+- 立即解決衝突或效能問題
+
+### 第三款：優化共同元素 {#refine-common}
+
+- 核心功能運作後實作側邊欄和過濾
+- 添加導航結構
+- 確保組件間的一致樣式
+
+## 第四階段：優化 {#phase-4-refinement}
+
+### 第一款：效能優化 {#performance}
+
+- 識別並解決瓶頸
+- 優化反應式相依性
+- 考慮昂貴操作的快取策略
+
+### 第二款：使用者體驗改進 {#ux-improvements}
+
+- 添加載入指示器
+- 實作錯誤訊息
+- 優化版面配置和排版
+
+### 第三款：最終測試 {#final-testing}
+
+- 使用真實資料進行大規模測試
+- 驗證所有使用者工作流程
+- 檢查不同情境下的效能
+
+# 第二項：實作範例 {#implementation-example}
+
+## 步驟 1：資料基礎 {#step-1-data}
+
+:::{.callout-tip}
+## 資料測試應用程式
+```r
+# 在 app.R 中
+library(shiny)
+library(dplyr)
+
+# 只從資料組件開始
+source("update_scripts/global_scripts/10_rshinyapp_components/data/ui_data_source.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/data/server_data_source.R")
+
+ui <- fluidPage(
+  titlePanel("資料測試"),
+  dataSourceUI("data"),
+  verbatimTextOutput("data_summary")
+)
+
+server <- function(input, output, session) {
+  data_source <- dataSourceServer("data")
+  
+  # 簡單輸出以驗證資料載入
+  output$data_summary <- renderPrint({
+    customer_data <- data_source$sales_by_customer()
+    summary(customer_data)
+  })
+}
+
+shinyApp(ui, server)
+```
+:::
+
+## 步驟 2：添加第一個組件 {#step-2-first}
+
+:::{.callout-tip}
+## 添加客戶檔案組件
+```r
+# 添加資料組件
+source("update_scripts/global_scripts/10_rshinyapp_components/data/ui_data_source.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/data/server_data_source.R")
+
+# 添加第一個功能組件
+source("update_scripts/global_scripts/10_rshinyapp_components/micro/ui_micro_customer_profile.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/micro/server_micro_customer_profile.R")
+
+ui <- fluidPage(
+  titlePanel("客戶檔案"),
+  dataSourceUI("data"),
+  microCustomerProfileUI("customer_profile")
+)
+
+server <- function(input, output, session) {
+  data_source <- dataSourceServer("data")
+  microCustomerProfileServer("customer_profile", data_source)
+}
+
+shinyApp(ui, server)
+```
+:::
+
+## 步驟 3：添加導航和第二個組件 {#step-3-navigation}
+
+:::{.callout-tip}
+## 整合多個組件
+```r
+library(shiny)
+library(bslib)
+library(dplyr)
+
+# 添加所有必要組件
+source("update_scripts/global_scripts/10_rshinyapp_components/data/ui_data_source.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/data/server_data_source.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/common/ui_common_sidebar.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/common/server_common_sidebar.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/micro/ui_micro_customer_profile.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/micro/server_micro_customer_profile.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/macro/ui_macro_overview.R")
+source("update_scripts/global_scripts/10_rshinyapp_components/macro/server_macro_overview.R")
+
+ui <- page_navbar(
+  title = "Customer DNA",
+  sidebar = commonSidebarUI("sidebar"),
+  
+  # 只在開發後添加導航面板
+  nav_panel("總覽", macroOverviewUI("macro")),
+  nav_panel("客戶檔案", microCustomerProfileUI("micro"))
+)
+
+server <- function(input, output, session) {
+  data_source <- dataSourceServer("data")
+  commonSidebarServer("sidebar", data_source)
+  macroOverviewServer("macro", data_source)
+  microCustomerProfileServer("micro", data_source)
+}
+
+shinyApp(ui, server)
+```
+:::
+
+# 第三項：優點 {#benefits}
+
+## 由下而上建構的優點 {#construction-benefits}
+
+:::{.callout-note}
+## 主要優點
+1. **早期發現資料問題**
+   - 在 UI 開發前識別資料問題
+   - 在組件依賴前更容易修復資料結構問題
+
+2. **專注測試**
+   - 隔離測試每個組件
+   - 清楚識別問題來源
+   - 更快的除錯和迭代開發
+
+3. **優先開發**
+   - 首先專注於最重要的方面
+   - 在添加附加功能前讓基本功能運作
+   - 更早交付最小可行版本
+
+4. **更清晰的架構**
+   - 組件設計為自包含
+   - 更清晰的關注點分離
+   - 更可維護的程式碼庫
+
+5. **漸進式複雜性**
+   - 從簡單開始逐步增加複雜性
+   - 新團隊成員更容易理解
+   - 避免一次用完整系統壓倒開發者
+:::
+
+# 第四項：常見陷阱 {#pitfalls}
+
+## 應避免的問題 {#problems-to-avoid}
+
+:::{.callout-warning}
+## 常見錯誤及解決方案
+
+1. **過早整合**
+   - 問題：等太久才測試組件協作
+   - 解決方案：及早創建整合測試但在開發期間保持組件分離
+
+2. **不一致的介面**
+   - 問題：組件使用不同的參數名稱或資料結構
+   - 解決方案：為所有組件建立明確的介面標準
+
+3. **資料結構變更**
+   - 問題：在組件依賴後更改資料結構
+   - 解決方案：及早最終確定核心資料結構或使用適配器向後相容
+
+4. **過度建構組件**
+   - 問題：添加「以防萬一」的功能
+   - 解決方案：遵循 YAGNI 原則（你不會需要它）並在需要時添加功能
+
+5. **忽略文件**
+   - 問題：未記錄組件介面和相依性
+   - 解決方案：邊建構邊記錄，特別是反應式相依性和資料需求
+:::
+
+# 第五項：實作指導原則 {#guidelines}
+
+## 團隊實作建議 {#team-implementation}
+
+實作此原則的團隊應：
+
+:::{.callout-note}
+## 實作檢查清單
+1. 抵制在建立資料模型前建構 UI 組件的誘惑
+2. 清楚記錄每個組件的資料相依性
+3. 維護單獨驗證每個組件的測試策略
+4. 使用 YAML 配置系統地組裝組件
+5. 只在核心功能運作後迭代 UI 優化
+:::
+
+# 結論 {#conclusion}
+
+由下而上的建構方法確保 Shiny 應用程式建立在堅實的資料基礎上，組件經過充分測試，整合順利進行。這種方法導致更可維護、可靠和可擴展的應用程式。
+
+---
+
+*依據：結構組織法第4條*  
+*衍生自：[SO_P003 應用程式建構原則](SO_P003_app_construction.qmd)*  
+*影響：[SO_R004 YAML 配置](../rules/SO_R004_app_yaml_configuration.qmd)*  
+*相關：[TD_P001 部署模式](../../CH05_testing_deployment/principles/TD_P001_deployment_patterns.qmd)、[DEV_P002 真實情境測試](../../CH03_development_methodology/principles/DEV_P002_authentic_context_testing.qmd)*

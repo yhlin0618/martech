@@ -1,0 +1,214 @@
+---
+title: "UX_P001: Lazy Initialization Principle"
+subtitle: "Load only what is immediately needed at startup; defer everything else to first use"
+chapter: "CH07"
+category: "principle"
+number: "UX_P001"
+date-created: "2026-03-02"
+date-modified: "2026-03-02"
+author: "Claude"
+type: "principle"
+law: "User Experience Law"
+article-number: "Article 1"
+derives_from:
+  - "CH00.MP048: Universal Initialization"
+influences:
+  - "CH03.DEV_P014: Performance Optimization"
+  - "CH03.DEV_P021: Performance Acceleration"
+related_to:
+  - "CH04.UI_R019: AI Process Notification"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Overview {#overview}
+
+**User Experience Law Article 1 (Lazy Initialization Principle)**
+
+This article establishes the principle that application startup should load only the minimum resources required for initial display, deferring all other resources to the point of first use. This directly improves perceived performance and user experience.
+
+:::{.callout-important}
+## Core Concept
+"Load Only When Needed" — The startup phase should only load resources that are immediately necessary for the application to become interactive. All other resources (packages, source files, data) should be deferred until first use.
+:::
+
+# Background {#background}
+
+## Problem Statement {#problem-statement}
+
+MAMBA application startup involves multiple heavyweight operations that execute sequentially:
+
+| Phase | Content | Estimated Time |
+|-------|---------|----------------|
+| Package loading | 28 packages (arrow, plotly, bs4Dash are slow) | 10-15s |
+| Recursive source() | ~327 R files from 6 directories | 8-15s |
+| Double source() | Union files re-source files already loaded by init | 2-5s |
+| Other | DuckDB init, CSV reads, translation init | 2-3s |
+
+**Total: 30-45 seconds** from `Rscript app.R` to "Listening on http"
+
+## Root Cause {#root-cause}
+
+The current initialization pattern (`autoinit()` / `sc_initialization_app_mode.R`) loads ALL resources at startup regardless of whether they are needed immediately. This "eager initialization" approach causes unnecessarily long startup times.
+
+# Article 1: Package Loading {#package-loading}
+
+## Section 1: Startup-Essential vs Runtime Packages {#essential-vs-runtime}
+
+Packages must be classified into two categories:
+
+**Startup-Essential** (load immediately):
+
+- `shiny` — Application framework
+- `bs4Dash` — UI framework
+- `DBI`, `duckdb` — Database connectivity
+- `dplyr` — Core data manipulation
+
+**Runtime-Deferred** (load on first use):
+
+- `arrow` — Only when reading parquet/feather files
+- `plotly` — Only when rendering interactive charts
+- `readxl` — Only when importing Excel files
+- `janitor` — Only when cleaning data
+- `openxlsx` — Only when exporting Excel files
+
+## Section 2: Deferred Loading Pattern {#deferred-loading-pattern}
+
+Use `requireNamespace()` with deferred `library()` for runtime packages:
+
+```r
+# Pattern: Deferred package loading
+ensure_package <- function(pkg) {
+  if (!isNamespaceLoaded(pkg)) {
+    suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+  }
+}
+
+# Usage in component server
+positionMSPlotlyServer <- function(id, ...) {
+  moduleServer(id, function(input, output, session) {
+    ensure_package("plotly")
+    # ... component logic using plotly
+  })
+}
+```
+
+:::{.callout-note}
+## Implementation Note
+The `ensure_package()` function should be defined in `global_scripts/04_utils/fn_ensure_package.R` and loaded as part of the startup-essential utilities.
+:::
+
+# Article 2: File Sourcing {#file-sourcing}
+
+## Section 1: On-Demand Component Loading {#on-demand-sourcing}
+
+Shiny UI components (`10_rshinyapp_components/`) should be sourced when they are first activated, not at startup:
+
+**Current pattern (eager):**
+```r
+# In autoinit() — sources ALL ~327 files at startup
+source_dirs <- c("01_db", "02_db_utils", "03_config",
+                 "04_utils", "10_rshinyapp_components", ...)
+for (dir in source_dirs) {
+  files <- list.files(dir, pattern = "\\.R$", recursive = TRUE)
+  lapply(files, source)  # ALL files, even unused components
+}
+```
+
+**Recommended pattern (lazy):**
+```r
+# At startup: only source core infrastructure
+startup_dirs <- c("01_db", "02_db_utils", "03_config", "04_utils")
+for (dir in startup_dirs) {
+  files <- list.files(dir, pattern = "\\.R$", recursive = TRUE)
+  lapply(files, source)
+}
+
+# Components: source on first use via source guard
+source_component <- function(component_path) {
+  component_env_key <- paste0(".sourced_", basename(component_path))
+  if (!exists(component_env_key, envir = .GlobalEnv)) {
+    source(component_path)
+    assign(component_env_key, TRUE, envir = .GlobalEnv)
+  }
+}
+```
+
+## Section 2: Source Guard Pattern {#source-guard}
+
+Every component file should be idempotent — safe to source multiple times without side effects:
+
+```r
+# Source guard: skip if already loaded
+if (exists("positionMSPlotlyUI") && is.function(positionMSPlotlyUI)) {
+  return(invisible(NULL))
+}
+
+# ... actual function definitions below
+```
+
+# Article 3: Double-Source Prevention {#double-source-prevention}
+
+## Section 1: Problem Description {#double-source-problem}
+
+The current architecture has two source paths that overlap:
+
+1. **autoinit()** recursively sources all files in `10_rshinyapp_components/`
+2. **union files** (e.g., `union_production_test.R`) explicitly `source()` the same files
+
+This causes ~30-50 files to be sourced twice, wasting 2-5 seconds.
+
+## Section 2: Registry Pattern {#registry-pattern}
+
+Use a source registry to prevent double-sourcing:
+
+```r
+# In 04_utils/fn_source_once.R
+.source_registry <- new.env(parent = emptyenv())
+
+source_once <- function(file_path) {
+  canonical <- normalizePath(file_path, mustWork = FALSE)
+  if (!exists(canonical, envir = .source_registry)) {
+    source(file_path, local = FALSE)
+    assign(canonical, Sys.time(), envir = .source_registry)
+  }
+  invisible(NULL)
+}
+```
+
+All `source()` calls in union files and component loaders should use `source_once()` instead.
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Lazy Initialization Checklist
+
+When implementing lazy initialization:
+
+- [ ] Classify all packages as startup-essential or runtime-deferred
+- [ ] Create `fn_ensure_package.R` utility function
+- [ ] Replace eager `library()` with deferred loading for non-essential packages
+- [ ] Separate startup source directories from component source directories
+- [ ] Implement source guard in component files
+- [ ] Create `fn_source_once.R` to prevent double-sourcing
+- [ ] Replace `source()` with `source_once()` in union files
+- [ ] Measure startup time before and after (target: < 15 seconds)
+:::
+
+# Related Principles {#related}
+
+- **MP048**: Universal Initialization — Defines the initialization framework; UX_P001 optimizes its execution order
+- **DEV_P014**: Performance Optimization — General performance guidelines
+- **DEV_P021**: Performance Acceleration — Runtime optimization (complements UX_P001's startup focus)
+- **UI_R019**: AI Process Notification — Show progress during remaining load time
+
+---
+
+*Authority: User Experience Law Article 1*
+*Derived from: [MP048 Universal Initialization](../../CH00_fundamental_principles/MP048_universal_initialization.qmd)*
+*Influences: [DEV_P014 Performance Optimization](../../CH03_development_methodology/principles/DEV_P014_performance_optimization.qmd)*

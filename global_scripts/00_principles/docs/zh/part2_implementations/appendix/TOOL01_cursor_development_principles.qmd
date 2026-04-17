@@ -1,0 +1,244 @@
+---
+title: "Tool Configuration 01: Cursor Development Principles"
+subtitle: "Development guidelines and code quality principles for Cursor editor"
+chapter: "Appendix"
+category: "tool-config"
+number: "TOOL01"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "tool-configuration"
+law: "Development Tools"
+article-number: "Tool Config 1"
+related_to:
+  - "MP047_functional_programming"
+  - "R067_functional_encapsulation"
+  - "R094_roxygen2_function_examples"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Tool Config 1: Cursor Development Principles {#overview}
+
+::: {.callout-note}
+This document is derived from the Cursor editor configuration file `cursor_rules/development_principles.mdc`. The original MDC file remains in place for Cursor editor functionality.
+:::
+
+## Section 1: Code Quality Principles {#code-quality}
+
+### Subsection 1: Function Validation {#function-validation}
+
+Before using any function, verify its existence using `?` or `??` commands. Detailed rules are provided in the R function validation configuration.
+
+**Key Requirements:**
+- Always validate function availability before use
+- Check package loading status
+- Verify custom function existence in environment
+
+### Subsection 2: Modular Design {#modular-design}
+
+Each functionality should be encapsulated in independent modules:
+
+- **Encapsulation**: Keep related functionality together
+- **Global Variables**: Avoid excessive use of global variables
+- **Function Interfaces**: Use explicit, well-defined function interfaces
+- **Dependencies**: Clearly document module dependencies
+
+### Subsection 3: Error Handling {#error-handling}
+
+Implement robust error handling mechanisms:
+
+- **Appropriate Mechanisms**: Use tryCatch() and error handlers
+- **Meaningful Messages**: Provide clear, actionable error messages
+- **Edge Cases**: Consider boundary conditions and exceptional cases
+- **Graceful Degradation**: Ensure failures don't crash the application
+
+### Subsection 4: Code Readability {#readability}
+
+Maintain high code readability standards:
+
+- **Descriptive Names**: Use clear variable and function names
+- **Documentation**: Add appropriate comments and documentation
+- **Consistent Style**: Maintain uniform code formatting
+- **Logical Structure**: Organize code in logical sections
+
+## Section 2: Project-Specific Principles {#project-specific}
+
+### Subsection 1: Shiny Applications {#shiny-apps}
+
+#### UI and Server Separation {#ui-server}
+- Keep UI and Server logic strictly separated
+- Use modular UI components
+- Implement reactive programming patterns
+
+#### Component Organization {#component-org}
+```r
+# UI Component
+componentNameUI <- function(id) {
+  ns <- NS(id)
+  # UI definition
+}
+
+# Server Component
+componentNameServer <- function(id, data_connection) {
+  moduleServer(id, function(input, output, session) {
+    # Server logic
+  })
+}
+
+# Defaults Component
+componentNameDefaults <- function() {
+  # Default values
+}
+```
+
+### Subsection 2: Data Processing {#data-processing}
+
+#### Database Operations {#database-ops}
+- **Primary Tool**: Use DuckDB for data operations
+- **Memory Efficiency**: Prioritize memory-efficient operations
+- **Data Validation**: Implement appropriate data validation
+
+#### Data Pipeline Pattern {#data-pipeline}
+```r
+# 1. Connect to database
+conn <- dbConnect(duckdb::duckdb(), dbdir = "app_data.duckdb")
+
+# 2. Query data efficiently
+data <- dbGetQuery(conn, "
+  SELECT * FROM table
+  WHERE condition = TRUE
+")
+
+# 3. Process in memory
+processed <- data %>%
+  filter(valid_flag == 1) %>%
+  summarize(metrics = mean(value))
+
+# 4. Close connection
+dbDisconnect(conn)
+```
+
+### Subsection 3: File Organization {#file-organization}
+
+#### Directory Structure {#directory-structure}
+Follow the established directory structure:
+
+```
+project/
+├── 00_principles/       # Principles and rules
+├── 01_db/              # Database utilities
+├── 02_db_utils/        # Database helper functions
+├── 04_utils/           # General utilities
+├── 10_rshinyapp_components/  # Shiny components
+└── 23_deployment/      # Deployment configuration
+```
+
+#### File Naming Conventions {#file-naming}
+- Use descriptive file names
+- Group related functionality in appropriate directories
+- Follow the `fn_` prefix for function files
+- Use `sc_` prefix for script files
+
+## Section 3: Validation Practices {#validation}
+
+### Subsection 1: Pre-execution Validation {#pre-execution}
+
+Before executing any code:
+
+1. **Check Function Availability**
+   ```r
+   # Check if function exists
+   if (!exists("function_name")) {
+     stop("Required function 'function_name' not found")
+   }
+   ```
+
+2. **Verify Package Loading**
+   ```r
+   # Ensure required packages are loaded
+   required_packages <- c("dplyr", "shiny", "DBI")
+   missing_packages <- required_packages[!required_packages %in% 
+                                         installed.packages()[,"Package"]]
+   if (length(missing_packages) > 0) {
+     stop(paste("Missing packages:", paste(missing_packages, collapse = ", ")))
+   }
+   ```
+
+3. **Validate Data Structures**
+   ```r
+   # Check data frame structure
+   required_columns <- c("id", "value", "date")
+   if (!all(required_columns %in% colnames(data))) {
+     stop("Missing required columns in data")
+   }
+   ```
+
+### Subsection 2: Runtime Validation {#runtime}
+
+During execution:
+
+1. **Input Validation**: Check all inputs before processing
+2. **Intermediate Checks**: Validate data at transformation steps
+3. **Output Verification**: Ensure outputs meet expected format
+
+## Section 4: Development Workflow {#workflow}
+
+### Subsection 1: Development Cycle {#dev-cycle}
+
+1. **Plan**: Define functionality and interfaces
+2. **Implement**: Write code following principles
+3. **Validate**: Test with validation rules
+4. **Document**: Add appropriate documentation
+5. **Review**: Code review against principles
+6. **Deploy**: Follow deployment standards
+
+### Subsection 2: Testing Strategy {#testing}
+
+```r
+# Unit test example
+test_that("Function validates inputs correctly", {
+  expect_error(my_function(NULL), "Input cannot be NULL")
+  expect_equal(my_function(valid_input), expected_output)
+})
+```
+
+## Section 5: Integration with Cursor {#cursor-integration}
+
+### Subsection 1: Cursor Configuration {#cursor-config}
+
+The original MDC file structure for Cursor:
+
+```yaml
+---
+description: Development principles for code quality
+globs: ["*.R", "*.r"]
+alwaysApply: false
+---
+```
+
+### Subsection 2: Auto-application Rules {#auto-rules}
+
+These principles are automatically applied when:
+- Working with R files in Cursor
+- The MDC file is present in `cursor_rules/` directory
+- Cursor's rule system is enabled
+
+## Section 6: Best Practices Summary {#best-practices}
+
+### Key Takeaways {#takeaways}
+
+1. **Always Validate**: Check function existence before use
+2. **Modularize**: Keep code organized in logical modules
+3. **Handle Errors**: Implement comprehensive error handling
+4. **Document Well**: Maintain clear documentation
+5. **Follow Standards**: Adhere to project conventions
+6. **Test Thoroughly**: Validate at multiple stages
+
+---
+*This configuration ensures consistent, high-quality code development when using Cursor editor in the project.*

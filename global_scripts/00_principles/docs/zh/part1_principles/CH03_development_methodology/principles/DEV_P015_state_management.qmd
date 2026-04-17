@@ -1,0 +1,668 @@
+---
+title: "DEV_P015: 狀態管理原則"
+subtitle: "應用程式必須實施結構化的狀態管理方法，清楚定義狀態的儲存位置、變更方式和系統流向。狀態應組織為具有適當範圍、變更模式和存取控制的不同類別，以確保可預測且可維護的應用程式"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P015"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article-number: 
+  number: 15
+  title: "狀態管理原則"
+related_to:
+  - "MP052: 單向資料流"
+  - "MP053: 反饋迴路"
+  - "DEV_P012: 反應式資料過濾原則"
+  - "UI_P008: 組件組合原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十五條：狀態管理原則 {#overview}
+
+**開發方法法第十五條（狀態管理原則）**
+
+應用程式必須實施結構化的狀態管理方法，清楚定義狀態的儲存位置、變更方式和系統流向。狀態應組織為具有適當範圍、變更模式和存取控制的不同類別，以確保可預測且可維護的應用程式。
+
+:::{.callout-important}
+## 核心原則
+建立結構化的狀態管理系統，透過明確的類別劃分、範圍界定和變更控制來組織狀態，確保應用程式行為的可預測性和可維護性。
+:::
+
+# 第一項：狀態類別分類 {#state-categories}
+
+## 第一款：伺服器狀態 {#server-state}
+
+**定義與特徵：**
+- **定義**：來自外部來源的資料
+- **範例**：資料庫記錄、API回應、檔案內容
+- **特徵**：通常非同步獲取、可能需要快取、經常跨組件共享
+
+**實施範例：**
+```r
+# 伺服器狀態管理
+server_state <- reactive({
+  req(input$data_source)
+  fetch_server_data(input$data_source)
+})
+
+# 帶快取的伺服器狀態
+cached_server_state <- reactive({
+  cache_key <- digest::digest(input$query_params)
+  
+  if (!is.null(cache_store[[cache_key]])) {
+    return(cache_store[[cache_key]])
+  }
+  
+  result <- fetch_server_data(input$query_params)
+  cache_store[[cache_key]] <- result
+  return(result)
+})
+```
+
+## 第二款：UI狀態 {#ui-state}
+
+**定義與特徵：**
+- **定義**：與用戶介面相關的暫時狀態
+- **範例**：表單值、選取的標籤、展開的區段
+- **特徵**：用戶驅動、通常限定於特定組件、不會持續到會話之外
+
+**實施範例：**
+```r
+# 組件級UI狀態
+ui_state <- reactiveValues(
+  selected_tab = "overview",
+  sidebar_collapsed = FALSE,
+  form_values = list(),
+  validation_errors = list()
+)
+
+# UI狀態管理
+observeEvent(input$toggle_sidebar, {
+  ui_state$sidebar_collapsed <- !ui_state$sidebar_collapsed
+})
+
+observeEvent(input$tab_selection, {
+  ui_state$selected_tab <- input$tab_selection
+})
+```
+
+## 第三款：應用程式狀態 {#application-state}
+
+**定義與特徵：**
+- **定義**：核心應用程式邏輯和跨組件狀態
+- **範例**：用戶認證、當前視圖、主題設定
+- **特徵**：跨多個組件共享、可能跨會話持續、定義應用程式行為
+
+**實施範例：**
+```r
+# 全域應用程式狀態
+app_state <- reactiveValues(
+  user = NULL,
+  theme = "light",
+  sidebar_collapsed = FALSE,
+  permissions = list(),
+  current_view = "dashboard",
+  notifications = list()
+)
+
+# 應用程式狀態操作
+set_user <- function(user_data) {
+  app_state$user <- user_data
+  if (!is.null(user_data$permissions)) {
+    app_state$permissions <- user_data$permissions
+  }
+}
+
+logout <- function() {
+  app_state$user <- NULL
+  app_state$permissions <- list()
+  app_state$current_view <- "login"
+}
+```
+
+## 第四款：URL狀態 {#url-state}
+
+**定義與特徵：**
+- **定義**：反映在URL中並從URL導出的狀態
+- **範例**：當前頁面、過濾器、視圖參數
+- **特徵**：可書籤、可分享、定義導航上下文
+
+**實施範例：**
+```r
+# URL狀態管理
+url_state <- reactive({
+  parseQueryString(session$clientData$url_search)
+})
+
+# 同步狀態到URL
+observeEvent(input$filters, {
+  query_params <- list(
+    filter = input$filters,
+    sort = input$sort_option,
+    page = input$current_page
+  )
+  
+  query_string <- paste(
+    names(query_params), "=", 
+    URLencode(as.character(query_params)), 
+    sep = "", collapse = "&"
+  )
+  
+  updateQueryString(paste0("?", query_string), session)
+})
+```
+
+# 第二項：狀態範圍模式 {#state-scoping-patterns}
+
+## 第一款：狀態範圍原則 {#state-scoping-principles}
+
+**範圍劃分策略：**
+
+1. **組件本地狀態**：單一組件使用的狀態應保持在該組件本地
+2. **共享狀態**：多個組件使用的狀態應提升到其最近的共同祖先
+3. **全域狀態**：整個應用程式使用的狀態應儲存在全域存儲中
+4. **持久化狀態**：應在頁面重新整理後存續的狀態應儲存在瀏覽器存儲或URL中
+
+**實施範例：**
+```r
+# 組件本地狀態（在模組server中）
+local_state <- reactiveVal(initial_value)
+
+# 共享狀態（在父組件中）
+shared_state <- reactiveVal(initial_value)
+child1Server("child1", shared_state)
+child2Server("child2", shared_state)
+
+# 全域狀態（在app.R中）
+global_state <- reactiveValues(
+  user = NULL,
+  theme = "light",
+  feature_flags = list()
+)
+```
+
+## 第二款：狀態存取模式 {#state-access-patterns}
+
+**存取控制策略：**
+
+1. **唯讀vs.可寫**：清楚分離可讀取狀態的組件與可修改狀態的組件
+2. **衍生狀態**：從主要狀態計算衍生狀態而非儲存它
+3. **狀態選擇器**：存取狀態的特定片段而非整個狀態物件
+4. **變更處理器**：使用明確的函數修改狀態而非直接變更
+
+**狀態存儲實施：**
+```r
+createStateStore <- function(initial_state = list()) {
+  # 內部反應式狀態
+  state <- reactiveVal(initial_state)
+  
+  # 建立getter函數
+  get_state <- function(path = NULL) {
+    reactive({
+      current <- state()
+      if (is.null(path)) {
+        return(current)
+      }
+      
+      # 允許存取嵌套路徑
+      for (key in path) {
+        if (!is.list(current) || is.null(current[[key]])) {
+          return(NULL)
+        }
+        current <- current[[key]]
+      }
+      return(current)
+    })
+  }
+  
+  # 建立setter函數
+  set_state <- function(path, value) {
+    current <- state()
+    
+    # 處理單一鍵值vs路徑
+    if (length(path) == 1) {
+      current[[path]] <- value
+    } else {
+      # 建立嵌套參照
+      target <- current
+      for (i in seq_len(length(path) - 1)) {
+        key <- path[i]
+        if (is.null(target[[key]])) {
+          target[[key]] <- list()
+        }
+        target <- target[[key]]
+      }
+      target[[path[length(path)]]] <- value
+    }
+    
+    state(current)
+  }
+  
+  # 回傳存取函數
+  list(
+    get = get_state,
+    set = set_state
+  )
+}
+
+# 使用範例
+app_state <- createStateStore(list(
+  user = NULL,
+  settings = list(
+    theme = "light",
+    sidebar_collapsed = FALSE
+  ),
+  data = list(
+    customers = NULL,
+    products = NULL
+  )
+))
+
+# 在組件中使用
+user <- app_state$get(c("user"))
+theme <- app_state$get(c("settings", "theme"))
+
+# 更新狀態
+observe({
+  req(input$theme_selector)
+  app_state$set(c("settings", "theme"), input$theme_selector)
+})
+```
+
+# 第三項：狀態變更模式 {#state-change-patterns}
+
+## 第一款：動作驅動變更 {#action-driven-changes}
+
+**變更控制策略：**
+
+1. **明確動作**：所有狀態變更應由明確的用戶動作或事件觸發
+2. **交易式更新**：相關的狀態變更應組合為交易
+3. **原子性更新**：狀態應原子性更新以防止不一致狀態
+4. **樂觀更新**：UI可立即反映變更，同時等待伺服器確認
+
+**動作狀態實施：**
+```r
+createActionableState <- function(initial_state) {
+  state <- reactiveVal(initial_state)
+  
+  # 定義可用動作
+  actions <- list(
+    update_user = function(user_data) {
+      current <- state()
+      current$user <- user_data
+      state(current)
+    },
+    toggle_theme = function() {
+      current <- state()
+      current$settings$theme <- ifelse(
+        current$settings$theme == "light", 
+        "dark", 
+        "light"
+      )
+      state(current)
+    },
+    logout = function() {
+      current <- state()
+      current$user <- NULL
+      current$permissions <- list()
+      state(current)
+    }
+  )
+  
+  # 回傳狀態和動作
+  list(
+    state = state,
+    actions = actions
+  )
+}
+
+# 使用範例
+app_store <- createActionableState(initial_state)
+state <- app_store$state
+actions <- app_store$actions
+
+# 在組件中使用
+observeEvent(input$logout_button, {
+  actions$logout()
+})
+
+observeEvent(input$toggle_theme, {
+  actions$toggle_theme()
+})
+```
+
+## 第二款：狀態同步模式 {#state-synchronization-patterns}
+
+**同步策略：**
+
+1. **伺服器-客戶端同步**：保持伺服器和客戶端狀態同步，具有清楚的更新政策
+2. **跨組件同步**：確保組件在共享資料時反映相同狀態
+3. **狀態持久化**：定義哪些狀態跨會話持續以及如何恢復
+4. **衝突解決**：處理多個來源更新相同狀態時的衝突
+
+**同步狀態實施：**
+```r
+createSyncedState <- function(client_initial = NULL, server_fetch_fn, sync_interval = 30000) {
+  # 建立客戶端狀態
+  client_state <- reactiveVal(client_initial)
+  
+  # 建立伺服器狀態
+  server_state <- reactiveVal(NULL)
+  
+  # 建立最後同步時間戳
+  last_synced <- reactiveVal(NULL)
+  
+  # 進行中同步標記
+  syncing <- reactiveVal(FALSE)
+  
+  # 獲取伺服器狀態
+  fetch_server_state <- function() {
+    syncing(TRUE)
+    server_fetch_fn(function(result) {
+      server_state(result)
+      last_synced(Sys.time())
+      
+      # 將伺服器變更應用到客戶端狀態
+      merge_states()
+      
+      syncing(FALSE)
+    })
+  }
+  
+  # 合併客戶端和伺服器狀態
+  merge_states <- function() {
+    server_data <- server_state()
+    client_data <- client_state()
+    
+    if (is.null(server_data)) {
+      return()
+    }
+    
+    if (is.null(client_data)) {
+      client_state(server_data)
+      return()
+    }
+    
+    # 實施自訂合併邏輯
+    # 這個簡單版本只取較新的值
+    merged <- client_data
+    for (key in names(server_data)) {
+      if (!key %in% names(client_data) || 
+          server_data[[key]]$updated_at > client_data[[key]]$updated_at) {
+        merged[[key]] <- server_data[[key]]
+      }
+    }
+    
+    client_state(merged)
+  }
+  
+  # 使用伺服器獲取初始化
+  fetch_server_state()
+  
+  # 設定定期同步
+  observe({
+    invalidateLater(sync_interval)
+    fetch_server_state()
+  })
+  
+  # 回傳狀態和控制
+  list(
+    state = client_state,
+    server_state = server_state,
+    last_synced = last_synced,
+    syncing = syncing,
+    sync_now = fetch_server_state
+  )
+}
+```
+
+# 第四項：狀態存儲實施 {#state-store-implementation}
+
+## 第一款：應用程式狀態存儲 {#application-state-store}
+
+**狀態存儲建立：**
+```r
+createAppState <- function() {
+  # 私有狀態
+  state <- reactiveValues(
+    user = NULL,
+    theme = "light",
+    sidebar_collapsed = FALSE,
+    permissions = list(),
+    current_view = "dashboard",
+    notifications = list()
+  )
+  
+  # Getters - 唯讀存取
+  getters <- list(
+    user = reactive({ state$user }),
+    is_authenticated = reactive({ !is.null(state$user) }),
+    theme = reactive({ state$theme }),
+    is_dark_mode = reactive({ state$theme == "dark" }),
+    has_permission = function(permission) {
+      reactive({
+        req(state$permissions)
+        permission %in% state$permissions
+      })
+    },
+    current_view = reactive({ state$current_view })
+  )
+  
+  # Actions - 狀態變更
+  actions <- list(
+    set_user = function(user_data) {
+      state$user <- user_data
+      
+      # 更新依賴狀態
+      if (!is.null(user_data) && !is.null(user_data$permissions)) {
+        state$permissions <- user_data$permissions
+      } else {
+        state$permissions <- list()
+      }
+    },
+    logout = function() {
+      state$user <- NULL
+      state$permissions <- list()
+      # 重定向到登入頁面
+      state$current_view <- "login"
+    },
+    toggle_theme = function() {
+      state$theme <- ifelse(state$theme == "light", "dark", "light")
+    },
+    toggle_sidebar = function() {
+      state$sidebar_collapsed <- !state$sidebar_collapsed
+    },
+    navigate_to = function(view) {
+      state$current_view <- view
+    },
+    add_notification = function(notification) {
+      notifications <- c(state$notifications, list(notification))
+      state$notifications <- notifications
+    },
+    clear_notification = function(id) {
+      state$notifications <- state$notifications[
+        sapply(state$notifications, function(n) n$id != id)
+      ]
+    }
+  )
+  
+  # 回傳公開介面
+  list(
+    getters = getters,
+    actions = actions
+  )
+}
+
+# 在app.R中建立
+app_state <- createAppState()
+
+# 在模組中使用
+app_server <- function(input, output, session) {
+  # 將狀態傳遞給模組
+  homeServer("home", app_state$getters, app_state$actions)
+  settingsServer("settings", app_state$getters, app_state$actions)
+  
+  # 在主app中處理認證
+  observeEvent(input$login, {
+    user_data <- authenticate_user(input$username, input$password)
+    if (!is.null(user_data)) {
+      app_state$actions$set_user(user_data)
+    }
+  })
+  
+  observeEvent(input$logout, {
+    app_state$actions$logout()
+  })
+}
+```
+
+## 第二款：UI狀態管理 {#ui-state-management}
+
+**表單狀態管理實施：**
+```r
+profileFormServer <- function(id, user_data, on_save) {
+  moduleServer(id, function(input, output, session) {
+    # 本地表單狀態
+    form_state <- reactiveValues(
+      values = list(),
+      original_values = list(),
+      errors = list(),
+      dirty = FALSE,
+      submitted = FALSE
+    )
+    
+    # 使用用戶資料初始化表單
+    observe({
+      req(user_data())
+      data <- user_data()
+      
+      # 設定初始值
+      form_state$values <- data
+      form_state$original_values <- data
+      form_state$dirty <- FALSE
+    })
+    
+    # 欄位變更時更新表單狀態
+    observe({
+      # 從所有輸入收集值
+      values <- list(
+        name = input$name,
+        email = input$email,
+        role = input$role
+      )
+      
+      # 跳過初始NULL值
+      if (any(sapply(values, is.null))) {
+        return()
+      }
+      
+      # 設定當前值
+      form_state$values <- values
+      
+      # 檢查表單是否已變更
+      form_state$dirty <- !identical(values, form_state$original_values)
+    })
+    
+    # 提交時驗證表單
+    observeEvent(input$submit, {
+      form_state$submitted <- TRUE
+      
+      # 重設錯誤
+      form_state$errors <- list()
+      
+      # 驗證欄位
+      if (is.null(input$name) || input$name == "") {
+        form_state$errors$name <- "姓名為必填"
+      }
+      
+      if (is.null(input$email) || input$email == "") {
+        form_state$errors$email <- "電子郵件為必填"
+      } else if (!grepl("^[^@]+@[^@]+\\.[^@]+$", input$email)) {
+        form_state$errors$email <- "電子郵件格式無效"
+      }
+      
+      # 如果沒有錯誤，則儲存
+      if (length(form_state$errors) == 0) {
+        # 呼叫儲存處理器
+        on_save(form_state$values)
+        
+        # 更新原始值以符合當前值
+        form_state$original_values <- form_state$values
+        form_state$dirty <- FALSE
+      }
+    })
+    
+    # 重設表單
+    observeEvent(input$reset, {
+      # 重設為原始值
+      updateTextInput(session, "name", value = form_state$original_values$name)
+      updateTextInput(session, "email", value = form_state$original_values$email)
+      updateSelectInput(session, "role", selected = form_state$original_values$role)
+      
+      form_state$dirty <- FALSE
+      form_state$submitted <- FALSE
+      form_state$errors <- list()
+    })
+    
+    # 回傳表單狀態
+    return(list(
+      values = reactive({ form_state$values }),
+      is_dirty = reactive({ form_state$dirty }),
+      has_errors = reactive({ length(form_state$errors) > 0 }),
+      is_valid = reactive({ length(form_state$errors) == 0 })
+    ))
+  })
+}
+```
+
+# 第五項：狀態管理反模式 {#state-management-anti-patterns}
+
+## 第一款：全域變數濫用 {#global-variable-abuse}
+
+**問題**：對組件特定狀態使用全域變數  
+**解決方案**：將狀態適當範圍化到需要它的組件
+
+## 第二款：屬性鑽探 {#prop-drilling}
+
+**問題**：透過許多中間組件傳遞狀態  
+**解決方案**：對廣泛共享的狀態使用狀態存儲或上下文提供者
+
+## 第三款：衍生狀態重複 {#derived-state-duplication}
+
+**問題**：儲存可導出的狀態，可能會變得不同步  
+**解決方案**：從主要狀態計算衍生狀態
+
+## 第四款：命令式UI更新 {#imperative-ui-updates}
+
+**問題**：基於狀態變更直接操作DOM  
+**解決方案**：基於狀態宣告式渲染UI
+
+## 第五款：非原子性更新 {#non-atomic-updates}
+
+**問題**：分別更新相關狀態，導致不一致  
+**解決方案**：將相關狀態更新組合為原子性交易
+
+# 第六項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **建基於 MP052（單向資料流）**：詳細說明狀態應如何在應用程式中流動
+2. **補充 MP053（反饋迴路）**：提供狀態變更以回應用戶動作的模式
+3. **支援 MP017（關注點分離）**：將狀態管理與應用程式其他方面分離
+4. **增強 UI_P008（組件組合原則）**：定義組件應如何共享和管理狀態
+
+---
+
+*基於：開發方法法第十五條*  
+*相關連結：[MP052 單向資料流](../../CH00_fundamental_principles/meta_principles/MP052_unidirectional_data_flow.qmd), [UI_P008 組件組合原則](../../CH04_ui_components/principles/UI_P008_component_composition.qmd)*

@@ -1,0 +1,194 @@
+---
+id: "SO_R036"
+title: "Derivation Replicability Rule"
+subtitle: "NSQL specifications must be complete enough for replication"
+type: "rule"
+category: "structure_organization"
+chapter: "CH01"
+date_created: "2025-12-24"
+date_modified: "2025-12-24"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 36
+implements:
+  - "MP097": "Principle-Implementation Separation"
+related_to:
+  - "DM_R044": "Derivation Implementation Standard"
+  - "DM_R049": "Derivation Consumer Documentation"
+supersedes: []
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# SO_R036: Derivation Replicability Rule
+
+## Rule Statement
+
+**Every Derivation documentation file (.qmd) MUST contain complete NSQL specifications** that enable a reader to:
+
+1. Understand the full computational logic without reading implementation code
+2. Replicate the derivation in any programming language
+3. Verify that implementations conform to the specification
+
+## Core Principle
+
+> "看著文件就能 replicate 要做的事情"
+>
+> (Reading the documentation alone should be enough to replicate what needs to be done)
+
+## Relationship with MP097
+
+| Principle | Focus | Requirement |
+|-----------|-------|-------------|
+| **MP097** | Separation | .qmd should NOT contain R code |
+| **SO_R036** | Completeness | .qmd NSQL MUST be complete enough to replicate |
+
+These principles are complementary:
+- MP097 says **what NOT to put** in .qmd (R code)
+- SO_R036 says **what MUST be** in .qmd (complete NSQL)
+
+## NSQL Completeness Requirements
+
+### What NSQL Must Include
+
+| Element | Description | Example |
+|---------|-------------|---------|
+| **Thresholds** | All numeric cut points | `WHEN r_value <= 60 THEN 'E0'` |
+| **Formulas** | Complete calculation expressions | `cai: (dna_m_score + dna_f_score + dna_r_score) / 3` |
+| **Cut Points** | All boundary values | `breaks = [0, 0.25, 0.5, 0.75, 1]` |
+| **Conditions** | Full CASE WHEN with all branches | See NES classification example |
+| **Input Schema** | Required input columns | `FROM: customer_id, platform_id, payment_time` |
+| **Output Schema** | Produced output columns | `OUTPUT: dna_segment, cai, nes_status` |
+
+### What NSQL Should NOT Be
+
+```nsql
+# BAD: Too vague, cannot replicate
+CALCULATE dna_scores FROM rfm_data
+OUTPUT TO customer_dna
+
+# GOOD: Complete specification
+CALCULATE D01_03_dna_scores:
+  FROM processed_data.df_customer_rfm
+  CALCULATE:
+    dna_m_score: PERCENT_RANK() OVER (ORDER BY m_value ASC)
+    dna_f_score: PERCENT_RANK() OVER (ORDER BY f_value ASC)
+    dna_r_score: 1 - PERCENT_RANK() OVER (ORDER BY r_value ASC)
+    cai: (dna_m_score + dna_f_score + dna_r_score) / 3
+  OUTPUT TO app_data.df_dna_by_customer
+```
+
+## Implementation Reference Role
+
+:::{.callout-note}
+## Implementation Reference is Supplementary
+
+The "Implementation Reference" section in derivation documents points to WHERE the code lives, not WHAT it does.
+
+- **NSQL** = Authoritative specification (the "contract")
+- **Implementation Reference** = Location of code that fulfills the contract
+:::
+
+Correct pattern:
+
+```markdown
+## Implementation Reference {#implementation}
+
+See platform implementation scripts:
+- **Cyberbiz**: `update_scripts/DRV/cbz/cbz_D01_03.R`
+- **Amazon**: `update_scripts/DRV/amz/amz_D01_03.R`
+
+Scripts follow DM_R044 Five-Part Structure.
+```
+
+## Compliance Checklist
+
+For each D0X_XX.qmd derivation task file, verify:
+
+- [ ] All calculation formulas are explicitly defined in NSQL
+- [ ] All conditional thresholds have specific numeric values
+- [ ] All CASE WHEN statements include every branch
+- [ ] Input columns are documented (schema or list)
+- [ ] Output columns are documented (schema or list)
+- [ ] A developer could implement the logic in Python/SQL/R just from reading NSQL
+- [ ] No "magic numbers" - all values are explicit
+
+## Example: D01_03 DNA Analysis (Compliant)
+
+This example shows a compliant NSQL specification:
+
+```nsql
+# D01_03: NES Classification - FULLY SPECIFIED
+CLASSIFY D01_03_nes_status:
+  FROM processed_data.df_customer_rfm
+
+  CALCULATE nes_status:
+    CASE
+      WHEN transaction_count = 1 AND customer_tenure_days <= 30 THEN 'N'
+      WHEN r_value <= 60 THEN 'E0'
+      WHEN r_value <= 180 THEN 'S1'
+      WHEN r_value <= 365 THEN 'S2'
+      ELSE 'S3'
+    END
+
+# D01_03: DNA Segment - FULLY SPECIFIED
+CALCULATE D01_03_dna_segments:
+  CALCULATE dna_segment:
+    CONCAT(
+      CASE
+        WHEN dna_m_score >= 0.75 THEN 'M4'
+        WHEN dna_m_score >= 0.50 THEN 'M3'
+        WHEN dna_m_score >= 0.25 THEN 'M2'
+        ELSE 'M1'
+      END,
+      CASE
+        WHEN dna_f_score >= 0.67 THEN 'F3'
+        WHEN dna_f_score >= 0.33 THEN 'F2'
+        ELSE 'F1'
+      END,
+      CASE
+        WHEN dna_r_score >= 0.75 THEN 'R4'
+        WHEN dna_r_score >= 0.50 THEN 'R3'
+        WHEN dna_r_score >= 0.25 THEN 'R2'
+        ELSE 'R1'
+      END
+    )
+```
+
+A developer reading this NSQL can implement equivalent logic in any language.
+
+## Benefits
+
+### For Developers
+- Clear specification to implement against
+- No ambiguity in business logic
+- Can verify implementation correctness
+
+### For Reviewers
+- Can audit logic without reading code
+- Easy to spot specification errors
+- Clear documentation of business rules
+
+### For Maintainers
+- Single source of truth for logic
+- Changes to logic require updating NSQL first
+- Implementation stays synchronized with specification
+
+## Rationale
+
+The separation between specification (NSQL) and implementation (R code) requires that the specification be complete. An incomplete specification:
+
+1. Forces developers to read implementation code to understand logic
+2. Creates ambiguity when implementations differ between platforms
+3. Makes it impossible to verify implementation correctness
+4. Defeats the purpose of having a specification layer
+
+SO_R036 ensures that MP097's separation principle achieves its intended benefit: clean, language-agnostic documentation that fully captures business logic.
+
+## Conclusion
+
+SO_R036 complements MP097 by requiring that NSQL specifications be complete enough for replication. While MP097 prohibits R code in .qmd files, SO_R036 ensures that NSQL fills the gap by capturing all computational logic. Together, these rules create documentation that is both clean (no language-specific code) and complete (fully replicable specifications).

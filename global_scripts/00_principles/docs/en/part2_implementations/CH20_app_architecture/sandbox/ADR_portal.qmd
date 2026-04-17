@@ -1,0 +1,326 @@
+---
+title: "ADR: Portal Load Balancer"
+subtitle: "Round-robin load balancing for Sandbox applications"
+date: 2025-01-09
+status: accepted
+---
+
+# Portal Load Balancer Architecture Decision Record
+
+## Status
+
+**Status**: Accepted
+
+**Date**: 2025-01-09
+
+---
+
+## Background
+
+### Context
+
+The Sandbox project deploys 4 Shiny applications (BrandEdge, InsightForge, TagPilot, VitalSigns) on Posit Connect Cloud for educational demonstrations. With up to 20 concurrent users, we needed a mechanism to:
+
+1. **Distribute load** across multiple instances of each app
+2. **Prevent overload** on any single instance
+3. **Maintain simplicity** for users (single entry point)
+
+### Requirements
+
+| Requirement | Priority | Description |
+|-------------|----------|-------------|
+| REQ-01 | High | Distribute 20 users across multiple instances |
+| REQ-02 | High | Single entry point (one URL for users) |
+| REQ-03 | Medium | No user authentication required for Portal |
+| REQ-04 | Medium | Persistent counter (survives restarts) |
+| REQ-05 | Low | Free or minimal cost |
+
+### The Problem with In-Memory Counters
+
+Initial attempt used a Shiny app with an in-memory counter. However, **Posit Connect Cloud has a 60-second idle timeout** that cannot be configured. This caused:
+
+- Counter reset to 0 when app went idle
+- All users routed to the same instance after timeout
+- Defeated the purpose of load balancing
+
+---
+
+## Decision
+
+### Summary
+
+Use a **static HTML/JavaScript frontend** hosted on **Vercel** with a **Supabase PostgreSQL** database for persistent, atomic counter operations. This architecture is completely stateless and survives any timeout.
+
+### Technology Stack
+
+| Component | Technology | Rationale |
+|-----------|------------|-----------|
+| Frontend | Static HTML + JavaScript | No server-side state, instant loading |
+| Hosting | Vercel | Free tier, automatic Git deployment |
+| Database | Supabase PostgreSQL | Free tier, atomic operations, REST API |
+| Counter | PL/pgSQL Function | Atomic increment with modulo |
+
+### Architecture Diagram
+
+```
+                                    Supabase (Free)
+                                         │
+Vercel (Free)                           │
+     │                                   │
+     ↓ ~100ms load                      │
+┌─────────────────┐                     │
+│  Static HTML    │                     │
+│  Portal Page    │                     │
+│  (4 App Cards)  │                     │
+└────────┬────────┘                     │
+         │                               │
+         ↓ User clicks                   │
+┌─────────────────┐    POST /rpc/      │
+│   JavaScript    │ ─────────────────→  │
+│   fetch()       │    increment_       │
+│                 │    counter          │
+│                 │ ←─────────────────  │
+└────────┬────────┘    Returns: 0-4     │
+         │                               │
+         ↓ redirect                     │
+┌─────────────────────────────────────────────────┐
+│  Posit Connect Cloud                             │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
+│  │ app00│ │ app01│ │ app02│ │ app03│ │ app04│  │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Options Considered
+
+### Option 1: Shiny Portal on Posit Connect
+
+**Description**: R Shiny app with reactiveVal counter
+
+**Pros**:
+- Familiar R/Shiny technology
+- Single codebase with other apps
+
+**Cons**:
+- 60-second idle timeout resets counter
+- No way to persist state across restarts
+- Slow cold start (~5-10 seconds)
+
+**Why not chosen**: Posit Connect Cloud's idle timeout cannot be extended, making in-memory counters unreliable.
+
+---
+
+### Option 2: Vercel + Supabase (Selected)
+
+**Description**: Static HTML frontend with PostgreSQL atomic counter
+
+**Pros**:
+- No idle timeout (stateless)
+- Instant page load (~100ms)
+- Atomic counter operations (race-condition safe)
+- Free tier sufficient
+- Automatic Git deployment
+
+**Cons**:
+- Additional services to manage
+- Different technology stack
+
+**Why chosen**: Completely solves the timeout problem with minimal complexity.
+
+---
+
+### Option 3: Cloudflare Workers + KV
+
+**Description**: Edge computing with key-value storage
+
+**Pros**:
+- Very fast (edge locations)
+- Free tier available
+
+**Cons**:
+- KV is eventually consistent (not atomic)
+- More complex setup
+- Overkill for this use case
+
+**Why not chosen**: Supabase provides sufficient performance with simpler atomic operations.
+
+---
+
+## Technical Details
+
+### Supabase Configuration
+
+**Project URL**: `https://oziernubrqgqthjksbii.supabase.co`
+
+#### Table Schema
+
+```sql
+CREATE TABLE portal_counters (
+  app_id TEXT PRIMARY KEY,
+  counter INT DEFAULT 0
+);
+
+INSERT INTO portal_counters VALUES
+  ('brandedge', 0),
+  ('insightforge', 0),
+  ('tagpilot', 0),
+  ('vitalsigns', 0);
+```
+
+#### Atomic Counter Function
+
+```sql
+CREATE OR REPLACE FUNCTION increment_counter(app TEXT)
+RETURNS INT AS $$
+DECLARE
+  new_val INT;
+BEGIN
+  UPDATE portal_counters
+  SET counter = (counter + 1) % 5
+  WHERE app_id = app
+  RETURNING counter INTO new_val;
+  RETURN new_val;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**Key Points**:
+- `% 5` ensures counter wraps from 0-4 (5 instances per app)
+- `RETURNING` makes it atomic (read-after-write in single operation)
+- No race conditions even with concurrent requests
+
+### URL Format
+
+| App | Instance Range | URL Pattern |
+|-----|----------------|-------------|
+| BrandEdge | 00-04 | `kyleyhl-sandbox-brandedge0{0-4}.share.connect.posit.cloud` |
+| InsightForge | 00-04 | `kyleyhl-sandbox-insightforge0{0-4}.share.connect.posit.cloud` |
+| TagPilot | 00-04 | `kyleyhl-sandbox-tagpilot0{0-4}.share.connect.posit.cloud` |
+| VitalSigns | 00-04 | `kyleyhl-sandbox-vitalsigns0{0-4}.share.connect.posit.cloud` |
+
+**Total**: 4 apps × 5 instances = 20 deployments for 20 users
+
+### JavaScript Implementation
+
+```javascript
+const SUPABASE_URL = 'https://oziernubrqgqthjksbii.supabase.co';
+const SUPABASE_KEY = 'eyJ...'; // anon/public key
+
+async function go(app) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_counter`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`
+    },
+    body: JSON.stringify({ app: app })
+  });
+  const counter = await res.json();
+  const url = `https://kyleyhl-sandbox-${app}0${counter}.share.connect.posit.cloud/`;
+  window.location.href = url;
+}
+```
+
+### Security Considerations
+
+- **anon key** is intentionally public (used in client-side JavaScript)
+- **Row Level Security (RLS)** should be configured if sensitive data exists
+- Counter manipulation is low-risk (worst case: uneven distribution)
+
+---
+
+## Deployment
+
+### URLs
+
+| Environment | URL | Repository |
+|-------------|-----|------------|
+| Production | https://ai-martech.vercel.app | kiki830621/sandbox-portal |
+
+### Environment Variables
+
+| Variable | Location | Description |
+|----------|----------|-------------|
+| `SUPABASE_URL` | index.html (hardcoded) | Supabase project URL |
+| `SUPABASE_KEY` | index.html (hardcoded) | Supabase anon key |
+
+**Note**: These are intentionally hardcoded as they are public keys. For production apps with sensitive data, use environment variables.
+
+### Deployment Process
+
+1. **Push to GitHub**
+   ```bash
+   cd sandbox-portal
+   git add -A
+   git commit -m "Update portal"
+   git push
+   ```
+
+2. **Vercel auto-deploys** from `main` branch
+
+3. **Verify** at https://ai-martech.vercel.app
+
+---
+
+## Consequences
+
+### Positive
+
+- **Zero timeout issues**: Stateless architecture survives any idle period
+- **Instant loading**: ~100ms vs ~5-10s for Shiny app
+- **Atomic operations**: No race conditions with concurrent users
+- **Free**: Both Vercel and Supabase free tiers are sufficient
+- **Simple maintenance**: Static HTML, easy to update
+
+### Negative
+
+- **Additional services**: Two external services to manage
+- **Counter visibility**: Counter is visible in browser DevTools (low risk)
+
+### Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Supabase outage | Low | High | Static fallback page |
+| Counter manipulation | Low | Low | Low impact if manipulated |
+| API rate limiting | Low | Medium | Supabase free tier generous |
+
+---
+
+## Testing
+
+### Connection Test Script
+
+Location: `tests/testthat/test-portal-connections.R`
+
+```bash
+cd sandbox_test
+Rscript -e "testthat::test_file('tests/testthat/test-portal-connections.R')"
+```
+
+### Manual Testing
+
+1. Open https://ai-martech.vercel.app
+2. Click each app card
+3. Verify redirect to correct instance
+4. Check Supabase dashboard for counter updates
+
+---
+
+## Related Documents
+
+- [Sandbox CLAUDE.md](../../../../../sandbox/CLAUDE.md) - Deployment instructions
+- [Supabase Documentation](https://supabase.com/docs)
+- [Vercel Documentation](https://vercel.com/docs)
+
+---
+
+## Changelog
+
+| Date | Author | Change |
+|------|--------|--------|
+| 2025-01-09 | Claude | Initial version |
+| 2025-01-09 | Claude | Updated to 5 instances (00-04) from 10 |

@@ -1,0 +1,342 @@
+---
+rule_id: "SO_R034"
+title: "Debug Script Management and Archival"
+category: "Script Organization"
+status: "active"
+created: "2025-11-30"
+version: "1.0"
+related_principles:
+  - "MP046"
+  - "SO_R025"
+  - "SO_R033"
+applies_to:
+  - "Debug scripts"
+  - "Investigation scripts"
+  - "Troubleshooting utilities"
+---
+
+# SO_R034: Debug Script Management and Archival
+
+## Principle Statement
+
+Debug scripts are temporary investigation tools that MUST be archived after issue resolution, not kept in active codebase.
+
+## Rationale
+
+**Problem**: Accumulation of debug scripts causes:
+- Codebase clutter with one-time investigation scripts
+- Confusion about which debugging tools are still relevant
+- Git status pollution
+- Lost historical context when debug scripts are deleted without archival
+
+**Solution**: Clear lifecycle management with archival for historical reference.
+
+## Script Classification
+
+### Temporary Debug Scripts
+
+**Characteristics**:
+- Created for specific issue investigation
+- One-time use or issue-specific
+- Not intended for reuse across multiple issues
+- Prefix: `debug_`
+
+**Lifecycle**: Create → Use → Archive (after issue resolution)
+
+**Examples**:
+```r
+debug_all_duplicates.R           # Investigating duplicate column issue
+debug_eby_tables.R               # Checking eBay table structure
+debug_etl_error_visibility.R     # Diagnosing ETL error handling
+```
+
+### Persistent Debug Utilities
+
+**Characteristics**:
+- Reusable debugging functions
+- General-purpose tracing/logging utilities
+- Part of permanent codebase infrastructure
+
+**Lifecycle**: Maintain in codebase, version control
+
+**Location**: `scripts/global_scripts/22_initializations/sc_debug_verbose_init.R`
+
+**Examples**:
+```r
+# Persistent debug utilities
+sc_debug_verbose_init.R          # Configurable debug tracing
+fn_log_execution_context.R       # Execution context logging
+fn_trace_function_calls.R        # Function call tracing
+```
+
+## Implementation Rules
+
+### Creating Debug Scripts
+
+#### When to Create
+- Investigating specific bug or unexpected behavior
+- Need temporary instrumentation for issue diagnosis
+- Validating hypotheses about system behavior
+
+#### Naming Convention
+```
+debug_[component]_[issue_description].R
+
+Examples:
+debug_database_connection_timeout.R
+debug_eby_missing_records.R
+debug_poisson_convergence_failure.R
+```
+
+#### Header Template
+```r
+#!/usr/bin/env Rscript
+# =============================================================================
+# Debug Script: [Issue Description]
+# =============================================================================
+# Purpose: [Specific investigation goal]
+# Issue: ISSUE_XXX or GitHub Issue #YYY
+# Created: YYYY-MM-DD
+# Expected Lifecycle: TEMPORARY - Archive after issue resolution
+# =============================================================================
+
+# Load required libraries
+suppressPackageStartupMessages({
+  library(DBI)
+  library(duckdb)
+})
+
+# [Debug investigation code]
+```
+
+### Archival Process
+
+#### When to Archive
+- Issue is resolved or closed
+- Investigation is complete (even if issue not fully resolved)
+- Debug script no longer needed for active work
+
+#### Archive Location
+```
+scripts/global_scripts/00_principles/changelog/archive/debugging/
+└── [YYYYMMDD]_[issue_identifier]/
+    ├── debug_script_1.R
+    ├── debug_script_2.R
+    └── README.md  (optional - describes investigation context)
+```
+
+#### Archive Naming Pattern
+```
+[date]_[issue_identifier]/
+
+Examples:
+20251113_database_duplicates/
+20251116_eby_tables/
+20251130_poisson_convergence/
+```
+
+#### Archival Procedure
+```bash
+# 1. Create archive directory
+mkdir -p scripts/global_scripts/00_principles/changelog/archive/debugging/20251130_issue_123
+
+# 2. Move debug scripts
+mv debug_issue_123_*.R scripts/global_scripts/00_principles/changelog/archive/debugging/20251130_issue_123/
+
+# 3. Create context README (optional)
+cat > scripts/global_scripts/00_principles/changelog/archive/debugging/20251130_issue_123/README.md << 'EOF'
+# Debug Scripts for ISSUE_123
+
+## Issue
+Database connection timeout in production
+
+## Investigation Period
+2025-11-25 to 2025-11-30
+
+## Scripts
+- debug_issue_123_connection_pool.R: Pool exhaustion testing
+- debug_issue_123_timeout_logging.R: Detailed timeout logging
+
+## Resolution
+Increased connection pool size from 10 to 25
+EOF
+```
+
+### Issue Closure Integration
+
+When closing an issue that involved debug scripts:
+
+1. **Document Debug Script Location** in issue closure notes:
+   ```markdown
+   ## Issue Resolution
+
+   Fixed by increasing connection pool size.
+
+   ## Debug Scripts Archived
+   Location: `changelog/archive/debugging/20251130_issue_123/`
+   Scripts:
+   - debug_issue_123_connection_pool.R
+   - debug_issue_123_timeout_logging.R
+   ```
+
+2. **Reference in CHANGELOG**:
+   ```markdown
+   ## ISSUE_123 - Database Connection Timeout Fix
+
+   ### Debug Scripts
+   Archived in `changelog/archive/debugging/20251130_issue_123/`
+   ```
+
+## Examples
+
+### Correct Debug Script Lifecycle ✓
+
+```r
+# 1. CREATE: Investigating duplicate columns
+# File: debug_duplicate_columns.R (in root or working directory)
+
+# 2. USE: Run investigation
+Rscript debug_duplicate_columns.R
+
+# 3. RESOLVE: Issue fixed
+
+# 4. ARCHIVE: Move to archive
+mv debug_duplicate_columns.R \
+   scripts/global_scripts/00_principles/changelog/archive/debugging/20251113_duplicate_columns/
+
+# 5. DOCUMENT: Update issue and CHANGELOG
+```
+
+### Incorrect Debug Script Management ✗
+
+```r
+# WRONG: Leaving debug scripts in root indefinitely
+./debug_old_issue.R  # Created 6 months ago, never archived
+
+# WRONG: Deleting debug scripts without archival
+rm debug_something.R  # Lost historical context
+
+# WRONG: Debug scripts in component directories
+scripts/global_scripts/01_db/debug_connection.R  # Should be archived, not kept in component
+
+# WRONG: Using test_ prefix for debug scripts
+test_debug_something.R  # Confusing - is it a test or debug script?
+```
+
+## Archive Directory Structure
+
+### Recommended Organization
+
+```
+changelog/archive/debugging/
+├── 20251113_database_duplicates/
+│   ├── debug_all_duplicates.R
+│   ├── debug_duplicate_columns.R
+│   └── README.md
+├── 20251116_eby_tables/
+│   ├── debug_eby_tables.R
+│   ├── debug_eby_missing_data.R
+│   └── investigation_notes.txt
+├── 20251120_poisson_convergence/
+│   └── debug_convergence_filter.R
+└── 20251130_root_cleanup/
+    └── README.md
+```
+
+### Archive README Template
+
+```markdown
+# Debug Scripts: [Issue Title]
+
+## Issue Reference
+- Issue ID: ISSUE_XXX
+- GitHub: #YYY
+- Created: YYYY-MM-DD
+- Resolved: YYYY-MM-DD
+
+## Problem Description
+[Brief description of the issue being investigated]
+
+## Investigation Approach
+[What debugging strategy was used]
+
+## Scripts in This Archive
+- `debug_script_1.R`: [Purpose]
+- `debug_script_2.R`: [Purpose]
+
+## Key Findings
+[What the debug scripts revealed]
+
+## Resolution
+[How the issue was resolved]
+
+## Related Documentation
+- CHANGELOG: [path to changelog entry]
+- Issue document: [path if exists]
+```
+
+## Periodic Cleanup
+
+### Monthly Audit (Recommended)
+
+```bash
+#!/bin/bash
+# Monthly debug script cleanup
+
+echo "Checking for debug scripts in root..."
+ROOT_DEBUG=$(find . -maxdepth 1 -name "debug_*.R" -type f)
+
+if [ -n "$ROOT_DEBUG" ]; then
+  echo "Found debug scripts in root:"
+  echo "$ROOT_DEBUG"
+  echo ""
+  echo "Create archive and move:"
+  echo "  mkdir -p scripts/global_scripts/00_principles/changelog/archive/debugging/$(date +%Y%m%d)_cleanup"
+  echo "  mv debug_*.R scripts/global_scripts/00_principles/changelog/archive/debugging/$(date +%Y%m%d)_cleanup/"
+else
+  echo "✓ No debug scripts in root"
+fi
+```
+
+## Relationship to Other Principles
+
+### MP046: Debug Code Tracing
+MP046 defines persistent debug utilities (e.g., `sc_debug_verbose_init.R`) that are part of the codebase.
+SO_R034 governs temporary debug scripts created for specific investigations.
+
+### SO_R025: Script Organization
+SO_R034 extends SO_R025 by specifying debug script lifecycle and archival.
+
+### SO_R033: Test Script Location
+Debug scripts are distinct from test scripts:
+- **Test scripts**: Reusable validation, kept in `98_test/`
+- **Debug scripts**: Temporary investigation, archived after use
+
+## Enforcement
+
+### Code Review Checklist
+
+- [ ] No debug_*.R files older than 30 days in root directory
+- [ ] Closed issues document debug script archive location
+- [ ] Debug scripts include issue reference in header
+- [ ] Archived debug scripts have context README if investigation was complex
+
+### Automated Cleanup Reminder
+
+```bash
+# Add to monthly cron job or CI/CD
+find . -maxdepth 1 -name "debug_*.R" -mtime +30 -exec echo "Old debug script: {}" \;
+```
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-11-30 | Initial creation based on root directory cleanup |
+
+## See Also
+
+- MP046: Debug Code Tracing
+- SO_R025: Script Organization Hierarchy
+- SO_R033: Test Script Location Standard
+- SO_R035: Temporary File and Log Management

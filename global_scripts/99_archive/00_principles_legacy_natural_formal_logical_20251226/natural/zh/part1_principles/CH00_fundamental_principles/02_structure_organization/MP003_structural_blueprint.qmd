@@ -1,0 +1,263 @@
+---
+title: "MP002: Default Deny Principle"
+subtitle: "預設拒絕原則"
+chapter: "CH00"
+category: "MP"
+number: "002"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "System"
+type: "meta-principle"
+influences:
+  - "R044: Path Modification Principle"
+  - "MP001: No Fake Data"
+related:
+  - "MP006: Data Source Hierarchy"
+  - "MP003: Operating Modes"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 概述 {#overview}
+
+本元原則將「預設拒絕」建立為所有系統、組件和流程的基礎安全和操作方法。除非已建立的規則、原則或授權機制明確允許，否則不應採取任何行動。
+
+:::{.callout-important}
+## 核心規則
+**所有行動、操作和修改必須在執行前明確允許。當權限狀態不清楚或未檢查時，預設拒絕行動。**
+:::
+
+# 理由 {#rationale}
+
+「預設拒絕」方法對於維護系統完整性、安全性和可預測性至關重要。沒有這個原則：
+
+:::{.callout-warning}
+## 潛在風險
+1. **安全漏洞**：系統可能在沒有適當保護的情況下暴露敏感資料或操作
+2. **意外後果**：在沒有明確權限的情況下採取的行動可能導致系統不穩定
+3. **不一致的行為**：臨時權限處理創建不可預測的系統回應
+4. **範圍蔓延**：組件可能超出其預期功能邊界
+5. **審計挑戰**：未經授權或未計劃的行動難以追蹤和審查
+:::
+
+# 實作指南 {#implementation}
+
+## 系統設計 {#system-design}
+
+在所有架構層級應用預設拒絕原則：
+
+### 認證/授權 {#auth}
+
+- 從零存取權限開始
+- 只有在明確授權後才授予特定權限
+- 在操作前實作適當的權限檢查
+
+### 檔案操作 {#file-ops}
+
+- 沒有明確權限不創建/修改檔案
+- 在操作前驗證路徑完整性和授權
+- 當寫入權限不清楚時預設為唯讀存取
+
+### 資料庫存取 {#database}
+
+- 預設從唯讀連接開始
+- 只有在權限驗證後才升級到寫入存取
+- 將資料庫操作範圍限制在最小必需的存取級別
+
+### 程式碼執行 {#code-execution}
+
+- 在處理前驗證所有輸入
+- 根據上下文驗證函數執行權限
+- 將執行範圍限制在授權組件
+
+### 網路操作 {#network}
+
+- 預設阻止所有外部連接
+- 只為授權服務開放通訊
+- 在處理前驗證所有傳入連接
+
+## 程式碼實作 {#code-implementation}
+
+:::{.panel-tabset}
+
+### 基本模式
+
+```r
+# 錯誤：假設權限
+write_to_database(data)
+
+# 正確：先檢查權限
+if (has_write_permission("database")) {
+  write_to_database(data)
+} else {
+  log_access_denied("Attempted database write without permission")
+  stop("Operation not permitted: write access required")
+}
+```
+
+### 資料庫連接
+
+```r
+# 預設拒絕在資料庫連接中的範例
+dbConnect_from_list <- function(dataset, path_list = db_path_list, read_only = TRUE, ...) {
+  # 以 read_only = TRUE 作為預設開始
+  
+  # 檢查寫入存取是否明確授予和允許
+  if (!read_only) {
+    # 驗證寫入權限
+    if (!has_write_permission(dataset)) {
+      warning("Write access denied - connecting in read-only mode")
+      read_only <- TRUE  # 儘管請求寫入，強制唯讀
+    }
+  }
+  
+  # 以適當權限繼續
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = path_list[[dataset]], read_only = read_only)
+  return(con)
+}
+```
+
+### 檔案操作
+
+```r
+# 預設拒絕在檔案操作中的範例
+modify_file <- function(file_path, new_content) {
+  # 首先檢查是否允許修改
+  if (!can_modify_file(file_path)) {
+    log_unauthorized_attempt("file_modification", file_path)
+    stop("Permission denied: Cannot modify file ", file_path)
+  }
+  
+  # 只有在明確允許時才繼續
+  writeLines(new_content, file_path)
+  return(TRUE)
+}
+```
+
+### 目錄創建
+
+```r
+# 預設拒絕在目錄創建中的範例
+create_directory <- function(dir_path) {
+  # 在嘗試創建前檢查權限
+  if (!permission_to_create_directory(dir_path)) {
+    log_denied_action("directory_creation", dir_path)
+    return(FALSE)
+  }
+  
+  # 只有在明確允許時才繼續
+  dir.create(dir_path, recursive = TRUE)
+  return(TRUE)
+}
+```
+
+:::
+
+## 錯誤處理 {#error-handling}
+
+當權限被拒絕時：
+
+1. **清晰的訊息**：提供關於缺少權限的明確錯誤訊息
+2. **記錄**：記錄被拒絕的行動以供審計和除錯
+3. **優雅降級**：在適當的地方提供有限功能
+4. **恢復路徑**：提供如何獲得必要權限的指導
+
+# 與其他原則的互動 {#interactions}
+
+預設拒絕原則強化並與以下互動：
+
+:::{.callout-note}
+## 相關原則
+- **R044 路徑修改原則**：在修改路徑前要求明確權限
+- **資料存取層層級**：在資料層之間執行嚴格的權限邊界
+- **操作模式控制**：基於當前操作模式限制能力
+- **MP001 無假資料**：防止在沒有授權的情況下生成合成資料
+:::
+
+# 例外流程 {#exceptions}
+
+對預設拒絕原則的任何例外必須：
+
+:::{.callout-caution}
+## 例外要求
+1. 明確記錄並提供清晰理由
+2. 有時間限制的範圍（強烈不鼓勵永久例外）
+3. 包括補償控制以減輕相關風險
+4. 獲得系統/資料擁有者的批准
+5. 定期審查持續必要性
+:::
+
+# 合規驗證 {#compliance}
+
+系統審查應驗證：
+
+:::{.callout-tip}
+## 檢查清單
+- [ ] 所有程式碼路徑在敏感操作前包含權限檢查
+- [ ] 權限相關參數的預設值是限制性的
+- [ ] 記錄捕獲允許和拒絕的操作
+- [ ] 錯誤訊息清楚指示權限要求
+- [ ] 不存在後門或繞過機制
+:::
+
+# 實作範例 {#examples}
+
+## 完整的權限系統 {#complete-system}
+
+```r
+# 權限管理系統範例
+permission_manager <- R6::R6Class("PermissionManager",
+  private = list(
+    permissions = list(),
+    log_file = "permissions.log"
+  ),
+  
+  public = list(
+    initialize = function() {
+      # 以空權限開始（預設拒絕）
+      private$permissions <- list()
+    },
+    
+    grant_permission = function(resource, action, user) {
+      key <- paste(resource, action, user, sep = ":")
+      private$permissions[[key]] <- TRUE
+      self$log_action("GRANT", resource, action, user)
+    },
+    
+    revoke_permission = function(resource, action, user) {
+      key <- paste(resource, action, user, sep = ":")
+      private$permissions[[key]] <- NULL
+      self$log_action("REVOKE", resource, action, user)
+    },
+    
+    check_permission = function(resource, action, user) {
+      key <- paste(resource, action, user, sep = ":")
+      # 預設拒絕：如果沒有明確權限，返回 FALSE
+      has_permission <- isTRUE(private$permissions[[key]])
+      
+      if (!has_permission) {
+        self$log_action("DENIED", resource, action, user)
+      } else {
+        self$log_action("ALLOWED", resource, action, user)
+      }
+      
+      return(has_permission)
+    },
+    
+    log_action = function(type, resource, action, user) {
+      log_entry <- sprintf("[%s] %s: %s on %s by %s",
+                          Sys.time(), type, action, resource, user)
+      cat(log_entry, "\n", file = private$log_file, append = TRUE)
+    }
+  )
+)
+```
+
+# 結論 {#conclusion}
+
+通過遵守這個元原則，我們創建了本質上更安全、可預測和可維護的系統，並為授權操作設定了清晰的邊界。預設拒絕方法確保系統完整性並防止未經授權的行動，同時提供清晰的權限管理路徑。

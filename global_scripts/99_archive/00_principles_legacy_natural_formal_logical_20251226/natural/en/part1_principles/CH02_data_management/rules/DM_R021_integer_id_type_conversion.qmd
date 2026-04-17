@@ -1,0 +1,254 @@
+---
+title: "DM_R004: Integer ID Type Conversion Rule"
+subtitle: "All system identifiers must be explicitly converted to integer type when used in data operations"
+chapter: "CH02"
+category: "rule"
+number: "DM_R004"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 4
+  title: "Integer ID Type Conversion Rule"
+implements:
+  - "P080: Integer ID Consistency Principle"
+  - "MP052: Unidirectional Data Flow"
+related_to:
+  - "R076: Module Data Connection Rule"
+  - "R088: Shiny Module ID Handling"
+  - "R090: ID Relationship Validation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 4: Integer ID Type Conversion Rule {#overview}
+
+**Data Management Law Article 4 (Integer ID Type Conversion Rule)**
+
+This rule enforces consistent type handling of IDs throughout an application.
+
+:::{.callout-important}
+## Core Rule
+All system identifiers must be explicitly converted to integer type when used in data operations.
+:::
+
+# Section 1: Description {#description}
+
+This rule enforces consistent type handling of IDs throughout an application, particularly at system boundaries where type conversion is likely to occur. It ensures that all IDs are explicitly converted to integers before being used in filtering, joining, or other data operations.
+
+# Section 2: Rationale {#rationale}
+
+## Subsection 1: Type Safety {#type-safety}
+
+Prevents subtle bugs from implicit type conversion.
+
+## Subsection 2: Performance {#performance}
+
+Integer comparisons are faster than string comparisons.
+
+## Subsection 3: Predictability {#predictability}
+
+Ensures consistent behavior regardless of data source.
+
+## Subsection 4: Reliability {#reliability}
+
+Avoids errors in data filtering and joining operations.
+
+# Section 3: Implementation Guide {#implementation-guide}
+
+## Subsection 1: Module Function Parameters {#module-function-parameters}
+
+When a module receives an ID parameter, convert it to integer immediately:
+
+```r
+customerModule <- function(id, customer_id) {
+  # Convert ID to integer immediately upon receipt
+  customer_id <- as.integer(customer_id)
+  
+  # Use the integer ID for all subsequent operations
+  # ...
+}
+```
+
+## Subsection 2: UI Input Handling {#ui-input-handling}
+
+When receiving user input values that represent IDs, convert them to integers before use:
+
+```r
+observeEvent(input$customer_select, {
+  # Convert the selected ID to integer
+  selected_id <- as.integer(input$customer_select)
+  
+  # Use the selected ID to filter data
+  filtered_data <- data %>% filter(customer_id == selected_id)
+})
+```
+
+## Subsection 3: Data Filtering {#data-filtering}
+
+Always convert ID values to integers when filtering data frames:
+
+```r
+# CORRECT: Explicit integer conversion before filtering
+filter_customers_by_id <- function(data, id_value) {
+  # Ensure integer type
+  id_value <- as.integer(id_value)
+  
+  # Then filter
+  filtered <- data %>% filter(customer_id == id_value)
+  return(filtered)
+}
+```
+
+## Subsection 4: Anti-patterns {#anti-patterns}
+
+### Implicit Type Conversion {#implicit-conversion}
+
+```r
+# INCORRECT: Relies on implicit type conversion
+data %>% filter(customer_id == input$customer_select)
+
+# CORRECT: Explicit type conversion
+data %>% filter(customer_id == as.integer(input$customer_select))
+```
+
+### Missing Error Handling {#missing-error-handling}
+
+```r
+# INCORRECT: No error handling for non-numeric input
+as.integer(input$customer_select)
+
+# CORRECT: Proper error handling
+tryCatch({
+  selected_id <- as.integer(input$customer_select)
+  if (is.na(selected_id)) {
+    stop("Invalid customer ID")
+  }
+}, error = function(e) {
+  # Handle the error (e.g., show a message to the user)
+  showNotification("Please select a valid customer", type = "error")
+})
+```
+
+# Section 4: Examples {#examples}
+
+## Subsection 1: Standard ID Conversion Function {#standard-conversion-function}
+
+```r
+safe_as_integer <- function(x, default = NA_integer_) {
+  if (is.null(x) || length(x) == 0) {
+    return(default)
+  }
+  
+  result <- tryCatch({
+    as.integer(x)
+  }, warning = function(w) {
+    default
+  }, error = function(e) {
+    default
+  })
+  
+  if (is.na(result)) {
+    result <- default
+  }
+  
+  return(result)
+}
+```
+
+## Subsection 2: Complete Example with Error Handling {#complete-example}
+
+```r
+moduleServer("customer_module", function(input, output, session) {
+  # Reactive expression for filtered data
+  filtered_data <- reactive({
+    # Validate that a selection exists
+    req(input$customer_select)
+    
+    # Try to convert the selected ID to integer
+    id <- tryCatch({
+      id <- as.integer(input$customer_select)
+      if (is.na(id)) {
+        showNotification("Invalid customer ID format", type = "error")
+        return(NULL)
+      }
+      id
+    }, error = function(e) {
+      showNotification("Error processing customer ID", type = "error")
+      return(NULL)
+    })
+    
+    # Only filter if we have a valid ID
+    if (!is.null(id)) {
+      data <- customers_data %>% filter(customer_id == id)
+      if (nrow(data) == 0) {
+        showNotification(paste("No customer found with ID", id), type = "warning")
+      }
+      return(data)
+    }
+    
+    return(NULL)
+  })
+})
+```
+
+## Subsection 3: Module Accepting an ID Parameter {#module-with-id-parameter}
+
+```r
+customerViewModule <- function(id, customer_id = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # Initialize reactive value for selected customer
+    selected_customer_id <- reactiveVal(NULL)
+    
+    # If customer_id is provided, use it after conversion
+    observe({
+      if (!is.null(customer_id)) {
+        # Convert to integer and validate
+        id <- as.integer(customer_id)
+        if (!is.na(id)) {
+          selected_customer_id(id)
+        }
+      }
+    })
+    
+    # When user changes selection
+    observeEvent(input$customer_select, {
+      id <- as.integer(input$customer_select)
+      if (!is.na(id)) {
+        selected_customer_id(id)
+      }
+    })
+    
+    # Reactive for customer data
+    customer_data <- reactive({
+      id <- selected_customer_id()
+      req(id)
+      
+      # Use the integer id for data filtering
+      customers %>% filter(customer_id == id)
+    })
+  })
+}
+```
+
+# Section 5: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Eliminate Type-Related Errors**: Prevent errors caused by type mismatches
+2. **Improve Query Performance**: Integer comparisons are faster
+3. **Ensure Data Integrity**: ID handling remains consistent throughout the application
+4. **Simplify Debugging**: Type issues are easier to identify and fix
+5. **Enhance Portability**: Reduces dependency on specific data source types
+
+---
+
+*Based on: Data Management Law Article 4*  
+*Related to: [P080 Integer ID Consistency Principle](../principles/DM_P004_integer_id_consistency.qmd), [R076 Module Data Connection Rule](../../CH03_development_methodology/rules/DEV_R022_module_data_connection.qmd)*

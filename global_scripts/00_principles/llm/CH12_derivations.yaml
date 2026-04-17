@@ -1,0 +1,378 @@
+# ========================================
+# CH10: Business Derivation Workflows
+# MAMBA Principles - Derivations
+# ========================================
+#
+# This chapter contains business logic derivations
+# that consume ETL-prepared data and produce
+# application-ready outputs.
+#
+# Derivations: D00-D04
+#
+# Key Principle: MP064 ETL-Derivation Separation
+#   - ETL handles data preparation
+#   - Derivations handle business logic
+#
+# ========================================
+
+chapter_id: "CH10"
+chapter_title: "Business Derivation Workflows"
+description: "Derivations implement business logic on ETL-prepared data"
+base_path: "docs/en/part2_implementations/CH13_derivations"
+
+# ============================================================
+# DRV GROUP SEMANTICS (重要！建立 DRV 腳本前必須確認)
+# ============================================================
+#
+# 每個 DRV 群組有明確的功能定義，新建 DRV 腳本前必須確認正確群組。
+#
+drv_group_semantics:
+  overview: |
+    D00 - D04 群組各有專屬用途，選擇錯誤群組會導致架構混亂。
+    特別注意：DNA 相關屬於 D01，Poisson 相關屬於 D04。
+
+  groups:
+    D00:
+      name: "App Data Init"
+      purpose: "基礎資料結構初始化、跨平台 lookup tables"
+      examples: ["D00_01 初始化 app_data 結構"]
+
+    D01:
+      name: "Customer DNA Analysis"
+      purpose: "客戶 DNA 分析（RFM、NES、DNA 分數、ECDF 分布）"
+      examples:
+        - "D01_05 df_dna_by_customer 彙總"
+        - "D01_07 DNA 分布圖表預計算資料"
+      keywords: ["DNA", "RFM", "NES", "CAI", "CRI", "ECDF", "customer_dna"]
+
+    D02:
+      name: "Filtered Customer Views"
+      purpose: "分段客戶視圖、產品線篩選後的客戶資料"
+      examples: ["D02_01 客戶分群視圖"]
+
+    D03:
+      name: "Positioning Analysis"
+      purpose: "市場定位分析、競爭分析、策略建議"
+      examples: ["D03_06 Segment analysis", "D03_08 AI insights"]
+
+    D04:
+      name: "Poisson Precision Marketing"
+      purpose: "Poisson 分析、時序分析、精準行銷預測"
+      examples:
+        - "D04_02 Poisson analysis core"
+        - "D04_04 Time series expansion"
+      keywords: ["Poisson", "time_series", "precision", "prediction"]
+
+  common_mistakes:
+    - mistake: "DNA 相關放到 D04"
+      correct: "DNA 相關放到 **D01** (Customer DNA Analysis)"
+      reason: "D01 專門處理客戶 DNA 分析，包括 RFM、NES、DNA 分數"
+
+    - mistake: "Poisson 分析放到 D01"
+      correct: "Poisson 分析放到 **D04** (Poisson Precision Marketing)"
+      reason: "D04 專門處理 Poisson 分析和時序預測"
+
+    - mistake: "預計算資料放到 D04"
+      correct: "看資料類型決定群組"
+      reason: "DNA 預計算放 D01，Poisson 預計算放 D04"
+
+  decision_tree: |
+    建立新 DRV 腳本時的決策流程：
+
+    1. 是否涉及 DNA、RFM、NES、CAI、客戶分數？
+       → YES: D01 (Customer DNA Analysis)
+
+    2. 是否涉及 Poisson、時序、精準行銷預測？
+       → YES: D04 (Poisson Precision Marketing)
+
+    3. 是否涉及產品線篩選的客戶視圖？
+       → YES: D02 (Filtered Customer Views)
+
+    4. 是否涉及市場定位、競爭分析？
+       → YES: D03 (Positioning Analysis)
+
+    5. 是否是基礎資料結構初始化？
+       → YES: D00 (App Data Init)
+
+# ============================================================
+# DERIVATION OVERVIEW
+# ============================================================
+derivations:
+  D00:
+    id: "D00"
+    title: "App Data Init"
+    file: "D00_app_data_init.qmd"
+    description: "Foundation data structures/init for application use"
+    outputs:
+      - "app_data schema"
+      - "cross-platform lookup tables"
+    depends_on_etl: ["ETL01"]
+
+  D01:
+    id: "D01"
+    title: "Customer DNA Analysis"
+    description: "Customer behavioral segmentation using RFM and DNA scoring"
+    structure: "directory"  # Split into multiple files
+    directory: "D01_dna_analysis/"
+    index_file: "D01_dna_analysis/index.qmd"
+    task_files:
+      - file: "D01_00_consume_etl_output.qmd"
+        task: "Consume ETL01 Output"
+        drv_scripts: []
+      - file: "D01_01_customer_aggregation.qmd"
+        task: "Customer Aggregation"
+        drv_scripts: []
+      - file: "D01_02_rfm_calculation.qmd"
+        task: "RFM Calculation"
+        drv_scripts: []
+      - file: "D01_03_dna_analysis.qmd"
+        task: "DNA Analysis"
+        drv_scripts: ["cbz_D01_03.R", "amz_D01_03.R"]
+      - file: "D01_04_customer_profile.qmd"
+        task: "Customer Profile"
+        drv_scripts: ["cbz_D01_04.R", "amz_D01_04.R"]
+      - file: "D01_05_app_views.qmd"
+        task: "Application Views"
+        drv_scripts: ["cbz_D01_05.R", "amz_D01_05.R"]
+      - file: "D01_06_execution.qmd"
+        task: "Master Execution"
+        drv_scripts: ["cbz_D01_06.R", "amz_D01_06.R", "all_D01_06.R"]
+      - file: "D01_07_plot_data_precompute.qmd"
+        task: "DNA Plot Data Pre-computation"
+        drv_scripts: ["all_D01_07.R"]
+        description: "Pre-compute ECDF curves, histograms, and summary statistics for DNA Distribution Analysis visualization"
+    outputs:
+      - "df_profile_by_customer"
+      - "df_dna_by_customer"
+      - "df_segments_by_customer"
+    depends_on_etl: ["ETL01"]
+    key_concepts:
+      - "RFM (Recency, Frequency, Monetary)"
+      - "NES (New, Existing, Sleeping)"
+      - "DNA Segment Codes (M1-M4, F1-F3, R1-R4)"
+      - "CAI (Customer Activity Index)"
+
+  D02:
+    id: "D02"
+    title: "Filtered Customer Views"
+    file: "D02_filtered_customer_views.qmd"
+    description: "Segmented customer insights with product line filtering"
+    outputs:
+      - "filtered views by product line"
+      - "segment statistics"
+    depends_on: ["D01"]
+
+  D03:
+    id: "D03"
+    title: "Positioning Analysis"
+    file: "D03_positioning_analysis.qmd"
+    description: "Market position analysis and competitive insights"
+    migration_status: "mostly_migrated"
+    migration_note: "Most D03 steps migrated to ETL03-07. Remaining steps are DRV-based analysis."
+    etl_migrations:
+      - from: "D03_00"
+        to: "ETL03_0IM"
+      - from: "D03_01"
+        to: "ETL04"
+      - from: "D03_02"
+        to: "ETL05"
+      - from: "D03_03-05"
+        to: "ETL06"
+      - from: "D03_10"
+        to: "ETL07"
+    current_drv_scripts:
+      - script: "amz_D03_00.R"
+        purpose: "ASIN product line mapping"
+      - script: "amz_D03_06.R"
+        purpose: "Segment analysis"
+      - script: "amz_D03_07.R"
+        purpose: "Strategic recommendations"
+      - script: "amz_D03_08.R"
+        purpose: "AI-powered insights generation"
+      - script: "amz_D03_09.R"
+        purpose: "Performance metrics analysis"
+      - script: "amz_D03_10.R"
+        purpose: "Position table creation"
+      - script: "amz_D03_11.R"
+        purpose: "Position table finalization"
+    outputs:
+      - "positioning metrics"
+      - "competitive analysis"
+      - "df_position"
+      - "df_competitive_landscape"
+    depends_on_etl: ["ETL03", "ETL04", "ETL05", "ETL06", "ETL07"]
+
+  D04:
+    id: "D04"
+    title: "Poisson Precision Marketing"
+    description: "Poisson analysis outputs for platform modules and precision marketing"
+    structure: "directory"  # Split into multiple files
+    directory: "D04_poisson_marketing/"
+    index_file: "D04_poisson_marketing/index.qmd"
+    task_files:
+      - file: "D04_00_product_dictionary.qmd"
+        task: "Product Dictionary (Conceptual)"
+        drv_scripts: []
+      - file: "D04_01_time_label_enrichment.qmd"
+        task: "Time Label Enrichment (CBZ)"
+        drv_scripts: ["cbz_D04_01.R"]
+      - file: "D04_02_poisson_analysis.qmd"
+        task: "Poisson Analysis Core"
+        drv_scripts: ["cbz_D04_02.R", "eby_D04_02.R"]
+      - file: "D04_03_r120_metadata.qmd"
+        task: "R120 Metadata Enrichment (CBZ)"
+        drv_scripts: ["cbz_D04_03.R"]
+      - file: "D04_04_time_series.qmd"
+        task: "Time Series Expansion"
+        drv_scripts: ["cbz_D04_04.R", "eby_D04_04.R", "all_D04_04.R"]
+      - file: "D04_05_poisson_wrappers.qmd"
+        task: "Poisson Analysis Wrappers"
+        drv_scripts: ["cbz_D04_05.R", "all_D04_05.R"]
+      - file: "D04_06_app_data_publishing.qmd"
+        task: "App Data Publishing"
+        drv_scripts: ["cbz_D04_06.R", "all_D04_06.R"]
+      - file: "D04_07_precision_time_series.qmd"
+        task: "Precision Time Series Completion"
+        drv_scripts: ["all_D04_07.R"]
+      - file: "D04_08_precision_poisson_analysis.qmd"
+        task: "Precision Poisson Analysis"
+        drv_scripts: ["all_D04_08.R"]
+      - file: "D04_09_feature_preparation.qmd"
+        task: "Precision Feature Preparation"
+        drv_scripts: ["all_D04_09.R"]
+      - file: "D04_10_module_consumers.qmd"
+        task: "Module Consumers"
+        drv_scripts: []
+    outputs:
+      - "app_data.df_{platform}_poisson_analysis_all"
+      - "processed_data.df_{platform}_poisson_analysis_{product_line}"
+      - "processed_data.df_precision_features"
+      - "processed_data.df_precision_poisson_analysis"
+      - "processed_data.df_precision_time_series"
+    depends_on: ["D03"]
+    depends_on_etl: ["ETL01"]
+    key_concepts:
+      - "Poisson Distribution"
+      - "Univariate Poisson Regression"
+      - "Predictor Classification"
+      - "R120 Metadata"
+
+# ============================================================
+# DRV SCRIPT LOCATIONS
+# ============================================================
+drv_locations:
+  base_path: "update_scripts/DRV"
+  platforms:
+    cbz:
+      path: "update_scripts/DRV/cbz/"
+      description: "Cyberbiz platform derivations"
+    amz:
+      path: "update_scripts/DRV/amz/"
+      description: "Amazon platform derivations"
+    eby:
+      path: "update_scripts/DRV/eby/"
+      description: "eBay platform derivations"
+    all:
+      path: "update_scripts/DRV/all/"
+      description: "Cross-platform derivations"
+
+# ============================================================
+# KEY DERIVATION PATTERNS (NSQL)
+# ============================================================
+patterns:
+  consume_etl:
+    nsql: |
+      CONSUME transformed_data.df_{platform}_sales___standardized FROM ETL01
+      VALIDATE required_columns: [customer_id, platform_id, product_line_id, payment_time, lineproduct_price]
+    description: "Read ETL-prepared data with validation"
+
+  customer_aggregation:
+    nsql: |
+      AGGREGATE transformed_data BY customer_id, platform_id, product_line_id_filter
+      CALCULATE: total_spent, transaction_count, first_purchase, last_purchase
+      OUTPUT TO processed_data.df_customer_aggregated
+    description: "Group transactions by customer dimensions"
+
+  rfm_calculation:
+    nsql: |
+      CALCULATE RFM FROM processed_data.df_customer_aggregated
+      r_value: DATEDIFF(days, last_purchase, reference_date)
+      f_value: transaction_count
+      m_value: total_spent / transaction_count
+    description: "Calculate classic RFM metrics"
+
+  dna_scoring:
+    nsql: |
+      CALCULATE dna_scores:
+        dna_m_score: PERCENT_RANK() OVER (ORDER BY m_value ASC)
+        dna_f_score: PERCENT_RANK() OVER (ORDER BY f_value ASC)
+        dna_r_score: 1 - PERCENT_RANK() OVER (ORDER BY r_value ASC)
+        cai: (dna_m_score + dna_f_score + dna_r_score) / 3
+    description: "Normalize RFM to 0-1 scores"
+
+  nes_classification:
+    nsql: |
+      CLASSIFY nes_status:
+        WHEN transaction_count = 1 AND tenure <= 30 THEN 'N'
+        WHEN r_value <= 60 THEN 'E0'
+        WHEN r_value <= 180 THEN 'S1'
+        WHEN r_value <= 365 THEN 'S2'
+        ELSE 'S3'
+    description: "Classify customer lifecycle stage"
+
+# ============================================================
+# RELATED PRINCIPLES
+# ============================================================
+related_principles:
+  - id: "MP064"
+    title: "ETL-Derivation Separation"
+    relevance: "Core principle - derivations contain NO data preparation"
+  - id: "DM_R044"
+    title: "Derivation Implementation Standard"
+    relevance: "Template structure for derivation files"
+  - id: "MP092"
+    title: "Platform ID Standard"
+    relevance: "Three-letter platform_ids (amz, eby, cbz)"
+  - id: "R120"
+    title: "Filter Variable Naming"
+    relevance: "product_line_id_filter naming convention"
+  - id: "DM_R058"
+    title: "Product Line ID Semantics"
+    relevance: "Three-layer naming (v2): product_line_id_chosen (UI) / product_line_id_sliced (slice) / product_line_id_filter (DB); ETL source product_line_id unchanged"
+
+# ============================================================
+# SCENARIOS
+# ============================================================
+scenarios:
+  creating_new_derivation:
+    description: "Building a new business derivation"
+    steps:
+      - "Identify ETL dependencies"
+      - "Define output schema"
+      - "Follow DM_R044 template structure"
+      - "Implement NSQL specification first"
+      - "Create platform-specific DRV scripts"
+    related_files:
+      - "DERIVATION_STANDARDS.qmd"
+      - "TEMPLATE_derivation.R"
+
+  debugging_dna_analysis:
+    description: "Troubleshooting DNA analysis issues"
+    steps:
+      - "Check ETL01 output exists"
+      - "Validate schema with D01_00"
+      - "Verify aggregation in D01_01"
+      - "Check RFM calculations in D01_02"
+      - "Review DNA scores in D01_03"
+    common_issues:
+      - "Missing required columns from ETL01"
+      - "NULL values in RFM metrics"
+      - "Incorrect segment codes"
+
+  adding_platform_support:
+    description: "Adding a new platform to derivations"
+    steps:
+      - "Create platform ETL first"
+      - "Add DRV scripts in platform subdirectory"
+      - "Follow {platform}_D01_XX.R naming"
+      - "Update YAML configuration"

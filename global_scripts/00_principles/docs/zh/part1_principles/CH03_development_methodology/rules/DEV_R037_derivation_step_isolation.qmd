@@ -1,0 +1,266 @@
+---
+title: "DEV_R037: 衍生步驟隔離規則"
+subtitle: "每個 D_XX 腳本必須僅實作其文件化步驟；編排腳本不得包含計算邏輯"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R037"
+date-created: "2025-12-26"
+date-modified: "2026-02-13"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number:
+  number: 37
+  title: "衍生步驟隔離規則"
+related_to:
+  - "MP145: 文件與實作一致性"
+  - "MP064: ETL-衍生分離"
+  - "MP005: 成文法類比"
+  - "DM_R044: 衍生實作標準"
+  - "SO_R007: 單一函式一檔"
+  - "MP028: 原則與實例"
+  - "MP037: 原則導向修改"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三十七條：衍生步驟隔離規則 {#overview}
+
+**開發方法法 第三十七條（衍生步驟隔離規則）**
+
+此規則為每個衍生腳本（D_XX）建立明確邊界，確保每支腳本僅實作其文件化責任，避免步驟間邏輯重複。
+
+:::{.callout-important}
+## 核心規則
+
+1. 每個 `D_XX` 腳本只能實作其**文件責任**  
+2. 衍生邏輯不得在步驟間重複  
+3. 編排步驟（`D_XX_06`）不得包含計算邏輯  
+4. 計算邏輯僅可放在對應步驟或共用函式中
+:::
+
+# 第一節：問題成因 {#problem}
+
+## 小節 1：責任膨脹 {#responsibility-creep}
+
+衍生腳本常因修補需求逐步加入未授權邏輯：
+
+```r
+# 文件 D01_03 寫：使用 analysis_dna() 轉換 RFM -> DNA 分群
+# D01_03 實作卻新增跨步驟邏輯
+process_dna <- function(df) {
+  df <- transform_rfm(df)          # 正確
+  df <- add_customer_profiles(df)   # 違規：應在 D01_04
+  df <- create_app_views(df)       # 違規：應在 D01_05
+  return(df)
+}
+```
+
+## 小節 2：邏輯重複 {#logic-duplication}
+
+同一計算在多支腳本重複出現：
+
+```r
+df$dna_score <- (df$m_norm + df$f_norm + df$r_norm) / 3
+
+# D01_06（編排）也再算一次 -> 行為偏差風險
+```
+
+## 小節 3：編排腳本中計算 {#computation-in-orchestration}
+
+```r
+execute_pipeline <- function() {
+  run_d01_00()
+  run_d01_01()
+  run_d01_03()
+  run_d01_04()
+
+  # 編排腳本只應調用，不應再計算
+  df <- read_output()
+  df$custom_metric <- calculate_something(df) # ❌ 違規
+  write_output(df)
+}
+```
+
+# 第二節：實施指引 {#implementation}
+
+## 小節 1：步驟分類 {#step-types}
+
+| 類型 | 說明 | 允許操作 |
+|------|------|----------|
+| **概念步驟** | 說明要做什麼 | 資料讀取、彙總 |
+| **具體步驟** | 指定實作函式 | 呼叫指定函式、寫入輸出 |
+| **編排步驟** | 調度多個步驟 | `source()`、順序執行、紀錄 |
+
+## 小節 2：正確的具體步驟樣式 {#correct-concrete-pattern}
+
+```r
+#####
+# CONSUMES: df_rfm_by_customer___processed
+# PRODUCES: df_dna_by_customer___cleansed
+# DEPENDS_ON_DRV: cbz_D01_02
+#####
+
+# === INITIALIZE ===
+autoinit()
+source("scripts/global_scripts/04_utils/fn_analysis_dna.R")
+
+# === MAIN ===
+df_input <- tbl2(tbl2con("processed_data"), "df_rfm_by_customer___processed") |> collect()
+df_output <- analysis_dna(df_input, platform = "cbz")
+dbWriteTable(tbl2con("cleansed_data"), "df_dna_by_customer___cleansed", df_output, overwrite = TRUE)
+
+# === DEINITIALIZE ===
+autodeinit()
+```
+
+## 小節 3：正確的編排樣式 {#correct-orchestration-pattern}
+
+```r
+#####
+# ORCHESTRATES: D01_00, D01_01, D01_02, D01_03, D01_04, D01_05
+# COMPUTATION: NONE
+#####
+
+autoinit()
+
+# 只做調度
+source("scripts/update_scripts/DRV/cbz/cbz_D01_00.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_01.R")
+source("scripts/update_scripts/DRV/cbz/cbz_D01_02.R")
+
+autodeinit()
+```
+
+## 小節 4：使用 `_implementation_rules.yaml` {#implementation-rules}
+
+每個模組需有對應規格文件，明確定義責任與邊界。
+
+```yaml
+# D01_dna_analysis/_implementation_rules.yaml
+derivation_steps:
+  d01_03:
+    title: "DNA Analysis"
+    type: "concrete"
+    responsibility: "Transform RFM into customer DNA segments"
+    must_call: "analysis_dna()"
+    function_location: "scripts/global_scripts/04_utils/fn_analysis_dna.R"
+    output_table: "df_dna_by_customer___cleansed"
+
+  d01_06:
+    title: "Execution Orchestration"
+    type: "orchestration"
+    responsibility: "Run D01_00-D01_05 in sequence"
+    constraint: "NO direct computation - only orchestration"
+```
+
+## 小節 5：Spec-First 衝突處理 {#spec-first-conflict}
+
+1. **不直接改腳本**：先暫停實作變更
+2. **先更新規格與任務文件**：`_implementation_rules.yaml`、步驟文件
+3. 記錄變更範圍與理由
+4. 更新責任、限制、輸入輸出關係
+5. 僅在規格生效後修改程式
+
+# 第三節：違規偵測 {#violations}
+
+## 小節 1：常見違規 {#violation-patterns}
+
+| 模式 | 檢測方式 | 嚴重度 |
+|------|-----------|--------|
+| D01_06 出現 DNA 計算 | `grep "dna_.*_score\\|analysis_dna" D01_06.R` | Critical |
+| 缺少 must_call | 腳本未包含必需函式 | Critical |
+| 寫入非文件表 | 寫入未授權輸出表 | High |
+| 編排步驟有計算 | D01_06 含資料處理 | Medium |
+
+## 小節 2：程式碼審查清單 {#code-review-checklist}
+
+```markdown
+## DEV_R037 合規檢查
+### 腳本：{script_name}
+### 文件責任：{來自 _implementation_rules.yaml}
+
+#### 具體步驟
+- [ ] 僅呼叫文件必需函式？
+- [ ] 寫入正確輸出表？
+- [ ] 未混入其他步驟邏輯？
+- [ ] 無重複計算？
+
+#### 編排步驟
+- [ ] 僅包含 source() 調度？
+- [ ] 無資料操作？
+- [ ] 無計算邏輯？
+- [ ] 僅有流程日誌？
+```
+
+#### 衝突治理補充
+
+- [ ] 請求變更前先檢查文件衝突？
+- [ ] 文件/規格是否先於程式修改？
+- [ ] 新行為是否已在 `_implementation_rules.yaml` 記錄？
+- [ ] 變更是否有對應 MP028/MP037/MP145 條文？
+
+# 第四節：為何必要 {#rationale}
+
+## 小節 1：DRY 原則 {#dry}
+
+邏輯散布在多處，會造成：
+- 修 bug 需改多個地方
+- 修改不一致
+- 輸出結果可能不一致
+
+## 小節 2：可測性 {#testability}
+
+隔離步驟可單獨測試，提高可控性。
+
+```r
+test_that("D01_03 produces correct DNA scores", {
+  input <- load_test_rfm_data()
+  output <- analysis_dna(input)
+
+  expect_true("dna_segment" %in% names(output))
+  expect_true(all(output$dna_m_score >= 0 & output$dna_m_score <= 1))
+})
+```
+
+## 小節 3：MP145 合規 {#mp145}
+
+該規則強化 MP145 在 DRV 的落地，確保文件寫的每一項，腳本都做到且不多不少。
+
+# 第五節：例外處理 {#exceptions}
+
+## 小節 1：跨平台彙總 {#cross-platform}
+
+`all_D01_06.R` 可做平台結果彙總，但：
+
+- 允許：讀取各平台輸出並合併
+- 允許：寫入彙總輸出
+- 不允許：在合併後新增新計算
+
+# 第六節：相關原則 {#related}
+
+| 原則 | 關係 |
+|------|------|
+| **MP145** | 與文件-實作一致性直接對齊 |
+| **MP064** | ETL-DRV 分離上層原則 |
+| **DM_R044** | 腳本結構模板 |
+| **MP028** | 原則優先 |
+| **MP037** | 原則導向修改 |
+
+# 第七節：效益 {#benefits}
+
+1. 行為可預測，維持文件一致性  
+2. 變更集中，維護成本下降  
+3. 可測試性提升  
+4. 問題定位更準確  
+5. 對新成員的認知負擔降低
+
+# 第八節：結論 {#conclusion}
+
+DEV_R037 透過限制步驟責任邊界，防止編排腳本承擔核心計算，讓 DRV 管線可維護、可測試且可追溯。結合 `_implementation_rules.yaml` 與 MP145 檢核，可形成可驗證的實作合約。
+

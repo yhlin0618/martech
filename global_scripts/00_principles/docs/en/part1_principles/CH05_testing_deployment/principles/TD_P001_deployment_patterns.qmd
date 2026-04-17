@@ -1,0 +1,244 @@
+---
+title: "TD_P001: Deployment Patterns Principle"
+subtitle: "Guidelines for deploying applications to production environments"
+chapter: "CH05"
+category: "principle"
+number: "TD_P001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Testing & Deployment Law"
+article-number: "Article 1"
+derives_from:
+  - "CH00.MP003: Operating Modes"
+  - "CH00.MP006: Data Source Hierarchy"
+influences:
+  - "TD_P002: Authentic Context Testing"
+  - "CH01.SO_P003: App Construction Principles"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Testing & Deployment Law Article 1 (Deployment Patterns Principle)**
+
+This article establishes guidelines for deploying applications to production environments, ensuring consistency, reliability, and security across deployments.
+
+:::{.callout-important}
+## Core Principle
+Application deployment should follow consistent patterns that preserve the integrity of the codebase, maintain security boundaries, and ensure that all required dependencies are included.
+:::
+
+# Section 1: Deployment Scope {#deployment-scope}
+
+## Subsection 1: APP_MODE Complete Inclusion {#app-mode-inclusion}
+
+The most important rule for deployment is that **ALL files sourced in APP_MODE must be included in the deployment package**. This ensures that the application has all necessary dependencies to function properly in production.
+
+```r
+# Rule: When deploying to rsconnect (Shiny Server, Posit Connect, etc.),
+# include all files that would be sourced in APP_MODE initialization.
+```
+
+This includes:
+- All files in directories loaded by `sc_initialization_app_mode.R`
+- All utility functions used by the application
+- All global data files needed for app functionality
+- Configuration files with the appropriate environment settings
+
+## Subsection 2: Required Directories {#required-directories}
+
+Based on the APP_MODE initialization script, these directories must be included:
+
+1. `update_scripts/global_scripts/02_db_utils`
+2. `update_scripts/global_scripts/04_utils`
+3. `update_scripts/global_scripts/03_config`
+4. `update_scripts/global_scripts/10_rshinyapp_components`
+5. `update_scripts/global_scripts/11_rshinyapp_utils`
+6. `local_scripts` (renamed to `app_configs` in newer versions)
+
+## Subsection 3: Dependencies Between Utilities {#utility-dependencies}
+
+When deploying, be mindful of dependencies between utility files:
+
+- Database utilities in `02_db_utils` may depend on functions from `11_rshinyapp_utils`
+- UI components may depend on utility functions
+- All dependencies must be properly resolved in the deployment package
+
+# Section 2: Deployment Process {#deployment-process}
+
+## Subsection 1: Pre-Deployment Verification {#pre-deployment}
+
+Before deploying, verify that the application can run successfully in APP_MODE with only the files that will be included in the deployment:
+
+```r
+# Test APP_MODE initialization with only deployment files
+OPERATION_MODE <- "APP_MODE"
+source("scripts/global_scripts/00_principles/sc_initialization_app_mode.R")
+# Verify no errors occur during initialization
+```
+
+## Subsection 2: Deployment Manifest {#deployment-manifest}
+
+Create a deployment manifest that explicitly lists all files to be included:
+
+```r
+# Example rsconnect deployment with explicit file list
+rsconnect::deployApp(
+  appDir = ".",
+  appFiles = c(
+    # Core app files
+    "app.R", "global.R", "ui.R", "server.R",
+    
+    # Directories from APP_MODE initialization
+    list.files("update_scripts/global_scripts/02_db_utils", 
+               full.names = TRUE, recursive = TRUE),
+    list.files("update_scripts/global_scripts/04_utils", 
+               full.names = TRUE, recursive = TRUE),
+    list.files("update_scripts/global_scripts/03_config", 
+               full.names = TRUE, recursive = TRUE),
+    list.files("update_scripts/global_scripts/10_rshinyapp_components", 
+               full.names = TRUE, recursive = TRUE),
+    list.files("update_scripts/global_scripts/11_rshinyapp_utils", 
+               full.names = TRUE, recursive = TRUE),
+    list.files("app_configs", 
+               full.names = TRUE, recursive = TRUE)
+  )
+)
+```
+
+## Subsection 3: Environment-Specific Configuration {#environment-config}
+
+Deployment should include mechanisms for environment-specific configuration:
+
+```r
+# In app initialization
+if (file.exists(".env")) {
+  dotenv::load_dot_env()
+} else if (file.exists("app_configs/production.env")) {
+  dotenv::load_dot_env("app_configs/production.env")
+}
+```
+
+# Section 3: Security Considerations {#security}
+
+## Subsection 1: Secrets Management {#secrets-management}
+
+Never include plain-text secrets in deployment files:
+
+:::{.callout-warning}
+## Security Requirements
+- Use environment variables for sensitive information
+- Configure secrets in the deployment platform (rsconnect, server environment)
+- For local development, use `.env` files (excluded from version control)
+:::
+
+## Subsection 2: Limited Scope {#limited-scope}
+
+The deployment should only include what's needed for APP_MODE:
+
+- Exclude update scripts that are not needed in production
+- Exclude development and testing utilities
+- Exclude documentation that isn't relevant to production
+
+## Subsection 3: Read-Only Enforcement {#read-only}
+
+Enforce read-only access to data in production:
+
+- Ensure database connections use read-only mode
+- Prevent file system writes where possible
+- Log access attempts for security auditing
+
+# Section 4: Version Control and Deployment {#version-control}
+
+## Subsection 1: Deployment from Tagged Releases {#tagged-releases}
+
+Deploy from tagged releases rather than development branches:
+
+```bash
+# Tag a release before deployment
+git tag -a v1.0.0 -m "Release 1.0.0"
+git push origin v1.0.0
+
+# Deploy the tagged version
+git checkout v1.0.0
+# Deploy to rsconnect
+```
+
+## Subsection 2: Deployment Documentation {#deployment-docs}
+
+Document each deployment with:
+
+- Version deployed
+- Date and time of deployment
+- Configuration changes
+- Environment settings
+
+# Section 5: Best Practices {#best-practices}
+
+## Subsection 1: Deployment Testing {#deployment-testing}
+
+Before deploying to production:
+
+:::{.callout-note}
+## Testing Checklist
+- Test in a staging environment
+- Verify all dependencies are included
+- Check for proper initialization in APP_MODE
+- Test with production-like data volumes
+:::
+
+## Subsection 2: Rollback Plan {#rollback-plan}
+
+Always have a rollback plan:
+
+- Keep previous version available
+- Document rollback procedures
+- Test rollback process periodically
+
+## Subsection 3: Deployment Automation {#deployment-automation}
+
+Use automation to ensure consistent deployments:
+
+- Script the deployment process
+- Use continuous deployment where appropriate
+- Automate verification steps
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Deployment Patterns Checklist
+
+When deploying applications, confirm:
+
+- [ ] All APP_MODE files are included
+- [ ] Dependencies are properly resolved
+- [ ] Pre-deployment verification passed
+- [ ] Deployment manifest is complete
+- [ ] Environment configuration is set
+- [ ] Secrets are properly managed
+- [ ] Production scope is limited
+- [ ] Read-only access is enforced
+- [ ] Version is tagged
+- [ ] Deployment is documented
+- [ ] Staging environment tested
+- [ ] Rollback plan exists
+- [ ] Automation scripts ready
+:::
+
+# Conclusion {#conclusion}
+
+By following these deployment patterns, we ensure that applications are consistently and reliably deployed to production environments with all necessary dependencies and proper security controls. This principle works in conjunction with the Operating Modes Principle and the Data Source Hierarchy Principle to maintain the integrity and security of the application across different environments.
+
+---
+
+*Based on: Testing & Deployment Law Article 1*  
+*Derives from: [MP003 Operating Modes](../../CH00_fundamental_principles/MP003_operating_modes.qmd), [MP006 Data Source Hierarchy](../../CH00_fundamental_principles/MP006_data_source_hierarchy.qmd)*  
+*Influences: [TD_P002 Authentic Context Testing](TD_P002_authentic_context_testing.qmd), [SO_P003 App Construction Principles](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd)*

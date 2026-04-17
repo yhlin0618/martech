@@ -1,0 +1,324 @@
+---
+title: "DEV_R006: Package Documentation Reference Rule"
+subtitle: "Consistent package usage through centralized documentation references"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R006"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law Implementation Rules"
+article: "Article 6"
+related_to:
+  - "DEV_R001: Apply Over Loops"
+  - "CH00.MP016: Modularity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Implementation Rules Article 6 (Package Documentation Reference Rule)**
+
+This article mandates that developers follow established usage patterns documented in project-specific and centralized package documentation, referencing this documentation in file headers.
+
+:::{.callout-important}
+## Core Rule
+When using functions from external packages, developers must follow established usage patterns documented in both project-specific (`20_R_packages/`) and centralized cross-project reference repositories, and reference this documentation in file headers.
+:::
+
+# Section 1: Documentation Structure {#structure}
+
+## Subsection 1: Documentation Locations {#locations}
+
+第一項：文件位置 (Documentation locations)
+
+1. **Project-Specific**: `20_R_packages/[package_name].md`
+   - Contains project-specific usage patterns
+   - Tailored to project requirements
+   - Maintained by project team
+
+2. **Cross-Project Reference**: `/precision_marketing/R_package_references/`
+   - Git clone from central GitHub repository
+   - Never modified directly
+   - Changes through proper git workflow
+
+:::{.callout-warning}
+## Important
+The documentation in `/precision_marketing/R_package_references/` is a git clone from the central GitHub repository and should never be modified directly. All changes must be made through proper git workflow.
+:::
+
+## Subsection 2: Documentation Hierarchy {#hierarchy}
+
+第一項：文件優先級 (Documentation priority)
+
+1. **Project-Specific Overrides General**: Project patterns take precedence
+2. **Explicit Over Implicit**: Documented patterns override defaults
+3. **Version-Specific**: Documentation matches package version in use
+
+# Section 2: Implementation Requirements {#implementation}
+
+## Subsection 1: File Header References {#headers}
+
+第一項：檔案標頭要求 (File header requirements)
+
+Files using external packages must include references in headers:
+
+```r
+#' @file customer_analysis.R
+#' @principle R95 Import Requirements Rule
+#' @principle R103 Package Documentation Reference Rule
+#' @uses_package dplyr See 20_R_packages/dplyr.md for usage patterns
+#' @uses_package ggplot2 See 20_R_packages/ggplot2.md for visualization standards
+#' @uses_package tidyr See 20_R_packages/tidyr.md for data reshaping patterns
+#' @author Analytics Team
+#' @date 2025-04-13
+```
+
+第二項：標頭元素說明 (Header element descriptions)
+
+- `@file`: Current file name
+- `@principle`: Applicable principles/rules
+- `@uses_package`: Package name and documentation reference
+- `@author`: Code author(s)
+- `@date`: Creation or modification date
+
+## Subsection 2: Implementation Consistency {#consistency}
+
+第一項：一致性實作 (Consistent implementation)
+
+Code must follow usage patterns in referenced documentation:
+
+**CORRECT** (follows documented pattern):
+```r
+# Follows dplyr usage pattern from 20_R_packages/dplyr.md
+customers %>%
+  filter(segment == "high_value") %>%
+  group_by(region) %>%
+  summarize(
+    avg_value = mean(customer_value, na.rm = TRUE),
+    count = n()
+  ) %>%
+  arrange(desc(avg_value))
+```
+
+**INCORRECT** (violates documented pattern):
+```r
+# Not using pipe operator as specified in documentation
+subset(customers, segment == "high_value")
+# Mixing base R with tidyverse against guidelines
+aggregate(customers$value, by = list(customers$region), FUN = mean)
+```
+
+## Subsection 3: Function Documentation {#function-docs}
+
+第一項：函數文件參考 (Function documentation references)
+
+Function documentation should reference package patterns:
+
+```r
+#' Analyze Customer Segments
+#'
+#' Performs customer segmentation analysis using standardized
+#' data manipulation patterns.
+#'
+#' @param data Customer data frame
+#' @param segment_var Variable to use for segmentation
+#' @return Analysis results as tibble
+#' @note Implements dplyr grouping pattern from 20_R_packages/dplyr.md
+#' @note Uses ggplot2 visualization standards from 20_R_packages/ggplot2.md
+#' @export
+analyze_segments <- function(data, segment_var = "segment") {
+  # Implementation following documented patterns
+  data %>%
+    group_by(!!sym(segment_var)) %>%
+    summarize(
+      customers = n(),
+      avg_value = mean(customer_value, na.rm = TRUE),
+      total_revenue = sum(revenue, na.rm = TRUE)
+    )
+}
+```
+
+# Section 3: New Package Integration {#integration}
+
+## Subsection 1: Integration Process {#process}
+
+第一項：新套件整合步驟 (New package integration steps)
+
+When introducing a new package:
+
+1. **Create Documentation First**:
+   ```bash
+   # Create package documentation
+   touch 20_R_packages/[package_name].md
+   ```
+
+2. **Define Usage Patterns**:
+   ```markdown
+   # Package: dplyr
+   
+   ## Standard Usage Patterns
+   
+   ### Data Manipulation Pipeline
+   Always use pipe operator (%>%) for chaining operations...
+   
+   ### Grouping Operations
+   Use group_by() followed by summarize() for aggregations...
+   ```
+
+3. **Document Configuration**:
+   ```markdown
+   ## Standard Configuration
+   
+   ### Options
+   - Always set na.rm = TRUE in aggregation functions
+   - Use .groups = "drop" in summarize() to avoid warnings
+   ```
+
+4. **Provide Examples**:
+   ```markdown
+   ## Integration Examples
+   
+   ### With Database Connections
+   ```r
+   con %>%
+     tbl("customers") %>%
+     filter(active == TRUE) %>%
+     collect()
+   ```
+   ```
+
+## Subsection 2: Documentation Requirements {#doc-requirements}
+
+第一項：文件內容要求 (Documentation content requirements)
+
+Package documentation must include:
+
+1. **Standard Usage Patterns**: Canonical implementation methods
+2. **Configuration Standards**: Default options and settings
+3. **Function Selection Guidelines**: When to use which functions
+4. **Integration Examples**: Combining with other components
+5. **Versioning Requirements**: Compatible versions and constraints
+6. **Common Pitfalls**: What to avoid
+7. **Performance Considerations**: Optimization guidelines
+
+# Section 4: Application Scope {#scope}
+
+## Subsection 1: Package Categories {#categories}
+
+第一項：適用套件類別 (Applicable package categories)
+
+This rule applies to:
+
+1. **Core Functionality Packages**:
+   - Data manipulation: `dplyr`, `tidyr`, `data.table`
+   - Visualization: `ggplot2`, `plotly`
+   - Modeling: `caret`, `tidymodels`
+
+2. **UI Framework Packages**:
+   - Shiny components: `shiny`, `bs4Dash`
+   - Interactive widgets: `DT`, `leaflet`
+
+3. **Integration Packages**:
+   - Database: `DBI`, `RPostgres`
+   - API: `httr`, `jsonlite`
+
+4. **Specialized Analysis Packages**:
+   - Time series: `forecast`, `tsibble`
+   - Text analysis: `tidytext`, `tm`
+
+## Subsection 2: Exemptions {#exemptions}
+
+第一項：豁免情況 (Exemption cases)
+
+Documentation references not required for:
+- Base R functions (built-in)
+- Single-use utility packages
+- Packages used only in tests
+- Development-only packages
+
+# Section 5: Code Review Process {#review}
+
+## Subsection 1: Review Checklist {#checklist-review}
+
+第一項：審查清單 (Review checklist)
+
+During code review, verify:
+
+- [ ] File headers reference relevant package documentation
+- [ ] Code follows usage patterns in referenced documentation
+- [ ] Deviations from patterns are justified in comments
+- [ ] New packages have documentation before use
+- [ ] Function documentation notes pattern implementation
+- [ ] Configuration matches documented standards
+
+## Subsection 2: Deviation Handling {#deviations}
+
+第一項：偏離處理 (Handling deviations)
+
+When deviating from documented patterns:
+
+```r
+# DEVIATION FROM STANDARD PATTERN
+# Reason: Performance optimization for large dataset (>10M rows)
+# Standard pattern would cause memory overflow
+# Approved by: Team Lead (2025-04-13)
+
+# Using data.table instead of dplyr for this operation
+setDT(large_dataset)
+large_dataset[segment == "high_value", 
+              .(avg_value = mean(customer_value)),
+              by = region]
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Package Documentation Reference Checklist
+
+**Documentation Setup:**
+- [ ] Project-specific docs in `20_R_packages/`
+- [ ] Cross-project reference available
+- [ ] Documentation for all used packages
+- [ ] Version compatibility noted
+
+**File Headers:**
+- [ ] @uses_package tags present
+- [ ] Documentation paths correct
+- [ ] All packages referenced
+- [ ] Principles noted
+
+**Implementation:**
+- [ ] Follows documented patterns
+- [ ] Configuration matches standards
+- [ ] Functions use approved methods
+- [ ] Deviations documented
+
+**New Packages:**
+- [ ] Documentation created first
+- [ ] Patterns defined
+- [ ] Examples provided
+- [ ] Team reviewed
+
+**Code Review:**
+- [ ] Headers checked
+- [ ] Patterns verified
+- [ ] Deviations justified
+- [ ] Documentation current
+:::
+
+# Conclusion {#conclusion}
+
+The Package Documentation Reference Rule ensures consistent and maintainable use of external packages across the codebase. By requiring explicit references to centralized documentation and adherence to established patterns, teams maintain code quality, reduce errors, and facilitate knowledge transfer. This systematic approach to package usage creates a more robust and maintainable codebase while preserving flexibility for justified deviations.
+
+---
+
+*Based on: Development Methodology Law Implementation Rules Article 6*  
+*Related to: [DEV_R001 Apply Over Loops](DEV_R001_apply_over_loops.qmd), [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd)*

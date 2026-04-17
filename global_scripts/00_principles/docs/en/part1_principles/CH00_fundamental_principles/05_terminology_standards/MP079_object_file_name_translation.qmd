@@ -1,0 +1,201 @@
+---
+title: "MP078: Object File Name Translation"
+subtitle: "When translating object names (as defined in MP077) to filenames, dots (.) in object names must be converted to underscores (_) to ensure compatibility with filesystem conventions, while preserving the hierarchical structure and meaning of the object identifier"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP078"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "terminology-standard"
+law: "Fundamental Principles Law"
+article-number: 
+  number: 78
+  title: "Object File Name Translation"
+related_to:
+  - "MP077: Object Naming Convention"
+  - "SO_R007: One Function, One File Rule"
+  - "DEV_P004: Dot Notation Property Access Principle"
+  - "SO_R002: File Naming Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 78: Object File Name Translation {#overview}
+
+**Fundamental Principles Law Article 78 (Object File Name Translation)**
+
+When translating object names (as defined in MP077) to filenames, dots (.) in object names must be converted to underscores (_) to ensure compatibility with filesystem conventions, while preserving the hierarchical structure and meaning of the object identifier.
+
+:::{.callout-important}
+## Core Requirement
+By defining specific translation rules and providing utility functions, this rule enables seamless integration between code references and file operations.
+:::
+
+# Section 1: Translation Rules {#translation-rules}
+
+## Subsection 1: Basic Translation Pattern {#basic-translation-pattern}
+
+```
+object_name = type.purpose[___identifier]
+filename = fn_type_purpose.ext  # For functions
+filename = type_purpose.ext     # For other objects
+```
+
+Where:
+- All dots (.) in the object name are converted to underscores (_) in the filename
+- The optional identifier (after the triple underscore `___`) is omitted from the filename
+- An appropriate file extension (.R, .py, etc.) is added based on the language
+
+## Subsection 2: Examples of Translations {#translation-examples}
+
+| Object Name | Filename |
+|-------------|----------|
+| dt.calculate_sales | fn_dt_calculate_sales.R |
+| mdl.regression.sales | mdl_regression_sales.R |
+| comp.ui.customer | comp_ui_customer.R |
+| df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001___clean | df_amazon_sales_data_by_product_index_at_ALL_at_now_at_001.R |
+
+## Subsection 3: Handling Underscores in Object Names {#handling-underscores}
+
+When underscores already exist in object names (e.g., to separate words within a component), these underscores are preserved in the filename. This means that underscores in filenames may correspond to either:
+- Dots (.) in object names (separating components)
+- Underscores (_) in object names (separating words within components)
+
+For example:
+- Object: `fn.process.customer_data.remove_duplicates`
+- Filename: `fn_process_customer_data_remove_duplicates.R`
+
+## Subsection 4: Identifiers Exclusion {#identifiers-exclusion}
+
+The optional identifier part (after the triple underscore `___`) in object names is NOT included in the filename, as it represents a state or variation of the same underlying object rather than a distinct entity.
+
+For example:
+- Object: `df.sales.transactions.by_customer.at_CA.at_q1_2025.at_000___agg`
+- Filename: `df_sales_transactions_by_customer_at_CA_at_q1_2025_at_000.R`
+
+# Section 2: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Translation Functions {#translation-functions}
+
+Create standardized utility functions for bidirectional translation:
+- `object_name_to_filename(object_name, extension = ".R")` - Converts an object name to a filename
+- `filename_to_object_name(filename)` - Converts a filename to its corresponding object name
+
+## Subsection 2: Consistent Application {#consistent-application}
+
+- All object-handling functions must use these translation functions
+- File operations should reference objects by their object names and perform translation internally
+- Document all cases where a filename does not follow this translation rule
+
+## Subsection 3: IDE Integration {#ide-integration}
+
+Integrate with IDE tools to support:
+- Automatic file creation with properly translated names
+- Navigation between object references and their corresponding files
+- Refactoring support for consistent renaming
+
+# Section 3: Implementation Examples {#implementation-examples}
+
+## Subsection 1: Function Definition and File Creation {#function-definition}
+
+```r
+# Object name as defined in code
+calc.revenue <- function(sales_data, date_range, by_product = TRUE) {
+  # Function implementation
+}
+
+# Save to appropriately named file
+save_function_to_file(calc.revenue, "functions/")
+# Creates: functions/fn_calc_revenue.R
+```
+
+## Subsection 2: Loading Objects from Files {#loading-objects}
+
+```r
+# Load a function from a file based on object name
+calc.revenue <- load_function("calc.revenue")
+# Internally translates to: load_function_from_file("functions/fn_calc_revenue.R")
+```
+
+## Subsection 3: Translation Functions Implementation {#translation-functions-implementation}
+
+```r
+object_name_to_filename <- function(object_name, extension = ".R") {
+  # Extract the main part (before any triple underscore)
+  main_part <- strsplit(object_name, "___")[[1]][1]
+  
+  # Replace dots with underscores
+  filename <- gsub("\\.", "_", main_part)
+  
+  # Add extension
+  paste0(filename, extension)
+}
+
+filename_to_object_name <- function(filename) {
+  # Remove extension
+  base_name <- tools::file_path_sans_ext(filename)
+  
+  # This is an approximate reverse mapping
+  # Note: Cannot perfectly reconstruct original if there were underscores in components
+  object_name_candidate <- gsub("_", ".", base_name)
+  
+  # Additional validation could be implemented here
+  
+  return(object_name_candidate)
+}
+```
+
+# Section 4: Relationship to Other Principles {#relationship-to-other-principles}
+
+## Subsection 1: Relation to Object Naming Convention (MP077) {#relation-to-object-naming}
+
+This rule extends MP077 by:
+1. **Filesystem Translation**: Providing a filesystem-compatible representation of object names
+2. **Preserving Hierarchy**: Maintaining the hierarchical components defined in MP077
+3. **Handling Identifiers**: Specifying how the optional identifier part is handled
+
+## Subsection 2: Relation to One Function, One File Rule (SO_R007) {#relation-to-one-function-one-file}
+
+This rule supports SO_R007 by:
+1. **Standardized Mapping**: Creating a standardized way to map function names to filenames
+2. **Consistent Organization**: Ensuring consistent organization of function files
+3. **Namespace Support**: Supporting namespaced functions through the hierarchical naming
+
+## Subsection 3: Relation to Dot Notation Property Access Principle (DEV_P004) {#relation-to-dot-notation}
+
+This rule supports DEV_P004 by:
+1. **Consistent Access**: Maintaining a consistent notation between code and filesystem
+2. **Mapping Strategy**: Providing a clear mapping between notation styles
+
+## Subsection 4: Relation to File Naming Convention (SO_R002) {#relation-to-file-naming}
+
+This rule extends SO_R002 by:
+1. **Specific Pattern**: Providing a specific pattern for object-related files
+2. **Consistency**: Ensuring consistent handling of different object types
+
+# Section 5: Benefits {#benefits}
+
+## Subsection 1: Technical Benefits {#technical-benefits}
+
+1. **Filesystem Compatibility**: Ensures object names work with filesystem restrictions
+2. **Hierarchical Preservation**: Maintains the hierarchical structure from object names
+3. **Consistent Access**: Provides consistent access patterns between code and files
+4. **Automated Management**: Enables automated file management based on object references
+
+## Subsection 2: Development Benefits {#development-benefits}
+
+1. **Clear Associations**: Makes the relationship between objects and files explicit
+2. **Simplified Operations**: Simplifies conversion between objects and files
+3. **Better Tooling**: Supports better IDE integration and tooling
+4. **Reduced Errors**: Reduces errors from naming inconsistencies
+
+---
+
+*Based on: Fundamental Principles Law Article 78*  
+*Related to: [MP077 Object Naming Convention](MP077_object_naming_convention.qmd), [SO_R007 One Function, One File Rule](../../CH01_structure_organization/rules/SO_R007_one_function_one_file.qmd)*

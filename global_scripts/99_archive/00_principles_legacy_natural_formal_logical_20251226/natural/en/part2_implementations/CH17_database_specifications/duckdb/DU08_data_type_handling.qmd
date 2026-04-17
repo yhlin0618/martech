@@ -1,0 +1,253 @@
+---
+title: "DU08: Data Type Handling"
+subtitle: "Comprehensive Guide to Data Type Management in DuckDB"
+author: "MAMBA Framework"
+date: "2025-08-27"
+categories: [database, data-types, etl]
+---
+
+# Data Type Handling in DuckDB
+
+## Overview
+
+Proper data type handling is crucial for ETL pipelines and data integration. This guide covers strategies for managing different data types, especially when dealing with complex nested structures from APIs and external sources.
+
+## Type Detection and Inference
+
+### Automatic Type Detection
+
+DuckDB provides automatic type detection for common file formats:
+
+```r
+# R: Automatic detection
+df <- dbGetQuery(con, "SELECT * FROM 'data.json'")
+
+# Manual type specification
+df <- dbGetQuery(con, "
+  SELECT * FROM read_json('data.json', 
+    columns = {
+      id: 'INTEGER',
+      name: 'VARCHAR',
+      data: 'JSON'
+    }
+  )
+")
+```
+
+### Type Inspection
+
+```sql
+-- Check column types
+DESCRIBE table_name;
+
+-- Get detailed type information
+SELECT 
+  column_name,
+  data_type,
+  is_nullable
+FROM information_schema.columns
+WHERE table_name = 'your_table';
+```
+
+## Handling Basic Types
+
+### Numeric Types
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R`
+**Function**: `process_numeric_data()`
+**Purpose**: Handle numeric type conversion with overflow protection
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R")
+df_clean <- process_numeric_data(df)
+```
+
+### String Types
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R`
+**Function**: `clean_string_data()`
+**Purpose**: Clean and normalize string data with encoding handling
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R")
+df_clean <- clean_string_data(df)
+```
+
+### Date and Time Types
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R`
+**Function**: `process_temporal_data()`
+**Purpose**: Parse and standardize date/time data with timezone handling
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R")
+df_clean <- process_temporal_data(df)
+```
+
+## Handling Nested Types
+
+### LIST Type Handling
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R`
+**Functions**: `flatten_list_column()`, `store_list_as_json()`, `extract_list_elements()`
+**Purpose**: Three strategies for handling LIST type columns
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R")
+df_flat <- flatten_list_column(df, "items")
+```
+
+### STRUCT Type Handling
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R`
+**Function**: `process_struct_data()`
+**Purpose**: Handle STRUCT type data with flattening or extraction
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R")
+df_processed <- process_struct_data(df, "nested_col")
+```
+
+### JSON Type Handling
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R`
+**Function**: `handle_json_data()`
+**Purpose**: Extract and process JSON column data
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R")
+df_json <- handle_json_data(con, "api_responses")
+```
+
+## Type Conversion Strategies
+
+### Safe Type Conversion
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R`
+**Functions**: `safe_convert()`, `safe_type_conversion()`
+**Purpose**: Safe type conversion with error handling
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R")
+df_typed <- safe_type_conversion(df, list(id = "integer", price = "numeric"))
+```
+
+### Database Type Mapping
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R`
+**Functions**: `get_duckdb_type()`, `create_typed_table()`
+**Purpose**: Map R types to DuckDB and create tables with explicit types
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R")
+create_typed_table(con, "new_table", df)
+```
+
+## Performance Optimization
+
+### Type-Specific Optimizations
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R`
+**Function**: `optimize_types()`
+**Purpose**: Optimize data types for storage efficiency and query performance
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R")
+df_optimized <- optimize_types(df)
+```
+
+### Batch Processing for Large Datasets
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R`
+**Function**: `process_large_dataset()`
+**Purpose**: Process large datasets in memory-efficient chunks
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_nested_types.R")
+process_large_dataset(con, "source", "target", chunk_size = 50000)
+```
+
+## Error Handling and Validation
+
+### Type Validation
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R`
+**Function**: `validate_types()`
+**Purpose**: Validate data types against expected schema
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_data_cleaning.R")
+schema <- list(id = "integer", amount = "numeric")
+validate_types(df, schema)
+```
+
+## Best Practices
+
+1. **Always Inspect First**: Check data types before processing
+2. **Be Explicit**: Use explicit type conversion rather than relying on implicit
+3. **Handle NULLs**: Implement consistent NULL handling strategy
+4. **Document Transformations**: Keep record of all type conversions
+5. **Test Edge Cases**: Test with NULLs, empty values, and extreme values
+6. **Optimize for Query**: Choose types that optimize query performance
+7. **Consider Storage**: Balance between precision and storage efficiency
+
+## Common Issues and Solutions
+
+### Issue: List columns from API
+**Solution**: Convert to JSON string or normalize to separate table
+
+### Issue: Mixed types in column
+**Solution**: Convert to most general type or split into multiple columns
+
+### Issue: Large numeric values
+**Solution**: Use BIGINT or NUMERIC types instead of INTEGER
+
+### Issue: Timezone confusion
+**Solution**: Store as UTC, convert for display
+
+### Issue: JSON parsing errors
+**Solution**: Validate JSON before insertion, use try-catch blocks

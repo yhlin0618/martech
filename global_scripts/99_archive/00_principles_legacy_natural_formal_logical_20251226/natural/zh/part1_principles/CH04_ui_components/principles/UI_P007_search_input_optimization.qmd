@@ -1,0 +1,1066 @@
+---
+title: "UI_P007: 搜尋輸入優化原則"
+subtitle: "根據資料集大小、效能需求和UI一致性需求選擇搜尋輸入組件，對大型資料集實施伺服器端過濾並優化使用者體驗"
+chapter: "CH04"
+category: "principle"
+number: "UI_P007"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI組件法"
+article: 
+  number: 7
+  title: "搜尋輸入優化原則"
+related_to:
+  - "UI_P006: UI套件一致性原則"
+  - "DEV_P012: 反應式資料過濾原則"
+  - "UI_P003: 側邊欄過濾專用"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七條：搜尋輸入優化原則 {#overview}
+
+**UI組件法第七條（搜尋輸入優化原則）**
+
+根據資料集大小、效能需求和UI一致性需求選擇搜尋輸入組件，對大型資料集實施伺服器端過濾並優化使用者體驗。
+
+:::{.callout-important}
+## 核心原則
+根據資料量和效能需求智能選擇搜尋組件，實施適當的過濾策略以確保最佳使用者體驗。
+:::
+
+# 第一項：決策框架 {#decision-framework}
+
+## 第一款：資料集大小分析 {#dataset-size-analysis}
+
+根據資料量選擇輸入組件：
+
+| 資料集大小 | 推薦方法 | 實施策略 |
+|------------|----------|----------|
+| <1,000 筆資料 | 客戶端過濾與標準組件 | selectInput + 本地搜尋 |
+| 1,000-10,000 筆資料 | 伺服器端過濾配防抖動 | selectizeInput + 伺服器處理 |
+| >10,000 筆資料 | 資料庫層級過濾 | SQL查詢 + 分頁載入 |
+
+### 效能考量標準 {#performance-criteria}
+
+選擇組件時考慮以下效能指標：
+
+1. **初始載入時間**：組件首次渲染的時間
+2. **搜尋響應時間**：使用者輸入到結果顯示的延遲
+3. **記憶體使用量**：組件及其資料的記憶體佔用
+4. **網路傳輸量**：客戶端與伺服器間的資料傳輸
+5. **使用者體驗流暢度**：互動的整體流暢程度
+
+## 第二款：組件選項比較 {#component-comparison}
+
+### selectizeInput 特性 {#selectize-input}
+
+**優點：**
+- 內建於Shiny核心（無額外依賴）
+- 透過 updateSelectizeInput 支援伺服器端過濾
+- 與Shiny反應式系統緊密整合
+- 文件完善且廣泛使用
+- 對大型資料集與伺服器端處理高效
+
+**缺點：**
+- 外觀較不現代
+- 視覺樣式自訂選項有限
+- 行動端體驗優化有限
+
+**最適用於：**
+- 注重大型資料集效能的應用程式
+- 需要與Shiny反應性緊密整合的情況
+- 最小化依賴項很重要時
+
+```r
+# 伺服器端處理實作範例
+selectizeInput(
+  "customer_search",
+  "搜尋客戶：",
+  choices = NULL,
+  selectize = TRUE,
+  options = list(
+    placeholder = "輸入姓名或電子郵件...",
+    maxproducts = 1,
+    maxOptions = 10,
+    searchConjunction = "and",  # 支援多關鍵字搜尋
+    plugins = list("remove_button")  # 移除按鈕
+  )
+)
+
+# 伺服器端處理程序
+observeEvent(input$customer_search_search, {
+  search_term <- input$customer_search_search
+  
+  if (nchar(search_term) >= 2) {
+    # 資料庫查詢過濾
+    filtered_results <- tbl2(conn, "customers") %>%
+      filter(
+        str_detect(tolower(name), tolower(!!search_term)) |
+        str_detect(tolower(email), tolower(!!search_term))
+      ) %>%
+      arrange(name) %>%
+      head(10) %>%
+      collect()
+    
+    # 更新選項
+    choices_list <- setNames(
+      filtered_results$id,
+      paste(filtered_results$name, "(", filtered_results$email, ")")
+    )
+    
+    updateSelectizeInput(
+      session,
+      "customer_search",
+      choices = choices_list
+    )
+  }
+})
+```
+
+### shinyWidgets::pickerInput 特性 {#picker-input}
+
+**優點：**
+- Bootstrap樣式的現代外觀
+- 豐富的自訂選項
+- 更好的行動端支援
+- 更多可配置的搜尋行為
+- 與其他shinyWidgets組件視覺一致
+
+**缺點：**
+- 需要額外套件依賴
+- 對極大資料集效率較低
+- 伺服器端處理配置較複雜
+- 對很大的選項集可能較慢
+
+**最適用於：**
+- 優先考慮現代UI外觀的應用程式
+- 需要廣泛樣式自訂的介面
+- 有行動端使用需求的應用程式
+- UI一致性優先於原始效能時
+
+```r
+# 實作範例
+shinyWidgets::pickerInput(
+  "customer_search",
+  "搜尋客戶：",
+  choices = filtered_data,
+  options = list(
+    "live-search" = TRUE,
+    "live-search-placeholder" = "輸入姓名或電子郵件...",
+    "size" = 5,
+    "liveSearchStyle" = "contains",
+    "maxOptions" = 10,
+    "maxOptionsText" = "顯示前{n}個結果",
+    "noneResultsText" = "無符合結果",
+    "style" = "btn-outline-primary"
+  ),
+  multiple = FALSE
+)
+```
+
+### DT::datatable 搜尋功能 {#datatable-search}
+
+**適用場景：**
+- 需要顯示詳細資料表格時
+- 支援多欄位同時搜尋
+- 需要排序和分頁功能
+
+```r
+# 進階表格搜尋
+DT::datatable(
+  customers_data,
+  filter = "top",
+  options = list(
+    searchHighlight = TRUE,
+    search = list(regex = TRUE, caseInsensitive = TRUE),
+    columnDefs = list(
+      list(searchable = FALSE, targets = c(0, 1))  # 某些欄位不可搜尋
+    )
+  )
+)
+```
+
+# 第二項：實作指南 {#implementation-guidelines}
+
+## 第一款：伺服器端處理 {#server-side-processing}
+
+對於超過1,000筆資料的資料集，實施伺服器端過濾：
+
+### selectizeInput 伺服器端實作 {#selectize-server}
+
+```r
+# 完整的伺服器端搜尋實作
+server <- function(input, output, session) {
+  # 防抖動搜尋
+  search_reactive <- reactive({
+    input$customer_search_search
+  }) %>% debounce(300)  # 300毫秒延遲
+  
+  observeEvent(search_reactive(), {
+    search_term <- search_reactive()
+    
+    if (is.null(search_term) || nchar(search_term) < 2) {
+      updateSelectizeInput(
+        session,
+        "customer_search",
+        choices = list(),
+        server = TRUE
+      )
+      return()
+    }
+    
+    # 執行搜尋查詢
+    tryCatch({
+      results <- search_customers(search_term)
+      
+      choices_list <- setNames(
+        results$id,
+        paste0(results$name, " <", results$email, ">")
+      )
+      
+      updateSelectizeInput(
+        session,
+        "customer_search",
+        choices = choices_list,
+        server = TRUE
+      )
+    }, error = function(e) {
+      showNotification(
+        paste("搜尋錯誤：", e$message),
+        type = "error"
+      )
+    })
+  })
+}
+
+# 搜尋函數
+search_customers <- function(term, limit = 10) {
+  tbl2(conn, "customers") %>%
+    filter(
+      str_detect(tolower(name), tolower(!!term)) |
+      str_detect(tolower(email), tolower(!!term)) |
+      str_detect(tolower(company), tolower(!!term))
+    ) %>%
+    arrange(name) %>%
+    head(limit) %>%
+    collect()
+}
+```
+
+### pickerInput 優化實作 {#picker-optimization}
+
+```r
+# pickerInput 的效能優化版本
+optimized_picker_search <- function(data_source, search_columns) {
+  # 預處理資料以提高搜尋效能
+  processed_data <- data_source %>%
+    mutate(
+      search_text = tolower(paste(
+        across(all_of(search_columns)), 
+        sep = " "
+      ))
+    )
+  
+  # 客戶端搜尋（適用於中等大小資料集）
+  shinyWidgets::updatePickerInput(
+    session,
+    "search_input",
+    choices = processed_data,
+    options = list(
+      "liveSearchNormalize" = TRUE,
+      "liveSearchStyle" = "startsWith"
+    )
+  )
+}
+```
+
+## 第二款：搜尋優化技術 {#search-optimization}
+
+### 最小字元門檻 {#minimum-character-threshold}
+
+```r
+# 實施最小字元需求
+observeEvent(input$search_input_search, {
+  search_term <- input$search_input_search
+  
+  if (nchar(search_term) < 2) {
+    # 清空結果或顯示提示
+    updateSelectizeInput(
+      session,
+      "search_input",
+      choices = list("請輸入至少2個字元" = "")
+    )
+    return()
+  }
+  
+  # 執行搜尋
+  perform_search(search_term)
+})
+```
+
+### 防抖動處理 {#debouncing}
+
+```r
+# 防抖動搜尋實作
+search_debounced <- reactive({
+  input$search_input_search
+}) %>% debounce(500)  # 500毫秒延遲
+
+observeEvent(search_debounced(), {
+  if (nchar(search_debounced()) >= 2) {
+    perform_search(search_debounced())
+  }
+})
+```
+
+### 結果限制 {#result-limiting}
+
+```r
+# 限制搜尋結果數量
+search_with_limit <- function(term, max_results = 15) {
+  all_results <- perform_database_search(term)
+  
+  if (nrow(all_results) > max_results) {
+    limited_results <- all_results[1:max_results, ]
+    
+    # 添加"更多結果"指示
+    additional_info <- data.frame(
+      id = "more_results",
+      display_text = paste("... 還有", nrow(all_results) - max_results, "個結果")
+    )
+    
+    return(rbind(limited_results, additional_info))
+  }
+  
+  return(all_results)
+}
+```
+
+### 搜尋向量化 {#search-vectorization}
+
+```r
+# 使用向量化操作提高搜尋效能
+vectorized_search <- function(data, search_terms, search_columns) {
+  # 建立搜尋模式
+  pattern <- paste(search_terms, collapse = "|")
+  
+  # 向量化搜尋
+  matches <- data %>%
+    filter(
+      if_any(
+        all_of(search_columns),
+        ~ str_detect(tolower(.x), tolower(pattern))
+      )
+    )
+  
+  return(matches)
+}
+
+# 使用grep進行高效搜尋
+grep_search <- function(data, term, column) {
+  matches <- grep(
+    pattern = tolower(term),
+    x = tolower(data[[column]]),
+    value = FALSE,
+    fixed = TRUE  # 使用固定字串匹配提高效能
+  )
+  
+  return(data[matches, ])
+}
+```
+
+### 增量載入 {#incremental-loading}
+
+```r
+# 分頁增量載入
+incremental_search <- function(term, page = 1, page_size = 20) {
+  offset <- (page - 1) * page_size
+  
+  results <- tbl2(conn, "large_dataset") %>%
+    filter(str_detect(tolower(name), tolower(!!term))) %>%
+    arrange(name) %>%
+    slice(offset + 1:(offset + page_size)) %>%
+    collect()
+  
+  return(list(
+    data = results,
+    has_more = nrow(results) == page_size
+  ))
+}
+```
+
+## 第三款：使用者體驗考量 {#ux-considerations}
+
+### 有意義的標籤 {#meaningful-labels}
+
+```r
+# 創建描述性標籤
+create_search_labels <- function(data) {
+  labels <- paste0(
+    data$name,
+    " (", data$email, ")",
+    if_else(
+      !is.na(data$company),
+      paste(" - ", data$company),
+      ""
+    )
+  )
+  
+  return(setNames(data$id, labels))
+}
+
+# 使用富文本標籤
+rich_labels <- function(data) {
+  labels <- paste0(
+    "<strong>", data$name, "</strong><br>",
+    "<small class='text-muted'>", data$email, "</small>"
+  )
+  
+  return(setNames(data$id, labels))
+}
+```
+
+### 狀態回饋 {#status-feedback}
+
+```r
+# 載入指示器
+show_search_loading <- function() {
+  showNotification(
+    tagList(
+      icon("spinner", class = "fa-spin"),
+      "搜尋中..."
+    ),
+    id = "search_loading",
+    duration = NULL,
+    type = "message"
+  )
+}
+
+hide_search_loading <- function() {
+  removeNotification("search_loading")
+}
+
+# 搜尋結果統計
+show_search_stats <- function(count, term) {
+  output$search_stats <- renderText({
+    if (count == 0) {
+      paste("沒有找到與'", term, "'相關的結果")
+    } else {
+      paste("找到", count, "個與'", term, "'相關的結果")
+    }
+  })
+}
+```
+
+### 空狀態處理 {#empty-state-handling}
+
+```r
+# 空結果處理
+handle_empty_results <- function(search_term) {
+  updateSelectizeInput(
+    session,
+    "search_input",
+    choices = list(
+      paste("沒有找到'", search_term, "'的相關結果") = ""
+    )
+  )
+  
+  # 建議替代搜尋
+  suggestions <- get_search_suggestions(search_term)
+  if (length(suggestions) > 0) {
+    showNotification(
+      tagList(
+        p("您是否要找："),
+        tags$ul(
+          lapply(suggestions, function(s) {
+            tags$li(
+              actionLink(
+                paste0("suggestion_", s),
+                s,
+                onclick = paste0("Shiny.setInputValue('search_suggestion', '", s, "')") 
+              )
+            )
+          })
+        )
+      ),
+      type = "warning",
+      duration = 10
+    )
+  }
+}
+
+# 搜尋建議生成
+get_search_suggestions <- function(term) {
+  # 基於編輯距離的建議
+  all_names <- get_all_searchable_names()
+  distances <- adist(tolower(term), tolower(all_names))
+  close_matches <- all_names[distances <= 2]
+  
+  return(head(close_matches, 3))
+}
+```
+
+# 第三項：應用場景 {#application-contexts}
+
+## 第一款：客戶搜尋 {#customer-search}
+
+客戶搜尋功能遵循以下指南：
+
+### 小型客戶庫 {#small-customer-base}
+
+```r
+# <500個客戶：使用標準selectizeInput與客戶端過濾
+ui_small_customers <- fluidPage(
+  selectizeInput(
+    "customer_select",
+    "選擇客戶：",
+    choices = create_customer_choices(customers_data),
+    options = list(
+      placeholder = "輸入客戶姓名...",
+      searchField = c("text", "value")
+    )
+  )
+)
+
+create_customer_choices <- function(data) {
+  choices <- setNames(
+    data$customer_id,
+    paste0(data$name, " - ", data$email)
+  )
+  return(choices)
+}
+```
+
+### 中型客戶庫 {#medium-customer-base}
+
+```r
+# 500-5,000個客戶：使用server=TRUE的selectizeInput
+ui_medium_customers <- fluidPage(
+  selectizeInput(
+    "customer_select",
+    "搜尋客戶：",
+    choices = NULL,
+    options = list(
+      placeholder = "輸入姓名、電子郵件或公司...",
+      maxproducts = 1,
+      maxOptions = 15
+    )
+  )
+)
+
+server_medium_customers <- function(input, output, session) {
+  # 伺服器端搜尋
+  updateSelectizeInput(
+    session,
+    "customer_select",
+    choices = customer_choices_reactive(),
+    server = TRUE
+  )
+  
+  customer_choices_reactive <- reactive({
+    req(input$customer_select_search)
+    search_customers_server(
+      term = input$customer_select_search,
+      limit = 15
+    )
+  })
+}
+```
+
+### 大型客戶庫 {#large-customer-base}
+
+```r
+# >5,000個客戶：實施資料庫層級過濾
+ui_large_customers <- fluidPage(
+  div(
+    class = "search-container",
+    selectizeInput(
+      "customer_search",
+      "搜尋客戶：",
+      choices = NULL,
+      options = list(
+        placeholder = "請輸入至少3個字元進行搜尋...",
+        maxproducts = 1,
+        maxOptions = 20,
+        loadThrottle = 300
+      )
+    ),
+    div(
+      id = "search_status",
+      class = "search-status"
+    )
+  )
+)
+
+server_large_customers <- function(input, output, session) {
+  # 資料庫級搜尋與快取
+  search_cache <- reactiveVal(list())
+  
+  observeEvent(input$customer_search_search, {
+    search_term <- input$customer_search_search
+    
+    if (nchar(search_term) < 3) {
+      output$search_status <- renderText("請輸入至少3個字元")
+      return()
+    }
+    
+    # 檢查快取
+    cache_key <- tolower(search_term)
+    cached_result <- search_cache()[[cache_key]]
+    
+    if (!is.null(cached_result)) {
+      update_search_results(cached_result)
+      return()
+    }
+    
+    # 執行資料庫搜尋
+    show_search_loading()
+    
+    future({
+      search_customers_db(search_term)
+    }) %...>% {
+      # 更新快取
+      current_cache <- search_cache()
+      current_cache[[cache_key]] <- .
+      search_cache(current_cache)
+      
+      # 更新結果
+      update_search_results(.)
+      hide_search_loading()
+    }
+  })
+}
+
+search_customers_db <- function(term, limit = 20) {
+  sql <- "
+    SELECT 
+      customer_id,
+      name,
+      email,
+      company
+    FROM customers 
+    WHERE 
+      LOWER(name) LIKE LOWER($1) OR
+      LOWER(email) LIKE LOWER($1) OR
+      LOWER(company) LIKE LOWER($1)
+    ORDER BY 
+      CASE WHEN LOWER(name) LIKE LOWER($1) THEN 1 ELSE 2 END,
+      name
+    LIMIT $2
+  "
+  
+  results <- dbGetQuery(
+    conn, 
+    sql, 
+    params = list(
+      paste0("%", term, "%"),
+      limit
+    )
+  )
+  
+  return(results)
+}
+```
+
+## 第二款：產品搜尋 {#product-search}
+
+產品目錄通常需要專門處理：
+
+### 階層式分類搜尋 {#hierarchical-category-search}
+
+```r
+# 考慮分類階層：搜尋前允許按分類過濾
+ui_product_search <- fluidPage(
+  fluidRow(
+    column(3,
+      selectInput(
+        "category_filter",
+        "產品分類：",
+        choices = c("全部" = "all", get_product_categories())
+      )
+    ),
+    column(9,
+      selectizeInput(
+        "product_search",
+        "搜尋產品：",
+        choices = NULL,
+        options = list(
+          placeholder = "輸入產品名稱或關鍵字...",
+          maxOptions = 20
+        )
+      )
+    )
+  )
+)
+
+server_product_search <- function(input, output, session) {
+  # 基於分類過濾的產品搜尋
+  observeEvent(c(input$product_search_search, input$category_filter), {
+    search_term <- input$product_search_search
+    category <- input$category_filter
+    
+    if (nchar(search_term) >= 2) {
+      results <- search_products(
+        term = search_term,
+        category = if (category == "all") NULL else category
+      )
+      
+      choices_list <- create_product_choices(results)
+      
+      updateSelectizeInput(
+        session,
+        "product_search",
+        choices = choices_list
+      )
+    }
+  })
+}
+
+search_products <- function(term, category = NULL, limit = 20) {
+  query <- tbl2(conn, "products") %>%
+    filter(
+      str_detect(tolower(name), tolower(!!term)) |
+      str_detect(tolower(description), tolower(!!term)) |
+      str_detect(tolower(sku), tolower(!!term))
+    )
+  
+  if (!is.null(category)) {
+    query <- query %>% filter(category == !!category)
+  }
+  
+  results <- query %>%
+    arrange(name) %>%
+    head(limit) %>%
+    collect()
+  
+  return(results)
+}
+
+create_product_choices <- function(products) {
+  choices <- setNames(
+    products$product_id,
+    paste0(
+      products$name,
+      " - $", products$price,
+      if_else(
+        products$in_stock,
+        " (有庫存)",
+        " (缺貨)"
+      )
+    )
+  )
+  return(choices)
+}
+```
+
+### 多面向搜尋 {#faceted-search}
+
+```r
+# 實施多面向搜尋：啟用多個過濾維度
+ui_faceted_search <- fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      h4("過濾條件"),
+      selectInput(
+        "brand_filter",
+        "品牌：",
+        choices = c("全部" = "all", get_brands()),
+        multiple = TRUE
+      ),
+      sliderInput(
+        "price_range",
+        "價格範圍：",
+        min = 0,
+        max = 1000,
+        value = c(0, 1000)
+      ),
+      checkboxGroupInput(
+        "features",
+        "產品特色：",
+        choices = get_product_features()
+      )
+    ),
+    mainPanel(
+      selectizeInput(
+        "product_search",
+        "搜尋產品：",
+        choices = NULL,
+        width = "100%"
+      ),
+      div(id = "search_results")
+    )
+  )
+)
+
+server_faceted_search <- function(input, output, session) {
+  # 組合多個過濾條件
+  filtered_products <- reactive({
+    base_query <- tbl2(conn, "products")
+    
+    # 品牌過濾
+    if (!is.null(input$brand_filter) && !"all" %in% input$brand_filter) {
+      base_query <- base_query %>%
+        filter(brand %in% !!input$brand_filter)
+    }
+    
+    # 價格過濾
+    base_query <- base_query %>%
+      filter(
+        price >= !!input$price_range[1],
+        price <= !!input$price_range[2]
+      )
+    
+    # 特色過濾
+    if (length(input$features) > 0) {
+      feature_conditions <- map_chr(input$features, ~paste0("features LIKE '%", .x, "%'"))
+      feature_sql <- paste(feature_conditions, collapse = " OR ")
+      base_query <- base_query %>%
+        filter(sql(paste("(", feature_sql, ")")))
+    }
+    
+    return(base_query)
+  })
+  
+  # 基於過濾結果的搜尋
+  observeEvent(input$product_search_search, {
+    search_term <- input$product_search_search
+    
+    if (nchar(search_term) >= 2) {
+      results <- filtered_products() %>%
+        filter(
+          str_detect(tolower(name), tolower(!!search_term)) |
+          str_detect(tolower(description), tolower(!!search_term))
+        ) %>%
+        head(25) %>%
+        collect()
+      
+      choices_list <- create_detailed_product_choices(results)
+      
+      updateSelectizeInput(
+        session,
+        "product_search",
+        choices = choices_list
+      )
+    }
+  })
+}
+```
+
+### 包含產品元數據 {#product-metadata}
+
+```r
+# 在結果中顯示價格、可用性等
+create_detailed_product_choices <- function(products) {
+  choices <- setNames(
+    products$product_id,
+    paste0(
+      "<div class='product-choice'>",
+      "<strong>", products$name, "</strong>",
+      "<br><span class='price'>$", products$price, "</span>",
+      "<span class='stock ", 
+      if_else(products$in_stock, "in-stock", "out-stock"),
+      "'>", 
+      if_else(products$in_stock, "有庫存", "缺貨"),
+      "</span>",
+      "<br><small class='description'>",
+      str_trunc(products$description, 50),
+      "</small>",
+      "</div>"
+    )
+  )
+  return(choices)
+}
+
+# 對應的CSS樣式
+product_search_css <- tags$style("
+  .product-choice {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+  }
+  .product-choice:last-child {
+    border-bottom: none;
+  }
+  .price {
+    color: #28a745;
+    font-weight: bold;
+    margin-right: 10px;
+  }
+  .stock.in-stock {
+    color: #28a745;
+  }
+  .stock.out-stock {
+    color: #dc3545;
+  }
+  .description {
+    color: #6c757d;
+  }
+")
+```
+
+# 第四項：效能監控和測試 {#performance-testing}
+
+## 第一款：效能基準測試 {#performance-benchmarking}
+
+```r
+# 搜尋效能基準測試
+benchmark_search_performance <- function() {
+  test_sizes <- c(100, 1000, 10000, 50000)
+  search_terms <- c("A", "An", "John", "Smith")
+  
+  results <- expand_grid(
+    size = test_sizes,
+    term = search_terms
+  ) %>%
+    rowwise() %>%
+    mutate(
+      timing = list({
+        test_data <- generate_test_customers(size)
+        
+        # 測試不同搜尋方法
+        times <- microbenchmark(
+          client_side = grep(tolower(term), tolower(test_data$name)),
+          vectorized = str_detect(tolower(test_data$name), tolower(term)),
+          regex = grepl(tolower(term), tolower(test_data$name), fixed = TRUE),
+          times = 10
+        )
+        
+        summary(times)
+      })
+    )
+  
+  return(results)
+}
+
+# 記憶體使用測試
+test_memory_usage <- function(data_size) {
+  # 測試前記錄記憶體
+  mem_before <- pryr::mem_used()
+  
+  # 執行搜尋操作
+  test_data <- generate_test_customers(data_size)
+  search_results <- perform_search(test_data, "test")
+  
+  # 測試後記錄記憶體
+  mem_after <- pryr::mem_used()
+  
+  return(list(
+    memory_used = mem_after - mem_before,
+    data_size = data_size,
+    result_count = nrow(search_results)
+  ))
+}
+```
+
+## 第二款：即時效能監控 {#real-time-monitoring}
+
+```r
+# 即時搜尋效能監控
+monitor_search_performance <- function() {
+  # 效能監控反應式值
+  search_metrics <- reactiveVal(data.frame(
+    timestamp = as.POSIXct(character()),
+    search_term = character(),
+    result_count = integer(),
+    processing_time = numeric(),
+    memory_usage = numeric()
+  ))
+  
+  # 包裝搜尋函數以添加監控
+  monitored_search <- function(term) {
+    start_time <- Sys.time()
+    start_memory <- pryr::mem_used()
+    
+    # 執行搜尋
+    results <- perform_search(term)
+    
+    end_time <- Sys.time()
+    end_memory <- pryr::mem_used()
+    
+    # 記錄指標
+    new_metric <- data.frame(
+      timestamp = Sys.time(),
+      search_term = term,
+      result_count = nrow(results),
+      processing_time = as.numeric(end_time - start_time),
+      memory_usage = as.numeric(end_memory - start_memory)
+    )
+    
+    # 更新指標
+    current_metrics <- search_metrics()
+    updated_metrics <- rbind(current_metrics, new_metric)
+    
+    # 保持最近100筆記錄
+    if (nrow(updated_metrics) > 100) {
+      updated_metrics <- tail(updated_metrics, 100)
+    }
+    
+    search_metrics(updated_metrics)
+    
+    # 效能警告
+    if (new_metric$processing_time > 2) {
+      showNotification(
+        paste("搜尋處理時間較長：", round(new_metric$processing_time, 2), "秒"),
+        type = "warning"
+      )
+    }
+    
+    return(results)
+  }
+  
+  return(list(
+    search_function = monitored_search,
+    metrics = search_metrics
+  ))
+}
+
+# 效能儀表板
+create_performance_dashboard <- function(metrics_reactive) {
+  output$performance_plot <- renderPlot({
+    metrics <- metrics_reactive()
+    
+    if (nrow(metrics) > 0) {
+      ggplot(metrics, aes(x = timestamp, y = processing_time)) +
+        geom_line(color = "blue") +
+        geom_point(aes(size = result_count), alpha = 0.6) +
+        labs(
+          title = "搜尋效能監控",
+          x = "時間",
+          y = "處理時間 (秒)",
+          size = "結果數量"
+        ) +
+        theme_minimal()
+    }
+  })
+  
+  output$performance_summary <- renderTable({
+    metrics <- metrics_reactive()
+    
+    if (nrow(metrics) > 0) {
+      metrics %>%
+        summarise(
+          "平均處理時間" = round(mean(processing_time), 3),
+          "最大處理時間" = round(max(processing_time), 3),
+          "平均結果數" = round(mean(result_count)),
+          "搜尋次數" = n()
+        )
+    }
+  })
+}
+```
+
+# 結論 {#conclusion}
+
+搜尋輸入優化原則通過根據資料集大小、效能需求和使用者體驗目標選擇適當的搜尋組件和實施策略，確保應用程式在各種規模下都能提供響應迅速、使用者友好的搜尋功能。通過伺服器端過濾、防抖動處理、結果限制和智能快取等技術，應用程式可以在保持優秀效能的同時提供一致且直觀的搜尋體驗。
+
+---
+
+*基於：UI組件法第七條*  
+*相關：[UI_P006 UI套件一致性原則](UI_P006_ui_package_consistency.qmd)、[DEV_P012 反應式資料過濾原則](../../CH03_development_methodology/principles/DEV_P012_reactive_data_filtering.qmd)*

@@ -1,0 +1,132 @@
+---
+title: "DM_R016: Lowercase Natural Key Rule"
+subtitle: "All natural keys used as identifiers in the system must be lowercase to maintain pattern consistency with existing naming conventions"
+chapter: "CH02"
+category: "rule"
+number: "DM_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 16
+  title: "Lowercase Natural Key Rule"
+related_to:
+  - "MP83: Key Selection Principle"
+  - "MP70: Type-Prefix Naming"
+  - "MP71: Capitalization Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 16: Lowercase Natural Key Rule {#overview}
+
+**Data Management Law Article 16 (Lowercase Natural Key Rule)**
+
+All natural keys used as identifiers in the system must be lowercase to maintain pattern consistency with existing naming conventions.
+
+:::{.callout-important}
+## Statement
+All natural keys used as identifiers in the system must be lowercase to maintain pattern consistency with existing naming conventions.
+:::
+
+# Section 1: Rationale {#rationale}
+
+Natural keys provide semantic value through meaningful, self-documenting identifiers. However, to maintain consistency with the system's existing naming conventions (which use lowercase with underscores), natural keys must follow the same pattern. This ensures visual coherence, reduces cognitive load, and prevents errors caused by case inconsistencies.
+
+# Section 2: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Character Case {#character-case}
+
+- All natural key identifiers MUST be lowercase (e.g., "amz", "cas", "spt")
+- NO uppercase characters are allowed in natural keys
+- This applies to all database objects, variable names, and code references
+
+## Subsection 2: Format Requirements {#format-requirements}
+
+- Natural keys for product lines SHOULD be 3 characters long when possible
+- Multiple-word concepts SHOULD use established abbreviation practices without separators
+- Keys MUST NOT include special characters, spaces, or punctuation
+
+## Subsection 3: Database Implementation {#database-implementation}
+
+- Column definitions for natural keys SHOULD specify case-insensitive collation where supported
+- Input validation MUST convert any uppercase input to lowercase before storage
+- Queries SHOULD include case conversion for robustness: `WHERE LOWER(product_line_code) = 'amz'`
+
+## Subsection 4: Consistent Application {#consistent-application}
+
+- Existing tables that use natural keys MUST be modified to use lowercase
+- Data migration scripts MUST convert uppercase natural keys to lowercase
+- Documentation MUST reflect lowercase examples for all natural keys
+
+# Section 3: Examples {#examples}
+
+## Subsection 1: Correct Implementation {#correct-implementation}
+
+```sql
+-- Correct: lowercase natural key
+CREATE TABLE product_lines (
+  product_line_code char(3) PRIMARY KEY,
+  product_line_name_english text NOT NULL
+);
+
+INSERT INTO product_lines VALUES ('cas', 'Casual Wear');
+INSERT INTO product_lines VALUES ('spt', 'Sports Apparel');
+```
+
+```r
+# Correct: lowercase in table and variable names
+df_cas_sales <- df_sales %>% 
+  filter(product_line_code == 'cas')
+```
+
+## Subsection 2: Incorrect Implementation {#incorrect-implementation}
+
+```sql
+-- Incorrect: uppercase natural key
+CREATE TABLE product_lines (
+  product_line_code char(3) PRIMARY KEY
+);
+
+INSERT INTO product_lines VALUES ('CAS', 'Casual Wear');
+```
+
+```r
+# Incorrect: mixed case in variable names
+df_CAS_sales <- df_sales %>% 
+  filter(product_line_code == 'CAS')
+```
+
+# Section 4: UI Presentation Exception {#ui-presentation-exception}
+
+While natural keys must be lowercase in the database and code, they MAY be displayed in uppercase in user interfaces when emphasis is beneficial, provided that:
+
+1. The conversion to uppercase happens only at the presentation layer
+2. Any user input is converted back to lowercase before storage
+3. The UI consistently displays all natural keys in the same case
+
+# Section 5: Relationship to Other Principles {#relationship-to-other-principles}
+
+- **MP83: Key Selection Principle** - This rule applies specifically to natural keys as defined in MP83
+- **MP70: Type-Prefix Naming** - Natural keys follow similar prefix patterns but use lowercase
+- **MP71: Capitalization Convention** - Extends capitalization rules to natural keys
+
+# Section 6: Benefits {#benefits}
+
+1. **Visual Consistency**: Maintains cohesive pattern across all code and database elements
+2. **Reduced Cognitive Load**: Developers don't need to remember case exceptions
+3. **Error Prevention**: Reduces errors from inconsistent capitalization
+4. **Typing Efficiency**: Lowercase is faster to type without shift keys
+5. **Convention Alignment**: Aligns with R and SQL conventions which typically favor lowercase
+
+---
+
+*Based on: Data Management Law Article 16*  
+*Related to: [MP83 Key Selection Principle](../../CH00_fundamental_principles/meta_principles/MP083_key_selection.qmd), [MP70 Type-Prefix Naming](../../CH00_fundamental_principles/meta_principles/MP070_type_prefix_naming.qmd)*

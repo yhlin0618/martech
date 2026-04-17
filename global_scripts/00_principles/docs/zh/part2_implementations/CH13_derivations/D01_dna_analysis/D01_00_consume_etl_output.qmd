@@ -1,0 +1,114 @@
+---
+
+title: "D01_00: Consume ETL01 Output"
+subtitle: "Read and validate standardized sales data from ETL01"
+parent: "D01_dna_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D01_00"
+date-created: "2025-12-14"
+date-modified: "2025-12-14"
+author: "Claude"
+type: "derivation-task"
+depends_on: []
+outputs_to:
+  - "D01_01_customer_aggregation"
+implements:
+  - script: "cbz_D01_00.R"
+    path: "update_scripts/DRV/cbz/"
+  - script: "amz_D01_00.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "eby_D01_00.R"
+    path: "update_scripts/DRV/eby/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D01_00: Consume ETL01 Output {#overview}
+
+This task reads and validates the standardized sales transaction data output from ETL01. Each platform writes its own standardized table (`df_{platform}_sales___standardized`), and D01 consumes the platform-specific table. It serves as the entry point for the D01 derivation pipeline.
+
+## Task Definition (NSQL)
+
+```nsql
+CONSUME transformed_data.df_{platform}_sales___standardized FROM ETL01
+```
+
+## ETL01 Output Schema {#etl-schema}
+
+D01 receives standardized transaction-level data with:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `transaction_id` | VARCHAR | Unique transaction identifier |
+| `customer_id` | INTEGER | Customer identifier (already converted) |
+| `product_id` | VARCHAR | Product identifier |
+| `product_line_id` | INTEGER | Product category (already joined) |
+| `platform_id` | VARCHAR(3) | Sales platform_id (eby, cbz, amz, etc.) |
+| `payment_time` | TIMESTAMP | Transaction timestamp |
+| `lineproduct_price` | NUMERIC | Transaction amount |
+| `etl_timestamp` | TIMESTAMP | ETL processing metadata |
+
+## Schema Validation (NSQL) {#schema-validation-nsql}
+
+```nsql
+# Validate ETL01 Output Schema Before Processing
+VALIDATE_SCHEMA transformed_data.df_{platform}_sales___standardized:
+  REQUIRED_COLUMNS:
+    transaction_id: VARCHAR [NOT_NULL, UNIQUE]
+    customer_id: INTEGER [NOT_NULL]
+    product_id: VARCHAR [NOT_NULL]
+    product_line_id: INTEGER [NOT_NULL]
+    platform_id: VARCHAR(3) [IN: 'amz', 'eby', 'cbz', 'rtl']
+    payment_time: TIMESTAMP [NOT_NULL]
+    lineproduct_price: DOUBLE [NOT_NULL, >= 0]
+
+  OPTIONAL_COLUMNS:
+    ship_postal_code: VARCHAR
+    buyer_name: VARCHAR
+    etl_timestamp: TIMESTAMP
+    source_file: VARCHAR
+
+  ON_VALIDATION_FAILURE:
+    LOG_ERROR "ETL01 output schema validation failed"
+    ABORT D01_processing
+```
+
+## Data Consumption Pattern (NSQL) {#data-consumption-nsql}
+
+```nsql
+# D01 Data Consumption from ETL01
+CONSUME_ETL01_OUTPUT:
+  CONNECT TO transformed_data AS transformed_conn
+
+  IF etl01_result.success:
+    QUERY tbl2(transformed_conn, etl01_result.output_table)
+    COLLECT TO sales_data
+
+    VALIDATE_COLUMNS sales_data:
+      REQUIRED: [customer_id, platform_id, product_line_id, payment_time, lineproduct_price]
+      ON_MISSING: THROW_ERROR "Required columns missing from ETL01 output"
+  ELSE:
+    THROW_ERROR "ETL01 execution failed, cannot proceed with D01"
+
+  DISCONNECT FROM transformed_conn
+```
+
+## Implementation Reference {#implementation}
+
+This task is implemented as dedicated validation scripts:
+
+- **Cyberbiz**: `update_scripts/DRV/cbz/cbz_D01_00.R`
+- **Amazon**: `update_scripts/DRV/amz/amz_D01_00.R`
+- **eBay**: `update_scripts/DRV/eby/eby_D01_00.R`
+
+## Key Principle
+
+**D01 contains NO data preparation logic.** All data cleansing, standardization, and transformation is handled by ETL01. D01_00 simply validates that the expected schema is present and passes data to downstream tasks.
+
+## Next Task
+
+After successful consumption, proceed to [D01_01: Customer Aggregation](D01_01_customer_aggregation.qmd).

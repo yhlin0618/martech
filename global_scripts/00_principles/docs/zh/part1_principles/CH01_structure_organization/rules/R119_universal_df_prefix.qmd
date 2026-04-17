@@ -1,0 +1,370 @@
+---
+title: "R119: 資料集統一使用 df_ 前綴"
+subtitle: "所有儲存於資料庫的資料集必須使用 df_ 前綴,不論其來自 ETL 或 DRV 層級"
+author: "principle-product-manager"
+date: "2025-11-13"
+categories: [規則, 命名慣例, 資料庫, 資料管理, 一致性]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+**所有儲存於資料庫的資料集必須使用 `df_` 前綴,不論其來自 ETL 層或 DRV 層。**
+
+## 理由說明
+
+### 類型優先於來源
+
+**基於類型的命名**: 資料庫物件應該依據其類型(資料集)命名,而非來源(哪個層級建立的)。
+
+**通用識別**: 使用者應該能透過一致的命名立即識別資料集與其他資料庫物件(視圖、函數、索引)。
+
+**類比**: 就像函數無論屬於哪個層級都使用 `fn_` 前綴,資料集無論來源為何都使用 `df_` 前綴。
+
+### 清晰與可預測性
+
+- `df_` 清楚表示「這是一個資料框架/資料集」
+- 通用適用於所有層級(0IM, 1ST, 2TR, DRV, APP)
+- 消除關於表格類型的混淆
+
+### 實現 MP071
+
+此規則實現 **MP071: 類型前綴命名元原則**,該原則確立「程式碼實體的名稱應包含標準化前綴以識別其類型和目的」。
+
+## 命名模式
+
+```
+df_{domain}_{entity}___{stage}
+```
+
+### 組成部分
+
+- **`df_`**: 通用前綴(所有資料集必需)
+- **`{domain}`**: 資料來源(cbz, eby, amz, precision 等)
+- **`{entity}`**: 資料代表的內容(sales, customers, products, product_features, poisson_analysis)
+- **`___{stage}`**: 三個底線 + 階段指標(僅用於 ETL 層級)
+
+### 階段後綴規則
+
+**使用階段後綴**(___raw, ___staged, ___transformed)於:
+- **層級 0 (0IM)**: 原始匯入資料
+- **層級 1 (1ST)**: 暫存/清理資料
+- **層級 2 (2TR)**: 轉換資料
+
+**不使用階段後綴**於:
+- **層級 3 (DRV)**: 衍生分析資料集(最終輸出)
+- **層級 4 (APP)**: 應用程式就緒資料集(從 DRV 複製)
+
+**理由**: 階段後綴表示 ETL 處理的中間階段。DRV/APP 表格是最終分析輸出,非中間階段。
+
+## 各層級範例
+
+### 層級 0 (0IM - 原始匯入)
+
+```r
+# 從來源系統匯入的原始資料
+df_cbz_sales___raw
+df_cbz_customers___raw
+df_cbz_products___raw
+df_eby_orders___raw
+df_amz_inventory___raw
+```
+
+### 層級 1 (1ST - 暫存)
+
+```r
+# 初步清理後的暫存資料
+df_cbz_sales___staged
+df_cbz_customers___staged
+df_precision_products___staged
+df_eby_orders___staged
+```
+
+### 層級 2 (2TR - 轉換)
+
+```r
+# 轉換完成準備衍生的資料
+df_cbz_sales___transformed
+df_cbz_customers___transformed
+df_precision_products___transformed
+df_eby_orders___transformed
+```
+
+### 層級 3 (DRV - 衍生) ⭐ 無階段後綴
+
+```r
+# 最終分析資料集 - 無階段後綴
+df_cbz_product_features        # 非 df_cbz_product_features
+df_cbz_time_series             # 非 df_cbz_time_series
+df_cbz_poisson_analysis        # 非 df_cbz_poisson_analysis
+df_precision_market_analysis   # 非 df_precision_market_analysis
+df_precision_features          # 非 df_precision_features
+df_precision_poisson_analysis  # 非 df_precision_poisson_analysis
+```
+
+### 層級 4 (APP - 應用程式)
+
+```r
+# 應用程式資料(從 DRV 複製) - 無階段後綴
+df_cbz_product_features
+df_cbz_time_series
+df_cbz_poisson_analysis
+df_profile_by_customer
+df_position
+```
+
+## 常見錯誤
+
+### ✗ 錯誤: 使用 df_ 前綴
+
+```r
+# 錯誤 - 使用基於來源的命名
+dbWriteTable(con_processed, "df_cbz_product_features", features)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", analysis)
+dbWriteTable(con_processed, "df_precision_features", precision_features)
+
+# 用錯誤名稱讀取
+features <- tbl2(con_app, "df_cbz_product_features")
+```
+
+### ✓ 正確: 使用 df_ 前綴
+
+```r
+# 正確 - 使用基於類型的命名
+dbWriteTable(con_processed, "df_cbz_product_features", features)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", analysis)
+dbWriteTable(con_processed, "df_precision_features", precision_features)
+
+# 用正確名稱讀取
+features <- tbl2(con_app, "df_cbz_product_features")
+```
+
+### ✗ 錯誤: 對 DRV/APP 表格添加階段後綴
+
+```r
+# 錯誤 - DRV 表格不應有階段後綴
+dbWriteTable(con_processed, "df_cbz_product_features___derived", features)
+dbWriteTable(con_app, "df_cbz_poisson_analysis___final", analysis)
+```
+
+### ✓ 正確: DRV/APP 無階段後綴
+
+```r
+# 正確 - DRV/APP 表格是最終輸出,不需要階段標記
+dbWriteTable(con_processed, "df_cbz_product_features", features)
+dbWriteTable(con_app, "df_cbz_poisson_analysis", analysis)
+```
+
+## 實作範例
+
+### 在 DRV 腳本中
+
+**之前**(錯誤):
+```r
+# cbz_DRV_sales_analysis.R
+dbWriteTable(con_processed, "df_cbz_product_features", product_features)
+dbWriteTable(con_processed, "df_cbz_time_series", time_series)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", poisson_results)
+```
+
+**之後**(正確):
+```r
+# cbz_DRV_sales_analysis.R
+dbWriteTable(con_processed, "df_cbz_product_features", product_features)
+dbWriteTable(con_processed, "df_cbz_time_series", time_series)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", poisson_results)
+```
+
+### 整合腳本（已歸檔）
+
+`consolidate_to_app_data.R` 為過渡用批次搬移腳本，已歸檔。
+現行做法為 DRV/ETL 直接寫入 app_data（參考 MP110、DM_R055）。
+
+### 在應用程式程式碼中
+
+**之前**(錯誤):
+```r
+# app.R 或元件模組
+features <- tbl2(con_app, "df_cbz_product_features") %>% collect()
+analysis <- tbl2(con_app, "df_cbz_poisson_analysis") %>% collect()
+```
+
+**之後**(正確):
+```r
+# app.R 或元件模組
+features <- tbl2(con_app, "df_cbz_product_features") %>% collect()
+analysis <- tbl2(con_app, "df_cbz_poisson_analysis") %>% collect()
+```
+
+## 遷移路徑
+
+對於現有含 `df_` 前綴表格的資料庫:
+
+```r
+# rename_drv_to_df.R
+library(DBI)
+library(duckdb)
+
+# 連接資料庫
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+
+# 取得所有帶 df_ 前綴的表格
+tables <- dbListTables(con)
+df_tables <- grep("^df_", tables, value = TRUE)
+
+cat("發現", length(df_tables), "個帶 df_ 前綴的表格\n")
+cat("將重新命名的表格:\n")
+print(df_tables)
+
+# 重新命名每個表格
+for (old_name in df_tables) {
+  # 新名稱: 將 df_ 替換為 df_
+  new_name <- sub("^df_", "df_", old_name)
+
+  # 取得重新命名前的列數
+  count_before <- dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM %s", old_name))$n
+
+  # 重新命名表格
+  dbExecute(con, sprintf("ALTER TABLE %s RENAME TO %s", old_name, new_name))
+
+  # 驗證重新命名後的列數
+  count_after <- dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM %s", new_name))$n
+
+  # 報告
+  cat(sprintf("✓ 已重新命名: %s -> %s (%d 列)\n", old_name, new_name, count_after))
+
+  # 驗證無資料遺失
+  if (count_before != count_after) {
+    warning(sprintf("%s 列數不符: 之前=%d, 之後=%d",
+                    old_name, count_before, count_after))
+  }
+}
+
+dbDisconnect(con, shutdown = TRUE)
+cat("\n✓ 遷移完成\n")
+```
+
+## 驗證腳本
+
+檢查所有資料庫的合規性:
+
+```r
+# verify_df_prefix_compliance.R
+library(DBI)
+library(duckdb)
+
+verify_database <- function(db_path, db_name) {
+  con <- dbConnect(duckdb::duckdb(), db_path, read_only = TRUE)
+  tables <- dbListTables(con)
+
+  # 檢查: 所有表格應以 df_ 開頭
+  non_compliant <- tables[!grepl("^df_", tables)]
+
+  cat("\n", rep("=", 60), "\n", sep = "")
+  cat("資料庫:", db_name, "\n")
+  cat("路徑:", db_path, "\n")
+  cat("總表格數:", length(tables), "\n")
+
+  if (length(non_compliant) > 0) {
+    cat("❌ 不合規表格(缺少 df_ 前綴):\n")
+    print(non_compliant)
+  } else {
+    cat("✓ 所有", length(tables), "個表格符合 R119 規範(df_ 前綴)\n")
+  }
+
+  dbDisconnect(con, shutdown = TRUE)
+}
+
+# 驗證所有資料庫
+verify_database("data/raw_data/raw_data.duckdb", "raw_data")
+verify_database("data/staged_data/staged_data.duckdb", "staged_data")
+verify_database("data/processed_data/processed_data.duckdb", "processed_data")
+verify_database("data/app_data/app_data.duckdb", "app_data")
+```
+
+## 為何不使用 df_ 前綴?
+
+### 推理
+
+1. **`df_` 描述來源**(衍生層) - 它從哪裡來
+2. **`df_` 描述類型**(資料集/資料框架) - 它是什麼
+3. **資料庫物件應依類型命名,非來源**
+4. **與函數命名一致**: 函數無論層級都使用 `fn_`
+5. **通用標準**: 所有資料框架使用 `df_`,所有函數使用 `fn_`
+
+### 與函數命名的類比
+
+**函數**(無論層級):
+- ETL 函數: `fn_clean_sales.R` (非 `etl_clean_sales.R`)
+- DRV 函數: `fn_calculate_ranges.R` (非 `df_calculate_ranges.R`)
+- 工具函數: `fn_format_date.R` (非 `util_format_date.R`)
+
+**資料集**(無論層級):
+- ETL 資料集: `df_cbz_sales___raw` (非 `etl_cbz_sales___raw`)
+- DRV 資料集: `df_cbz_product_features` (非 `df_cbz_product_features`)
+- APP 資料集: `df_cbz_poisson_analysis` (非 `app_cbz_poisson_analysis`)
+
+**兩者都使用通用類型前綴**(`fn_`, `df_`)**無論層級為何**。
+
+## 相關原則
+
+- **MP071**: 類型前綴命名元原則 - 建立基於類型命名的父原則
+- **R021**: 一個函數一個檔案 - 函數組織規則
+- **R069**: 函數檔案命名 - 函數通用使用 fn_ 前綴
+- **R119**(本規則): 資料集統一 df_ 前綴 - 資料集通用使用 df_ 前綴
+- **MP102**: 完整性與標準化 - 整體系統一致性
+- **MP110**: ETL 多層架構 - 定義層級結構(0IM, 1ST, 2TR, DRV, APP)
+
+## 執行
+
+### 程式碼審查檢查清單
+
+- [ ] 所有 `dbWriteTable()` 呼叫使用 `df_` 前綴
+- [ ] 所有 `tbl2()` 呼叫參考帶 `df_` 前綴的表格
+- [ ] 無使用 `df_`、`etl_` 或其他基於來源前綴的表格
+- [ ] 階段後綴(___raw, ___staged, ___transformed)僅用於 ETL 層級
+- [ ] DRV 和 APP 表格無階段後綴
+
+### Linting 規則(未來)
+
+```r
+# 建議的 linter 以偵測違規
+check_df_prefix <- function(code) {
+  # 檢查 dbWriteTable 呼叫
+  pattern_write <- 'dbWriteTable\\([^,]+,\\s*"(?!df_)[^"]+'
+  violations_write <- grep(pattern_write, code, value = TRUE)
+
+  # 檢查 tbl2 呼叫
+  pattern_read <- 'tbl2\\([^,]+,\\s*"(?!df_)[^"]+'
+  violations_read <- grep(pattern_read, code, value = TRUE)
+
+  if (length(violations_write) > 0 || length(violations_read) > 0) {
+    stop("R119 違規: 所有資料集名稱必須使用 df_ 前綴")
+  }
+}
+```
+
+## 總結
+
+**簡單規則**: 如果它是資料庫中的資料集,就使用 `df_` 前綴。就這樣。
+
+**無例外**基於:
+- 哪個層級建立的(ETL vs DRV)
+- 它存在於哪個資料庫(raw_data vs app_data)
+- 它屬於哪個層級(0IM, 1ST, 2TR, DRV, APP)
+
+**一致性為王**: 基於類型的命名(df_)勝過基於來源的命名(df_)。
+
+---
+
+**建立日期**: 2025-11-13
+**作者**: principle-product-manager
+**狀態**: 啟用
+**實現**: MP071 (類型前綴命名元原則)

@@ -1,0 +1,169 @@
+---
+id: "MP150"
+title: "MP150: Dataflow Tracking and Execution Telemetry"
+type: "meta-principle"
+category: "data_management"
+date_created: "2026-02-13"
+date_modified: "2026-02-13"
+author: "Codex"
+status: "active"
+version: "1.0"
+weight: 150
+priority: "HIGH"
+related_to:
+  - "MP149": "Data Transaction Integrity"
+  - "MP141": "Scheduled Execution Pattern"
+  - "MP142": "Configuration-Driven Pipeline"
+  - "MP104": "ETL Data Flow Separation"
+  - "DM_R054": "Universal Data Storage"
+implements:
+  - "RUN_TELEMETRY": "Every ETL/DRV unit must emit immutable execution events"
+  - "DATAFLOW_LINKAGE": "Traceability between source artifacts and output tables"
+  - "MISSING_DATA_RECORDING": "Missing optional data becomes explicit metadata"
+---
+
+# MP150: Dataflow Tracking and Execution Telemetry
+
+## Core Statement
+
+**All ETL and DRV execution must be traceable end-to-end through standardized telemetry: source discovery, execution status, and output effects must be recorded as machine-readable metadata so downstream modules can verify what happened without reading external script logs.**
+
+This principle applies to **every script in the dataflow graph** (ETL and DRV). A successful run is not only correct output; it is also a verifiable execution record.
+
+## Why This Matters
+
+A data pipeline can still appear successful while silently skipping sources, producing empty tables, or silently altering expected row cardinality. Without a standard telemetry contract, dataflow debugging becomes speculative and recovery is delayed.
+
+MP150 requires that dataflow observability be part of the normal pipeline contract, not an optional log.
+
+## Scope and Coverage
+
+MP150 applies when:
+
+- Discovering input artifacts (folders, files, tabs, API pages)
+- Importing or transforming data (ETL and DRV)
+- Producing derived artifacts consumed by later stages
+- Handling conditional logic such as skip branches, empty inputs, or recoverable warnings
+
+It covers script-level execution (`*_ETL_*.R`, `*_DRV_*.R`) and cross-stage dependencies.
+
+## Mandatory Execution Event Contract
+
+Each pipeline run MUST emit events matching the following minimum schema.
+
+### Required Run Header
+
+- `run_id` (`string`): Unique run identifier (stable across script stages)
+- `run_type` (`string`): `etl` or `drv`
+- `platform_id` (`string`): `cbz`, `amz`, `eby`, `all`, etc.
+- `pipeline_id` (`string`): Logical dataflow lane (e.g., `sales`, `reviews`, `competitor_sales`)
+- `phase` (`string`): `0IM`, `1ST`, `2TR`, `3PR`, `4CL`, `5NM`
+- `sequence` (`string`): Script-level index if applicable (e.g., `D03_10`)
+- `step_name` (`string`): Executable name
+- `status` (`string`): `STARTED`, `SKIPPED`, `PASSED`, `FAILED`, `ABORTED`
+- `started_at` (`timestamp`), `ended_at` (`timestamp`)
+- `duration_ms` (`integer`): Milliseconds from start to end
+
+### Required Data-Effect Fields
+
+- `rows_input` (`integer`, nullable): Rows available before operation
+- `rows_output` (`integer`, nullable): Rows produced/written after operation
+- `rows_written_delta` (`integer`, nullable): Difference between attempted and written rows where applicable
+- `file_count_discovered` (`integer`): Input units found at discovery time
+- `file_count_loaded` (`integer`): Units successfully loaded
+- `file_count_skipped` (`integer`): Units intentionally skipped
+- `file_count_empty` (`integer`): Units discovered but empty/zero-row
+- `missing_critical_inputs` (`array|string`): Critical missing inputs and reasons
+- `error_code` (`string`, nullable): Standardized error marker when failed/aborted
+- `notes` (`string`, nullable): Human-readable summary
+
+### Required Audit Fields
+
+- `actor` (`string`, nullable): Runtime actor/context
+- `configuration_id` (`string`, nullable): Hash or version id of config used
+- `environment_profile` (`string`, nullable): Node/env fingerprint used for reproducibility
+- `source_ledger` (`string`, nullable): Pointer to discovery ledger if split logs exist
+- `output_ledger` (`string`, nullable): Pointer to output audit location (table/file)
+
+## Non-Fatal vs Fatal Behavior
+
+MP150 does **not** force every missing artifact to stop the run.
+
+- **Mandatory input missing** in a critical script/step **must stop with `FAILED`** and persist failure metadata.
+- **Optional input empty/missing** in an explicitly optional step **must emit `SKIPPED` or `EMPTY` events** with `missing_critical_inputs = NULL` and continue if configured.
+- **Unknown/ambiguous source status** must not be silently ignored; it must be explicitly mapped to `FAILED` or `SKIPPED`.
+
+## Traceability Rule
+
+For every non-trivial transformation, implementations must persist at least one parent-child relationship record:
+
+- `source_object`
+- `target_object`
+- `transform_signature` (hash or function reference)
+- `dependency_path`
+
+This allows downstream users to answer:
+
+- Which source folder/file generated this table?
+- Did we skip it because it was optional, empty, or missing?
+- Which input version/runs were used?
+
+## Persistence Requirements
+
+Telemetry must be persisted to the app metadata layer (`app_data`) in durable form:
+
+1. **Primary store**: append-only table (e.g., `app_data.drv_run_events`, `app_data.drv_run_event_ledger`, or equivalent)
+2. **Secondary store**: optional file log for operator readability
+3. **Retention policy**: keep complete metadata with a retention window aligned to business operations (must be policy-defined, not accidental)
+
+At minimum, every run must be queryable by `run_id` and platform+phase.
+
+## Minimal SQL Contract (Example)
+
+```sql
+CREATE TABLE IF NOT EXISTS app_data.drv_run_events (
+  run_id TEXT NOT NULL,
+  run_type TEXT NOT NULL,
+  platform_id TEXT NOT NULL,
+  pipeline_id TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  sequence TEXT,
+  step_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TIMESTAMP,
+  ended_at TIMESTAMP,
+  duration_ms INTEGER,
+  rows_input BIGINT,
+  rows_output BIGINT,
+  rows_written_delta BIGINT,
+  file_count_discovered INTEGER,
+  file_count_loaded INTEGER,
+  file_count_skipped INTEGER,
+  file_count_empty INTEGER,
+  missing_critical_inputs TEXT,
+  error_code TEXT,
+  notes TEXT,
+  actor TEXT,
+  configuration_id TEXT,
+  environment_profile TEXT,
+  source_ledger TEXT,
+  output_ledger TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## Implementation Checklist
+
+- [ ] Every execution script records START/END telemetry with a stable `run_id`.
+- [ ] Discovery, load/transform, and completion stages emit status explicitly.
+- [ ] Missing optional data is recorded as explicit metadata (`SKIPPED` / `EMPTY`), not silent pass.
+- [ ] Metadata is persisted (not only printed) before script exits.
+- [ ] Failed/aborted runs always include `error_code` and a machine-readable reason.
+- [ ] Output artifacts can be traced from `run_id` to source path/artifact.
+
+## Relationship to Existing Principles
+
+- **MP149**: MP149 guarantees completeness semantics; MP150 guarantees observability of that completeness execution.
+- **MP142**: Pipeline definitions in config must align with run-time telemetry context.
+- **DM_R054**: Metadata persistence expectations are met through shared app_data recording.
+- **MP104**: Keeps dataflow boundary clarity while preserving operational traceability.

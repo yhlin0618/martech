@@ -1,0 +1,338 @@
+---
+title: "MP055: 計算分配元原則 (Computation Allocation Principle)"
+subtitle: "應用程式計算必須根據計算強度、使用頻率和對用戶體驗的重要性，策略性地分配到執行的不同階段"
+author: "Development Team"
+date: "2025-04-10"
+date-modified: "2025-08-16"
+categories: [meta-principle, performance-optimization, resource-management, computation-allocation]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心聲明
+
+應用程式計算必須根據計算強度、使用頻率和對用戶體驗的重要性，策略性地分配到執行的不同階段（初始化、空閒時間、用戶觸發和即時）。
+
+## 理由
+
+反應式應用程式必須平衡計算資源，以確保最佳用戶體驗，同時有效管理系統資源。計算的策略性分配確保：
+
+1. **應用程式響應性**：關鍵用戶交互保持快速和流暢
+2. **資源效率**：計算資源在最可用時使用
+3. **可擴展性**：應用程式可以處理增加的數據量而不會成比例地降低性能
+4. **用戶體驗**：關鍵交互的感知延遲最小化
+
+## 實施框架
+
+### 1. 計算分類 {#computation-classification}
+
+應用程式中的所有計算都應按以下方式分類：
+
+#### A. 計算強度
+- **輕量**：在參考硬體上在 < 100ms 內完成
+- **中等**：在參考硬體上在 100ms-1s 內完成
+- **重量**：在參考硬體上在 > 1s 內完成
+
+#### B. 使用頻率
+- **一次**：在應用程式生命週期中計算一次
+- **偶爾**：不頻繁計算（例如，每日或每會話）
+- **頻繁**：在正常應用程式使用期間定期計算
+
+#### C. 結果穩定性
+- **靜態**：結果在應用程式會話期間不變
+- **半靜態**：結果不頻繁變化
+- **動態**：結果根據用戶操作或數據更新頻繁變化
+
+#### D. 重要性
+- **核心**：基本應用程式功能所必需
+- **功能**：對特定功能重要
+- **增強**：提供附加價值但不是必需的
+
+### 2. 分配策略 {#allocation-strategies}
+
+根據分類，將計算分配到以下策略之一：
+
+#### A. 預計算
+對於 **重量** + **靜態**/**半靜態** + **頻繁** 的計算：
+- 在初始化或數據載入期間計算
+- 存儲結果以供即時訪問
+- 在數據刷新週期更新，而不是在用戶交互期間
+
+#### B. 懶計算
+對於 **中等**/**重量** + **半靜態** + **偶爾** 的計算：
+- 僅在首次需要時計算
+- 存儲結果以供後續訪問
+- 當輸入顯著變化時使緩存無效
+
+#### C. 緩存計算
+對於 **中等** + **動態** + **頻繁** 的計算：
+- 在輸入變化時計算
+- 緩存結果直到輸入再次變化
+- 實施高效的緩存失效
+
+#### D. 節流計算
+對於 **輕量**/**中等** + **動態** + **頻繁** 的計算：
+- 按需計算但限制頻率（防抖）
+- 優先考慮響應性而非即時更新
+- 考慮對進行中的計算提供視覺反饋
+
+#### E. 背景計算
+對於 **重量** + **動態** + **偶爾** 的計算：
+- 卸載到背景過程
+- 隨著結果到達逐步更新 UI
+- 在處理期間提供臨時反饋
+
+#### F. 按需計算
+對於 **輕量** + **動態** + **頻繁** 的計算：
+- 在需要時即時計算
+- 優化以獲得最大性能
+- 盡可能使用向量化操作
+
+### 3. 系統架構影響 {#system-architecture}
+
+#### A. 計算位置
+- **客戶端**：對於個人化、UI 依賴的計算
+- **伺服器端**：對於共享、數據密集或安全的計算
+- **資料庫**：對於面向數據的聚合和篩選
+
+#### B. 數據傳輸優化
+- 僅傳輸處理過的結果，而不是原始數據
+- 對大型數據集使用漸進式數據載入
+- 適當壓縮數據以進行傳輸
+
+#### C. 硬體資源管理
+- 管理大型數據集的記憶體消耗
+- 利用並行處理進行獨立計算
+- 考慮對密集操作進行 CPU/GPU 優化
+
+## 實施模式
+
+### 1. 預計算分佈模式 {#precomputed-pattern}
+
+```r
+# 在初始化階段
+initialize_distributions <- function(data_source) {
+  # 計算關鍵指標的分佈
+  distributions <- list(
+    metric_a = calculate_distribution(data_source$metric_a),
+    metric_b = calculate_distribution(data_source$metric_b)
+  )
+  
+  # 作為反應式值返回供應用程式使用
+  reactiveVal(distributions)
+}
+
+# 在組件伺服器函數中
+server <- function(input, output, session) {
+  output$distribution_plot <- renderPlot({
+    # 使用預計算的分佈
+    dist_data <- distributions()[[input$selected_metric]]
+    
+    # 使用預計算數據創建視覺化
+    ggplot(dist_data, aes(x = value, y = cumulative)) +
+      geom_line()
+  })
+}
+```
+
+### 2. 緩存反應式模式 {#cached-pattern}
+
+```r
+# 在組件伺服器函數中
+server <- function(input, output, session) {
+  # 定義具有反應式依賴的緩存計算
+  filtered_data <- reactive({
+    # 僅在輸入變化時重新計算
+    req(input$filter_a, input$filter_b)
+    
+    # 檢查緩存是否有效
+    cache_key <- paste(input$filter_a, input$filter_b, sep = "|")
+    if (cache_key %in% names(results_cache)) {
+      return(results_cache[[cache_key]])
+    }
+    
+    # 如果未緩存則執行計算
+    result <- heavy_calculation(data, input$filter_a, input$filter_b)
+    
+    # 更新緩存
+    results_cache[[cache_key]] <<- result
+    return(result)
+  })
+}
+```
+
+### 3. 背景處理模式 {#background-pattern}
+
+```r
+# 在組件伺服器函數中
+server <- function(input, output, session) {
+  # 追蹤計算狀態
+  calculation_status <- reactiveVal("idle")
+  
+  # 在背景觸發重量計算
+  observeEvent(input$run_analysis, {
+    calculation_status("running")
+    
+    # 啟動背景作業
+    future_promise({
+      # 運行密集計算
+      result <- run_complex_analysis(data, input$parameters)
+      return(result)
+    }) %...>% 
+      (function(result) {
+        # 計算完成時更新 UI
+        calculation_results(result)
+        calculation_status("complete")
+      }) %...!% 
+      (function(error) {
+        # 處理錯誤
+        calculation_status("error")
+        log_error(error)
+      })
+  })
+  
+  # 根據狀態顯示適當的 UI
+  output$results <- renderUI({
+    status <- calculation_status()
+    if (status == "idle") {
+      return(div("點擊「運行分析」開始"))
+    } else if (status == "running") {
+      return(div("分析進行中...", spinner()))
+    } else if (status == "complete") {
+      return(plot_results(calculation_results()))
+    } else {
+      return(div("運行分析時出錯", class = "error"))
+    }
+  })
+}
+```
+
+### 4. 漸進式載入模式 {#progressive-pattern}
+
+```r
+# 在組件伺服器函數中
+server <- function(input, output, session) {
+  # 初始狀態使用樣本
+  current_data <- reactiveVal(sample_data(full_data, n = 1000))
+  
+  # 開始快速近似分析
+  output$visualization <- renderPlot({
+    # 總是立即顯示一些內容
+    create_visualization(current_data())
+  })
+  
+  # 然後在背景處理完整數據集
+  observe({
+    # 僅在組件初始化時運行
+    invalidateLater(100)
+    
+    # 不阻塞 UI 線程
+    future_promise({
+      process_full_dataset(full_data)
+    }) %...>% 
+      (function(result) {
+        # 當可用時用完整結果更新
+        current_data(result)
+      })
+  })
+}
+```
+
+## 跨環境類型的應用
+
+### 1. 開發環境 {#development-environment}
+- 專注於靈活性和可調試性
+- 接受一些性能權衡以獲得開發速度
+- 將計算分配實施為模擬行為
+
+### 2. 測試環境 {#testing-environment}
+- 匹配生產計算分配
+- 添加儀器以驗證性能特徵
+- 使用現實的數據量進行測試
+
+### 3. 生產環境 {#production-environment}
+- 應用所有優化策略
+- 監控計算時間和資源使用
+- 根據實際使用模式擴展分配策略
+
+## 與其他原則的關係
+
+此元原則建立在：
+
+- **MP0017（關注點分離）**：通過將計算時間與邏輯實施分離
+- **MP0030（向量化原則）**：通過優化內部計算以獲得性能
+- **MP0047（函數式編程）**：通過鼓勵純函數以獲得更好的緩存和記憶化
+
+並需要實施：
+
+- **P77（性能優化）**：用於創建高效的計算，無論分配如何
+
+## 好處
+
+1. **更流暢的用戶體驗**：即使有複雜的計算，應用程式也感覺更響應
+2. **更好的資源利用**：計算在資源可用時發生
+3. **改進的可擴展性**：應用程式可以處理更大的數據集而不會成比例地變慢
+4. **明確的性能管理**：使性能考慮成為架構關注點
+5. **可預測的行為**：系統性能特徵變得更可預測
+
+## 實施檢查清單
+
+要將此元原則應用於您的應用程式：
+
+1. [ ] 按強度、頻率、穩定性和重要性清點和分類所有計算
+2. [ ] 為每個計算確定適當的分配策略
+3. [ ] 為半靜態計算實施緩存機制
+4. [ ] 為重量、頻繁的計算添加預計算
+5. [ ] 為長時間運行的操作創建背景處理基礎設施
+6. [ ] 建立計算時間和資源使用的監控
+7. [ ] 記錄計算分配決策以便維護
+
+## 範例
+
+### 客戶 DNA 分佈範例
+
+1. **分類**：
+   - 計算強度：中等（大型客戶數據集）
+   - 使用頻率：頻繁（核心視覺化）
+   - 結果穩定性：半靜態（隨數據更新而變化）
+   - 重要性：核心（主要分析工具）
+
+2. **分配策略**：預計算 + 緩存計算
+
+3. **實施**：
+   ```r
+   # 在數據初始化期間
+   precomputed_distributions <- reactiveVal(NULL)
+   
+   # 隨數據載入初始化
+   observe({
+     req(customer_data())
+     
+     # 計算常見分佈
+     distributions <- list(
+       m_distribution = compute_distribution(customer_data()$m_value),
+       r_distribution = compute_distribution(customer_data()$r_value),
+       f_distribution = compute_distribution(customer_data()$f_value),
+       ipt_distribution = compute_distribution(customer_data()$ipt_mean),
+       nes_counts = table(customer_data()$nes_status)
+     )
+     
+     # 存儲以供組件使用
+     precomputed_distributions(distributions)
+   })
+   
+   # 在視覺化組件中使用
+   output$distribution_plot <- renderPlotly({
+     req(precomputed_distributions())
+     metric <- input$selected_metric
+     
+     # 使用預計算數據
+     plot_distribution(precomputed_distributions()[[paste0(metric, "_distribution")]])
+   })
+   ```

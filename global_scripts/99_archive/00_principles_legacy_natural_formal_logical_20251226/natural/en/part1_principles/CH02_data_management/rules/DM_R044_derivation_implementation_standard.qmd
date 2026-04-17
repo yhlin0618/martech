@@ -1,0 +1,656 @@
+---
+id: "DM_R044"
+title: "Derivation Implementation Standard Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-09-29"
+date_modified: "2025-09-29"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 44
+implements:
+  - "MP064": "ETL-Derivation Separation Principle"
+  - "MP031": "Initialization First"
+  - "MP033": "Deinitialization Final"
+related_to:
+  - "DM_R042": "DRV Sequential Numbering Rule"
+  - "DEV_R032": "Script Structure Standard Rule"
+  - "DM_R041": "ETL Directory Structure Rule"
+  - "DM_R039": "Database Connection Pattern"
+supersedes:
+  - "Legacy derivation patterns without standardized structure"
+---
+
+# DM_R044: Derivation Implementation Standard Rule
+
+## Rule Statement
+
+**All Derivation (DRV) files MUST follow a standardized implementation structure with mandatory header format, five-part execution pattern, and comprehensive documentation blocks**: This ensures consistency, maintainability, and proper resource management across all derivation implementations.
+
+## Standard Derivation Format
+
+### Required Header Structure
+
+Every derivation file MUST begin with this standardized header:
+
+```r
+#####
+# DERIVATION: {NAME}
+# VERSION: {X.Y}
+# PLATFORM: {cbz|amz|eby|all}
+# GROUP: D{nn}
+# SEQUENCE: {seq}
+# PURPOSE: {one-line description}
+# CONSUMES: {ETL output tables}
+# PRODUCES: {derived tables/views}
+# PRINCIPLE: {relevant principles}
+#####
+#P{platform_number}_D{group}_{sequence}
+```
+
+**Header Components**:
+- **DERIVATION**: Human-readable name (e.g., "Customer DNA Analysis")
+- **VERSION**: Semantic version (e.g., "1.2")
+- **PLATFORM**: Three-letter code or 'all' for cross-platform
+- **GROUP**: Derivation group number (D01, D02, etc.)
+- **SEQUENCE**: Execution sequence within group (03, 04, 05, etc.)
+- **PURPOSE**: One-line description of what this derivation does
+- **CONSUMES**: List of ETL output tables this derivation reads
+- **PRODUCES**: List of tables/views this derivation creates
+- **PRINCIPLE**: References to governing principles (MP064, DM_R042, etc.)
+- **P-number**: Internal processing code matching filename (line 2)
+
+### Documentation Block (Required)
+
+Following the header, include roxygen2-style documentation:
+
+```r
+#' @title {Descriptive Title}
+#' @description {Detailed description of derivation logic}
+#' @param {parameter_name} {description} (if applicable)
+#' @return {description of output}
+#' @requires {required packages}
+#' @input_tables {list of input tables from ETL}
+#' @output_tables {list of output tables produced}
+#' @business_rules {business logic documentation}
+#' @platform {platform_id}
+#' @author {original author}
+#' @modified_by {modifier name}
+#' @date {creation date}
+#' @update_log {update history}
+```
+
+## Five-Part Execution Structure
+
+All derivation files MUST implement exactly five sections:
+
+### PART 1: INITIALIZE
+
+```r
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+# Setup environment and connections
+
+# 1.1: Environment Setup
+autoinit()  # or equivalent initialization
+
+# 1.2: Database Connections
+# Track which connections this script creates
+connection_created_processed <- FALSE
+connection_created_app <- FALSE
+
+# Connect to required databases
+if (!exists("processed_data") || !inherits(processed_data, "DBIConnection")) {
+  processed_data <- dbConnectDuckdb(db_path_list$processed_data, read_only = TRUE)
+  connection_created_processed <- TRUE
+  message("Connected to processed_data database")
+}
+
+if (!exists("app_data") || !inherits(app_data, "DBIConnection")) {
+  app_data <- dbConnectDuckdb(db_path_list$app_data, read_only = FALSE)
+  connection_created_app <- TRUE
+  message("Connected to app_data database")
+}
+
+# 1.3: Load Dependencies
+# Source any required utility functions
+# Load configuration parameters
+
+# 1.4: Initialize Tracking Variables
+error_occurred <- FALSE
+test_passed <- FALSE
+rows_processed <- 0
+start_time <- Sys.time()
+```
+
+### PART 2: MAIN
+
+```r
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# Core derivation logic
+
+tryCatch({
+  # 2.1: Log Processing Start
+  message(sprintf("Starting %s at %s", basename(commandArgs()[4]), start_time))
+
+  # 2.2: Validate Input Tables
+  required_tables <- c("df_sales_standardized", "df_customer_standardized")
+  for (table in required_tables) {
+    if (!dbExistsTable(processed_data, table)) {
+      stop(sprintf("Required input table %s does not exist", table))
+    }
+  }
+
+  # 2.3: Load ETL Output Data
+  df_input <- tbl(processed_data, "df_sales_standardized") %>%
+    collect()
+
+  message(sprintf("Loaded %d rows from input table", nrow(df_input)))
+
+  # 2.4: Apply Business Logic
+  # This is where derivation-specific logic goes
+  # Example: Customer aggregation, RFM calculation, etc.
+
+  df_derived <- df_input %>%
+    group_by(customer_id, platform_id) %>%
+    summarize(
+      total_revenue = sum(lineproduct_price, na.rm = TRUE),
+      transaction_count = n(),
+      first_purchase = min(payment_time, na.rm = TRUE),
+      last_purchase = max(payment_time, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      days_since_last = as.numeric(Sys.Date() - as.Date(last_purchase)),
+      customer_lifetime = as.numeric(as.Date(last_purchase) - as.Date(first_purchase))
+    )
+
+  rows_processed <- nrow(df_derived)
+
+  # 2.5: Write Derived Output
+  dbWriteTable(
+    app_data,
+    "df_customer_metrics",
+    df_derived,
+    append = FALSE,
+    overwrite = TRUE
+  )
+
+  message(sprintf("Wrote %d rows to output table", rows_processed))
+
+}, error = function(e) {
+  message("ERROR in MAIN: ", e$message)
+  error_occurred <- TRUE
+})
+```
+
+### PART 3: TEST
+
+```r
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+# Verify derivation results
+
+if (!error_occurred) {
+  tryCatch({
+    # 3.1: Verify Output Table Exists
+    if (!dbExistsTable(app_data, "df_customer_metrics")) {
+      stop("Output table was not created")
+    }
+
+    # 3.2: Validate Output Structure
+    output_check <- tbl(app_data, "df_customer_metrics") %>%
+      head(5) %>%
+      collect()
+
+    required_columns <- c("customer_id", "platform_id", "total_revenue",
+                         "transaction_count", "days_since_last")
+    missing_columns <- setdiff(required_columns, colnames(output_check))
+
+    if (length(missing_columns) > 0) {
+      stop(sprintf("Missing required columns: %s",
+                  paste(missing_columns, collapse = ", ")))
+    }
+
+    # 3.3: Validate Business Rules
+    # Check for data quality issues
+    invalid_records <- output_check %>%
+      filter(total_revenue < 0 | transaction_count < 1)
+
+    if (nrow(invalid_records) > 0) {
+      warning(sprintf("Found %d records violating business rules",
+                     nrow(invalid_records)))
+    }
+
+    # 3.4: Check Row Counts
+    output_rows <- tbl(app_data, "df_customer_metrics") %>%
+      summarize(n = n()) %>%
+      pull(n)
+
+    if (output_rows != rows_processed) {
+      warning(sprintf("Row count mismatch: processed %d, wrote %d",
+                     rows_processed, output_rows))
+    }
+
+    message("✅ All tests passed successfully")
+    test_passed <- TRUE
+
+  }, error = function(e) {
+    message("ERROR in TEST: ", e$message)
+    test_passed <- FALSE
+  })
+} else {
+  message("Skipping tests due to error in MAIN")
+  test_passed <- FALSE
+}
+```
+
+### PART 4: SUMMARIZE
+
+```r
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+# Report metrics and prepare return values
+
+# 4.1: Calculate Execution Metrics
+end_time <- Sys.time()
+execution_time <- difftime(end_time, start_time, units = "secs")
+
+# 4.2: Generate Summary Report
+summary_report <- list(
+  script = basename(commandArgs()[4]),
+  platform = "cbz",  # or extracted from filename
+  group = "D01",
+  sequence = "03",
+  start_time = start_time,
+  end_time = end_time,
+  execution_time_secs = as.numeric(execution_time),
+  rows_processed = rows_processed,
+  status = ifelse(test_passed, "SUCCESS", "FAILED"),
+  error_occurred = error_occurred
+)
+
+# 4.3: Log Summary
+message("\n" %+% paste(rep("=", 60), collapse = ""))
+message("DERIVATION SUMMARY")
+message(paste(rep("=", 60), collapse = ""))
+message(sprintf("Script: %s", summary_report$script))
+message(sprintf("Status: %s", summary_report$status))
+message(sprintf("Rows Processed: %d", summary_report$rows_processed))
+message(sprintf("Execution Time: %.2f seconds", summary_report$execution_time_secs))
+message(paste(rep("=", 60), collapse = ""))
+
+# 4.4: Write Execution Log (optional)
+if (exists("execution_log_path")) {
+  log_entry <- data.frame(summary_report, stringsAsFactors = FALSE)
+  write.csv(log_entry,
+           file.path(execution_log_path,
+                    sprintf("drv_log_%s.csv", format(Sys.time(), "%Y%m%d_%H%M%S"))),
+           row.names = FALSE)
+}
+
+# 4.5: Prepare Return Value
+return_value <- summary_report
+```
+
+### PART 5: DEINITIALIZE
+
+```r
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+# MANDATORY: Cleanup and resource deallocation ONLY
+
+# 5.1: Close Database Connections (only those created by this script)
+if (exists("connection_created_processed") && connection_created_processed) {
+  if (exists("processed_data") && inherits(processed_data, "DBIConnection")) {
+    dbDisconnect(processed_data)
+    message("Disconnected from processed_data database")
+  }
+}
+
+if (exists("connection_created_app") && connection_created_app) {
+  if (exists("app_data") && inherits(app_data, "DBIConnection")) {
+    dbDisconnect(app_data)
+    message("Disconnected from app_data database")
+  }
+}
+
+# 5.2: Return Final Value
+if (exists("return_value")) {
+  final_status <- return_value
+} else {
+  final_status <- list(status = "INCOMPLETE", error = "No return value generated")
+}
+
+# 5.3: Autodeinit (MUST be last statement)
+autodeinit()
+
+# Return the final status
+final_status
+```
+
+## Error Handling Requirements
+
+### Graceful Degradation
+
+All derivations MUST handle errors gracefully:
+
+```r
+# Pattern for non-critical operations
+tryCatch({
+  # Optional enhancement
+  df_enhanced <- add_optional_metrics(df_base)
+}, error = function(e) {
+  warning(sprintf("Could not add optional metrics: %s", e$message))
+  df_enhanced <- df_base  # Continue with base data
+})
+```
+
+### Critical Failures
+
+For critical failures that prevent derivation completion:
+
+```r
+# Pattern for critical operations
+tryCatch({
+  # Critical operation
+  df_required <- load_required_data()
+}, error = function(e) {
+  message(sprintf("CRITICAL ERROR: %s", e$message))
+  error_occurred <- TRUE
+  # Do not continue processing
+})
+```
+
+## Input/Output Documentation
+
+### Table Dependency Declaration
+
+Each derivation MUST clearly document its data dependencies:
+
+```yaml
+# At top of file in comments or documentation block
+INPUT_TABLES:
+  processed_data:
+    - df_sales_standardized     # From ETL01_2TR
+    - df_customer_standardized  # From ETL02_2TR
+    - df_product_standardized   # From ETL03_2TR
+
+OUTPUT_TABLES:
+  app_data:
+    - df_customer_dna           # Customer DNA profiles
+    - df_customer_segments      # Customer segmentation
+    - df_customer_metrics       # Aggregated metrics
+```
+
+### Column Specifications
+
+Document expected column structures:
+
+```yaml
+EXPECTED_COLUMNS:
+  df_sales_standardized:
+    required:
+      - customer_id (INTEGER)
+      - platform_id (TEXT)
+      - lineproduct_price (NUMERIC)
+      - payment_time (TIMESTAMP)
+    optional:
+      - product_line_id (INTEGER)
+      - discount_amount (NUMERIC)
+```
+
+## Platform-Specific Considerations
+
+### Platform ID Validation
+
+```r
+# Extract and validate platform from filename
+get_platform_from_filename <- function() {
+  script_name <- basename(commandArgs()[4])
+  platform <- substr(script_name, 1, 3)
+
+  valid_platforms <- c("cbz", "amz", "eby", "all")
+  if (!platform %in% valid_platforms) {
+    stop(sprintf("Invalid platform_id: %s", platform))
+  }
+
+  return(platform)
+}
+```
+
+### Cross-Platform Derivations
+
+For derivations that process multiple platforms:
+
+```r
+# Pattern for cross-platform processing
+platforms <- c("cbz", "amz", "eby")
+
+results_list <- lapply(platforms, function(platform) {
+  tryCatch({
+    process_platform_data(platform)
+  }, error = function(e) {
+    warning(sprintf("Failed to process platform %s: %s",
+                   platform, e$message))
+    return(NULL)
+  })
+})
+
+# Combine non-null results
+df_combined <- do.call(rbind, Filter(Negate(is.null), results_list))
+```
+
+## Logging Standards
+
+### Message Formatting
+
+Use consistent message formatting:
+
+```r
+# Progress messages
+message(sprintf("[%s] Starting derivation: %s",
+               format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+               "Customer DNA Analysis"))
+
+# Warning messages
+warning(sprintf("DM_R044 WARNING: %s", "Missing optional field"))
+
+# Error messages
+message(sprintf("DM_R044 ERROR: %s", "Required table not found"))
+
+# Success messages
+message("✅ DM_R044: Derivation completed successfully")
+```
+
+### Execution Tracking
+
+Track key metrics throughout execution:
+
+```r
+# Initialize metrics
+metrics <- list(
+  start_time = Sys.time(),
+  rows_read = 0,
+  rows_processed = 0,
+  rows_written = 0,
+  warnings = 0,
+  errors = 0
+)
+
+# Update during processing
+metrics$rows_read <- nrow(df_input)
+metrics$rows_processed <- metrics$rows_processed + batch_size
+```
+
+## Validation Functions
+
+### Pre-Derivation Validation
+
+```r
+validate_derivation_prerequisites <- function() {
+  # Check required databases exist
+  required_dbs <- c("processed_data", "app_data")
+  for (db in required_dbs) {
+    if (!exists(db) || !inherits(get(db), "DBIConnection")) {
+      stop(sprintf("Required database connection missing: %s", db))
+    }
+  }
+
+  # Check required tables exist
+  if (!dbExistsTable(processed_data, "df_sales_standardized")) {
+    stop("Required ETL output table missing: df_sales_standardized")
+  }
+
+  # Check table has data
+  row_count <- tbl(processed_data, "df_sales_standardized") %>%
+    summarize(n = n()) %>%
+    pull(n)
+
+  if (row_count == 0) {
+    warning("Input table is empty, derivation may produce no results")
+  }
+
+  return(TRUE)
+}
+```
+
+### Post-Derivation Validation
+
+```r
+validate_derivation_output <- function(table_name, expected_rows = NULL) {
+  # Check table exists
+  if (!dbExistsTable(app_data, table_name)) {
+    stop(sprintf("Output table not created: %s", table_name))
+  }
+
+  # Check row count if expected value provided
+  if (!is.null(expected_rows)) {
+    actual_rows <- tbl(app_data, table_name) %>%
+      summarize(n = n()) %>%
+      pull(n)
+
+    if (actual_rows != expected_rows) {
+      warning(sprintf("Row count mismatch: expected %d, got %d",
+                     expected_rows, actual_rows))
+    }
+  }
+
+  # Check for required columns
+  sample_data <- tbl(app_data, table_name) %>%
+    head(1) %>%
+    collect()
+
+  if (nrow(sample_data) == 0) {
+    warning(sprintf("Output table %s is empty", table_name))
+  }
+
+  return(TRUE)
+}
+```
+
+## Migration from Legacy Patterns
+
+### Identify Non-Compliant Files
+
+```r
+# Find derivation files not following standard
+find_non_compliant_derivations <- function(drv_dir) {
+  all_files <- list.files(drv_dir, pattern = "\\.R$",
+                         recursive = TRUE, full.names = TRUE)
+
+  non_compliant <- c()
+
+  for (file in all_files) {
+    lines <- readLines(file, n = 20)
+
+    # Check for standard header
+    if (!any(grepl("^# DERIVATION:", lines))) {
+      non_compliant <- c(non_compliant, file)
+      next
+    }
+
+    # Check for five-part structure
+    required_parts <- c("PART 1: INITIALIZE", "PART 2: MAIN",
+                       "PART 3: TEST", "PART 4: SUMMARIZE",
+                       "PART 5: DEINITIALIZE")
+
+    file_content <- readLines(file)
+    missing_parts <- required_parts[!sapply(required_parts, function(part) {
+      any(grepl(part, file_content, fixed = TRUE))
+    })]
+
+    if (length(missing_parts) > 0) {
+      non_compliant <- c(non_compliant, file)
+    }
+  }
+
+  return(non_compliant)
+}
+```
+
+## Implementation Checklist
+
+- [ ] Header contains all required fields (DERIVATION, VERSION, etc.)
+- [ ] P-number on line 2 matches filename pattern
+- [ ] Documentation block with roxygen2-style annotations
+- [ ] Five-part structure clearly marked with separators
+- [ ] INITIALIZE section sets up environment and connections
+- [ ] MAIN section wrapped in tryCatch for error handling
+- [ ] TEST section validates output and business rules
+- [ ] SUMMARIZE section generates metrics and reports
+- [ ] DEINITIALIZE section performs cleanup with autodeinit() last
+- [ ] Input/output tables clearly documented
+- [ ] Platform ID validation implemented
+- [ ] Consistent logging and message formatting
+- [ ] Return value properly structured
+
+## Benefits
+
+### Consistency
+- All derivations follow same structure
+- Easy to understand and maintain
+- Predictable execution flow
+
+### Maintainability
+- Clear documentation requirements
+- Standardized error handling
+- Comprehensive logging
+
+### Reliability
+- Proper resource management
+- Guaranteed cleanup
+- Validated inputs/outputs
+
+### Traceability
+- Execution metrics tracked
+- Clear data lineage
+- Audit trail maintained
+
+## Relationship to Other Rules
+
+### Implements
+- **MP064**: Maintains ETL-Derivation separation
+- **MP031**: Ensures initialization happens first
+- **MP033**: Guarantees deinitialization is final
+
+### Complements
+- **DM_R042**: Works with sequential numbering system
+- **DEV_R032**: Extends five-part structure standard
+- **DM_R041**: Follows directory structure requirements
+
+### Supersedes
+- Legacy ad-hoc derivation patterns
+- Unstructured derivation implementations
+- Three-part or four-part structures
+
+## Conclusion
+
+The Derivation Implementation Standard (DM_R044) establishes a comprehensive framework for all derivation files, ensuring consistency, maintainability, and reliability across the data processing pipeline. This standard provides clear guidelines for structure, documentation, error handling, and validation, creating a robust foundation for business logic implementation.

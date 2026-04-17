@@ -1,0 +1,206 @@
+---
+title: "CH17: Database Specifications"
+subtitle: "Comprehensive Database Documentation and Type Reference"
+author: "MAMBA Framework"
+date: "2025-08-27"
+categories: [database, specifications, duckdb, postgresql, sqlite]
+---
+
+# Database Specifications Overview
+
+This chapter provides comprehensive documentation for database systems used in the MAMBA framework, with detailed specifications for data types, SQL syntax, API usage, and performance optimization. Currently featuring complete DuckDB documentation with placeholders for PostgreSQL and SQLite.
+
+## Database Systems
+
+### [DuckDB Documentation](duckdb/index.qmd) 
+**Complete Reference Available**
+
+DuckDB is our primary analytical database, providing:
+- In-process OLAP database optimized for analytics
+- Zero external dependencies
+- Excellent performance for analytical queries
+- Native support for complex data types
+- Seamless integration with R and Python
+
+### [PostgreSQL Documentation](postgresql/index.qmd)
+**Coming Soon**
+
+PostgreSQL for production transactional workloads:
+- Enterprise-grade RDBMS
+- ACID compliance
+- Advanced indexing
+- Extensive extension ecosystem
+
+### [SQLite Documentation](sqlite/index.qmd)
+**Coming Soon**
+
+SQLite for development and embedded applications:
+- Serverless, zero-configuration database
+- Single file storage
+- Perfect for development and testing
+- Lightweight embedded database
+
+## Quick Navigation
+
+### DuckDB Complete Reference (Reorganized with DU Prefix)
+- [DU01: Overview and Introduction](duckdb/DU01_overview.qmd) - Getting started with DuckDB
+- [DU02: Connection Management](duckdb/DU02_connection_management.qmd) - Connection patterns and resource management
+- [DU03: Data Types Reference](duckdb/DU03_data_types.qmd) - Complete type system documentation
+- [DU04: Import/Export Guide](duckdb/DU04_import_export.qmd) - Data import/export capabilities
+- [DU05: Query Optimization](duckdb/DU05_query_optimization.qmd) - Performance optimization techniques
+- [DU06: MAMBA Integration](duckdb/DU06_mamba_integration.qmd) - Integration patterns with MAMBA
+- [DU07: Technical Specifications](duckdb/DU07_technical_specifications.qmd) - Complete technical details
+- [DU08: Data Type Handling](duckdb/DU08_data_type_handling.qmd) - Advanced type management
+- [DU09: List Column Strategies](duckdb/DU09_list_column_strategies.qmd) - Handling nested data structures
+- [DU10: Complete Reference](duckdb/DU10_complete_reference.qmd) - Comprehensive technical reference
+
+### Database Comparison
+- [Comparison Matrix](comparison.qmd) - Feature and capability comparison
+
+## Key Implementation Patterns
+
+### Pattern 1: Database Selection Strategy
+```r
+# Decision tree for database selection
+choose_database <- function(use_case) {
+  if (use_case == "analytical") {
+    return("duckdb")  # OLAP workloads
+  } else if (use_case == "transactional") {
+    return("postgresql")  # OLTP workloads
+  } else if (use_case == "development") {
+    return("sqlite")  # Dev/test environments
+  }
+}
+```
+
+### Pattern 2: Type-Safe Data Operations
+```r
+# Always specify types explicitly
+library(DBI)
+library(duckdb)
+
+con <- dbConnect(duckdb::duckdb())
+
+# Create table with explicit types
+dbExecute(con, "
+  CREATE TABLE products (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    price DECIMAL(10, 2),
+    attributes JSON,
+    tags VARCHAR[],
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+")
+```
+
+### Pattern 3: Handling Nested Data
+```r
+# Convert nested API responses to database-friendly format
+api_data <- jsonlite::fromJSON(api_response, flatten = TRUE)
+
+# Strategy 1: Flatten nested structures
+flat_data <- api_data %>%
+  tidyr::unnest_wider(nested_column, names_sep = "_")
+
+# Strategy 2: Store as JSON
+json_data <- api_data %>%
+  mutate(nested_json = purrr::map_chr(nested_column, jsonlite::toJSON))
+
+# Strategy 3: Normalize into separate tables
+parent_table <- api_data %>% select(-nested_column)
+child_table <- api_data %>% 
+  select(id, nested_column) %>%
+  tidyr::unnest(nested_column)
+```
+
+## Migration Guides
+
+### From API to Database
+1. **Analyze Structure**: Understand nested data patterns
+2. **Choose Strategy**: Flatten, normalize, or preserve as JSON
+3. **Define Schema**: Create explicit table definitions
+4. **Transform Data**: Apply consistent transformations
+5. **Validate Types**: Ensure type safety throughout
+
+### From Development to Production
+1. **SQLite → DuckDB**: For analytical workloads
+2. **SQLite → PostgreSQL**: For transactional systems
+3. **DuckDB → PostgreSQL**: When ACID compliance needed
+
+## Related Principles
+
+- **MP064**: ETL and Derivation Separation
+- **MP065**: Platform Configuration Management  
+- **MP092**: Platform ID Standards
+- **DM_R024**: Database Type Mapping
+- **DM_R025**: Nested Data Handling
+- **DM_R026**: List Column Strategies
+
+## Common Issues and Solutions
+
+### Issue 1: List Columns in R
+**Problem**: DuckDB LIST columns incompatible with R data frames
+**Solution**: Convert to JSON or flatten structure
+```r
+# Convert LIST to JSON for R compatibility
+result <- dbGetQuery(con, "
+  SELECT id, list_column::JSON as list_data
+  FROM table_with_lists
+")
+```
+
+### Issue 2: Type Mismatches
+**Problem**: Implicit type conversion failures
+**Solution**: Use explicit casting
+```r
+# Always cast explicitly
+dbExecute(con, "
+  INSERT INTO target 
+  SELECT 
+    id::INTEGER,
+    amount::DECIMAL(10,2),
+    data::JSON
+  FROM source
+")
+```
+
+### Issue 3: Memory Limitations
+**Problem**: Large datasets exceed memory
+**Solution**: Configure memory limits and use streaming
+```r
+# Set memory limit
+dbExecute(con, "SET memory_limit = '8GB'")
+
+# Use chunked processing
+result <- dbSendQuery(con, "SELECT * FROM large_table")
+while (!dbHasCompleted(result)) {
+  chunk <- dbFetch(result, n = 10000)
+  process_chunk(chunk)
+}
+```
+
+## Best Practices
+
+1. **Document Type Mappings**: Create type mapping tables for each data source
+2. **Test Edge Cases**: NULL values, empty arrays, mixed types
+3. **Version Control Schemas**: Track all schema changes
+4. **Monitor Performance**: Use EXPLAIN ANALYZE for query optimization
+5. **Handle Errors Gracefully**: Implement proper error handling
+
+## References
+
+### Official Documentation
+- [DuckDB Documentation](https://duckdb.org/docs/)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [SQLite Documentation](https://www.sqlite.org/docs.html)
+
+### MAMBA Framework
+- [ETL Pipelines](../CH11_etl_pipelines/index.qmd)
+- [Data Flow Architecture](../CH10_data_flow_architecture/index.qmd)
+- [Functions Reference](../CH15_functions_reference/index.qmd)
+
+### Community Resources
+- [DuckDB Discord](https://discord.duckdb.org/)
+- [PostgreSQL Community](https://www.postgresql.org/community/)
+- [SQLite Forum](https://sqlite.org/forum/forum)

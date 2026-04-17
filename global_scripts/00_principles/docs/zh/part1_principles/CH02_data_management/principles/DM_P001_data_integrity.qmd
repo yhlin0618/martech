@@ -1,0 +1,329 @@
+---
+title: "DM_P001: Data Integrity"
+subtitle: "Principles for maintaining data integrity throughout the data processing pipeline"
+chapter: "CH02"
+category: "principle"
+number: "DM_P001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "資料管理法 (Data Management Law)"
+article-number: "第1條"
+derives_from:
+  - "CH01.SO_P001: Project Principles"
+  - "CH00.MP001: Primitive Terms and Definitions"
+influences:
+  - "CH01.SO_P003: App Construction Principles"
+  - "CH00.MP006: Data Source Hierarchy"
+  - "CH03.DEV_P002: Authentic Context Testing"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**資料管理法第1條（資料完整性）**
+
+本條建立資料處理管線中維護資料完整性的原則，確保資料從原始來源到應用程式層級的可靠性和可追溯性。
+
+:::{.callout-important}
+## 核心概念
+資料完整性必須在所有處理階段維護，從原始資料收集到最終應用程式使用。原始資料的神聖性是不可侵犯的 - 我們對它的詮釋可能會改變，但原始資料必須保持不變。
+:::
+
+# 第一項：資料流程與儲存位置 {#data-flow}
+
+## 第一款：資料儲存位置 {#storage-locations}
+
+專案使用多個位置在不同處理階段儲存資料：
+
+| 位置 | 路徑 | 描述 |
+|------|------|------|
+| 外部原始資料檔案 | `/rawdata_[companyname]/` | 從外部來源接收的原始檔案，完全保持原樣 |
+| 外部原始資料庫 | DuckDB `external_raw_data` | 透過網路爬蟲/抓取收集的資料，未經修改儲存 |
+| 原始資料庫 | DuckDB `raw_data` | 匯入的原始資料，未經修改 |
+| 清洗資料庫 | DuckDB `cleansed_data` | 基本清理操作後的資料 |
+| 處理資料庫 | DuckDB `processed_data` | 完全轉換並應用商業邏輯的資料 |
+| 處理資料檔案 | `/precision_marketing_[companyname]/data/` | 分析用的中間處理檔案 |
+| 應用資料庫 | DuckDB `app_data` | 為 Shiny 應用程式優化的資料結構 |
+| 應用資料檔案 | `/precision_marketing_app/app_data/` | 應用程式特定資料檔案（RDS 等） |
+| SCD Type 0 | `/global_scripts/30_global_data/scd_type0/` | 永不改變的常數參考資料（如地圖檔案） |
+| SCD Type 1 | `/precision_marketing_app/app_data/scd_type1/` | 完全替換的緩慢變化維度資料 |
+| SCD Type 1 資料庫 | `/global_scripts/30_global_data/global_scd_type1.duckdb` | 共享參考資料的全域 SCD Type 1 資料庫 |
+| SCD Type 2 | `/precision_marketing_app/app_data/scd_type2/` | 保留歷史的緩慢變化維度資料 |
+| 快照資料庫 | DuckDB `snapshot_data` | 關鍵資料集的時間點快照，用於稽核和回復 |
+
+## 第二款：完整資料流程 {#complete-flow}
+
+所有資料必須遵循嚴格的處理流程，通過明確定義的階段：
+
+```
+                      ┌─────────────────┐
+External       rawdata_[companyname]/   │   
+  Files  →→→  (external raw files)  →→→ │                                            
+                                         │                                             
+External      Web Crawling/Scraping     │  external_raw_data DB   raw_data DB   cleansed_data DB   processed_data DB
+  Web  →→→        Module           →→→ │ →→→       (0)        →→→    (1)    →→→      (2)       →→→       (3)       
+ Sources                                 │                                                           ↓
+                      Import Module      │                     ←← ←← ←← ←← ←← ←← ←← ←← ←← ←┘
+                      └─────────────────┘                     ↓
+                                        precision_marketing_[companyname]/data/
+                                                  (processed files)
+                                                        ↓
+                 precision_marketing_app/app_data/   app_data DB       snapshot_data DB
+                            (app files)          →→→    (4)      ←→→→      (5)
+                                 ↓
+  global_scripts/30_global_data/      /app_data/scd_type1/   /app_data/scd_type2/
+   /scd_type0/  global_scd_type1.duckdb  (basic parameters)   (historical parameters)
+  (constant)        (global refs)
+```
+
+# 第二項：原始資料神聖性 {#raw-data-sanctity}
+
+## 第一款：關鍵原則 {#critical-principle}
+
+:::{.callout-warning}
+## 絕對不可修改原始資料
+外部原始資料檔案（在 `rawdata_[companyname]/`）、網路爬取/抓取資料（在 `external_raw_data` 資料庫）和原始資料庫表格（在 `raw_data` 資料庫）代表原始真相來源，**在任何情況下都絕不能修改**。
+:::
+
+## 第二款：外部原始資料檔案 {#external-files}
+
+- ✅ **應該做：** 在 `rawdata_[companyname]/` 目錄中保持原始檔案完全如接收時的狀態
+- ❌ **絕不：** 編輯、重命名或「修正」原始檔案，即使它們包含明顯錯誤
+- ✅ **應該做：** 創建檔案目錄，記錄接收檔案的時間戳記和檢查碼
+
+## 第三款：外部原始資料庫 {#external-database}
+
+- ✅ **應該做：** 在 `external_raw_data` 資料庫中完全按收集時的狀態儲存網路爬取/抓取資料
+- ❌ **絕不：** 修改匯入後的抓取資料表格
+- ✅ **應該做：** 包含關於抓取來源、時間和方法的元資料
+- ✅ **應該做：** 在單獨的驗證報告中記錄抓取資料的任何問題
+
+## 第四款：原始資料庫 {#raw-database}
+
+- ✅ **應該做：** 將原始資料完全按接收時的狀態匯入 `raw_data` 資料庫
+- ❌ **絕不：** 修改匯入後的原始資料表格
+- ✅ **應該做：** 在單獨的驗證報告中記錄原始資料的任何問題
+
+# 第三項：資料處理模組 {#processing-modules}
+
+## 第一款：網路爬蟲/抓取模組 {#web-crawling}
+
+從網路來源收集資料的過程是一個獨立模組：
+
+```
+                       ┌─────────────────────────────────┐
+External Web  →  Web Crawling/Scraping  →  external_raw_data DB  →  Validation Report
+  Sources         (extraction process)     (scraped data preserved)   (document issues)
+                       └─────────────────────────────────┘
+```
+
+網路爬蟲/抓取模組：
+- 接收網路來源（URL、API 等）作為輸入
+- 使用適當技術（抓取、API 呼叫）擷取資料
+- 記錄關於收集過程的完整元資料
+- 在 external_raw_data 資料庫中以未改變的形式儲存資料
+- 記錄所有活動以供稽核
+- 生成驗證報告，突出顯示任何問題
+- 包含速率限制和尊重的抓取實踐
+
+## 第二款：原始資料匯入模組 {#import-module}
+
+從原始檔案到 raw_data 資料庫的匯入過程是一個獨立模組：
+
+```
+                       ┌─────────────────────────────────┐
+External Files → rawdata_[companyname]/ →  Import    →  raw_data Database → Validation Report
+            (preserve external raw files)  Module     (raw data preserved)   (document issues)
+                       └─────────────────────────────────┘
+```
+
+匯入模組：
+- 從 rawdata_[companyname]/ 接收原始檔案作為輸入
+- 驗證檔案檢查碼以確保完整性
+- 用時間戳記和元資料編目檔案
+- 以未改變的形式將資料匯入 raw_data 資料庫
+- 記錄所有活動以供稽核
+- 生成驗證報告，突出顯示任何問題
+
+## 第三款：資料清洗模組 {#cleansing-module}
+
+清洗過程也是一個獨立模組：
+
+```
+                       ┌─────────────────────────────────┐
+raw_data Database  →   │    Cleansing Module    →    cleansed_data Database → Validation Report
+ (original data)       │   (standardization)         (cleaned data)        (document actions)
+                       └─────────────────────────────────┘
+```
+
+清洗模組：
+- 從 raw_data 資料庫讀取資料
+- 應用標準清理操作，不包含商業邏輯
+- 標準化格式、資料類型和編碼
+- 移除重複項並處理遺失值
+- 記錄所有轉換以確保可重現性
+- 輸出到 cleansed_data 資料庫
+- 生成所做變更的驗證報告
+
+# 第四項：資料庫管理 {#database-management}
+
+## 第一款：連線管理 {#connection-management}
+
+:::{.callout-important}
+## 集中式連線管理
+所有資料庫連線必須透過 100g_dbConnect_from_list.R 管理。絕不在應用程式程式碼或腳本中創建直接資料庫連線。
+:::
+
+集中式資料庫連線管理確保：
+1. 整個應用程式的資料庫路徑一致
+2. 連線問題的適當錯誤處理
+3. 需要時自動創建目錄
+4. 連線追蹤以便適當清理
+
+## 第二款：連線使用範例 {#connection-example}
+
+```r
+# 匯入連線函數
+source("update_scripts/global_scripts/02_db_utils/100g_dbConnect_from_list.R")
+source("update_scripts/global_scripts/02_db_utils/103g_dbDisconnect_all.R")
+
+# 連接到資料庫
+external_raw_data <- dbConnect_from_list("external_raw_data", read_only = TRUE)
+raw_data <- dbConnect_from_list("raw_data", read_only = TRUE)
+cleansed_data <- dbConnect_from_list("cleansed_data", read_only = FALSE)
+snapshot_data <- dbConnect_from_list("snapshot_data", read_only = TRUE)
+
+# 使用連線
+scraped_data <- dbGetQuery(external_raw_data, "SELECT * FROM competitor_prices")
+raw_table <- dbGetQuery(raw_data, "SELECT * FROM raw_customer_table")
+dbExecute(cleansed_data, "CREATE TABLE IF NOT EXISTS cleansed_customer_table (...)")
+
+# 查詢特定資料快照進行比較
+historical_data <- dbGetQuery(snapshot_data, 
+  "SELECT * FROM customer_weekly_2023_06_10_000000")
+
+# 完成後適當關閉所有連線
+dbDisconnect_all()
+```
+
+# 第五項：緩慢變化維度資料 {#scd-data}
+
+## 第一款：SCD Type 0 - 常數參考資料 {#scd-type0}
+
+SCD Type 0 資料代表永不改變的參考資料。
+
+位置和內容：
+- 儲存在 `/global_scripts/30_global_data/scd_type0/`
+- 包含永久參考資料，如：
+  - `gz_2010_us_040_00_500k.json`：美國州地理空間邊界
+  - `gz_2010_us_050_00_500k.json`：美國縣地理空間邊界
+
+使用原則：
+- 此資料被視為不可變且永不改變
+- 用於地理參考、產業代碼和其他標準分類
+- 需要時應直接從源檔案載入
+- 所有存取應為唯讀
+
+## 第二款：SCD Type 1 - 基本應用參數 {#scd-type1}
+
+SCD Type 1 資料代表只需要當前值且不保留歷史值的參數。
+
+本地 SCD Type 1 位置和內容：
+- 儲存在 `/precision_marketing_app/app_data/scd_type1/`
+- 包含必要的應用程式配置參數：
+  - `product_line.xlsx`：定義產品類別和層級
+  - `source.xlsx`：指定資料來源及其配置
+
+全域 SCD Type 1 資料庫：
+- 儲存在 `/global_scripts/30_global_data/global_scd_type1.duckdb`
+- 包含跨多個應用程式使用的共享參考資料
+- 為常見維度提供標準化查找表
+
+## 第三款：SCD Type 2 - 歷史參數變更 {#scd-type2}
+
+SCD Type 2 資料代表必須保留變更歷史的參數。
+
+位置和使用：
+- 儲存在 `/precision_marketing_app/app_data/scd_type2/`
+- 用於變更歷史重要的參數
+- 每筆記錄包含有效日期範圍（start_date 和 end_date）
+- 對於任何給定日期，只應有一筆記錄為活動狀態
+
+# 第六項：資料快照 {#data-snapshots}
+
+## 第一款：快照類型和頻率 {#snapshot-types}
+
+### 定期排程快照
+- **每日快照**：每天為關鍵操作表格創建
+- **每週快照**：每週進行完整系統快照
+- **每月快照**：完整系統快照保留至少 12 個月
+
+### 特殊事件快照
+- **更新前快照**：在主要更新或資料遷移前立即進行
+- **處理後快照**：在 ETL 過程完成後進行
+- **里程碑快照**：在重要業務里程碑時進行
+
+## 第二款：快照命名慣例 {#snapshot-naming}
+
+所有快照遵循標準化命名慣例：
+```
+{table_name}_{snapshot_type}_{YYYY_MM_DD_HHMMSS}
+```
+
+例如：
+- `customer_daily_2023_06_15_080000`
+- `sales_analysis_pre_update_2023_06_14_235959`
+- `complete_monthly_2023_06_01_000000`
+
+## 第三款：快照存取和使用 {#snapshot-access}
+
+快照是唯讀的，絕不應被修改。它們服務於多種目的：
+
+1. **資料恢復**：如果發生錯誤，能夠將資料恢復到先前狀態
+2. **稽核軌跡**：特定時間點資料狀態的歷史記錄
+3. **趨勢分析**：能夠比較不同時期的資料
+4. **故障排除**：洞察問題出現前後的資料狀態
+
+## 第四款：快照保留政策 {#retention-policy}
+
+- 每日快照：保留 30 天
+- 每週快照：保留 90 天
+- 每月快照：保留 12 個月
+- 更新前和里程碑快照：保留 24 個月
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 資料完整性檢查清單
+
+處理資料時，確認：
+
+- [ ] 原始資料檔案保持不變
+- [ ] 資料流程遵循定義的階段
+- [ ] 使用集中式連線管理
+- [ ] 適當的 SCD 類型用於不同資料
+- [ ] 創建並維護快照
+- [ ] 驗證報告記錄所有問題
+- [ ] 清洗操作可重現
+- [ ] 錯誤處理不修改源資料
+:::
+
+# 結論 {#conclusion}
+
+資料完整性是可靠資料處理系統的基礎。透過維護原始資料的神聖性、遵循結構化的處理流程，並實施適當的版本控制和快照策略，我們確保資料在整個管線中保持可信賴和可追溯。
+
+記住：「原始資料是神聖的 - 我們對它的詮釋可能會改變，但原始資料必須保持不變。」
+
+---
+
+*依據：資料管理法第1條*  
+*衍生自：[SO_P001 專案原則](../../CH01_structure_organization/principles/SO_P001_project_principles.qmd)、[MP001 原始術語和定義](../../CH00_fundamental_principles/MP001_primitive_terms_and_definitions.qmd)*  
+*影響：[SO_P003 應用程式建構原則](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd)、[MP006 資料來源層級](../../CH00_fundamental_principles/MP006_data_source_hierarchy.qmd)*

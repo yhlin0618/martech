@@ -1,0 +1,1011 @@
+---
+id: "DF006"
+title: "Metadata Management"
+type: "data-flow"
+date_created: "2025-07-15"
+date_modified: "2025-07-15"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "DF001": "Staging Operations"
+  - "MP0052": "Unidirectional Data Flow"
+relates_to:
+  - "DF005": "Application Data"
+  - "R100": "Database Access Tbl Rule"
+  - "R114": "Standard Path Constants"
+  - "ETL00": "ETL Framework"
+---
+
+# DF06: Metadata Management
+
+## Core Principle
+
+Metadata management operations provide **comprehensive data lineage tracking**, capturing and maintaining information about data sources, transformations, quality metrics, and business rules throughout the entire ETL pipeline.
+
+## Purpose and Scope
+
+### What Metadata Management Does
+- **Data lineage tracking**: Record source-to-target mappings across all ETL layers
+- **Schema documentation**: Maintain table and column definitions with business meanings
+- **Quality metrics capture**: Track data quality indicators at each processing stage
+- **Business rule repository**: Document validation and transformation logic
+- **Update history logging**: Record when and how data changes over time
+- **Impact analysis support**: Enable understanding of downstream effects of changes
+
+### What Metadata Management Does NOT Do
+- **Process data**: No actual data transformation (handled by ETL layers)
+- **Enforce rules**: No data validation enforcement (handled by cleansing layer)
+- **Generate reports**: No end-user reporting (handled by application layer)
+- **Real-time monitoring**: No live system monitoring (handled by operational tools)
+
+## Layer Position in Pipeline
+
+```mermaid
+graph LR
+    A[raw_data] --> B[staged_data]
+    B --> C[transformed_data]
+    C --> D[cleansed_data]
+    D --> E[processed_data]
+    E --> F[app_data]
+    
+    M[meta_data] -.-> A
+    M -.-> B
+    M -.-> C
+    M -.-> D
+    M -.-> E
+    M -.-> F
+    
+    M --> M1["Metadata Layer<br/>• Data lineage<br/>• Schema documentation<br/>• Quality metrics<br/>• Business rules"]
+    
+    style M fill:#e1f5fe
+    style M1 fill:#e1f5fe
+```
+
+**Input**: Metadata from all ETL layers  
+**Output**: `meta_data.duckdb`  
+**Directory**: `local_data/`
+
+## Metadata Schema Design
+
+### 1. Table Metadata
+
+Document all tables across the ETL pipeline:
+
+```r
+#' Create table metadata tracking
+#' 
+#' Maintains comprehensive information about all tables in the data pipeline
+#'
+create_table_metadata <- function(meta_conn) {
+  
+  # Create table metadata schema
+  DBI::dbExecute(meta_conn, "
+    CREATE TABLE IF NOT EXISTS table_metadata (
+      -- Identification
+      table_id INTEGER PRIMARY KEY,
+      database_name VARCHAR(100) NOT NULL,
+      schema_name VARCHAR(100),
+      table_name VARCHAR(200) NOT NULL,
+      full_table_name VARCHAR(500) GENERATED ALWAYS AS 
+        (database_name || '.' || COALESCE(schema_name || '.', '') || table_name) STORED,
+      
+      -- Classification
+      table_type VARCHAR(50) CHECK (table_type IN ('source', 'staging', 'transformed', 
+                                                   'cleansed', 'processed', 'application')),
+      etl_layer VARCHAR(50) CHECK (etl_layer IN ('raw_data', 'staged_data', 'transformed_data',
+                                                 'cleansed_data', 'processed_data', 'app_data')),
+      
+      -- Description
+      table_description TEXT,
+      business_purpose TEXT,
+      data_owner VARCHAR(200),
+      data_steward VARCHAR(200),
+      
+      -- Technical details
+      storage_format VARCHAR(50),
+      compression_type VARCHAR(50),
+      partition_column VARCHAR(100),
+      clustering_columns VARCHAR(500),
+      
+      -- Usage patterns
+      update_frequency VARCHAR(100),
+      typical_row_count BIGINT,
+      typical_size_mb DOUBLE,
+      read_pattern VARCHAR(100) CHECK (read_pattern IN ('batch', 'streaming', 'interactive', 'mixed')),
+      
+      -- Data governance
+      contains_pii BOOLEAN DEFAULT FALSE,
+      data_classification VARCHAR(50) CHECK (data_classification IN ('public', 'internal', 
+                                                                    'confidential', 'restricted')),
+      retention_days INTEGER,
+      
+      -- Audit fields
+      created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_by VARCHAR(100) DEFAULT CURRENT_USER,
+      modified_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      modified_by VARCHAR(100) DEFAULT CURRENT_USER,
+      is_active BOOLEAN DEFAULT TRUE,
+      
+      -- Constraints
+      UNIQUE(database_name, schema_name, table_name)
+    )
+  ")
+  
+  # Create indexes for efficient querying
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_table_metadata_layer ON table_metadata(etl_layer)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_table_metadata_type ON table_metadata(table_type)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_table_metadata_active ON table_metadata(is_active)
+  ")
+  
+  message("Table metadata schema created")
+}
+```
+
+### 2. Column Metadata
+
+Document all columns with business context:
+
+```r
+#' Create column metadata tracking
+#' 
+#' Maintains detailed information about all columns across tables
+#'
+create_column_metadata <- function(meta_conn) {
+  
+  # Create column metadata schema
+  DBI::dbExecute(meta_conn, "
+    CREATE TABLE IF NOT EXISTS column_metadata (
+      -- Identification
+      column_id INTEGER PRIMARY KEY,
+      table_id INTEGER NOT NULL REFERENCES table_metadata(table_id),
+      column_name VARCHAR(200) NOT NULL,
+      ordinal_position INTEGER NOT NULL,
+      
+      -- Data type information
+      data_type VARCHAR(100) NOT NULL,
+      character_maximum_length INTEGER,
+      numeric_precision INTEGER,
+      numeric_scale INTEGER,
+      datetime_precision INTEGER,
+      
+      -- Constraints
+      is_nullable BOOLEAN DEFAULT TRUE,
+      is_primary_key BOOLEAN DEFAULT FALSE,
+      is_foreign_key BOOLEAN DEFAULT FALSE,
+      is_unique BOOLEAN DEFAULT FALSE,
+      default_value TEXT,
+      check_constraint TEXT,
+      
+      -- Business context
+      column_description TEXT,
+      business_name VARCHAR(200),
+      business_definition TEXT,
+      data_element_concept VARCHAR(200),
+      
+      -- Data quality rules
+      allowed_values TEXT, -- JSON array of allowed values
+      format_pattern VARCHAR(500), -- Regex pattern for validation
+      min_value VARCHAR(100),
+      max_value VARCHAR(100),
+      
+      -- Lineage and derivation
+      source_system VARCHAR(200),
+      source_column VARCHAR(200),
+      transformation_logic TEXT,
+      calculation_formula TEXT,
+      
+      -- Data governance
+      contains_pii BOOLEAN DEFAULT FALSE,
+      pii_type VARCHAR(100), -- email, phone, ssn, etc.
+      masking_rule VARCHAR(200),
+      
+      -- Usage statistics
+      null_percentage DOUBLE,
+      distinct_count BIGINT,
+      most_frequent_value TEXT,
+      
+      -- Audit fields
+      created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_by VARCHAR(100) DEFAULT CURRENT_USER,
+      modified_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      modified_by VARCHAR(100) DEFAULT CURRENT_USER,
+      is_active BOOLEAN DEFAULT TRUE,
+      
+      -- Constraints
+      UNIQUE(table_id, column_name)
+    )
+  ")
+  
+  # Create indexes
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_column_metadata_table ON column_metadata(table_id)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_column_metadata_pii ON column_metadata(contains_pii)
+  ")
+  
+  message("Column metadata schema created")
+}
+```
+
+### 3. Data Lineage Tracking
+
+Track data flow through the pipeline:
+
+```r
+#' Create data lineage tracking
+#' 
+#' Records how data flows from source to target throughout the pipeline
+#'
+create_data_lineage <- function(meta_conn) {
+  
+  # Create lineage schema
+  DBI::dbExecute(meta_conn, "
+    CREATE TABLE IF NOT EXISTS data_lineage (
+      -- Identification
+      lineage_id INTEGER PRIMARY KEY,
+      lineage_type VARCHAR(50) CHECK (lineage_type IN ('table', 'column', 'process')),
+      
+      -- Source information
+      source_database VARCHAR(100),
+      source_schema VARCHAR(100),
+      source_table VARCHAR(200),
+      source_column VARCHAR(200),
+      source_full_path VARCHAR(500) GENERATED ALWAYS AS 
+        (source_database || '.' || COALESCE(source_schema || '.', '') || 
+         source_table || COALESCE('.' || source_column, '')) STORED,
+      
+      -- Target information
+      target_database VARCHAR(100),
+      target_schema VARCHAR(100),
+      target_table VARCHAR(200),
+      target_column VARCHAR(200),
+      target_full_path VARCHAR(500) GENERATED ALWAYS AS 
+        (target_database || '.' || COALESCE(target_schema || '.', '') || 
+         target_table || COALESCE('.' || target_column, '')) STORED,
+      
+      -- Transformation details
+      transformation_type VARCHAR(100),
+      transformation_logic TEXT,
+      transformation_script VARCHAR(500),
+      
+      -- Process information
+      etl_process_name VARCHAR(200),
+      etl_process_version VARCHAR(50),
+      execution_frequency VARCHAR(100),
+      
+      -- Data flow characteristics
+      data_flow_type VARCHAR(50) CHECK (data_flow_type IN ('direct', 'aggregated', 
+                                                           'filtered', 'joined', 'derived')),
+      join_keys TEXT, -- JSON array
+      filter_conditions TEXT,
+      aggregation_functions TEXT,
+      
+      -- Quality and validation
+      validation_rules TEXT,
+      data_quality_checks TEXT,
+      expected_row_count_ratio DOUBLE,
+      
+      -- Audit fields
+      created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_by VARCHAR(100) DEFAULT CURRENT_USER,
+      modified_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      modified_by VARCHAR(100) DEFAULT CURRENT_USER,
+      is_active BOOLEAN DEFAULT TRUE
+    )
+  ")
+  
+  # Create indexes
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_lineage_source ON data_lineage(source_full_path)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_lineage_target ON data_lineage(target_full_path)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_lineage_process ON data_lineage(etl_process_name)
+  ")
+  
+  message("Data lineage schema created")
+}
+```
+
+### 4. Data Quality Metrics
+
+Track quality metrics across the pipeline:
+
+```r
+#' Create data quality metrics tracking
+#' 
+#' Records data quality measurements at each stage of processing
+#'
+create_data_quality_metrics <- function(meta_conn) {
+  
+  # Create quality metrics schema
+  DBI::dbExecute(meta_conn, "
+    CREATE TABLE IF NOT EXISTS data_quality_metrics (
+      -- Identification
+      metric_id INTEGER PRIMARY KEY,
+      metric_date DATE NOT NULL,
+      metric_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      
+      -- Table reference
+      database_name VARCHAR(100) NOT NULL,
+      schema_name VARCHAR(100),
+      table_name VARCHAR(200) NOT NULL,
+      etl_layer VARCHAR(50),
+      
+      -- Row-level metrics
+      total_row_count BIGINT,
+      distinct_row_count BIGINT,
+      duplicate_row_count BIGINT,
+      duplicate_percentage DOUBLE GENERATED ALWAYS AS 
+        (CASE WHEN total_row_count > 0 
+              THEN CAST(duplicate_row_count AS DOUBLE) / total_row_count * 100 
+              ELSE 0 END) STORED,
+      
+      -- Completeness metrics
+      columns_checked INTEGER,
+      null_counts TEXT, -- JSON object: {column: count}
+      null_percentages TEXT, -- JSON object: {column: percentage}
+      completeness_score DOUBLE, -- Overall completeness 0-100
+      
+      -- Validity metrics
+      invalid_counts TEXT, -- JSON object: {column: count}
+      invalid_percentages TEXT, -- JSON object: {column: percentage}
+      validity_score DOUBLE, -- Overall validity 0-100
+      
+      -- Consistency metrics
+      referential_integrity_failures INTEGER,
+      business_rule_violations INTEGER,
+      consistency_score DOUBLE, -- Overall consistency 0-100
+      
+      -- Timeliness metrics
+      data_freshness_hours DOUBLE,
+      last_update_timestamp TIMESTAMP,
+      expected_update_timestamp TIMESTAMP,
+      timeliness_score DOUBLE, -- Overall timeliness 0-100
+      
+      -- Accuracy metrics (if reference data available)
+      accuracy_checks_performed INTEGER,
+      accuracy_failures INTEGER,
+      accuracy_score DOUBLE, -- Overall accuracy 0-100
+      
+      -- Overall quality score
+      overall_quality_score DOUBLE GENERATED ALWAYS AS 
+        ((COALESCE(completeness_score, 0) + 
+          COALESCE(validity_score, 0) + 
+          COALESCE(consistency_score, 0) + 
+          COALESCE(timeliness_score, 0) + 
+          COALESCE(accuracy_score, 0)) / 
+         NULLIF(
+           (CASE WHEN completeness_score IS NOT NULL THEN 1 ELSE 0 END +
+            CASE WHEN validity_score IS NOT NULL THEN 1 ELSE 0 END +
+            CASE WHEN consistency_score IS NOT NULL THEN 1 ELSE 0 END +
+            CASE WHEN timeliness_score IS NOT NULL THEN 1 ELSE 0 END +
+            CASE WHEN accuracy_score IS NOT NULL THEN 1 ELSE 0 END), 0)
+        ) STORED,
+      
+      -- Anomaly detection
+      anomalies_detected TEXT, -- JSON array of anomaly descriptions
+      anomaly_severity VARCHAR(20) CHECK (anomaly_severity IN ('low', 'medium', 'high', 'critical')),
+      
+      -- Process metadata
+      quality_check_duration_seconds DOUBLE,
+      check_performed_by VARCHAR(100),
+      
+      -- Audit fields
+      created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  ")
+  
+  # Create indexes
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_quality_metrics_table ON data_quality_metrics(database_name, schema_name, table_name)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_quality_metrics_date ON data_quality_metrics(metric_date)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_quality_metrics_score ON data_quality_metrics(overall_quality_score)
+  ")
+  
+  message("Data quality metrics schema created")
+}
+```
+
+### 5. Business Rules Repository
+
+Document business rules and their application:
+
+```r
+#' Create business rules repository
+#' 
+#' Maintains catalog of business rules applied throughout the pipeline
+#'
+create_business_rules <- function(meta_conn) {
+  
+  # Create business rules schema
+  DBI::dbExecute(meta_conn, "
+    CREATE TABLE IF NOT EXISTS business_rules (
+      -- Identification
+      rule_id INTEGER PRIMARY KEY,
+      rule_code VARCHAR(100) UNIQUE NOT NULL,
+      rule_name VARCHAR(200) NOT NULL,
+      rule_category VARCHAR(100),
+      
+      -- Rule definition
+      rule_description TEXT NOT NULL,
+      business_justification TEXT,
+      rule_logic TEXT NOT NULL, -- SQL or pseudocode
+      rule_type VARCHAR(50) CHECK (rule_type IN ('validation', 'transformation', 
+                                                 'derivation', 'aggregation', 'filter')),
+      
+      -- Implementation details
+      implementation_layer VARCHAR(50), -- Which ETL layer implements this
+      implementation_function VARCHAR(200),
+      implementation_script VARCHAR(500),
+      
+      -- Rule parameters
+      rule_parameters TEXT, -- JSON object of configurable parameters
+      threshold_values TEXT, -- JSON object of thresholds
+      
+      -- Scope and application
+      applies_to_tables TEXT, -- JSON array of table names
+      applies_to_columns TEXT, -- JSON array of column names
+      applies_to_process VARCHAR(200),
+      
+      -- Dependencies
+      depends_on_rules TEXT, -- JSON array of rule_codes
+      
+      -- Impact and importance
+      business_impact VARCHAR(20) CHECK (business_impact IN ('low', 'medium', 'high', 'critical')),
+      data_quality_dimension VARCHAR(50), -- completeness, validity, accuracy, etc.
+      
+      -- Version control
+      version_number VARCHAR(20) NOT NULL DEFAULT '1.0',
+      effective_date DATE NOT NULL,
+      expiration_date DATE,
+      
+      -- Governance
+      rule_owner VARCHAR(200),
+      approval_status VARCHAR(50) CHECK (approval_status IN ('draft', 'pending', 'approved', 'deprecated')),
+      approved_by VARCHAR(200),
+      approval_date DATE,
+      
+      -- Monitoring
+      monitor_frequency VARCHAR(50),
+      alert_threshold DOUBLE,
+      alert_recipients TEXT, -- JSON array of email addresses
+      
+      -- Audit fields
+      created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_by VARCHAR(100) DEFAULT CURRENT_USER,
+      modified_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      modified_by VARCHAR(100) DEFAULT CURRENT_USER,
+      is_active BOOLEAN DEFAULT TRUE
+    )
+  ")
+  
+  # Create indexes
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_business_rules_category ON business_rules(rule_category)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_business_rules_type ON business_rules(rule_type)
+  ")
+  DBI::dbExecute(meta_conn, "
+    CREATE INDEX IF NOT EXISTS idx_business_rules_active ON business_rules(is_active, approval_status)
+  ")
+  
+  message("Business rules schema created")
+}
+```
+
+## Metadata Collection Functions
+
+### 1. Automatic Schema Discovery
+
+```r
+#' Discover and document database schemas
+#' 
+#' Automatically extracts schema information from databases
+#'
+discover_and_document_schemas <- function(db_path_list, meta_conn) {
+  
+  results <- list()
+  
+  for (db_name in names(db_path_list)) {
+    if (!file.exists(db_path_list[[db_name]])) {
+      message("Skipping ", db_name, " - file does not exist")
+      next
+    }
+    
+    # Connect to database
+    db_conn <- DBI::dbConnect(duckdb::duckdb(), db_path_list[[db_name]])
+    
+    tryCatch({
+      # Get all tables
+      tables <- DBI::dbListTables(db_conn)
+      
+      for (table_name in tables) {
+        # Insert or update table metadata
+        table_info <- DBI::dbGetQuery(db_conn, 
+          sprintf("SELECT COUNT(*) as row_count FROM %s", table_name))
+        
+        DBI::dbExecute(meta_conn, "
+          INSERT INTO table_metadata (
+            database_name, table_name, table_type, etl_layer,
+            typical_row_count, created_by
+          ) VALUES (?, ?, ?, ?, ?, 'auto_discovery')
+          ON CONFLICT (database_name, schema_name, table_name) 
+          DO UPDATE SET 
+            typical_row_count = EXCLUDED.typical_row_count,
+            modified_date = CURRENT_TIMESTAMP,
+            modified_by = 'auto_discovery'
+        ", list(db_name, table_name, 
+                switch(db_name,
+                       "raw_data" = "source",
+                       "staged_data" = "staging",
+                       "transformed_data" = "transformed",
+                       "cleansed_data" = "cleansed",
+                       "processed_data" = "processed",
+                       "app_data" = "application",
+                       "unknown"),
+                db_name,
+                table_info$row_count[1]))
+        
+        # Get table_id for column metadata
+        table_id <- DBI::dbGetQuery(meta_conn, "
+          SELECT table_id FROM table_metadata 
+          WHERE database_name = ? AND table_name = ?
+        ", list(db_name, table_name))$table_id[1]
+        
+        # Get column information
+        columns <- DBI::dbGetQuery(db_conn, 
+          sprintf("PRAGMA table_info(%s)", table_name))
+        
+        for (i in seq_len(nrow(columns))) {
+          col <- columns[i, ]
+          
+          DBI::dbExecute(meta_conn, "
+            INSERT INTO column_metadata (
+              table_id, column_name, ordinal_position, data_type,
+              is_nullable, is_primary_key, default_value, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'auto_discovery')
+            ON CONFLICT (table_id, column_name)
+            DO UPDATE SET
+              ordinal_position = EXCLUDED.ordinal_position,
+              data_type = EXCLUDED.data_type,
+              is_nullable = EXCLUDED.is_nullable,
+              is_primary_key = EXCLUDED.is_primary_key,
+              default_value = EXCLUDED.default_value,
+              modified_date = CURRENT_TIMESTAMP,
+              modified_by = 'auto_discovery'
+          ", list(table_id, col$name, col$cid + 1, col$type,
+                  col$notnull == 0, col$pk == 1, col$dflt_value))
+        }
+        
+        results[[db_name]][[table_name]] <- list(
+          row_count = table_info$row_count[1],
+          column_count = nrow(columns)
+        )
+      }
+      
+    }, error = function(e) {
+      warning("Error processing ", db_name, ": ", e$message)
+    })
+    
+    DBI::dbDisconnect(db_conn)
+  }
+  
+  message("Schema discovery completed for ", length(results), " databases")
+  return(results)
+}
+```
+
+### 2. Lineage Recording
+
+```r
+#' Record data lineage for ETL processes
+#' 
+#' Documents how data flows from source to target
+#'
+record_data_lineage <- function(meta_conn, lineage_info) {
+  
+  # Validate required fields
+  required_fields <- c("source_database", "source_table", "target_database", 
+                      "target_table", "transformation_type", "etl_process_name")
+  
+  missing_fields <- setdiff(required_fields, names(lineage_info))
+  if (length(missing_fields) > 0) {
+    stop("Missing required fields: ", paste(missing_fields, collapse = ", "))
+  }
+  
+  # Insert lineage record
+  DBI::dbExecute(meta_conn, "
+    INSERT INTO data_lineage (
+      lineage_type, source_database, source_schema, source_table, source_column,
+      target_database, target_schema, target_table, target_column,
+      transformation_type, transformation_logic, transformation_script,
+      etl_process_name, etl_process_version, data_flow_type,
+      join_keys, filter_conditions, aggregation_functions,
+      validation_rules, created_by
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )
+  ", list(
+    lineage_info$lineage_type %||% "table",
+    lineage_info$source_database,
+    lineage_info$source_schema %||% NA,
+    lineage_info$source_table,
+    lineage_info$source_column %||% NA,
+    lineage_info$target_database,
+    lineage_info$target_schema %||% NA,
+    lineage_info$target_table,
+    lineage_info$target_column %||% NA,
+    lineage_info$transformation_type,
+    lineage_info$transformation_logic %||% NA,
+    lineage_info$transformation_script %||% NA,
+    lineage_info$etl_process_name,
+    lineage_info$etl_process_version %||% "1.0",
+    lineage_info$data_flow_type %||% "direct",
+    jsonlite::toJSON(lineage_info$join_keys) %||% NA,
+    lineage_info$filter_conditions %||% NA,
+    lineage_info$aggregation_functions %||% NA,
+    lineage_info$validation_rules %||% NA,
+    lineage_info$created_by %||% Sys.getenv("USER")
+  ))
+  
+  message("Lineage recorded: ", lineage_info$source_table, " -> ", lineage_info$target_table)
+}
+```
+
+### 3. Quality Metrics Collection
+
+```r
+#' Collect and record data quality metrics
+#' 
+#' Analyzes tables and records quality measurements
+#'
+collect_quality_metrics <- function(db_conn, table_name, meta_conn, 
+                                  database_name, etl_layer = NULL) {
+  
+  start_time <- Sys.time()
+  
+  # Get basic row counts
+  row_metrics <- DBI::dbGetQuery(db_conn, sprintf("
+    SELECT 
+      COUNT(*) as total_rows,
+      COUNT(DISTINCT *) as distinct_rows
+    FROM %s
+  ", table_name))
+  
+  duplicate_count <- row_metrics$total_rows - row_metrics$distinct_rows
+  
+  # Get column information
+  columns <- DBI::dbGetQuery(db_conn, 
+    sprintf("PRAGMA table_info(%s)", table_name))
+  
+  # Analyze nulls per column
+  null_counts <- list()
+  null_percentages <- list()
+  
+  for (col_name in columns$name) {
+    null_info <- DBI::dbGetQuery(db_conn, sprintf("
+      SELECT 
+        COUNT(*) - COUNT(%s) as null_count,
+        CAST((COUNT(*) - COUNT(%s)) AS DOUBLE) / COUNT(*) * 100 as null_percentage
+      FROM %s
+    ", col_name, col_name, table_name))
+    
+    null_counts[[col_name]] <- null_info$null_count[1]
+    null_percentages[[col_name]] <- round(null_info$null_percentage[1], 2)
+  }
+  
+  # Calculate completeness score
+  avg_null_percentage <- mean(unlist(null_percentages))
+  completeness_score <- round(100 - avg_null_percentage, 2)
+  
+  # Calculate check duration
+  end_time <- Sys.time()
+  duration_seconds <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  
+  # Insert quality metrics
+  DBI::dbExecute(meta_conn, "
+    INSERT INTO data_quality_metrics (
+      metric_date, database_name, schema_name, table_name, etl_layer,
+      total_row_count, distinct_row_count, duplicate_row_count,
+      columns_checked, null_counts, null_percentages, completeness_score,
+      quality_check_duration_seconds, check_performed_by
+    ) VALUES (
+      CURRENT_DATE, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )
+  ", list(
+    database_name,
+    table_name,
+    etl_layer,
+    row_metrics$total_rows[1],
+    row_metrics$distinct_rows[1],
+    duplicate_count,
+    nrow(columns),
+    jsonlite::toJSON(null_counts),
+    jsonlite::toJSON(null_percentages),
+    completeness_score,
+    duration_seconds,
+    Sys.getenv("USER")
+  ))
+  
+  message("Quality metrics collected for ", table_name, 
+          " - Completeness: ", completeness_score, "%")
+  
+  return(list(
+    total_rows = row_metrics$total_rows[1],
+    duplicate_percentage = round(duplicate_count / row_metrics$total_rows[1] * 100, 2),
+    completeness_score = completeness_score,
+    duration_seconds = duration_seconds
+  ))
+}
+```
+
+## Metadata Initialization and Management
+
+### Complete Metadata Setup
+
+```r
+#' Initialize complete metadata management system
+#' 
+#' Creates all metadata tables and performs initial discovery
+#'
+initialize_metadata_management <- function(db_path_list) {
+  
+  # Ensure meta_data path exists in db_path_list
+  if (!"meta_data" %in% names(db_path_list)) {
+    stop("meta_data path not found in db_path_list. Please add it to db_paths.R")
+  }
+  
+  # Connect to metadata database
+  meta_conn <- DBI::dbConnect(duckdb::duckdb(), db_path_list$meta_data)
+  
+  message("Initializing metadata management system...")
+  
+  # Create all metadata tables
+  create_table_metadata(meta_conn)
+  create_column_metadata(meta_conn)
+  create_data_lineage(meta_conn)
+  create_data_quality_metrics(meta_conn)
+  create_business_rules(meta_conn)
+  
+  # Perform initial schema discovery
+  message("\nPerforming initial schema discovery...")
+  discovery_results <- discover_and_document_schemas(db_path_list, meta_conn)
+  
+  # Create summary view
+  DBI::dbExecute(meta_conn, "
+    CREATE OR REPLACE VIEW metadata_summary AS
+    SELECT 
+      tm.database_name,
+      tm.etl_layer,
+      COUNT(DISTINCT tm.table_id) as table_count,
+      COUNT(DISTINCT cm.column_id) as column_count,
+      SUM(tm.typical_row_count) as total_rows,
+      MAX(tm.modified_date) as last_updated
+    FROM table_metadata tm
+    LEFT JOIN column_metadata cm ON tm.table_id = cm.table_id
+    WHERE tm.is_active = TRUE
+    GROUP BY tm.database_name, tm.etl_layer
+    ORDER BY 
+      CASE tm.etl_layer 
+        WHEN 'raw_data' THEN 1
+        WHEN 'staged_data' THEN 2
+        WHEN 'transformed_data' THEN 3
+        WHEN 'cleansed_data' THEN 4
+        WHEN 'processed_data' THEN 5
+        WHEN 'app_data' THEN 6
+        ELSE 7
+      END
+  ")
+  
+  # Display summary
+  summary <- DBI::dbGetQuery(meta_conn, "SELECT * FROM metadata_summary")
+  print(summary)
+  
+  DBI::dbDisconnect(meta_conn)
+  
+  message("\nMetadata management system initialized successfully!")
+  return(discovery_results)
+}
+
+# Usage example
+# initialize_metadata_management(db_path_list)
+```
+
+### Metadata Reporting Functions
+
+```r
+#' Generate metadata reports
+#' 
+#' Creates various reports from metadata repository
+#'
+generate_metadata_reports <- function(meta_conn, report_type = "summary") {
+  
+  if (report_type == "summary") {
+    # Overall summary report
+    report <- DBI::dbGetQuery(meta_conn, "
+      SELECT 
+        'Tables' as metric,
+        COUNT(DISTINCT table_id) as count
+      FROM table_metadata
+      WHERE is_active = TRUE
+      
+      UNION ALL
+      
+      SELECT 
+        'Columns' as metric,
+        COUNT(DISTINCT column_id) as count
+      FROM column_metadata
+      WHERE is_active = TRUE
+      
+      UNION ALL
+      
+      SELECT 
+        'Lineage Records' as metric,
+        COUNT(DISTINCT lineage_id) as count
+      FROM data_lineage
+      WHERE is_active = TRUE
+      
+      UNION ALL
+      
+      SELECT 
+        'Business Rules' as metric,
+        COUNT(DISTINCT rule_id) as count
+      FROM business_rules
+      WHERE is_active = TRUE
+      
+      UNION ALL
+      
+      SELECT 
+        'Quality Metrics' as metric,
+        COUNT(DISTINCT metric_id) as count
+      FROM data_quality_metrics
+    ")
+    
+  } else if (report_type == "lineage") {
+    # Lineage impact analysis
+    report <- DBI::dbGetQuery(meta_conn, "
+      WITH RECURSIVE lineage_tree AS (
+        -- Anchor: Start from source tables
+        SELECT 
+          lineage_id,
+          source_full_path,
+          target_full_path,
+          transformation_type,
+          1 as level
+        FROM data_lineage
+        WHERE source_database = 'raw_data'
+          AND is_active = TRUE
+        
+        UNION ALL
+        
+        -- Recursive: Follow the lineage chain
+        SELECT 
+          dl.lineage_id,
+          dl.source_full_path,
+          dl.target_full_path,
+          dl.transformation_type,
+          lt.level + 1
+        FROM data_lineage dl
+        INNER JOIN lineage_tree lt 
+          ON dl.source_full_path = lt.target_full_path
+        WHERE dl.is_active = TRUE
+          AND lt.level < 10 -- Prevent infinite recursion
+      )
+      SELECT 
+        level as pipeline_depth,
+        source_full_path,
+        target_full_path,
+        transformation_type
+      FROM lineage_tree
+      ORDER BY level, source_full_path
+    ")
+    
+  } else if (report_type == "quality_trend") {
+    # Quality trend analysis
+    report <- DBI::dbGetQuery(meta_conn, "
+      SELECT 
+        metric_date,
+        database_name,
+        table_name,
+        overall_quality_score,
+        completeness_score,
+        total_row_count
+      FROM data_quality_metrics
+      WHERE metric_date >= CURRENT_DATE - INTERVAL '30 days'
+      ORDER BY metric_date DESC, database_name, table_name
+    ")
+  }
+  
+  return(report)
+}
+```
+
+## Integration with ETL Pipeline
+
+### Automatic Metadata Collection Hook
+
+```r
+#' ETL metadata collection hook
+#' 
+#' Automatically collects metadata during ETL operations
+#'
+etl_metadata_hook <- function(operation_type, source_info, target_info, 
+                            transformation_details = NULL) {
+  
+  # Connect to metadata database
+  meta_conn <- DBI::dbConnect(duckdb::duckdb(), db_path_list$meta_data)
+  
+  tryCatch({
+    # Record lineage
+    lineage_info <- list(
+      source_database = source_info$database,
+      source_table = source_info$table,
+      target_database = target_info$database,
+      target_table = target_info$table,
+      transformation_type = operation_type,
+      transformation_logic = transformation_details$logic,
+      etl_process_name = transformation_details$process_name %||% "etl_pipeline",
+      data_flow_type = transformation_details$flow_type %||% "direct"
+    )
+    
+    record_data_lineage(meta_conn, lineage_info)
+    
+    # Collect quality metrics for target
+    if (!is.null(target_info$connection)) {
+      collect_quality_metrics(
+        target_info$connection,
+        target_info$table,
+        meta_conn,
+        target_info$database,
+        target_info$etl_layer
+      )
+    }
+    
+  }, error = function(e) {
+    warning("Metadata collection failed: ", e$message)
+  })
+  
+  DBI::dbDisconnect(meta_conn)
+}
+```
+
+## Best Practices
+
+### 1. Regular Metadata Updates
+- Schedule daily schema discovery to capture changes
+- Collect quality metrics after each ETL run
+- Update business rules as they evolve
+
+### 2. Metadata Governance
+- Assign data stewards for critical tables
+- Review and approve business rule changes
+- Monitor quality score trends
+
+### 3. Integration Guidelines
+- Add metadata hooks to all ETL processes
+- Document transformations in lineage records
+- Link business rules to implementation code
+
+## Conclusion
+
+The metadata management layer provides essential visibility into the data pipeline, enabling:
+- **Impact analysis**: Understanding downstream effects of changes
+- **Quality monitoring**: Tracking data quality over time
+- **Compliance**: Documenting data lineage for regulatory requirements
+- **Knowledge management**: Preserving business context and rules
+
+By maintaining comprehensive metadata, organizations can ensure their data pipelines remain well-documented, traceable, and aligned with business requirements.

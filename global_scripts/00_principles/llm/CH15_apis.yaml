@@ -1,0 +1,663 @@
+# ========================================
+# CH13: APIs and External Integration
+# Version: 1.1
+# Last Updated: 2025-12-26
+# (Renumbered from CH16 to CH13 per dependency-based reorganization)
+#
+# Contains: API00-API03, platform adapters
+# Total: ~8 patterns
+# ========================================
+
+chapter: "CH15_apis"
+description: "API Architecture and External Integration Patterns"
+pattern_count: 8
+
+# Note: These patterns govern all external API integrations in MAMBA.
+# Implements MP110 (Security Credentials), MP113 (Secure Communication).
+
+patterns:
+
+  # ====================
+  # API00: ARCHITECTURE OVERVIEW
+  # ====================
+
+  - id: API00
+    type: api_pattern
+    name: api_architecture_overview
+    display_name: "API Architecture Overview"
+    one_liner: "System-wide API integration architecture with gateway and adapters"
+    file_path: "part2_implementations/CH16_apis_external_integration/API00_architecture_overview.qmd"
+    implements: ["MP094", "MP113"]
+
+    rule_natural: |
+      MAMBA API architecture has three core components:
+
+      1. API Gateway Layer:
+         - router.R: Routes requests to appropriate platform
+         - authenticator.R: Manages authentication
+         - rate_limiter.R: Implements rate limiting
+         - error_handler.R: Centralized error handling
+
+      2. Platform Adapters:
+         - Each platform has its own adapter (cbz, eby, amz)
+         - Adapters implement common interface (BaseAdapter)
+         - Methods: get_customers(), get_orders(), get_products()
+
+      3. Data Transformation Layer:
+         - Standardizes data into MAMBA's unified schema
+         - Separate transformers for each entity type
+
+    rule_formal: |
+      RULE API00_ARCHITECTURE:
+      api_gateway_layer contains:
+        router, authenticator, rate_limiter, error_handler
+
+      platform_adapter implements BaseAdapter:
+        has get_customers(params)
+        has get_orders(params)
+        has get_products(params)
+        has make_request(endpoint, method, body)
+
+      transformation_layer:
+        input FROM platform_specific_format
+        output TO mamba_unified_schema
+
+    architectural_patterns:
+      adapter:
+        description: "Each platform implements common interface"
+        code: |
+          BaseAdapter <- R6Class("BaseAdapter",
+            public = list(
+              get_customers = function(params) { ... },
+              get_orders = function(params) { ... },
+              get_products = function(params) { ... }
+            )
+          )
+
+      circuit_breaker:
+        description: "Prevents cascading failures when APIs unavailable"
+        states: ["CLOSED", "OPEN", "HALF_OPEN"]
+        parameters:
+          threshold: 5  # failures before opening
+          timeout: 60   # seconds before trying again
+
+      retry:
+        description: "Automatic retry with exponential backoff"
+        max_retries: 3
+        base_delay: 1  # seconds
+        max_delay: 30  # seconds
+
+    violations:
+      - "Direct API calls without going through gateway"
+      - "Platform-specific code in main application"
+      - "No error handling on API calls"
+    compliant:
+      - "All API calls through gateway layer"
+      - "Platform-specific logic in adapters only"
+      - "Circuit breaker for all external calls"
+
+  # ====================
+  # API01: AUTHENTICATION
+  # ====================
+
+  - id: API01
+    type: api_pattern
+    name: authentication_patterns
+    display_name: "API Authentication Patterns"
+    one_liner: "OAuth2, API Keys, and token management strategies"
+    file_path: "part2_implementations/CH16_apis_external_integration/API01_authentication_patterns.qmd"
+    implements: ["MP110", "MP112"]
+
+    rule_natural: |
+      Three authentication methods supported:
+
+      1. API Key Authentication:
+         - Simple key in header or query parameter
+         - Platforms: Cyberbiz, WooCommerce
+         - Use: add_api_key_header() or add_api_key_query()
+
+      2. API Key + Secret (HMAC):
+         - Enhanced security with signature
+         - Platforms: Cyberbiz
+         - Generate HMAC-SHA256 signature from request
+
+      3. OAuth 2.0:
+         - Token-based with refresh capability
+         - Platforms: eBay, Amazon SP-API
+         - Use OAuth2Manager class for token management
+
+      Token management:
+      - Cache tokens until expiration
+      - Auto-refresh before expiry
+      - Secure storage (never in code)
+
+    rule_formal: |
+      RULE API01_AUTH:
+      FOR authentication A:
+      IF platform uses api_key_only
+      THEN add_api_key_header(request, key)
+
+      IF platform uses api_key_secret
+      THEN generate_hmac_signature(secret, method, url, body)
+
+      IF platform uses oauth2
+      THEN OAuth2Manager.get_access_token()
+
+      token_management:
+        cache until expires_at
+        refresh BEFORE expiration
+        store IN environment_variables NOT code
+
+    auth_methods:
+      api_key:
+        platforms: ["Cyberbiz", "WooCommerce"]
+        location: ["header", "query"]
+        header_name: "X-API-Key"
+
+      api_key_secret:
+        platforms: ["Cyberbiz"]
+        algorithm: "HMAC-SHA256"
+        signature_elements: ["method", "url", "body"]
+
+      oauth2:
+        platforms: ["eBay", "Amazon"]
+        grant_types: ["authorization_code", "client_credentials"]
+        token_refresh: true
+
+    violations:
+      - "Hardcoding API keys in source code"
+      - "Not refreshing OAuth tokens"
+      - "Storing secrets in configuration files"
+    compliant:
+      - "API keys from environment variables"
+      - "Automatic token refresh"
+      - "Secure credential storage"
+
+  # ====================
+  # API02: RATE LIMITING
+  # ====================
+
+  - id: API02
+    type: api_pattern
+    name: rate_limiting
+    display_name: "API Rate Limiting Strategies"
+    one_liner: "Handling rate limits and throttling across platforms"
+    file_path: "part2_implementations/CH16_apis_external_integration/API02_rate_limiting.qmd"
+    implements: ["DEV_P014", "DEV_P018"]
+
+    rule_natural: |
+      Rate limit types:
+      1. Request-based: N requests per time period
+      2. Concurrent: Max simultaneous connections
+      3. Payload-based: Data volume limits
+
+      Algorithms:
+
+      1. Token Bucket:
+         - Most flexible, commonly used
+         - Capacity + refill rate
+         - Allows bursting up to capacity
+
+      2. Sliding Window:
+         - Precise rate limiting
+         - Tracks actual request times
+         - No bursting allowed
+
+      3. Adaptive Rate Limiter:
+         - Adjusts based on 429 responses
+         - Backs off exponentially
+         - Recovers gradually
+
+      Platform-specific limits:
+      - CBZ: 5 req/sec, 100 req/min
+      - EBY: 5000 req/day
+      - AMZ: Varies by endpoint
+
+    rule_formal: |
+      RULE API02_RATE_LIMIT:
+      token_bucket_algorithm:
+        capacity = max_burst_size
+        refill_rate = tokens_per_second
+        acquire(tokens) blocks_if_insufficient
+
+      sliding_window_algorithm:
+        window_size = time_period
+        max_requests = limit_per_window
+        track request_timestamps
+
+      adaptive_algorithm:
+        on_success: gradually_increase_rate
+        on_429_error: exponential_backoff
+        min_rate = 0.1 * normal_rate
+
+    algorithms:
+      token_bucket:
+        parameters:
+          capacity: "max burst size"
+          refill_rate: "tokens per second"
+        code: |
+          TokenBucket <- R6Class("TokenBucket",
+            public = list(
+              acquire = function(tokens = 1, wait = TRUE) {
+                # refill, check, wait if needed
+              }
+            )
+          )
+
+      sliding_window:
+        parameters:
+          max_requests: "requests per window"
+          window_seconds: "window duration"
+        code: |
+          SlidingWindowRateLimiter <- R6Class(...)
+
+      adaptive:
+        parameters:
+          initial_rate: "starting requests/sec"
+          min_rate: "floor rate"
+          backoff_factor: 2
+          recovery_factor: 1.1
+
+    platform_limits:
+      CBZ:
+        requests_per_second: 5
+        requests_per_minute: 100
+      EBY:
+        requests_per_day: 5000
+      AMZ:
+        varies_by_endpoint: true
+
+    violations:
+      - "Making requests without rate limiting"
+      - "Ignoring 429 responses"
+      - "Not implementing backoff"
+    compliant:
+      - "Use appropriate rate limiter for platform"
+      - "Respect 429 responses with backoff"
+      - "Log rate limit encounters"
+
+  # ====================
+  # API03: ERROR HANDLING
+  # ====================
+
+  - id: API03
+    type: api_pattern
+    name: error_handling
+    display_name: "API Error Handling Patterns"
+    one_liner: "Standardized error handling and recovery strategies"
+    file_path: "part2_implementations/CH16_apis_external_integration/API03_error_handling.qmd"
+    implements: ["DEV_P013", "DEV_P018"]
+
+    rule_natural: |
+      Error categories:
+
+      1. Client Errors (4xx):
+         - 400: Bad Request - Invalid parameters
+         - 401: Unauthorized - Invalid credentials
+         - 403: Forbidden - Insufficient permissions
+         - 404: Not Found - Resource doesn't exist
+         - 429: Too Many Requests - Rate limit exceeded
+
+      2. Server Errors (5xx):
+         - 500: Internal Server Error
+         - 502: Bad Gateway
+         - 503: Service Unavailable
+         - 504: Gateway Timeout
+
+      3. Network Errors:
+         - Connection refused
+         - Timeout
+         - DNS resolution failure
+         - SSL/TLS errors
+
+      Recovery strategies:
+      - 4xx (except 429): Don't retry, fix request
+      - 429: Backoff and retry
+      - 5xx: Retry with exponential backoff
+      - Network: Retry with longer timeout
+
+      Stored error recovery (database-driven):
+      - Store errors in ai_rating_result (e.g., Connection_error, HTTP_429, API_error)
+      - Retry reads only error rows, reprocesses via API
+      - Delete only error rows that were successfully corrected
+      - Insert corrected results (no extra files)
+
+    rule_formal: |
+      RULE API03_ERROR_HANDLING:
+      FOR error E:
+      IF is_client_error(E) AND code != 429
+      THEN log_error(E) AND raise_exception(E)
+
+      IF code == 429
+      THEN apply_backoff() AND retry()
+
+      IF is_server_error(E)
+      THEN retry_with_exponential_backoff(E)
+
+      IF is_network_error(E)
+      THEN retry_with_increased_timeout(E)
+
+      error_handler:
+        parse error_details
+        log with_context
+        determine recovery_strategy
+        execute recovery OR raise
+
+      stored_error_recovery:
+        error_field = ai_rating_result
+        error_patterns = {Connection_error, HTTP_*, API_error, Unknown_format}
+        retry_flow:
+          select error_rows
+          reprocess
+          delete error_rows WHERE corrected
+          insert corrected_rows
+
+    error_codes:
+      client_4xx:
+        - code: 400
+          message: "Bad Request"
+          action: "Fix request parameters"
+        - code: 401
+          message: "Unauthorized"
+          action: "Refresh credentials"
+        - code: 403
+          message: "Forbidden"
+          action: "Check permissions"
+        - code: 404
+          message: "Not Found"
+          action: "Verify resource exists"
+        - code: 429
+          message: "Rate Limited"
+          action: "Backoff and retry"
+
+      server_5xx:
+        - code: 500
+          message: "Internal Server Error"
+          action: "Retry with backoff"
+        - code: 503
+          message: "Service Unavailable"
+          action: "Wait and retry"
+        - code: 504
+          message: "Gateway Timeout"
+          action: "Retry with longer timeout"
+
+    violations:
+      - "Ignoring API errors"
+      - "Retrying 4xx errors (except 429)"
+      - "No logging of errors"
+    compliant:
+      - "Use APIErrorHandler for all calls"
+      - "Log all errors with context"
+      - "Apply appropriate recovery strategy"
+      - "Use stored error recovery for API retry loops"
+
+    # === STORED ERROR RECOVERY (added 2025-12-26) ===
+    stored_error_recovery:
+      description: |
+        Pattern for recovering from errors stored in database tables.
+        When batch API operations store error results, this pattern enables
+        systematic retry of failed records.
+
+      error_patterns:
+        # Patterns stored in ai_rating_result column (or similar)
+        - pattern: "Connection_error"
+          cause: "Network connectivity failure"
+          recoverable: true
+        - pattern: "HTTP_4xx"
+          cause: "Client error (4xx status code)"
+          recoverable: false  # Except 429
+        - pattern: "HTTP_429"
+          cause: "Rate limit exceeded"
+          recoverable: true
+        - pattern: "HTTP_5xx"
+          cause: "Server error (5xx status code)"
+          recoverable: true
+        - pattern: "API_error"
+          cause: "Generic API error"
+          recoverable: true
+        - pattern: "Unknown_format"
+          cause: "Response parsing failure"
+          recoverable: true  # May succeed on retry
+
+      recovery_strategy:
+        approach: "DELETE + INSERT"
+        rationale: "SCD Type 2 compatible - removes error record before inserting corrected result"
+        steps:
+          - "Query error patterns from result table"
+          - "Match error records to source records by composite key"
+          - "Re-process matched records via API"
+          - "DELETE old error record (within transaction)"
+          - "INSERT corrected result (same transaction)"
+          - "COMMIT only if both operations succeed"
+
+      implementation_pattern:
+        parameter: "retry_errors = FALSE"
+        usage: |
+          # Normal mode: process new records only
+          process_property_ratings(..., retry_errors = FALSE)
+
+          # Retry mode: re-process error records
+          process_property_ratings(..., retry_errors = TRUE)
+        functions:
+          - "fn_process_property_ratings.R"  # AI rating with retry support
+        key_columns: ["product_id", "reviewer_id", "property_name"]
+
+      compliant:
+        - "Store queryable error patterns (e.g., 'Connection_error' not just 'error')"
+        - "Use retry_errors parameter for systematic recovery"
+        - "Wrap DELETE + INSERT in transaction"
+        - "Log error counts before and after retry"
+
+      violations:
+        - "Storing non-queryable error messages"
+        - "Manual data manipulation to fix errors"
+        - "Deleting without matching INSERT"
+
+      # === SCD TYPE 2 EXCEPTION (added 2025-12-26) ===
+      scd_type2_exception:
+        description: |
+          SCD Type 2 (Slowly Changing Dimension Type 2) normally requires
+          append-only operations (INSERT only, no DELETE/UPDATE).
+
+          Error recovery is a CONTROLLED EXCEPTION where DELETE + INSERT
+          is allowed to replace error records with corrected results.
+
+        rationale: |
+          Error records (Connection_error, HTTP_*, API_error) are NOT valid data.
+          They represent failed API operations, not actual business values.
+          Replacing them with corrected results maintains data integrity
+          while preserving the SCD Type 2 audit trail for valid data.
+
+        conditions_for_exception:
+          - "Record contains queryable error pattern in result column (ai_rating_result)"
+          - "DELETE and INSERT wrapped in same database transaction"
+          - "Only error records are deleted, never valid/successful data"
+          - "Corrected result replaces error 1:1 using same composite key"
+          - "Operation performed via retry_errors parameter, not manual SQL"
+
+        prohibited:
+          - "DELETE valid/successful records (violates SCD Type 2)"
+          - "DELETE without corresponding INSERT in same transaction"
+          - "Manual DELETE outside the retry_errors flow"
+          - "UPDATE operations (use DELETE + INSERT instead)"
+
+        implementation_reference:
+          function: "fn_process_property_ratings.R"
+          parameter: "retry_errors = TRUE"
+          transaction_pattern: |
+            BEGIN TRANSACTION
+              DELETE FROM table WHERE key IN (error_keys)
+              INSERT INTO table (corrected_records)
+            COMMIT
+
+  # ====================
+  # PLATFORM: CYBERBIZ
+  # ====================
+
+  - id: CBZ_API
+    type: platform_api
+    name: cyberbiz_api
+    display_name: "Cyberbiz API Integration"
+    one_liner: "Taiwan e-commerce platform API integration"
+    file_path: "part2_implementations/CH16_apis_external_integration/platforms/CBZ_cyberbiz_api.qmd"
+    implements: ["MP094", "DM_R022"]
+
+    rule_natural: |
+      Cyberbiz API specifications:
+      - Base URL: https://app-store-api.cyberbiz.io/
+      - Authentication: Bearer Token
+      - Rate limits: 5 req/sec max
+
+      API Scopes:
+      - public: Basic info access
+      - read_products: Product catalog
+      - write_products: Product management
+      - read_orders: Order data
+      - write_orders: Order updates
+      - read_customers: Customer data
+
+      Key endpoints:
+      - GET /v1/customers: List customers
+      - GET /v1/orders: List orders
+      - GET /v1/products: List products
+
+      Platform ID: 07/CBZ
+
+    rule_formal: |
+      RULE CBZ_API:
+      base_url = "https://app-store-api.cyberbiz.io/"
+      auth_type = "bearer_token"
+      rate_limit = 5 requests_per_second
+
+      platform_id = "07/CBZ"
+      data_format = "JSON"
+
+    endpoints:
+      customers:
+        method: GET
+        path: "/v1/customers"
+        params: ["page", "per_page", "updated_after"]
+      orders:
+        method: GET
+        path: "/v1/orders"
+        params: ["page", "per_page", "status", "created_after"]
+      products:
+        method: GET
+        path: "/v1/products"
+        params: ["page", "per_page", "updated_after"]
+
+    violations:
+      - "Exceeding rate limits"
+      - "Not using proper authentication"
+    compliant:
+      - "Use CBZ adapter with rate limiting"
+      - "Bearer token authentication"
+
+  # ====================
+  # TEMPLATE
+  # ====================
+
+  - id: API_TPL
+    type: api_template
+    name: api_integration_template
+    display_name: "API Integration Template"
+    one_liner: "Standard template for adding new platform integrations"
+    file_path: "part2_implementations/CH16_apis_external_integration/platforms/API_template.qmd"
+
+    rule_natural: |
+      Template for new platform integration:
+
+      1. Create adapter file: {platform}_adapter.R
+      2. Extend BaseAdapter class
+      3. Implement required methods:
+         - authenticate()
+         - get_customers()
+         - get_orders()
+         - get_products()
+         - make_request()
+
+      4. Create rate limiter configuration
+      5. Add platform to router.R
+      6. Create transformer for data standardization
+      7. Document API specifications
+
+    rule_formal: |
+      RULE API_TPL:
+      new_platform_adapter:
+        extends BaseAdapter
+        implements {authenticate, get_customers, get_orders, get_products}
+
+      required_files:
+        - "{platform}_adapter.R"
+        - "{platform}_transformer.R"
+        - "{platform}_rate_config.yaml"
+
+      registration:
+        add_to router.R
+        add_to platform_configs.yaml
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: API00
+    to: MP094
+    reason: "Architecture implements platform API pattern"
+
+  - from: API01
+    to: MP110
+    reason: "Authentication implements security credentials management"
+
+  - from: API02
+    to: DEV_P014
+    reason: "Rate limiting supports performance optimization"
+
+  - from: API03
+    to: DEV_P018
+    reason: "Error handling implements defensive programming"
+
+  - from: CBZ_API
+    to: DM_R022
+    reason: "Cyberbiz uses platform numbering convention"
+
+# ====================
+# SCENARIOS
+# ====================
+
+scenarios:
+  adding_new_platform:
+    description: "Integrating a new e-commerce platform"
+    must_read:
+      - API00  # Architecture overview
+      - API01  # Authentication
+      - API02  # Rate limiting
+      - API03  # Error handling
+      - API_TPL  # Template
+    checklist:
+      - "Identified authentication method?"
+      - "Documented rate limits?"
+      - "Created adapter extending BaseAdapter?"
+      - "Implemented all required methods?"
+      - "Added to router and configs?"
+
+  debugging_api_issues:
+    description: "Troubleshooting API integration problems"
+    must_read:
+      - API03  # Error handling
+      - API02  # Rate limiting
+    checklist:
+      - "Check error logs for category"
+      - "Verify rate limits not exceeded"
+      - "Test authentication separately"
+      - "Check network connectivity"
+
+  implementing_auth:
+    description: "Setting up authentication for a platform"
+    must_read:
+      - API01  # Authentication patterns
+      - "MP110"  # Security credentials
+    checklist:
+      - "Identified auth method (key, OAuth2)?"
+      - "Credentials in environment variables?"
+      - "Token refresh implemented?"

@@ -1,0 +1,286 @@
+# NSQL Schema Summary for MAMBA Project
+# 專案特定的 schema 摘要，供 NSQL 確認協議使用
+# 來源：core_schemas.yaml 的精簡版
+#
+# Version: 1.0
+# Last Updated: 2025-12-24
+
+meta:
+  project: "MAMBA"
+  source: "00_principles/docs/en/part2_implementations/CH10_database_specifications/etl_schemas/core_schemas.yaml"
+  last_updated: "2025-12-24"
+  purpose: |
+    此檔案供 NSQL 確認協議使用，讓 AI 在輸出確認格式時：
+    1. 知道有哪些表格可用
+    2. 使用正確的欄位名稱
+    3. 將用戶的自然語言對應到實際欄位
+
+# =============================================================================
+# 表格定義
+# =============================================================================
+tables:
+  sales:
+    description: "銷售交易資料"
+    table_pattern: "df_{platform}_sales___*"
+    aliases: ["銷售", "訂單明細", "交易", "sales", "銷售資料"]
+    fields:
+      - name: order_id
+        type: VARCHAR
+        required: true
+        aliases: ["訂單編號", "訂單ID", "order ID"]
+      - name: customer_id
+        type: VARCHAR
+        required: true
+        aliases: ["客戶ID", "會員編號", "customer ID"]
+      - name: product_id
+        type: VARCHAR
+        required: true
+        aliases: ["產品編號", "ASIN", "SKU", "商品編號"]
+      - name: order_date
+        type: DATE
+        required: true
+        aliases: ["訂單日期", "購買日期", "交易日期"]
+      - name: quantity
+        type: INTEGER
+        required: true
+        aliases: ["數量", "銷量", "購買數量"]
+      - name: unit_price
+        type: NUMERIC
+        required: true
+        aliases: ["單價", "價格"]
+      - name: total_amount
+        type: NUMERIC
+        required: true
+        aliases: ["金額", "總額", "營收", "交易金額"]
+      - name: platform_id
+        type: VARCHAR
+        required: true
+        aliases: ["平台代碼", "平台"]
+
+  products:
+    description: "產品目錄"
+    table_pattern: "df_{platform}_products___*"
+    aliases: ["產品", "商品", "products", "產品目錄", "商品資料"]
+    fields:
+      - name: product_id
+        type: VARCHAR
+        required: true
+        aliases: ["產品編號", "ASIN", "SKU"]
+      - name: product_name
+        type: VARCHAR
+        required: true
+        aliases: ["產品名稱", "商品名", "品名"]
+      - name: category
+        type: VARCHAR
+        required: false
+        aliases: ["類別", "分類", "產品類別", "商品類別"]
+      - name: subcategory
+        type: VARCHAR
+        required: false
+        aliases: ["子類別", "次分類"]
+      - name: brand
+        type: VARCHAR
+        required: false
+        aliases: ["品牌"]
+      - name: price
+        type: NUMERIC
+        required: false
+        aliases: ["價格", "售價", "定價"]
+      - name: is_active
+        type: BOOLEAN
+        required: false
+        aliases: ["是否上架", "狀態"]
+      - name: platform_id
+        type: VARCHAR
+        required: true
+        aliases: ["平台代碼", "平台"]
+
+  reviews:
+    description: "產品評論"
+    table_pattern: "df_{platform}_reviews___*"
+    aliases: ["評論", "評價", "reviews", "顧客評價", "商品評論"]
+    fields:
+      - name: review_id
+        type: VARCHAR
+        required: true
+        aliases: ["評論ID", "評價編號"]
+      - name: product_id
+        type: VARCHAR
+        required: true
+        aliases: ["產品編號", "ASIN", "商品編號"]
+      - name: customer_id
+        type: VARCHAR
+        required: true
+        aliases: ["客戶ID", "評論者"]
+      - name: rating
+        type: NUMERIC
+        required: true
+        aliases: ["評分", "星等", "評價分數", "分數"]
+      - name: review_date
+        type: DATE
+        required: true
+        aliases: ["評論日期", "評價日期"]
+      - name: review_text
+        type: TEXT
+        required: false
+        aliases: ["評論內容", "評價內容", "評論文字"]
+      - name: platform_id
+        type: VARCHAR
+        required: true
+        aliases: ["平台代碼", "平台"]
+
+  customers:
+    description: "客戶資料"
+    table_pattern: "df_{platform}_customers___*"
+    aliases: ["客戶", "會員", "customers", "顧客", "客戶資料"]
+    fields:
+      - name: customer_id
+        type: VARCHAR
+        required: true
+        aliases: ["客戶ID", "會員編號", "客戶編號"]
+      - name: customer_email
+        type: VARCHAR
+        required: false
+        aliases: ["電子郵件", "Email", "信箱"]
+      - name: customer_name
+        type: VARCHAR
+        required: false
+        aliases: ["客戶名稱", "姓名", "會員名稱"]
+      - name: registration_date
+        type: DATE
+        required: false
+        aliases: ["註冊日期", "加入日期"]
+      - name: platform_id
+        type: VARCHAR
+        required: true
+        aliases: ["平台代碼", "平台"]
+
+  orders:
+    description: "訂單表頭"
+    table_pattern: "df_{platform}_orders___*"
+    aliases: ["訂單", "orders", "訂單資料"]
+    fields:
+      - name: order_id
+        type: VARCHAR
+        required: true
+        aliases: ["訂單編號", "訂單ID"]
+      - name: customer_id
+        type: VARCHAR
+        required: true
+        aliases: ["客戶ID", "會員編號"]
+      - name: order_date
+        type: DATE
+        required: true
+        aliases: ["訂單日期", "下單日期"]
+      - name: order_status
+        type: VARCHAR
+        required: true
+        aliases: ["訂單狀態", "狀態"]
+      - name: total_amount
+        type: NUMERIC
+        required: true
+        aliases: ["訂單金額", "總金額"]
+      - name: shipping_amount
+        type: NUMERIC
+        required: false
+        aliases: ["運費", "運送費用"]
+      - name: tax_amount
+        type: NUMERIC
+        required: false
+        aliases: ["稅額", "稅金"]
+      - name: payment_method
+        type: VARCHAR
+        required: false
+        aliases: ["付款方式", "支付方式"]
+      - name: platform_id
+        type: VARCHAR
+        required: true
+        aliases: ["平台代碼", "平台"]
+
+# =============================================================================
+# 表格間關聯
+# =============================================================================
+relationships:
+  - from: sales
+    field: customer_id
+    to: customers
+    field_to: customer_id
+    cardinality: "many-to-one"
+
+  - from: sales
+    field: product_id
+    to: products
+    field_to: product_id
+    cardinality: "many-to-one"
+
+  - from: reviews
+    field: product_id
+    to: products
+    field_to: product_id
+    cardinality: "many-to-one"
+
+  - from: reviews
+    field: customer_id
+    to: customers
+    field_to: customer_id
+    cardinality: "many-to-one"
+
+  - from: orders
+    field: customer_id
+    to: customers
+    field_to: customer_id
+    cardinality: "many-to-one"
+
+# =============================================================================
+# 常見查詢模式
+# =============================================================================
+common_patterns:
+  - name: "產品銷售分析"
+    tables: [sales, products]
+    typical_operations:
+      - "按類別統計銷售額"
+      - "找出熱銷產品"
+      - "計算各品牌營收"
+
+  - name: "客戶行為分析"
+    tables: [sales, customers]
+    typical_operations:
+      - "計算 RFM"
+      - "找出高價值客戶"
+      - "分析購買頻率"
+
+  - name: "評價分析"
+    tables: [reviews, products]
+    typical_operations:
+      - "找出評分最高的產品"
+      - "分析評價趨勢"
+      - "計算平均評分"
+
+# =============================================================================
+# 聚合函數對應
+# =============================================================================
+aggregation_mapping:
+  "訂單數":
+    function: "count"
+    target: "order_id"
+    note: "計算唯一訂單數量"
+
+  "銷售額":
+    function: "sum"
+    target: "total_amount"
+    note: "加總交易金額"
+
+  "平均評分":
+    function: "mean"
+    target: "rating"
+    note: "計算評分平均值"
+
+  "銷量":
+    function: "sum"
+    target: "quantity"
+    note: "加總銷售數量"
+
+  "客戶數":
+    function: "count_distinct"
+    target: "customer_id"
+    note: "計算唯一客戶數"

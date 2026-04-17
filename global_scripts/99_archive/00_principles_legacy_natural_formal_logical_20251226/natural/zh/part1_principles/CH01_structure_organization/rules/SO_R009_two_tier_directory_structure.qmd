@@ -1,0 +1,312 @@
+---
+title: "SO_R009: 兩層目錄結構規則"
+subtitle: "為路徑組織建立標準化的兩層目錄結構，無論執行環境或平台如何都能實現一致的路徑引用"
+chapter: "CH01"
+category: "rule"
+number: "SO_R009"
+date-created: "2025-04-05"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article: 
+  number: 9
+  title: "兩層目錄結構規則"
+related_to:
+  - "MP002: 結構藍圖"
+  - "SO_P001: 專案原則"
+  - "DEV_R003: 平台中立程式碼"
+  - "DEV_R009: 初始化來源"
+  - "SO_R005: 應用程式 YAML 配置"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第九條：兩層目錄結構規則 {#overview}
+
+**結構組織法第九條（兩層目錄結構規則）**
+
+此規則為路徑組織建立標準化的兩層目錄結構，無論執行環境或平台如何都能實現一致的路徑引用。
+
+所有專案必須遵循一致的兩層目錄結構，其中：
+
+1. **APP_DIR**：當前工作目錄（`getwd()`）- 包含應用程式特定的檔案和目錄
+2. **ROOT_DIR**：APP_DIR 的父目錄（`dirname(getwd())`）- 包含共享資源和兄弟專案
+
+此結構確保一致的路徑引用並簡化專案組織。
+
+:::{.callout-important}
+## 核心概念
+標準化的兩層目錄結構提供組織內所有專案的一致組織、應用程式和共享資源之間的可預測關係、跨不同環境的簡化部署、無需複雜路徑解析的跨專案資源共享、在 Windows、macOS 和 Linux 上同樣運作的平台中立性，以及應用程式特定和共享資源之間的清晰分離。
+:::
+
+# 第一項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：路徑宣告 {#path-declaration}
+
+在初始化開始時宣告並初始化路徑變數：
+
+```r
+# 路徑初始化 - 建立兩層結構
+detect_paths <- function() {
+  # 取得當前工作目錄（APP_DIR）
+  app_dir <- getwd()
+  
+  # 取得父目錄（ROOT_DIR）
+  root_dir <- dirname(app_dir)
+  
+  return(list(
+    APP_DIR = app_dir,
+    ROOT_DIR = root_dir
+  ))
+}
+
+# 全域設定路徑變數
+paths <- detect_paths()
+APP_DIR <- paths$APP_DIR
+ROOT_DIR <- paths$ROOT_DIR
+
+# 為了向後相容
+ROOT_PATH <- APP_DIR
+```
+
+## 第二款：目錄組織 {#directory-organization}
+
+在 APP_DIR 內遵循一致的組織模式：
+
+```
+APP_DIR/
+├── app_data/           # 應用程式特定資料
+├── app_configs/        # 配置檔案
+├── logs/               # 應用程式日誌
+└── update_scripts/     # 更新腳本
+    └── global_scripts/ # 共享腳本
+```
+
+在 ROOT_DIR 內：
+
+```
+ROOT_DIR/
+├── precision_marketing_WISER/     # 當前應用程式
+├── precision_marketing_ACME/      # 兄弟應用程式
+├── precision_marketing_FOO/       # 另一個兄弟應用程式
+└── shared_resources/             # 跨應用程式共享的資源
+```
+
+## 第三款：路徑引用 {#path-references}
+
+始終使用適當的路徑變數來構建路徑：
+
+```r
+# 正確：應用程式特定的路徑引用
+app_config_path <- file.path(APP_DIR, "app_configs", "config.yaml")
+app_data_path <- file.path(APP_DIR, "app_data", "processed_data")
+
+# 正確：對共享或兄弟資源的引用
+sibling_app_path <- file.path(ROOT_DIR, "precision_marketing_ACME")
+shared_resource_path <- file.path(ROOT_DIR, "shared_resources")
+
+# 正確：使用兩層結構的另一個應用程式路徑
+other_app_path <- get_company_path("ACME")
+```
+
+## 第四款：資料庫路徑 {#database-paths}
+
+基於兩層結構配置資料庫路徑：
+
+```r
+# 正確：應用程式資料庫路徑
+db_path_list <- list(
+  app_data = file.path(APP_DIR, "app_data", "app_data.duckdb"),
+  processed_data = file.path(APP_DIR, "app_data", "processed_data.duckdb")
+)
+
+# 正確：全域資料庫路徑
+global_db_path <- file.path(APP_DIR, "update_scripts", "global_scripts", "30_global_data", "global_scd_type1.duckdb")
+```
+
+# 第二項：常見陷阱 {#common-pitfalls}
+
+## 第一款：硬編碼絕對路徑 {#hard-coded-absolute-paths}
+
+```r
+# 錯誤：硬編碼絕對路徑
+data_path <- "C:/Users/username/precision_marketing/data"
+
+# 正確：使用 APP_DIR
+data_path <- file.path(APP_DIR, "data")
+```
+
+## 第二款：不一致的目錄結構 {#inconsistent-directory-structure}
+
+```r
+# 錯誤：不一致的組織
+logs_dir <- file.path(APP_DIR, "logs")
+data_dir <- file.path(ROOT_DIR, "precision_marketing_WISER", "data")  # 冗餘嵌套
+
+# 正確：一致的組織
+logs_dir <- file.path(APP_DIR, "logs")
+data_dir <- file.path(APP_DIR, "data")
+```
+
+## 第三款：直接目錄創建 {#direct-directory-creation}
+
+```r
+# 錯誤：創建目錄而不檢查存在
+dir.create(file.path(APP_DIR, "data"))
+
+# 正確：先檢查存在
+data_dir <- file.path(APP_DIR, "data")
+if (!dir.exists(data_dir)) {
+  dir.create(data_dir, recursive = TRUE)
+}
+```
+
+# 第三項：特殊考慮 {#special-considerations}
+
+## 第一款：從舊結構遷移 {#migration-from-legacy}
+
+從舊結構遷移時：
+
+```r
+# 維護與舊程式碼的相容性
+legacy_mapping <- function() {
+  # 將舊變數名稱映射到新結構
+  ROOT_PATH <- APP_DIR
+  DATA_PATH <- file.path(APP_DIR, "app_data")
+  assign("ROOT_PATH", ROOT_PATH, envir = .GlobalEnv)
+  assign("DATA_PATH", DATA_PATH, envir = .GlobalEnv)
+}
+```
+
+## 第二款：使用外部函式庫 {#working-with-external-libraries}
+
+使用期望不同路徑結構的外部函式庫時：
+
+```r
+# 適應外部函式庫期望
+shiny_www_dir <- file.path(APP_DIR, "www")
+if (!dir.exists(shiny_www_dir)) {
+  dir.create(shiny_www_dir)
+}
+```
+
+## 第三款：多層組織 {#multi-level-organization}
+
+對於需要超過兩層的大型專案：
+
+```r
+# APP_DIR 內的三層組織
+project_dir <- file.path(APP_DIR, "projects", "project_name")
+```
+
+# 第四項：範例實施 {#example-implementation}
+
+實施兩層目錄結構的完整範例：
+
+```r
+# 兩層目錄結構實施
+detect_paths <- function() {
+  app_dir <- getwd()
+  root_dir <- dirname(app_dir)
+  
+  message("應用程式目錄：", app_dir)
+  message("根目錄：", root_dir)
+  
+  return(list(
+    APP_DIR = app_dir,
+    ROOT_DIR = root_dir
+  ))
+}
+
+# 設定路徑變數
+paths <- detect_paths()
+APP_DIR <- paths$APP_DIR
+ROOT_DIR <- paths$ROOT_DIR
+
+# 為了向後相容
+ROOT_PATH <- APP_DIR
+
+# 創建必需的目錄
+required_dirs <- c(
+  file.path(APP_DIR, "app_data"),
+  file.path(APP_DIR, "app_configs"),
+  file.path(APP_DIR, "logs"),
+  file.path(APP_DIR, "update_scripts")
+)
+
+for (dir in required_dirs) {
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE)
+    message("創建目錄：", dir)
+  }
+}
+
+# 取得兄弟應用程式路徑的函數
+get_sibling_app_path <- function(app_name) {
+  if (app_name == "WISER") {
+    return(APP_DIR)  # 當前應用程式
+  } else {
+    return(file.path(ROOT_DIR, paste0("precision_marketing_", app_name)))
+  }
+}
+
+# 存取共享資源的函數
+get_shared_resource_path <- function(resource_name) {
+  return(file.path(ROOT_DIR, "shared_resources", resource_name))
+}
+
+# 匯出到 R 檔案以持久化
+write_path_config <- function() {
+  config_file <- file.path(APP_DIR, "path_config.R")
+  writeLines(c(
+    "# 自動生成的路徑配置",
+    paste0("APP_DIR <- \"", APP_DIR, "\""),
+    paste0("ROOT_DIR <- \"", ROOT_DIR, "\""),
+    paste0("ROOT_PATH <- APP_DIR  # 為了向後相容")
+  ), config_file)
+}
+
+# 將配置寫入檔案
+write_path_config()
+```
+
+# 第五項：與其他規則的整合 {#integration-with-other-rules}
+
+## 第一款：平台中立程式碼（DEV_R003）{#platform-neutral-code}
+
+此規則透過使用 `file.path()` 和動態路徑檢測提供路徑組織的標準化結構，同時維護平台中立性，補充 DEV_R003。
+
+## 第二款：初始化來源（DEV_R009）{#initialization-sourcing}
+
+如 DEV_R009 中指定的，兩層結構應在初始化期間在載入任何其他資源之前建立。
+
+## 第三款：應用程式 YAML 配置（SO_R005）{#app-yaml-configuration}
+
+配置檔案應遵循兩層結構組織，應用程式特定配置在 APP_DIR/app_configs，共享配置在適當的 ROOT_DIR 位置。
+
+# 第六項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **可移植性**：專案變得更可移植，可在不同環境間輕鬆移動
+2. **簡化維護**：標準化結構減少路徑相關的維護負擔
+3. **資源共享**：有效共享資源同時避免環境特定的路徑問題
+4. **平台獨立**：在所有主要作業系統上一致運作
+
+## 第二款：組織優點 {#organizational-benefits}
+
+1. **一致性**：組織內所有專案的一致組織
+2. **清晰性**：應用程式特定和共享資源之間的清晰分離
+3. **可預測性**：應用程式和共享資源之間的可預測關係
+4. **簡化部署**：跨不同環境的簡化部署過程
+
+---
+
+*基於：結構組織法第九條*  
+*相關連結：[MP002 結構藍圖](../../CH00_fundamental_principles/meta_principles/MP002_structural_blueprint.qmd), [DEV_R003 平台中立程式碼](../../CH03_development_methodology/rules/DEV_R003_platform_neutral_code.qmd)*

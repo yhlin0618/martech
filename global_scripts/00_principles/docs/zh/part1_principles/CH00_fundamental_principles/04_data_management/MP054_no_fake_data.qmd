@@ -1,0 +1,243 @@
+---
+title: "MP029: 無假數據元原則 (No Fake Data)"
+subtitle: "禁止在生產環境中生成或使用假數據/模擬數據"
+author: "System"
+date: "2025-04-04"
+date-modified: "2025-08-16"
+categories: [meta-principle, data-integrity, production, best-practices]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則
+
+**絕不在生產環境中生成或使用假數據/模擬數據。**
+
+## 說明
+
+我們數據系統的完整性至關重要。在生產環境中使用假數據或模擬數據可能導致：
+
+1. **虛假洞察**：基於合成數據做出的決策缺乏現實世界的有效性
+2. **數據污染**：假數據可能與真實數據混合，危及整個數據集
+3. **信任喪失**：利益相關者必須對數據真實性有完全的信心
+4. **合規風險**：可能違反數據準確性的監管要求
+
+## 重要澄清：語言轉換 vs 假數據
+
+**MP054 禁止的是編造不存在的數據，不禁止語言處理和轉換。**
+
+### ❌ 禁止：編造假數據
+```r
+# 錯誤：編造不存在的銷售數字
+fake_sales <- tibble(
+  customer_id = 1:100,
+  sales_amount = rnorm(100, mean = 1000, sd = 200)  # 虛假數據
+)
+
+# 錯誤：生成虛構的客戶評論
+fake_reviews <- c("Great product!", "Awesome!", "Love it!")
+```
+
+### ✅ 允許：語言轉換和翻譯
+```r
+# 正確：將技術名稱翻譯為用戶友好名稱
+"month_5" → "5月" / "May"  # 這是翻譯，不是假數據
+
+# 正確：使用 AI 翻譯未知變數名稱
+predictor_name <- "customer_lifetime_value"
+display_name <- translate_with_openai(predictor_name, target_locale = "zh_TW")
+# 結果: "客戶終身價值" - 這是語言轉換，不是編造數據
+
+# 正確：標準化和格式化現有數據
+"JOHN_DOE" → "John Doe"  # 格式化
+"2024-01-15" → "2024年1月15日"  # 日期格式轉換
+```
+
+### 關鍵區別
+
+| 類別 | 定義 | MP054 立場 | 範例 |
+|------|------|-----------|------|
+| **假數據** | 憑空編造、不存在的事實數據 | ❌ 絕對禁止 | 虛構的銷售額、假客戶、模擬評分 |
+| **語言轉換** | 將現有信息轉換為不同語言或格式 | ✅ 完全允許 | 技術名稱翻譯、日期格式化、大小寫轉換 |
+| **AI 輔助翻譯** | 使用 AI 將技術術語翻譯為自然語言 | ✅ 完全允許 | 變數名稱人性化、術語本地化 |
+| **數據衍生** | 基於真實數據計算新指標 | ✅ 完全允許 | RFM 分群、統計摘要、聚合指標 |
+| **數據增強** | 用虛構信息填補空白 | ❌ 絕對禁止 | 用平均值替代缺失數據（除非明確標記） |
+
+## 實施
+
+### 1. 開發環境 {#development-environment}
+
+- 合成數據僅可在隔離的開發環境中使用
+- 必須清楚標記為合成/模擬，並附帶時間戳和來源
+- 絕不應存儲在生產數據庫中
+
+### 2. 測試環境 {#testing-environment}
+
+- 盡可能使用匿名但真實的數據進行測試
+- 當測試需要合成數據時，絕不能暴露給生產系統
+- 測試數據庫必須與生產數據庫隔離
+
+### 3. 生產環境 {#production-environment}
+
+- 僅應攝取真實、經過驗證的數據
+- 必須在生產代碼中禁用模擬數據生成器
+- 後備機制必須延遲報告缺失數據，而不是生成合成數據
+
+### 4. 緊急協議 {#emergency-protocols}
+
+- 如果出現數據訪問問題，系統應報告不可用
+- 絕不用生成的數據替代以填補空白
+- 恢復應專注於恢復對真實數據源的訪問
+
+### 5. 文檔 {#documentation}
+
+- 所有數據源必須記錄其來源和驗證方法
+- 必須實施數據譜系追蹤以確保可追溯性
+
+## 異常處理
+
+如果真實數據暫時不可用，系統應該：
+
+1. 記錄不可用性並附帶詳細的錯誤信息
+2. 將受影響的數據字段留空或設為 NULL
+3. 將報告標記為「不完整」或「待數據」
+4. 以適當的間隔重試訪問真實數據源
+5. 通知相關利益相關者數據缺口
+
+## 代碼實施
+
+### 1. 適當處理缺失數據
+
+實施與外部數據源的連接時：
+
+```r
+# 正確方法 - 適當處理缺失數據
+fetch_data <- function() {
+  tryCatch({
+    # 嘗試獲取真實數據
+    real_data <- connect_and_get_data()
+    return(real_data)
+  }, error = function(e) {
+    # 記錄錯誤
+    log_error("Failed to fetch data", e)
+
+    # 返回 NULL 或空數據框 - 絕不返回假數據
+    return(NULL)
+  })
+}
+
+# 適當報告缺失數據
+report_data <- function(data) {
+  if(is.null(data) || nrow(data) == 0) {
+    return("數據目前不可用。請稍後再查看。")
+  } else {
+    return(generate_report(data))
+  }
+}
+```
+
+### 2. AI 輔助語言轉換（符合 MP054）
+
+使用 AI 進行語言轉換和翻譯**不違反** MP054，因為這是處理現有信息，而非編造數據：
+
+```r
+# 正確：使用 AI 翻譯技術名稱為用戶友好名稱
+fn_translate_display_name_with_ai <- function(
+  predictor,
+  target_locale = "zh_TW",
+  cache_con = NULL
+) {
+
+  # 1. 檢查緩存（避免重複調用 API）
+  if (!is.null(cache_con)) {
+    cached <- dbGetQuery(
+      cache_con,
+      "SELECT display_name FROM df_ai_translation_cache
+       WHERE predictor = ? AND locale = ?",
+      params = list(predictor, target_locale)
+    )
+
+    if (nrow(cached) > 0) {
+      return(cached$display_name[1])
+    }
+  }
+
+  # 2. 調用 OpenAI API 進行翻譯
+  api_key <- Sys.getenv("OPENAI_API_KEY")
+
+  prompt <- glue::glue(
+    "Translate the following technical variable name to a user-friendly ",
+    "display name in {target_locale} locale:\n\n",
+    "Variable: {predictor}\n\n",
+    "Requirements:\n",
+    "- Provide ONLY the translated display name\n",
+    "- Use natural language appropriate for end users\n",
+    "- For {target_locale}, use Traditional Chinese characters\n",
+    "- Keep it concise (max 20 characters)"
+  )
+
+  req <- httr2::request("https://api.openai.com/v1/chat/completions") |>
+    httr2::req_auth_bearer_token(api_key) |>
+    httr2::req_body_json(list(
+      model = "gpt-4o-mini",
+      messages = list(
+        list(role = "system", content = "You are a technical translator specializing in data science terminology."),
+        list(role = "user", content = prompt)
+      ),
+      max_tokens = 50
+    )) |>
+    httr2::req_retry(max_tries = 3)
+
+  resp <- httr2::req_perform(req)
+  result <- httr2::resp_body_json(resp)
+
+  display_name <- result$choices[[1]]$message$content
+
+  # 3. 保存到緩存
+  if (!is.null(cache_con)) {
+    dbExecute(
+      cache_con,
+      "INSERT OR REPLACE INTO df_ai_translation_cache
+       (predictor, locale, display_name, translation_method, created_at)
+       VALUES (?, ?, ?, 'ai_generated', ?)",
+      params = list(predictor, target_locale, display_name, Sys.time())
+    )
+  }
+
+  # 4. 返回翻譯結果（這是語言轉換，不是假數據）
+  return(display_name)
+}
+```
+
+**關鍵點**：
+- AI 翻譯將**現有的技術名稱**轉換為**人類可讀的格式**
+- 沒有編造新的事實或數據
+- 只是改變了信息的**表達方式**，不是信息的**內容**
+- 結果應該被標記為 "ai_generated" 供審核
+- 翻譯結果應該被緩存以確保一致性
+
+## 合規驗證
+
+應定期進行審核以確保：
+
+1. 生產代碼中不存在合成數據生成器
+2. 所有數據都有適當的譜系文檔
+3. 異常處理遵循既定協議
+4. 測試環境適當隔離
+
+## 相關原則
+
+此原則與以下原則協同工作：
+
+- **MP0028（避免自我引用）**：兩個原則都維護系統完整性
+- **R21（一個函數一個檔案）**：有助於將測試數據生成隔離在單獨的檔案中
+- **P02（數據完整性）**：加強數據質量和來源
+- **R44（路徑修改）**：確保生產和測試數據路徑的適當分離
+
+通過遵守此原則，我們維護最高標準的數據完整性，並確保所有洞察和決策都基於真實信息。

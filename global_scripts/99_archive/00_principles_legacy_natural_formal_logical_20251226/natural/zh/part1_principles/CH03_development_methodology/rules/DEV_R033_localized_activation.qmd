@@ -1,0 +1,261 @@
+---
+title: "DEV_R033: 局部啟動規則"
+subtitle: "組件應在內部實施條件執行邏輯，僅在組件在上下文中活躍或需要時執行昂貴的操作，透過選擇性計算提高整體應用程式性能"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R033"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 33
+  title: "局部啟動規則"
+related_to:
+  - "MP47: 函數式編程"
+  - "MP55: 計算分配"
+  - "P77: 性能優化"
+  - "R116: 使用 tbl2 增強資料存取"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三十三條：局部啟動規則 {#overview}
+
+**開發方法法第三十三條（局部啟動規則）**
+
+組件應在內部實施條件執行邏輯，僅在組件在上下文中活躍或需要時執行昂貴的操作，透過選擇性計算提高整體應用程式性能。
+
+:::{.callout-important}
+## 規則陳述
+組件應在內部實施條件執行邏輯，僅在組件在上下文中活躍或需要時執行昂貴的操作，透過選擇性計算提高整體應用程式性能。
+:::
+
+# 第一項：原理 {#rationale}
+
+在具有多個組件的複雜 Shiny 應用程式中，許多昂貴的操作（資料庫查詢、AI API 呼叫、複雜計算）可能會在使用者未主動查看相關內容時不必要地執行。局部啟動允許組件在何時執行資源密集型任務方面變得「智慧」。
+
+# 第二項：實施模式 {#implementation-pattern}
+
+## 第一款：向組件伺服器添加啟動參數 {#add-activation-parameter}
+
+```r
+componentServer <- function(id, data_connection = NULL, config = NULL,
+                           session = getDefaultReactiveDomain(),
+                           active_tab = NULL) {  # 添加啟動參數
+  moduleServer(id, function(input, output, session) {
+    
+    # 創建啟動檢查器
+    is_component_active <- reactive({
+      if (is.null(active_tab)) return(TRUE)  # 如果未指定標籤頁，則始終活躍
+      
+      current_tab <- if (is.reactive(active_tab)) active_tab() else active_tab
+      # 定義此組件何時應該活躍
+      identical(current_tab, "target_tab_name")
+    })
+    
+    # 條件昂貴操作
+    expensive_result <- reactive({
+      # 僅在組件活躍時執行昂貴操作
+      if (!is_component_active()) {
+        return(NULL)
+      }
+      
+      # 在此處進行昂貴計算
+      perform_expensive_operation()
+    })
+  })
+}
+```
+
+## 第二款：從父級傳遞啟動狀態 {#pass-activation-state}
+
+```r
+# 在聯合或父組件中
+component_res <- componentServer(
+  id = "component_id",
+  data_connection = app_connection,
+  config = config,
+  session = session,
+  active_tab = reactive(input$sidebar_menu)  # 傳遞當前標籤頁狀態
+)
+```
+
+## 第三款：應用於多個昂貴操作 {#apply-to-multiple-operations}
+
+```r
+# 將啟動檢查應用於所有昂貴操作
+observe({
+  # 僅在組件活躍時執行背景 AI 分析
+  if (!is_component_active()) {
+    return()
+  }
+  
+  # 在此處進行昂貴的 AI/API 操作
+  perform_ai_analysis()
+})
+
+csa_analysis <- reactive({
+  # 僅在組件活躍時執行 MDS/聚類
+  if (!is_component_active()) {
+    return(NULL)
+  }
+  
+  # 在此處進行複雜的數學運算
+  perform_mds_clustering()
+})
+```
+
+# 第三項：性能優勢 {#performance-benefits}
+
+## 第一款：記憶體效率 {#memory-efficiency}
+
+- 防止在背景中進行不必要的資料處理
+- 減少非活躍組件的記憶體佔用
+- 允許對未使用的中間結果進行垃圾回收
+
+## 第二款：CPU 優化 {#cpu-optimization}
+
+- 消除冗餘計算
+- 減少導航期間的伺服器負載
+- 提高應用程式響應能力
+
+## 第三款：網路效率 {#network-efficiency}
+
+- 防止不必要的 API 呼叫（GPT、外部服務）
+- 減少資料庫查詢負載
+- 最小化非活躍內容的資料傳輸
+
+## 第四款：使用者體驗 {#user-experience}
+
+- 更快的初始頁面載入
+- 更流暢的標籤頁導航
+- 為活躍內容更好地分配資源
+
+# 第四項：應用時機 {#when-to-apply}
+
+## 第一款：高成本操作 {#high-cost-operations}
+
+- 機器學習計算（MDS、聚類、PCA）
+- 外部 API 呼叫（OpenAI GPT、網路服務）
+- 大型資料集處理
+- 複雜的統計分析
+
+## 第二款：背景處理 {#background-processing}
+
+- 自動 AI 命名/標記
+- 資料聚合和摘要
+- 報告生成
+- 視覺化預處理
+
+## 第三款：資源密集型組件 {#resource-intensive-components}
+
+- 市場細分分析
+- 即時資料更新
+- 大型資料集視覺化
+- 複雜的互動式圖表
+
+# 第五項：範例實施 {#example-implementation}
+
+## 第一款：positionMSPlotly 組件 {#positionmsplotly-component}
+
+```r
+# R121 之前：始終執行昂貴的 MDS 分析
+csa_result <- reactive({
+  perform_csa_analysis(data(), exclude_vars, na_threshold, use_modification)
+})
+
+# R121 之後：僅在標籤頁活躍時執行
+csa_result <- reactive({
+  if (!is_component_active()) {
+    return(NULL)
+  }
+  perform_csa_analysis(data(), exclude_vars, na_threshold, use_modification)
+})
+```
+
+## 第二款：AI 背景處理 {#ai-background-processing}
+
+```r
+# R121 之前：始終執行 GPT 分析
+observe({
+  cluster_names <- generate_cluster_names(analysis(), gpt_key)
+})
+
+# R121 之後：僅在組件活躍時執行
+observe({
+  if (!is_component_active()) {
+    return()
+  }
+  cluster_names <- generate_cluster_names(analysis(), gpt_key)
+})
+```
+
+# 第六項：設計考量 {#design-considerations}
+
+## 第一款：向後相容性 {#backward-compatibility}
+
+- 當 `active_tab` 為 NULL 時，組件應正常運作
+- 為了安全起見，預設行為應為「始終活躍」
+- 不破壞現有組件介面
+
+## 第二款：狀態保存 {#state-preservation}
+
+- 一旦計算，結果應該被快取直到資料更改
+- 啟動狀態不應影響先前計算的結果
+- 組件應在啟動週期之間記住其狀態
+
+## 第三款：細粒度控制 {#granular-control}
+
+- 組件內的不同操作可能有不同的啟動條件
+- 某些操作可能是必要的並始終執行
+- 其他操作可能純粹是可選的並高度條件化
+
+# 第七項：反模式 {#anti-patterns}
+
+## 第一款：過度優化 {#over-optimization}
+
+```r
+# 不要應用於輕量級操作
+if (!is_component_active()) return(NULL)  # 對於簡單的資料轉換
+simple_filter <- data %>% filter(column == value)  # 這樣始終運行是可以的
+```
+
+## 第二款：破壞基本功能 {#breaking-essential-functionality}
+
+```r
+# 不要有條件地執行核心反應式依賴項
+essential_data <- reactive({
+  if (!is_component_active()) return(NULL)  # 錯誤：破壞依賴組件
+  get_core_data()
+})
+```
+
+## 第三款：複雜的啟動邏輯 {#complex-activation-logic}
+
+```r
+# 保持啟動邏輯簡單明瞭
+is_active <- reactive({
+  # 錯誤：複雜的多條件邏輯
+  (input$tab == "target" && input$subtab == "detail" && 
+   input$advanced_mode && weekdays(Sys.Date()) %in% c("Monday", "Tuesday"))
+})
+```
+
+# 第八項：相關原則 {#related-principles}
+
+- **MP47：函數式編程** - 純函數促進啟動邏輯
+- **MP55：計算分配** - 確定昂貴操作應該發生的位置
+- **P77：性能優化** - 一般性能改進策略
+- **R116：使用 tbl2 增強資料存取** - 高效的資料存取模式
+
+---
+
+*基於：開發方法法第三十三條*  
+*相關連結：[MP47 函數式編程](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd), [MP55 計算分配](../../CH00_fundamental_principles/meta_principles/MP055_computation_allocation.qmd)*

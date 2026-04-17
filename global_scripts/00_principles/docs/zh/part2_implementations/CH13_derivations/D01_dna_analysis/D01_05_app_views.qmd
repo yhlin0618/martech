@@ -1,0 +1,63 @@
+---
+
+title: "D01_05: Final Validation"
+subtitle: "Verify D01 output contracts before handoff"
+parent: "D01_dna_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D01_05"
+date-created: "2025-12-14"
+date-modified: "2026-02-08"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D01_04_customer_profile"
+consumes:
+  - "app_data.df_dna_by_customer"
+  - "app_data.df_profile_by_customer"
+  - "app_data.df_segments_by_customer"
+outputs_to:
+  - "validation_result"
+implements:
+  - script: "cbz_D01_05.R"
+    path: "update_scripts/DRV/cbz/"
+  - script: "amz_D01_05.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "eby_D01_05.R"
+    path: "update_scripts/DRV/eby/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D01_05: Final Validation {#overview}
+
+This step validates that D01 outputs are complete and consumable by dashboard modules.
+
+## Task Definition (NSQL)
+
+```nsql
+VALIDATE app_data.df_dna_by_customer
+VALIDATE app_data.df_profile_by_customer
+VALIDATE app_data.df_segments_by_customer
+RETURN execution_status
+```
+
+## Minimum Checks
+
+1. Required app tables exist.
+2. Current platform has non-zero rows in `df_dna_by_customer`.
+3. Required identity columns exist:
+   - `platform_id`
+   - `customer_id`
+   - `product_line_id_filter`
+
+## Rule
+
+D01_05 performs validation only. It must not alter analytical definitions from D01_02.
+
+## Next Task
+
+After D01_05, proceed to [D01_06: Master Execution Flow](D01_06_execution.qmd).

@@ -1,0 +1,250 @@
+---
+title: "DM_R015: 動態組合 ID 模式"
+subtitle: "當處理多個 ID 組件（如 platform_id 和 customer_id）時，在查詢時動態生成組合識別碼，而不是在資料庫中將它們儲存為單獨的欄位"
+chapter: "CH02"
+category: "rule"
+number: "DM_R015"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 15
+  title: "動態組合 ID 模式"
+related_to:
+  - "P15: 雙重 ID 格式原則"
+  - "MP17: 關注點分離"
+  - "P80: 整數 ID 一致性"
+  - "R89: 整數 ID 類型轉換"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十五條：動態組合 ID 模式 {#overview}
+
+**資料管理法第十五條（動態組合 ID 模式）**
+
+當處理多個 ID 組件（如 platform_id 和 customer_id）時，在查詢時動態生成組合識別碼，而不是在資料庫中將它們儲存為單獨的欄位。
+
+:::{.callout-important}
+## 核心規則
+當處理多個 ID 組件（如 platform_id 和 customer_id）時，在查詢時動態生成組合識別碼，而不是在資料庫中將它們儲存為單獨的欄位。
+:::
+
+# 第一項：原理 {#rationale}
+
+此規則優化資料庫儲存、查詢性能和靈活性：
+
+- 避免資料庫中的資料重複
+- 保留各個 ID 組件的完整性
+- 保持不同顯示格式的靈活性
+- 支援對組件 ID 的高效過濾
+- 消除儲存的組合 ID 和組件 ID 之間的同步問題
+
+# 第二項：實施指南 {#implementation-guidelines}
+
+## 第一款：動態生成方法 {#dynamic-generation-approaches}
+
+根據需求組合 ID 進行查詢或顯示時，使用這些方法：
+
+### 基於分隔符的方法（推薦）{#separator-based-approach}
+
+```r
+# 在組件之間使用清晰的分隔符
+combined_id <- paste(platform_id, customer_id, sep = "_")
+# 範例："1_12345"
+
+# 易於分割回組件
+parts <- strsplit(combined_id, "_")[[1]]
+platform_id <- as.integer(parts[1])
+customer_id <- as.integer(parts[2])
+```
+
+### 固定寬度格式 {#fixed-width-format}
+
+```r
+# 對每個組件使用固定寬度
+combined_id <- sprintf("%02d%07d", platform_id, customer_id)
+# 範例："0112345"
+
+# 需要了解格式以進行分解
+platform_id <- as.integer(substr(combined_id, 1, 2))
+customer_id <- as.integer(substr(combined_id, 3, 9))
+```
+
+## 第二款：資料庫實施 {#database-implementation}
+
+對於資料庫操作：
+
+```r
+# 在 R 中使用 dplyr
+results <- df %>%
+  # 即時生成組合 ID
+  mutate(combined_id = paste(platform_id, customer_id, sep = "_")) %>%
+  # 使用生成的 ID 過濾
+  filter(combined_id == "1_12345")
+
+# 使用直接組件過濾更有效率
+results <- df %>%
+  filter(platform_id == 1, customer_id == 12345)
+
+# 直接在 SQL 中
+sql_query <- "
+SELECT *, 
+       platform_id || '_' || customer_id AS combined_id 
+FROM customers 
+WHERE platform_id = 1 AND customer_id = 12345;
+"
+```
+
+## 第三款：創建可重用函數 {#creating-reusable-functions}
+
+將組合 ID 邏輯封裝在函數中：
+
+```r
+make_combined_id <- function(platform_id, customer_id, 
+                            format = c("separator", "fixed")) {
+  format <- match.arg(format)
+  
+  if (format == "separator") {
+    return(paste(platform_id, customer_id, sep = "_"))
+  } else {
+    return(sprintf("%02d%07d", platform_id, customer_id))
+  }
+}
+
+parse_combined_id <- function(combined_id, 
+                             format = c("separator", "fixed")) {
+  format <- match.arg(format)
+  
+  if (format == "separator") {
+    parts <- strsplit(combined_id, "_")[[1]]
+    return(list(
+      platform_id = as.integer(parts[1]), 
+      customer_id = as.integer(parts[2])
+    ))
+  } else {
+    return(list(
+      platform_id = as.integer(substr(combined_id, 1, 2)),
+      customer_id = as.integer(substr(combined_id, 3, 9))
+    ))
+  }
+}
+```
+
+## 第四款：顯示的最佳實踐 {#best-practices-for-display}
+
+對於使用者介面顯示：
+
+```r
+# 對於資料表顯示
+display_data <- df %>%
+  mutate(combined_id = paste(platform_id, customer_id, sep = "_"))
+
+# 添加類型前綴以更清晰
+display_data <- df %>%
+  mutate(combined_id = paste0("PC", platform_id, "_", customer_id))
+
+# 對於固定寬度的格式化顯示
+display_data <- df %>%
+  mutate(combined_id = sprintf("PC%02d-%07d", platform_id, customer_id))
+```
+
+# 第三項：創建資料庫視圖 {#creating-database-views}
+
+當經常使用組合 ID 時，考慮創建視圖：
+
+```sql
+CREATE VIEW customers_with_combined_id AS
+SELECT *, 
+       platform_id || '_' || customer_id AS combined_id 
+FROM customers;
+```
+
+# 第四項：優點 {#benefits}
+
+1. **儲存效率**：不儲存冗餘資料
+2. **可維護性**：組合 ID 不會與組件 ID 不同步的風險
+3. **靈活性**：可以在不更改資料庫的情況下調整格式
+4. **性能**：組件 ID 可以使用高效的數字索引
+5. **適應性**：處理可變長度 ID 而無需填充問題
+
+# 第五項：常見陷阱 {#common-pitfalls}
+
+| 陷阱 | 解決方案 |
+|------|----------|
+| 在資料庫中儲存組合 ID | 需要時動態生成 |
+| 對數字過濾使用字串操作 | 直接對組件 ID 過濾 |
+| 不一致的分隔符使用 | 標準化為一種方法 |
+| 大型資料集的性能問題 | 創建索引視圖或計算列 |
+| 複雜格式的解析錯誤 | 盡可能使用簡單的分隔符 |
+
+# 第六項：與其他原則的整合 {#integration-with-other-principles}
+
+此規則實施：
+
+- **P15（雙重 ID 格式原則）**：維護儲存和顯示格式之間的分離
+- **P80（整數 ID 一致性）**：保留組件 ID 的整數類型
+- **MP17（關注點分離）**：將儲存與展示關注點分離
+
+# 第七項：範例 {#examples}
+
+## 第一款：具有組件 ID 的資料庫架構 {#database-schema}
+
+```sql
+CREATE TABLE customer_sales (
+  platform_id INTEGER NOT NULL,
+  customer_id INTEGER NOT NULL,
+  sale_date DATE NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  PRIMARY KEY (platform_id, customer_id, sale_date)
+);
+```
+
+## 第二款：創建搜尋函數 {#search-function}
+
+```r
+search_customer_by_combined_id <- function(conn, combined_id, format = "separator") {
+  # 解析組合 ID
+  components <- parse_combined_id(combined_id, format)
+  
+  # 使用組件 ID 查詢
+  result <- tbl(conn, "customers") %>%
+    filter(
+      platform_id == components$platform_id,
+      customer_id == components$customer_id
+    ) %>%
+    collect()
+    
+  return(result)
+}
+```
+
+## 第三款：UI 實施 {#ui-implementation}
+
+```r
+output$customer_table <- renderDataTable({
+  # 獲取具有動態生成組合 ID 的資料
+  display_data <- customer_data %>%
+    mutate(combined_id = make_combined_id(platform_id, customer_id))
+    
+  # 在 datatable 中顯示組合 ID
+  datatable(
+    display_data[, c("combined_id", "name", "email", "last_purchase")],
+    options = list(pageLength = 25)
+  )
+})
+```
+
+通過遵循此模式，您可以保持整數組件 ID 的計算優勢，同時在需要顯示或交叉參考時提供組合識別碼的靈活性。
+
+---
+
+*基於：資料管理法第十五條*  
+*相關連結：[P15 雙重 ID 格式原則](../../CH02_data_management/principles/DM_P002_dual_id_format.qmd), [P80 整數 ID 一致性](../../CH02_data_management/principles/DM_P008_integer_id_consistency.qmd)*

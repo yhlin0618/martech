@@ -1,0 +1,192 @@
+# Project Configuration Template for ai_martech
+# Copy this file to the root of your ai_martech project and customize
+
+project:
+  name: "ai_martech"
+  type: "r_shiny"                      # r_shiny | r_analysis | python | mixed
+  description: "AI-powered marketing technology platform"
+  owner: "MAMBA Enterprise"
+  version: "1.0.0"
+
+  # Principle system configuration
+  principles:
+    core_path: "global_scripts/00_principles"
+    local_path: "global_scripts/00_principles_local"
+    auto_sync: true
+    sync_interval_hours: 24
+
+    # Principle versioning
+    core_version: "1.0"
+    local_version: "1.0"
+
+  # Company/entity configuration (project-specific)
+  entities:
+    type: "companies"                  # Type of entities managed
+    list:
+      - name: "MAMBA"
+        code: "mamba"
+        display_name: "MAMBA Enterprise"
+        active: true
+        metadata:
+          tier: "enterprise"
+          database: "mamba_prod"
+
+      - name: "KitchenMAMA"
+        code: "kitchenmama"
+        display_name: "Kitchen MAMA"
+        active: true
+        metadata:
+          tier: "pro"
+          database: "kitchenmama_prod"
+
+      - name: "WISER"
+        code: "wiser"
+        display_name: "WISER Technology"
+        active: false
+        metadata:
+          tier: "basic"
+          database: "wiser_archive"
+
+  # Path patterns for app discovery
+  app_discovery:
+    # Application tiers to scan
+    tiers:
+      - "l0_research"
+      - "l1_basic"
+      - "l2_pro"
+      - "l3_enterprise"
+      - "l4_enterprise"
+
+    # Configuration file to identify apps
+    config_file: "app_config.yaml"
+
+    # Patterns to exclude from discovery
+    exclude_patterns:
+      - "archive"
+      - "test"
+      - "temp"
+      - "_backup"
+      - ".git"
+
+    # File patterns that indicate an app
+    app_indicators:
+      - "app.R"
+      - "ui.R"
+      - "server.R"
+      - "app_config.yaml"
+
+  # Project-specific parameters
+  parameters:
+    # Base path (use ${WORKSPACE_ROOT} for portability)
+    base_path: "${WORKSPACE_ROOT}/projects/ai_martech"
+
+    # Data directories
+    data_path: "data"
+    database_path: "database"
+    output_path: "output"
+
+    # Database configuration
+    database_type: "duckdb"            # duckdb | postgresql | sqlite
+
+    # Shiny configuration
+    shiny:
+      default_port: 8080
+      max_request_size: "50MB"
+
+    # bs4Dash configuration
+    bs4dash:
+      default_theme: "minty"
+      default_layout: "fixed"
+
+    # Global scripts configuration
+    global_scripts:
+      base_path: "global_scripts"
+      auto_source: true
+      modules:
+        - "01_db"
+        - "02_db_utils"
+        - "03_config"
+        - "04_utils"
+        - "10_rshinyapp_components"
+
+  # Environment variables
+  environment:
+    # Required environment variables
+    required_vars:
+      - "PGHOST"                       # PostgreSQL host
+      - "PGPORT"                       # PostgreSQL port
+      - "PGUSER"                       # PostgreSQL user
+      - "PGPASSWORD"                   # PostgreSQL password
+      - "PGDATABASE"                   # PostgreSQL database
+      - "PGSSLMODE"                    # PostgreSQL SSL mode
+      - "OPENAI_API_KEY"               # OpenAI API key
+
+    # Optional environment variables
+    optional_vars:
+      - "SLACK_WEBHOOK"                # Slack notifications
+      - "SENTRY_DSN"                   # Error tracking
+      - "GOOGLE_ANALYTICS_ID"          # Analytics
+      - "DEPLOY_ENV"                   # Deployment environment
+
+    # Environment-specific overrides
+    overrides:
+      development:
+        database_type: "duckdb"
+        shiny.default_port: 3838
+      production:
+        database_type: "postgresql"
+        shiny.default_port: 8080
+
+  # Deployment configuration
+  deployment:
+    # Preferred deployment targets
+    targets:
+      primary: "posit_connect"
+      secondary: "shinyapps_io"
+
+    # Deployment settings
+    settings:
+      min_instances: 1
+      max_instances: 3
+      idle_timeout: 300
+
+    # Pre-deployment checks
+    pre_deploy_checks:
+      - "lint"
+      - "test"
+      - "build"
+      - "security_scan"
+
+  # Testing configuration
+  testing:
+    framework: "testthat"
+    coverage_threshold: 80
+    test_directories:
+      - "tests"
+      - "global_scripts/98_test"
+
+  # Documentation
+  documentation:
+    readme_path: "README.md"
+    principles_docs: "global_scripts/00_principles"
+    api_docs: "docs/api"
+
+  # Logging and monitoring
+  logging:
+    level: "INFO"                      # DEBUG | INFO | WARN | ERROR
+    destination: "file"                # file | stdout | both
+    log_path: "logs"
+
+  # Security
+  security:
+    enforce_https: true
+    session_timeout_minutes: 30
+    rate_limiting: true
+    max_requests_per_minute: 100
+
+# Metadata
+metadata:
+  created_date: "2025-10-03"
+  last_modified: "2025-10-03"
+  config_version: "1.0"
+  schema_version: "1.0"

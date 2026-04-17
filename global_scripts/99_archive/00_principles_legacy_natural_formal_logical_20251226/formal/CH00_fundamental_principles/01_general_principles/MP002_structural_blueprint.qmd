@@ -1,0 +1,208 @@
+---
+title: "MP002: Structural Blueprint - Logical Formulation"
+subtitle: "Graph-theoretic and algebraic formulation of system structure"
+author: "Claude"
+date: "2025-08-16"
+categories: [meta-principle, logic, structure, graph-theory, algebra]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+---
+
+# Structural Blueprint - Logical Formulation
+
+## Graph-Theoretic Framework
+
+### System as Directed Graph
+
+Let the system structure be represented as a directed graph $G = (V, E)$ where:
+
+- $V = M \cup C \cup F \cup D$ is the vertex set
+  - $M$ = set of modules
+  - $C$ = set of components  
+  - $F$ = set of functions
+  - $D$ = set of data sources
+- $E \subseteq V \times V$ is the edge set representing relationships
+
+### Hierarchical Structure
+
+Define the containment hierarchy:
+
+$$H: V \rightarrow \mathcal{P}(V)$$
+
+where $\mathcal{P}(V)$ is the power set of $V$, such that:
+
+1. **Module Containment**: $\forall m \in M, H(m) \subseteq C \cup M$
+2. **Component Containment**: $\forall c \in C, H(c) \subseteq F$
+3. **Acyclicity**: The relation $\{(x,y) : y \in H(x)\}$ is acyclic
+
+### Dependency Relations
+
+Define dependency relation $\delta: V \times V \rightarrow \{0,1\}$:
+
+$$\delta(v_1, v_2) = \begin{cases}
+1 & \text{if } v_1 \text{ depends on } v_2 \\
+0 & \text{otherwise}
+\end{cases}$$
+
+With constraints:
+- **Transitivity**: $\delta(a,b) \land \delta(b,c) \implies \delta(a,c)$
+- **No self-dependency**: $\forall v \in V, \delta(v,v) = 0$
+
+## Algebraic Structure
+
+### Module Algebra
+
+Define modules as an algebraic structure $(M, \oplus, \otimes)$ where:
+
+- $\oplus: M \times M \rightarrow M$ (module composition)
+- $\otimes: M \times M \rightarrow M$ (module product)
+
+#### Axioms
+
+1. **Associativity**: 
+   - $(m_1 \oplus m_2) \oplus m_3 = m_1 \oplus (m_2 \oplus m_3)$
+   - $(m_1 \otimes m_2) \otimes m_3 = m_1 \otimes (m_2 \otimes m_3)$
+
+2. **Identity Elements**:
+   - $\exists e_\oplus \in M: \forall m \in M, m \oplus e_\oplus = m$
+   - $\exists e_\otimes \in M: \forall m \in M, m \otimes e_\otimes = m$
+
+3. **Distributivity**:
+   - $m_1 \otimes (m_2 \oplus m_3) = (m_1 \otimes m_2) \oplus (m_1 \otimes m_3)$
+
+### Component Composition
+
+Components form a category $\mathcal{C}$ with:
+
+- **Objects**: Components $C$
+- **Morphisms**: Functions between component interfaces
+- **Composition**: Sequential composition of functions
+- **Identity**: Identity function for each component
+
+## Type System
+
+### Component Types
+
+Each component $c \in C$ has a type signature:
+
+$$\tau(c) = \langle I_c, O_c, S_c \rangle$$
+
+where:
+- $I_c$ = input type
+- $O_c$ = output type  
+- $S_c$ = internal state type
+
+### Type Compatibility
+
+Two components $c_1, c_2$ are composable iff:
+
+$$O_{c_1} \equiv I_{c_2}$$
+
+where $\equiv$ denotes type equivalence.
+
+## Structural Invariants
+
+### Well-Formedness Conditions
+
+A system structure is well-formed iff:
+
+1. **Complete Coverage**: 
+   $$\forall f \in F, \exists c \in C: f \in H(c)$$
+
+2. **No Orphans**:
+   $$\forall v \in V \setminus \{root\}, \exists u \in V: v \in H(u)$$
+
+3. **Unique Containment**:
+   $$\forall v \in V, |\{u : v \in H(u)\}| \leq 1$$
+
+### Consistency Rules
+
+1. **Interface Consistency**:
+   $$\forall (c_1, c_2) \in E_C, \tau(c_1).O \sim \tau(c_2).I$$
+   
+   where $\sim$ denotes type compatibility.
+
+2. **Dependency Consistency**:
+   $$\delta(c_1, c_2) = 1 \implies \exists \text{ path from } c_2 \text{ to } c_1 \text{ in } G$$
+
+## Transformation Rules
+
+### Module Refactoring
+
+Define refactoring operations that preserve system behavior:
+
+1. **Split**: $\sigma: M \rightarrow M \times M$
+   - Precondition: $|H(m)| > 1$
+   - Postcondition: $H(\sigma_1(m)) \cup H(\sigma_2(m)) = H(m)$
+
+2. **Merge**: $\mu: M \times M \rightarrow M$
+   - Precondition: $\delta(m_1, m_2) = 0 \land \delta(m_2, m_1) = 0$
+   - Postcondition: $H(\mu(m_1, m_2)) = H(m_1) \cup H(m_2)$
+
+3. **Extract**: $\epsilon: C \times M \rightarrow M$
+   - Extracts component into new module
+
+## Formal Properties
+
+### Theorems
+
+**Theorem 1 (Modularity)**: 
+For any partition $\{M_1, M_2, ..., M_n\}$ of $M$, if $\forall i \neq j, \delta(M_i, M_j) = \emptyset$, then the system can be developed independently per partition.
+
+**Theorem 2 (Composability)**:
+If $\tau(c_1).O = \tau(c_2).I$ and $\tau(c_2).O = \tau(c_3).I$, then there exists a composite component $c_{1,2,3}$ with $\tau(c_{1,2,3}).I = \tau(c_1).I$ and $\tau(c_{1,2,3}).O = \tau(c_3).O$.
+
+**Theorem 3 (Dependency Bound)**:
+For acyclic dependency graph, maximum dependency chain length is $|V| - 1$.
+
+## Implementation Mapping
+
+### Concrete Instantiation
+
+The logical structure maps to implementation as:
+
+| Logical Entity | Implementation |
+|---------------|----------------|
+| Module $m \in M$ | R package or directory |
+| Component $c \in C$ | UI/Server/Defaults triple |
+| Function $f \in F$ | R function |
+| Edge $(v_1, v_2) \in E$ | `source()` or `library()` call |
+| Type $\tau(c)$ | Function signature |
+
+### Verification
+
+System structure can be verified by checking:
+
+```r
+verify_structure <- function(system) {
+  # Check acyclicity
+  assert(is_dag(system$dependency_graph))
+  
+  # Check completeness
+  assert(all(functions %in% unlist(components)))
+  
+  # Check type consistency
+  for(edge in edges) {
+    assert(compatible_types(
+      output_type(edge$from),
+      input_type(edge$to)
+    ))
+  }
+}
+```
+
+## Conclusion
+
+This logical formulation provides a rigorous foundation for system structure, enabling:
+
+1. **Formal verification** of structural properties
+2. **Automated refactoring** with behavior preservation
+3. **Dependency analysis** and optimization
+4. **Type-safe composition** of components
+5. **Mathematical proofs** of system properties
+
+The graph-theoretic and algebraic frameworks ensure that the structural blueprint is both mathematically sound and practically implementable.

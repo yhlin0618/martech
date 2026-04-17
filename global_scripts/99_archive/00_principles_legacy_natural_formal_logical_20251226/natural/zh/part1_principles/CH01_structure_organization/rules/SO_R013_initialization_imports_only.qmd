@@ -1,0 +1,198 @@
+---
+title: "SO_R013: 初始化檔案應只導入和配置"
+subtitle: "建立初始化檔案應限於導入現有功能和配置環境，而非定義新函數或業務邏輯的原則"
+chapter: "CH01"
+category: "rule"
+number: "SO_R013"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article: 
+  number: 13
+  title: "初始化檔案規則"
+related_to:
+  - "SO_R007: 一個函數一個檔案"
+  - "DEV_R012: 在實施前驗證現有函數"
+  - "MP002: 預設拒絕"
+  - "MP016: 模組化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十三條：初始化檔案規則 {#overview}
+
+**結構組織法第十三條（初始化檔案規則）**
+
+此規則建立初始化檔案應限於導入現有功能和配置環境，而非定義新函數或業務邏輯的原則。
+
+:::{.callout-important}
+## 核心規則
+初始化檔案必須只導入、配置和設置環境。所有實質功能必須在專用模組或工具檔案中定義。
+:::
+
+# 第一項：問題背景 {#rationale}
+
+## 第一款：在初始化檔案中定義函數的問題 {#problems}
+
+直接在初始化檔案中定義函數會造成幾個問題：
+
+1. **重複功能**：可能覆蓋從工具檔案正確定義的函數
+2. **版本衝突**：不同初始化檔案可能定義衝突版本
+3. **隱藏依賴**：難以追蹤功能定義位置
+4. **測試挑戰**：初始化檔案中的函數較難進行單元測試
+5. **混淆**：對於哪個實施是權威版本產生歧義
+6. **維護問題**：需要在多個地方維護相同邏輯
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：正確的初始化檔案結構 {#correct-structure}
+
+初始化檔案應該只：
+
+1. **導入程式庫**：載入所需套件和依賴
+2. **來源工具檔案**：從專用工具檔案導入函數
+3. **設置環境變數**：配置執行時環境
+4. **初始化資源**：設置連接和資源
+5. **創建目錄**：確保所需目錄存在
+
+```r
+# 正確：只導入和配置的初始化檔案
+# 000g_initialization_update_mode.R
+
+# 載入所需套件
+required_packages <- c("DBI", "dplyr", "tidyr", "readr")
+for(pkg in required_packages) {
+  if(!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+  library(pkg, character.only = TRUE)
+}
+
+# 取得 db_utils 目錄
+db_utils_dir <- file.path("update_scripts", "global_scripts", "02_db_utils")
+
+# 直接來源個別函數檔案
+fn_files <- c(
+  "fn_dbConnect_from_list.R",
+  "fn_dbDisconnect_all.R", 
+  "fn_get_default_db_paths.R",
+  "fn_set_db_paths.R"
+)
+
+# 來源每個函數檔案
+for(fn_file in fn_files) {
+  fn_path <- file.path(db_utils_dir, fn_file)
+  if(file.exists(fn_path)) {
+    source(fn_path)
+  }
+}
+
+# 來源其他工具模組
+source(file.path("update_scripts", "global_scripts", "03_file_utils", "file_utils.R"))
+
+# 設置環境變數
+OPERATION_MODE <- "UPDATE_MODE"
+
+# 初始化資源
+initialize_logging()
+
+# 列印初始化訊息
+message("=== 更新腳本初始化於 ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " ===")
+```
+
+## 第二款：錯誤的初始化做法 {#incorrect-practices}
+
+```r
+# 錯誤：在初始化檔案中定義函數
+# 000g_initialization_update_mode.R
+
+# 載入所需套件
+required_packages <- c("DBI", "dplyr", "tidyr", "readr")
+for(pkg in required_packages) {
+  if(!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+  library(pkg, character.only = TRUE)
+}
+
+# 錯誤：在初始化檔案中定義函數
+dbConnect_from_list <- function(db_name) {
+  # 函數實施...
+}
+
+# 錯誤：在初始化檔案中定義業務邏輯
+process_data <- function(data) {
+  # 函數實施...
+}
+
+# 列印初始化訊息
+message("=== 更新腳本初始化於 ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " ===")
+```
+
+# 第三項：函數定義位置 {#function-location}
+
+## 第一款：函數應定義的位置 {#where-to-define}
+
+函數應該在專用檔案中定義：
+
+1. **工具函數**：在適當命名的工具檔案中
+   - 範例：`dbConnect_from_list` 在 `db_utils.R`
+   
+2. **業務邏輯**：在模組或序列腳本中
+   - 範例：`calculate_customer_metrics` 在 `customer_metrics.R`
+
+3. **輔助函數**：在相關輔助模組中
+   - 範例：`format_currency` 在 `formatting_helpers.R`
+
+# 第四項：導入方法 {#import-approach}
+
+## 第一款：需要功能時的處理 {#when-needing-functionality}
+
+當需要功能時：
+
+1. **先來源**：始終來源適當的工具檔案
+2. **驗證函數存在**：檢查所需函數是否可用
+3. **使用通用工具**：利用集中式工具模組
+4. **記錄依賴**：注意需要哪些工具
+
+# 第五項：例外處理 {#exception-process}
+
+## 第一款：例外要求 {#exception-requirements}
+
+此原則的任何例外需要：
+
+1. **文件化理由**：清楚解釋為何需要例外
+2. **後備機制**：確保函數首先檢查現有實施
+3. **警告註解**：明顯標注實施違反此原則
+4. **遷移計劃**：將函數移至適當工具檔案的時程
+
+# 第六項：優點 {#benefits}
+
+遵循此原則確保：
+
+1. **清晰的依賴階層**：工具依賴程式庫，而非初始化
+2. **單一真實來源**：函數只在一個權威位置定義
+3. **可測試性**：工具函數可獨立測試
+4. **可維護性**：函數變更只需在一處進行
+5. **一致性**：無論初始化上下文，使用相同實施
+
+# 第七項：與其他原則整合 {#integration}
+
+此原則強化：
+
+- **SO_R007 一個函數一個檔案**：函數應在專用檔案中定義
+- **DEV_R012 檢查現有函數**：定義前始終檢查函數是否存在
+- **MP002 預設拒絕**：除非明確需要，否則不創建功能
+- **MP016 模組化**：遵循既定結構組織程式碼
+
+---
+
+*基於：結構組織法第十三條*  
+*相關連結：[SO_R007 一個函數一個檔案](SO_R007_one_function_one_file.qmd), [DEV_R012 驗證現有函數](../../CH03_development_methodology/rules/DEV_R012_verify_existing_functions.qmd)*

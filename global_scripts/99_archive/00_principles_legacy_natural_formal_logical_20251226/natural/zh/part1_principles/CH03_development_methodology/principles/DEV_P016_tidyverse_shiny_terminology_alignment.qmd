@@ -1,0 +1,478 @@
+---
+title: "DEV_P016: Tidyverse-Shiny術語對齊原則"
+subtitle: "Shiny應用程式組件命名應遵循與tidyverse操作對齊的一致術語，以維持資料操作和UI互動之間的概念完整性"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P016"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article: 
+  number: 16
+  title: "Tidyverse-Shiny術語對齊原則"
+related_to:
+  - "MP052: 單向資料流"
+  - "MP054: UI-伺服器對應"
+  - "DM_P006: 整數ID一致性原則"
+  - "UI_R002: Shiny模組ID處理"
+  - "MP024: 自然SQL語言"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十六條：Tidyverse-Shiny術語對齊原則 {#overview}
+
+**開發方法法第十六條（Tidyverse-Shiny術語對齊原則）**
+
+Shiny應用程式組件命名應遵循與tidyverse操作對齊的一致術語，以維持資料操作和UI互動之間的概念完整性。
+
+:::{.callout-important}
+## 核心原則
+建立標準化命名慣例，使Shiny UI組件識別符與tidyverse資料操作對齊，確保用戶介面和資料管道中使用的術語在概念上保持一致。
+:::
+
+# 第一項：實施基礎 {#implementation-rationale}
+
+## 第一款：認知一致性優勢 {#cognitive-consistency-advantages}
+
+**術語對齊的益處：**
+
+1. **認知一致性**：維持資料操作和UI互動之間一致的心理模型
+2. **減少情境切換**：在管道操作和介面組件之間使用相同術語
+3. **自我文檔化**：透過標準化命名清楚表達組件目的
+4. **改善可維護性**：使資料操作和UI程式碼之間的導航更容易
+5. **自然語言清晰度**：使用與NSQL（自然SQL）文檔對齊的動詞-名詞模式
+
+**對應關係原理：**
+
+| Tidyverse操作 | UI組件目的 | 命名模式 |
+|---------------|------------|----------|
+| `filter()` 篩選列 | 從記錄子集中選擇 | `{entity}_select` |
+| `select()` 選擇欄 | 選擇特定欄位 | `{field}_select` |
+| `arrange()` 排序 | 改變排序順序 | `{entity}_order` |
+| `mutate()` 新欄位 | 建立/修改值 | `{field}_input` |
+| `summarize()` 彙總 | 顯示彙總資料 | `{metric}_display` |
+| `group_by()` 分組 | 群組層級選擇 | `{group}_select` |
+| `join()` 關聯資料 | 跨實體選擇 | `{entity}_relation_select` |
+
+# 第二項：輸入組件命名慣例 {#input-component-naming}
+
+## 第一款：標準命名模式 {#standard-naming-patterns}
+
+**正確的命名實施：**
+
+```r
+# 正確：遵循tidyverse對齊命名模式
+selectInput(
+  inputId = ns("customer_select"),  # 從客戶資料集篩選列
+  label = "選擇客戶：",
+  choices = customer_choices
+)
+
+# 正確：用於欄位選擇
+checkboxGroupInput(
+  inputId = ns("metrics_select"),   # 從指標中選擇欄位
+  label = "選擇指標：",
+  choices = available_metrics
+)
+
+# 正確：用於資料排序
+selectInput(
+  inputId = ns("transactions_order"), # 排列交易
+  label = "排序依據：",
+  choices = c("日期（最新）", "日期（最舊）", "金額（高到低）", "金額（低到高）")
+)
+```
+
+## 第二款：伺服器函數命名慣例 {#server-function-naming}
+
+**事件處理器命名：**
+
+```r
+# 正確：客戶選擇的處理器
+observeEvent(input$customer_select, {
+  # 篩選客戶資料（內部使用tidyverse filter()）
+  filtered_data <- customers %>%
+    filter(customer_id == as.integer(input$customer_select))
+    
+  # 相應更新UI
+})
+
+# 正確：選擇資料欄位/欄位的處理器
+observeEvent(input$metrics_select, {
+  # 從資料中選擇欄位（內部使用tidyverse select()）
+  selected_data <- base_data %>%
+    select(all_of(input$metrics_select))
+    
+  # 顯示選擇的欄位
+})
+```
+
+# 第三項：輸出組件命名慣例 {#output-component-naming}
+
+## 第一款：顯示組件模式 {#display-component-patterns}
+
+**輸出渲染命名：**
+
+```r
+# 正確：篩選資料的顯示
+output$customer_details <- renderUI({
+  req(filtered_customer())
+  
+  # 渲染篩選的客戶詳情
+})
+
+# 正確：彙總指標的顯示
+output$sales_summary <- renderTable({
+  # 內部使用summarize()
+  req(input$group_by_field)
+  
+  aggregated_data <- data %>%
+    group_by(!!sym(input$group_by_field)) %>%
+    summarize(
+      total_sales = sum(amount),
+      avg_order = mean(amount),
+      count = n()
+    )
+    
+  aggregated_data
+})
+```
+
+# 第四項：反模式識別 {#anti-patterns}
+
+## 第一款：不一致術語 {#inconsistent-terminology}
+
+**術語不匹配問題：**
+
+```r
+# 錯誤：tidyverse概念與UI組件名稱不匹配
+selectInput(
+  inputId = ns("customer_filtered"), # "filtered"是結果，不是動作
+  label = "選擇客戶：",
+  choices = customer_choices
+)
+
+# 正確：與tidyverse filter概念對齊
+selectInput(
+  inputId = ns("customer_select"), # "select"是動作，匹配filter()概念
+  label = "選擇客戶：",
+  choices = customer_choices
+)
+```
+
+## 第二款：錯誤操作對應 {#incorrect-operation-mapping}
+
+**操作類型錯誤：**
+
+```r
+# 錯誤：實際選擇欄位時在名稱中使用"filter"
+checkboxGroupInput(
+  inputId = ns("metrics_filter"), # 錯誤-我們在選擇欄位，不是篩選列
+  label = "選擇指標：",
+  choices = available_metrics
+)
+
+# 正確：與tidyverse select()操作對齊
+checkboxGroupInput(
+  inputId = ns("metrics_select"), # 正確-選擇欄位與select()對齊
+  label = "選擇指標：",
+  choices = available_metrics
+)
+```
+
+## 第三款：缺少動作組件 {#missing-action-component}
+
+**動詞缺失問題：**
+
+```r
+# 錯誤：組件名稱中缺少動作動詞
+selectInput(
+  inputId = ns("customer"), # 太模糊-缺少動作
+  label = "客戶：",
+  choices = customer_choices
+)
+
+# 正確：包含動作組件
+selectInput(
+  inputId = ns("customer_select"), # 包含動作（select）
+  label = "選擇客戶：",
+  choices = customer_choices
+)
+```
+
+# 第五項：完整模組範例 {#complete-module-example}
+
+## 第一款：對齊命名的客戶分析模組 {#customer-analysis-module}
+
+**UI組件實施：**
+
+```r
+# UI組件
+customerAnalysisUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # 篩選列：customer_select
+    selectInput(
+      inputId = ns("customer_select"),
+      label = "選擇客戶：",
+      choices = NULL
+    ),
+    
+    # 選擇欄位：metric_select
+    checkboxGroupInput(
+      inputId = ns("metrics_select"),
+      label = "選擇指標：",
+      choices = c("營收", "訂單", "頻率", "最近")
+    ),
+    
+    # 排列輸出：transaction_order
+    selectInput(
+      inputId = ns("transactions_order"),
+      label = "交易排序依據：",
+      choices = c("日期（最新）" = "date_desc", 
+                  "日期（最舊）" = "date_asc", 
+                  "金額（高到低）" = "amount_desc", 
+                  "金額（低到高）" = "amount_asc")
+    ),
+    
+    # 分組：timeframe_group
+    radioButtons(
+      inputId = ns("timeframe_group"),
+      label = "分組依據：",
+      choices = c("日", "週", "月", "季")
+    ),
+    
+    # 輸出顯示
+    h4("客戶詳情"),
+    uiOutput(ns("customer_details")),
+    
+    h4("交易歷史"),
+    tableOutput(ns("transactions_display")),
+    
+    h4("指標趨勢"),
+    plotOutput(ns("metrics_trend_plot"))
+  )
+}
+```
+
+**伺服器組件實施：**
+
+```r
+# 伺服器組件
+customerAnalysisServer <- function(id, data_connection) {
+  moduleServer(id, function(input, output, session) {
+    
+    # 初始化客戶選擇
+    observe({
+      customers <- data_connection$get_customers()
+      
+      updateSelectInput(
+        session,
+        "customer_select",
+        choices = setNames(
+          customers$customer_id,
+          customers$customer_name
+        )
+      )
+    })
+    
+    # 1. FILTER操作：客戶選擇
+    selected_customer <- reactive({
+      req(input$customer_select)
+      
+      customer_id <- as.integer(input$customer_select)
+      
+      data_connection$get_customers() %>%
+        filter(customer_id == customer_id)
+    })
+    
+    # 2. FILTER操作：客戶交易
+    customer_transactions <- reactive({
+      req(selected_customer())
+      
+      customer_id <- selected_customer()$customer_id
+      
+      data_connection$get_transactions() %>%
+        filter(customer_id == customer_id)
+    })
+    
+    # 3. ARRANGE操作：交易排序
+    ordered_transactions <- reactive({
+      req(customer_transactions(), input$transactions_order)
+      
+      transactions <- customer_transactions()
+      
+      # 根據選擇應用排序
+      switch(input$transactions_order,
+        "date_desc" = arrange(transactions, desc(transaction_date)),
+        "date_asc" = arrange(transactions, transaction_date),
+        "amount_desc" = arrange(transactions, desc(amount)),
+        "amount_asc" = arrange(transactions, amount)
+      )
+    })
+    
+    # 4. SELECT操作：指標選擇
+    selected_metrics <- reactive({
+      req(input$metrics_select)
+      
+      # 將用戶友好名稱轉換為實際欄位名稱
+      metric_map <- c(
+        "營收" = "amount",
+        "訂單" = "order_count",
+        "頻率" = "purchase_frequency",
+        "最近" = "days_since_last"
+      )
+      
+      # 回傳實際欄位名稱
+      metric_map[input$metrics_select]
+    })
+    
+    # 5. GROUP_BY和SUMMARIZE操作：按時間框架的指標
+    metrics_by_timeframe <- reactive({
+      req(customer_transactions(), input$timeframe_group, selected_metrics())
+      
+      transactions <- customer_transactions()
+      
+      # 建立時間框架分組變數
+      transactions <- transactions %>%
+        mutate(
+          timeframe = case_when(
+            input$timeframe_group == "日" ~ as.character(transaction_date),
+            input$timeframe_group == "週" ~ format(transaction_date, "%Y-W%V"),
+            input$timeframe_group == "月" ~ format(transaction_date, "%Y-%m"),
+            input$timeframe_group == "季" ~ paste0(
+              format(transaction_date, "%Y-Q"),
+              quarter(transaction_date)
+            )
+          )
+        )
+      
+      # 分組和彙總
+      transactions %>%
+        group_by(timeframe) %>%
+        summarize(
+          amount = sum(amount),
+          order_count = n_distinct(order_id),
+          purchase_frequency = n_distinct(order_id) / n_distinct(customer_id),
+          days_since_last = as.integer(
+            difftime(max(transaction_date), min(transaction_date), units = "days")
+          )
+        ) %>%
+        select(timeframe, all_of(selected_metrics()))
+    })
+    
+    # 輸出渲染
+    
+    # 客戶詳情輸出
+    output$customer_details <- renderUI({
+      req(selected_customer())
+      customer <- selected_customer()
+      
+      div(
+        p(strong("姓名："), customer$customer_name),
+        p(strong("電子郵件："), customer$email),
+        p(strong("客戶始於："), format(customer$first_purchase_date, "%Y-%m-%d")),
+        p(strong("總購買次數："), customer$total_purchases),
+        p(strong("終身價值："), sprintf("$%.2f", customer$lifetime_value))
+      )
+    })
+    
+    # 交易表格輸出
+    output$transactions_display <- renderTable({
+      req(ordered_transactions())
+      ordered_transactions()
+    })
+    
+    # 指標趨勢圖
+    output$metrics_trend_plot <- renderPlot({
+      req(metrics_by_timeframe(), selected_metrics())
+      
+      # 繪製隨時間變化的指標
+      metrics_data <- metrics_by_timeframe()
+      
+      # 繪圖邏輯...
+    })
+  })
+}
+```
+
+# 第六項：NSQL文檔對齊 {#nsql-documentation-alignment}
+
+## 第一款：對齊術語的NSQL文檔 {#aligned-nsql-documentation}
+
+**與組件對應的SQL模式：**
+
+```sql
+-- 客戶分析模組的NSQL文檔
+
+-- FILTER操作
+-- 用於customer_select輸入
+SELECT *
+FROM customers
+WHERE customer_id = ?  -- 來自input$customer_select的參數
+
+-- 用於customer_transactions反應式
+SELECT *
+FROM transactions 
+WHERE customer_id = ?  -- 從selected_customer()衍生的參數
+
+-- ARRANGE操作
+-- 用於transactions_order輸入和ordered_transactions反應式
+SELECT * 
+FROM customer_transactions
+ORDER BY 
+  CASE 
+    WHEN ? = 'date_desc' THEN transaction_date DESC
+    WHEN ? = 'date_asc' THEN transaction_date ASC
+    WHEN ? = 'amount_desc' THEN amount DESC
+    WHEN ? = 'amount_asc' THEN amount ASC
+  END
+
+-- SELECT操作
+-- 用於metrics_select輸入和selected_metrics反應式
+SELECT timeframe, ${selected_metrics}
+FROM metrics_by_timeframe
+
+-- GROUP BY和SUMMARIZE操作
+-- 用於timeframe_group輸入和metrics_by_timeframe反應式
+SELECT 
+  CASE
+    WHEN ? = '日' THEN transaction_date
+    WHEN ? = '週' THEN FORMAT(transaction_date, 'YYYY-WW')
+    WHEN ? = '月' THEN FORMAT(transaction_date, 'YYYY-MM') 
+    WHEN ? = '季' THEN CONCAT(YEAR(transaction_date), '-Q', QUARTER(transaction_date))
+  END AS timeframe,
+  SUM(amount) AS amount,
+  COUNT(DISTINCT order_id) AS order_count,
+  COUNT(DISTINCT order_id) / COUNT(DISTINCT customer_id) AS purchase_frequency,
+  DATEDIFF('day', MIN(transaction_date), MAX(transaction_date)) AS days_since_last
+FROM transactions
+WHERE customer_id = ?
+GROUP BY timeframe
+```
+
+# 第七項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **建基於 MP052（單向資料流）**：確保術語在資料流向中的一致性
+2. **補充 MP054（UI-伺服器對應）**：提供命名慣例以增強對應關係
+3. **支援 DM_P006（整數ID一致性原則）**：在命名中應用一致的資料類型處理
+4. **增強 UI_R002（Shiny模組ID處理）**：定義模組間ID傳遞的命名標準
+5. **擴展 MP024（自然SQL語言）**：將自然語言概念與UI組件對齊
+
+---
+
+*基於：開發方法法第十六條*  
+*相關連結：[MP052 單向資料流](../../CH00_fundamental_principles/meta_principles/MP052_unidirectional_data_flow.qmd), [UI_R002 Shiny模組ID處理](../../CH04_ui_components/rules/UI_R002_shiny_module_id_handling.qmd)*

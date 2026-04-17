@@ -1,0 +1,379 @@
+---
+
+title: "Special ETL Patterns"
+subtitle: "Structural JOINs, Extensible Frameworks, and Advanced Techniques"
+category: "ETL Pipelines - Special"
+level: "CH11.04"
+status: "Active"
+created: "2025-08-29"
+modified: "2025-12-24"
+version: "2.0"
+principle_refs:
+  - "MP064: ETL-Derivation Separation"
+  - "DM_R040: Structural JOIN Pattern"
+  - "MP104: ETL Data Flow Separation"
+  - "R092: Use tbl2 for DBI"
+---
+
+# Special ETL Patterns
+
+## Overview
+
+This document covers advanced ETL patterns including structural JOINs (the canonical example of proper 2TR phase operations), extensible pipeline frameworks, and special techniques for complex scenarios.
+
+## Structural JOIN Pattern (DM_R040)
+
+### The Golden Rule
+
+**Structural JOINs that combine normalized tables into denormalized business records MUST occur in the 2TR (Transform) phase.**
+
+### What is a Structural JOIN?
+
+A **structural JOIN** combines related normalized tables into a single denormalized record. This is different from an **analytical JOIN** which combines data for business analysis.
+
+| JOIN Type | Purpose | Phase | Example |
+|-----------|---------|-------|---------|
+| **Structural** | Create complete records | 2TR (ETL) | Orders + Order Details → Sales |
+| **Analytical** | Business analysis | Derivation | Sales + Customer Segments → Analysis |
+
+### Complete Three-Phase Example
+
+#### Phase 0IM: Import (NO JOINs)
+
+```r
+# eby_ETL_orders_0IM.R
+autoinit()
+
+tryCatch({
+  # Import orders table (BAYORD)
+  message("Importing BAYORD (orders) table...")
+  orders_raw <- DBI::dbReadTable(source_con, "BAYORD")
+
+  # ✅ CORRECT: Keep orders in raw layer
+  DBI::dbWriteTable(raw_data, "df_eby_orders___raw", orders_raw, overwrite = TRUE)
+
+  # ❌ WRONG: Do NOT JOIN in 0IM phase
+}, error = function(e) {
+  stop("Error in orders 0IM: ", e$message)
+})
+
+autodeinit()
+
+# eby_ETL_order_details_0IM.R
+autoinit()
+
+tryCatch({
+  # Import order details table (BAYORE)
+  message("Importing BAYORE (order details) table...")
+  details_raw <- DBI::dbReadTable(source_con, "BAYORE")
+
+  # ✅ CORRECT: Keep details in raw layer
+  DBI::dbWriteTable(raw_data, "df_eby_order_details___raw", details_raw, overwrite = TRUE)
+
+  # Note: BAYORE has no order_date; do not apply date filters here.
+}, error = function(e) {
+  stop("Error in order_details 0IM: ", e$message)
+})
+
+autodeinit()
+```
+
+#### Phase 1ST: Staging (NO JOINs)
+
+```r
+# eby_ETL_orders_1ST.R
+autoinit()
+
+tryCatch({
+  # Standardize orders table
+  orders_raw <- DBI::dbReadTable(raw_data, "df_eby_orders___raw")
+  orders_staged <- orders_raw %>%
+    mutate(
+      order_date_parsed = lubridate::parse_date_time(order_date, orders = c("ymd", "mdy")),
+      seller_ebay_email = iconv(seller_ebay_email, from = "latin1", to = "UTF-8"),
+      staged_timestamp = Sys.time()
+    )
+
+  # ✅ CORRECT: Write orders to staged layer
+  DBI::dbWriteTable(staged_data, "df_eby_orders___staged", orders_staged, overwrite = TRUE)
+}, error = function(e) {
+  stop("Error in orders 1ST: ", e$message)
+})
+
+autodeinit()
+
+# eby_ETL_order_details_1ST.R
+autoinit()
+
+tryCatch({
+  # Standardize order details table
+  details_raw <- DBI::dbReadTable(raw_data, "df_eby_order_details___raw")
+  details_staged <- details_raw %>%
+    mutate(
+      batch_key = iconv(batch_key, from = "latin1", to = "UTF-8"), # ORE013 seller email copy
+      quantity = as.integer(quantity),
+      unit_price = as.numeric(gsub("[^0-9.-]", "", unit_price)),
+      staged_timestamp = Sys.time()
+    )
+
+  # ✅ CORRECT: Write details to staged layer
+  DBI::dbWriteTable(staged_data, "df_eby_order_details___staged", details_staged, overwrite = TRUE)
+}, error = function(e) {
+  stop("Error in order_details 1ST: ", e$message)
+})
+
+autodeinit()
+```
+
+#### Phase 2TR: Transform (STRUCTURAL JOINs HERE!)
+
+```r
+# eby_ETL_sales_2TR.R
+autoinit()
+
+tryCatch({
+  # Read staged normalized tables
+  orders_staged <- DBI::dbReadTable(staged_data, "df_eby_orders___staged")
+  details_staged <- DBI::dbReadTable(staged_data, "df_eby_order_details___staged")
+
+  # ===========================================================================
+  # ✅ CORRECT: STRUCTURAL JOIN happens in 2TR phase
+  # ===========================================================================
+  sales_transformed <- orders_staged %>%
+    inner_join(
+      details_staged,
+      by = c("order_id" = "order_id", "seller_ebay_email" = "batch_key"),
+      suffix = c("_order", "_detail")
+    ) %>%
+    mutate(
+      # Create transaction ID
+      transaction_id = paste0(order_id, "_", line_item_number),
+
+      # Calculate derived fields
+      total_amount = quantity * unit_price,
+      net_amount = total_amount - coalesce(discount_amount, 0),
+
+      # Platform identifier
+      platform_id = "eby",
+
+      # Transformation metadata
+      transformed_timestamp = Sys.time()
+    ) %>%
+    select(
+      transaction_id, order_id, customer_id, customer_name,
+      product_id, product_title,
+      quantity, unit_price, total_amount, net_amount,
+      order_date, platform_id, transformed_timestamp
+    )
+
+  # Write denormalized records to transformed layer
+  DBI::dbWriteTable(transformed_data, "df_eby_sales___transformed", sales_transformed, overwrite = TRUE)
+
+}, error = function(e) {
+  stop("Error in 2TR: ", e$message)
+})
+
+autodeinit()
+```
+
+**MAMBA eBay note**: Use `order_id + seller_ebay_email` (ORD001 + ORD009) with `order_id + batch_key` (ORE001 + ORE013). Order ID alone is not unique across sellers.
+
+### Data Flow Visualization
+
+```
+BAYORD (raw) ────────┐
+                     ├──> Still separate in 0IM
+BAYORE (raw) ────────┘
+        ↓
+BAYORD (staged) ─────┐
+                     ├──> Still separate in 1ST
+BAYORE (staged) ─────┘
+        ↓
+    [JOIN in 2TR]
+        ↓
+Sales (transformed) ──> Denormalized, ready for Derivations
+        ↓
+   [Derivations]
+        ↓
+Business Insights ────> Customer segments, product analysis, etc.
+```
+
+### Common Mistakes to Avoid
+
+```r
+# ❌ Mistake 1: JOIN in Import Phase
+raw_sales <- api_client$get_orders() %>%
+  left_join(api_client$get_order_details())  # WRONG!
+
+# ❌ Mistake 2: JOIN in Staging Phase
+staged_sales <- staged_orders %>%
+  inner_join(staged_details)  # WRONG!
+
+# ❌ Mistake 3: Structural JOIN in Derivation
+# Derivation should use ETL output, not redo the JOIN
+sales <- tbl2(con, "BAYORD") %>%
+  inner_join(tbl2(con, "BAYORE"))  # Should use df_eby_sales___transformed!
+```
+
+## Extensible Pipeline Framework
+
+### Template for Custom Pipelines
+
+```r
+# Template configuration for new ETL pipelines
+etl_template_config <- list(
+  etl_name = "custom_pipeline",
+  etl_version = "1.0",
+
+  # Source configuration
+  source = list(
+    type = "csv",  # csv, excel, json, api, database
+    path = "data/source.csv",
+    encoding = "UTF-8"
+  ),
+
+  # Staging configuration
+  staging = list(
+    encoding_target = "UTF-8",
+    validation_required = TRUE
+  ),
+
+  # Transformation configuration
+  transformation = list(
+    column_mapping = list(),
+    type_conversions = list(),
+    business_rules = list()
+  )
+)
+```
+
+### Extension Examples
+
+| Extension | Purpose | Output Tables |
+|-----------|---------|---------------|
+| **CLV Pipeline** | Customer Lifetime Value | `customer_clv_metrics` |
+| **Churn Pipeline** | Churn prediction data | `churn_indicators` |
+| **Time Series Pipeline** | Temporal aggregations | `daily_aggregates`, `weekly_trends` |
+| **Geographic Pipeline** | Regional analytics | `geographic_performance` |
+
+### Pipeline Orchestration
+
+```r
+# Execute multiple pipelines
+orchestrate_pipelines <- function(configs) {
+  results <- list()
+
+  for (pipeline_name in names(configs)) {
+    config <- configs[[pipeline_name]]
+
+    result <- tryCatch({
+      execute_pipeline(config)
+      list(status = "success", pipeline = pipeline_name)
+    }, error = function(e) {
+      list(status = "failed", pipeline = pipeline_name, error = e$message)
+    })
+
+    results[[pipeline_name]] <- result
+  }
+
+  return(results)
+}
+```
+
+## Shared Import Pattern
+
+When a single API call returns multiple data types:
+
+```r
+# cbz_ETL_shared_0IM.R
+autoinit()
+
+tryCatch({
+  # Single API call returns all data
+  api_response <- cyberbiz_api$get_all_data()
+
+  # Split by data type and write separately
+  sales_data <- api_response %>% filter(record_type == "sale")
+  customer_data <- api_response %>% filter(record_type == "customer")
+  order_data <- api_response %>% filter(record_type == "order")
+
+  # Write each to separate raw tables
+  dbWriteTable(raw_data, "df_cbz_sales___raw", sales_data, overwrite = TRUE)
+  dbWriteTable(raw_data, "df_cbz_customers___raw", customer_data, overwrite = TRUE)
+  dbWriteTable(raw_data, "df_cbz_orders___raw", order_data, overwrite = TRUE)
+
+  message("Shared import complete: ",
+          nrow(sales_data), " sales, ",
+          nrow(customer_data), " customers, ",
+          nrow(order_data), " orders")
+
+}, error = function(e) {
+  stop("Shared import failed: ", e$message)
+})
+
+autodeinit()
+```
+
+## SSH Tunnel Pattern
+
+For connecting to private databases:
+
+```r
+# Establish SSH tunnel before import
+establish_ssh_tunnel <- function(config) {
+  ssh_command <- sprintf(
+    "ssh -f -N -L %d:%s:%d %s@%s -p %d",
+    config$local_port,
+    config$remote_host,
+    config$remote_port,
+    config$ssh_user,
+    config$ssh_host,
+    config$ssh_port
+  )
+
+  system(ssh_command)
+  Sys.sleep(2)  # Wait for tunnel to establish
+
+  return(TRUE)
+}
+
+# Use in ETL
+tryCatch({
+  establish_ssh_tunnel(ssh_config)
+  con <- dbConnect(odbc(), ...)
+  # ... perform import
+}, finally = {
+  # Tunnel cleanup handled by autoinit/autodeinit
+})
+```
+
+## Validation Checklist
+
+For any ETL using special patterns:
+
+- [ ] No JOINs in 0IM phase scripts
+- [ ] No JOINs in 1ST phase scripts
+- [ ] Structural JOINs only in 2TR phase
+- [ ] Derivations use ETL-prepared denormalized data
+- [ ] Analytical JOINs only in Derivation layer
+- [ ] Each phase writes to its designated database layer
+- [ ] All ETLs can run independently (MP107)
+
+## Benefits of Proper Pattern Usage
+
+1. **Reusability**: Denormalized data from 2TR feeds multiple derivations
+2. **Performance**: JOIN happens once in ETL, not in every analysis
+3. **Clarity**: Each component has single, clear responsibility
+4. **Maintainability**: Changes to JOIN logic isolated to 2TR phase
+
+## Related Documentation
+
+- [index.qmd](index.qmd) - CH11 Overview
+- [01_sales_pipeline.qmd](01_sales_pipeline.qmd) - Sales patterns with JOIN example
+- [05_etl_independence.qmd](05_etl_independence.qmd) - Independence requirements
+- MP064: ETL-Derivation Separation Principle
+- DM_R040: Structural JOIN Pattern Rule
+
+---
+
+*Consolidated from `05_special_patterns/` directory on 2025-12-24*

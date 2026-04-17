@@ -1,0 +1,308 @@
+---
+title: "SEC_R003: GitIgnore Security Requirements"
+subtitle: "Mandatory .gitignore entries for credential protection"
+chapter: "CH07"
+category: "rule"
+number: "SEC_R003"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-rule"
+parent-principle: "MP110"
+enforcement: "REQUIRED"
+severity: "HIGH"
+format:
+  html:
+    toc: true
+    code-fold: true
+---
+
+## Rule Statement
+
+Every repository MUST have a properly configured .gitignore file that prevents credentials, secrets, and sensitive configuration files from being committed to version control.
+
+## Mandatory .gitignore Entries
+
+### Core Security Entries
+
+```gitignore
+# Environment Files - CRITICAL
+.env
+.env.*
+!.env.example
+!.env.template
+*.env
+env/
+
+# API Keys and Secrets
+*_api_key*
+*_secret*
+*_token*
+*_password*
+credentials/
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Configuration with Secrets
+config/production.yml
+config/staging.yml
+database.yml
+secrets.yml
+*_credentials.json
+
+# Cloud Provider Credentials
+.aws/
+.gcp/
+.azure/
+*.serviceaccount.json
+```
+
+### Platform-Specific Entries
+
+```gitignore
+# R/RStudio
+.Rprofile
+.Renviron
+.httr-oauth
+*.Rproj.user
+
+# Python
+*.pyc
+__pycache__/
+instance/
+.python-version
+
+# Node.js
+node_modules/
+.npmrc
+
+# Database
+*.sqlite
+*.db
+dump.sql
+```
+
+### Application-Specific
+
+```gitignore
+# Shiny Apps
+rsconnect/
+.secrets/
+app_secrets.R
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_credentials
+
+# IDE
+.vscode/settings.json
+.idea/workspace.xml
+```
+
+## Implementation Template
+
+### Complete .gitignore Template
+
+```gitignore
+# =========================
+# SECURITY - NEVER REMOVE
+# =========================
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+!.env.template
+env/
+*.env
+
+# Credentials and Secrets
+*api_key*
+*secret*
+*token*
+*password*
+*credential*
+secrets/
+credentials/
+private/
+
+# Certificates and Keys
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+ssl/
+
+# =========================
+# PLATFORM SPECIFIC
+# =========================
+
+# R/RStudio
+.Rhistory
+.Rprofile
+.Renviron
+.httr-oauth
+*.Rproj.user
+.Rproj.user/
+
+# Python
+*.pyc
+__pycache__/
+venv/
+.env/
+instance/
+
+# =========================
+# APPLICATION
+# =========================
+
+# Shiny
+rsconnect/
+app_cache/
+www/temp/
+
+# Data (if sensitive)
+data/*.csv
+data/*.xlsx
+!data/example.csv
+
+# Logs
+*.log
+logs/
+
+# =========================
+# OS FILES
+# =========================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.directory
+```
+
+## Validation Script
+
+### Check .gitignore Completeness
+
+```r
+# Function to validate .gitignore
+validate_gitignore <- function(gitignore_path = ".gitignore") {
+  required_patterns <- c(
+    ".env",
+    "*.key",
+    "*.pem",
+    "*secret*",
+    "*password*",
+    "*credential*",
+    ".Renviron",
+    ".Rprofile"
+  )
+  
+  if (!file.exists(gitignore_path)) {
+    stop(".gitignore file not found!")
+  }
+  
+  gitignore_content <- readLines(gitignore_path)
+  
+  missing_patterns <- character()
+  for (pattern in required_patterns) {
+    if (!any(grepl(pattern, gitignore_content, fixed = TRUE))) {
+      missing_patterns <- c(missing_patterns, pattern)
+    }
+  }
+  
+  if (length(missing_patterns) > 0) {
+    warning(sprintf(
+      "Missing security patterns in .gitignore: %s",
+      paste(missing_patterns, collapse = ", ")
+    ))
+    return(FALSE)
+  }
+  
+  message("✓ .gitignore properly configured for security")
+  return(TRUE)
+}
+
+# Run validation
+validate_gitignore()
+```
+
+## Enforcement
+
+### Pre-commit Hook
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# Check for required .gitignore entries
+required_patterns=(
+  ".env"
+  "*.key"
+  "*secret*"
+  "*password*"
+)
+
+for pattern in "${required_patterns[@]}"; do
+  if ! grep -q "$pattern" .gitignore; then
+    echo "ERROR: .gitignore missing required pattern: $pattern"
+    exit 1
+  fi
+done
+
+# Check for accidental credential commits
+if git diff --cached --name-only | xargs grep -E "(password|secret|token|key)\s*=" 2>/dev/null; then
+  echo "ERROR: Possible credential detected in staged files"
+  exit 1
+fi
+```
+
+## Recovery Procedures
+
+### If Sensitive File Was Committed
+
+```bash
+# Remove file from repository history
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch path/to/sensitive/file" \
+  --prune-empty --tag-name-filter cat -- --all
+
+# Force push (coordinate with team)
+git push --force --all
+git push --force --tags
+
+# Clean up local repository
+git for-each-ref --format='delete %(refname)' refs/original | git update-ref --stdin
+git reflog expire --expire=now --all
+git gc --prune=now
+```
+
+## Audit Checklist
+
+- [ ] .gitignore exists in repository root
+- [ ] All environment file patterns included
+- [ ] All credential patterns included
+- [ ] Platform-specific patterns added
+- [ ] No sensitive files in git history
+- [ ] Pre-commit hooks configured
+- [ ] Team trained on .gitignore importance
+
+## Related Rules
+
+- SEC_R001: No Hardcoded Credentials
+- SEC_R002: Environment Variable Standards
+- SEC_R004: Secret Detection Tools

@@ -1,0 +1,321 @@
+---
+id: "DM_R041"
+title: "ETL Directory Structure Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-09-28"
+date_modified: "2025-09-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 41
+implements:
+  - "MP104": "ETL Data Flow Separation Principle"
+  - "MP064": "ETL-Derivation Separation Principle"
+related_to:
+  - "DM_R028": "ETL Data Type Separation and Directory Structure Rule"
+  - "MP107": "ETL Pipeline Independence Principle"
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+---
+
+# DM_R041: ETL Directory Structure Rule
+
+## Rule Statement
+
+**All ETL, DRV, and orchestration scripts MUST be organized in a mandatory hierarchical directory structure**: No ETL or DRV scripts may exist in the root update_scripts directory. All scripts must be placed in their designated directories based on type (ETL/DRV/orchestration) and platform.
+
+## Mandatory Directory Hierarchy
+
+### Required Structure
+
+```yaml
+update_scripts/              # Root directory for all update scripts
+├── ETL/                    # MANDATORY: All ETL scripts
+│   ├── cbz/               # Cyberbiz platform ETLs
+│   ├── amz/               # Amazon platform ETLs
+│   ├── eby/               # eBay platform ETLs
+│   └── all/               # Cross-platform ETL summaries
+├── DRV/                    # MANDATORY: All Derivation scripts
+│   ├── cbz/               # Cyberbiz platform derivations
+│   ├── amz/               # Amazon platform derivations
+│   ├── eby/               # eBay platform derivations
+│   └── all/               # Cross-platform derivations
+└── orchestration/          # MANDATORY: Pipeline control scripts
+    ├── run_full_pipeline.R
+    ├── run_cbz_pipeline.R
+    ├── run_amz_pipeline.R
+    └── run_eby_pipeline.R
+```
+
+### Directory Purposes
+
+```yaml
+directory_purposes:
+  ETL:
+    purpose: "Extract-Transform-Load data preparation scripts"
+    subdirs: "Platform-specific (cbz, amz, eby) and cross-platform (all)"
+    naming: "{platform}_ETL_{datatype}_{phase}.R"
+
+  DRV:
+    purpose: "Derivation scripts for business logic"
+    subdirs: "Platform-specific (cbz, amz, eby) and cross-platform (all)"
+    naming: "{platform}_DRV{nn}_{purpose}.R"
+
+  orchestration:
+    purpose: "Pipeline runners and control scripts"
+    subdirs: "None - flat structure"
+    naming: "run_{scope}_pipeline.R"
+```
+
+## Compliance Requirements
+
+### Mandatory Rules
+
+1. **NO scripts in root**: The update_scripts/ directory must contain ONLY subdirectories, no .R files
+2. **ETL segregation**: All ETL scripts MUST be in ETL/{platform}/ directories
+3. **DRV segregation**: All DRV scripts MUST be in DRV/{platform}/ directories
+4. **Platform organization**: Each platform must have its own subdirectory
+5. **Orchestration centralization**: All pipeline runners in orchestration/
+
+### File Placement Rules
+
+```yaml
+placement_rules:
+  # ETL Scripts
+  "cbz_ETL_sales_0IM.R": "ETL/cbz/"         # ✅ Correct
+  "amz_ETL_orders_1ST.R": "ETL/amz/"        # ✅ Correct
+  "eby_ETL_products_2TR.R": "ETL/eby/"      # ✅ Correct
+  "all_ETL_summary_0IM.R": "ETL/all/"       # ✅ Correct
+
+  # DRV Scripts
+  "cbz_DRV01_customer.R": "DRV/cbz/"        # ✅ Correct
+  "amz_DRV03_positioning.R": "DRV/amz/"     # ✅ Correct
+  "all_DRV_summary.R": "DRV/all/"           # ✅ Correct
+
+  # Orchestration Scripts
+  "run_full_pipeline.R": "orchestration/"    # ✅ Correct
+
+  # Violations
+  "cbz_ETL_sales_0IM.R": "update_scripts/"  # ❌ Wrong (root)
+  "amz_DRV01_customer.R": "update_scripts/" # ❌ Wrong (root)
+  "cbz_ETL_sales_0IM.R": "ETL/"            # ❌ Wrong (no platform subdir)
+```
+
+## Implementation
+
+### Creating Directory Structure
+
+```r
+# Function to create mandatory directory structure
+create_etl_directory_structure <- function(base_path = "scripts/update_scripts") {
+  # Main directories
+  main_dirs <- c("ETL", "DRV", "orchestration")
+
+  for (dir in main_dirs) {
+    dir.create(file.path(base_path, dir), showWarnings = FALSE, recursive = TRUE)
+  }
+
+  # Platform subdirectories
+  platforms <- c("cbz", "amz", "eby", "all")
+
+  for (platform in platforms) {
+    dir.create(file.path(base_path, "ETL", platform),
+               showWarnings = FALSE, recursive = TRUE)
+    dir.create(file.path(base_path, "DRV", platform),
+               showWarnings = FALSE, recursive = TRUE)
+  }
+
+  message("✅ DM_R041: Directory structure created successfully")
+
+  # Validate structure
+  validate_directory_structure(base_path)
+}
+```
+
+### Validating Directory Structure
+
+```r
+# Function to validate directory compliance
+validate_directory_structure <- function(base_path = "scripts/update_scripts") {
+  violations <- list()
+
+  # Check for scripts in root (prohibited)
+  root_scripts <- list.files(base_path, pattern = "\\.R$")
+  if (length(root_scripts) > 0) {
+    violations$root_scripts <- root_scripts
+    message(sprintf("❌ DM_R041 VIOLATION: %d scripts found in root directory",
+                   length(root_scripts)))
+  }
+
+  # Check for required directories
+  required_dirs <- c("ETL", "DRV", "orchestration")
+  existing_dirs <- list.dirs(base_path, full.names = FALSE, recursive = FALSE)
+  missing_dirs <- setdiff(required_dirs, existing_dirs)
+
+  if (length(missing_dirs) > 0) {
+    violations$missing_dirs <- missing_dirs
+    message(sprintf("❌ DM_R041 VIOLATION: Missing required directories: %s",
+                   paste(missing_dirs, collapse = ", ")))
+  }
+
+  # Check for platform subdirectories
+  if (dir.exists(file.path(base_path, "ETL"))) {
+    etl_subdirs <- list.dirs(file.path(base_path, "ETL"),
+                            full.names = FALSE, recursive = FALSE)
+    required_platforms <- c("cbz", "amz", "eby", "all")
+    missing_platforms <- setdiff(required_platforms, etl_subdirs)
+
+    if (length(missing_platforms) > 0) {
+      violations$missing_etl_platforms <- missing_platforms
+      message(sprintf("⚠️ DM_R041 WARNING: Missing ETL platform directories: %s",
+                     paste(missing_platforms, collapse = ", ")))
+    }
+  }
+
+  # Check for misplaced ETL scripts
+  etl_scripts_in_root <- grep("_ETL_", root_scripts, value = TRUE)
+  if (length(etl_scripts_in_root) > 0) {
+    violations$misplaced_etl <- etl_scripts_in_root
+    message(sprintf("❌ DM_R041 VIOLATION: ETL scripts in root (should be in ETL/{platform}/): %s",
+                   paste(etl_scripts_in_root, collapse = ", ")))
+  }
+
+  # Check for misplaced DRV scripts
+  drv_scripts_in_root <- grep("_DRV|_D[0-9]{2}", root_scripts, value = TRUE)
+  if (length(drv_scripts_in_root) > 0) {
+    violations$misplaced_drv <- drv_scripts_in_root
+    message(sprintf("❌ DM_R041 VIOLATION: DRV scripts in root (should be in DRV/{platform}/): %s",
+                   paste(drv_scripts_in_root, collapse = ", ")))
+  }
+
+  if (length(violations) == 0) {
+    message("✅ DM_R041: Directory structure is fully compliant")
+    return(TRUE)
+  } else {
+    return(violations)
+  }
+}
+```
+
+### Migration Function
+
+```r
+# Function to migrate scripts to proper directories
+migrate_to_directory_structure <- function(base_path = "scripts/update_scripts") {
+  # Create structure first
+  create_etl_directory_structure(base_path)
+
+  # Get all scripts in root
+  root_scripts <- list.files(base_path, pattern = "\\.R$", full.names = FALSE)
+
+  migration_log <- list()
+
+  for (script in root_scripts) {
+    filename <- basename(script)
+    old_path <- file.path(base_path, filename)
+    new_path <- NULL
+
+    # Determine destination based on script type
+    if (grepl("_ETL_", filename)) {
+      # ETL script - extract platform
+      platform <- substr(filename, 1, 3)
+      if (platform %in% c("cbz", "amz", "eby")) {
+        new_path <- file.path(base_path, "ETL", platform, filename)
+      } else if (grepl("^all_ETL", filename)) {
+        new_path <- file.path(base_path, "ETL", "all", filename)
+      }
+
+    } else if (grepl("_DRV|_D[0-9]{2}", filename)) {
+      # DRV script - extract platform
+      platform <- substr(filename, 1, 3)
+      if (platform %in% c("cbz", "amz", "eby")) {
+        new_path <- file.path(base_path, "DRV", platform, filename)
+      } else if (grepl("^all_DRV", filename)) {
+        new_path <- file.path(base_path, "DRV", "all", filename)
+      }
+
+    } else if (grepl("^run_.*_pipeline", filename)) {
+      # Orchestration script
+      new_path <- file.path(base_path, "orchestration", filename)
+    }
+
+    # Move file if destination determined
+    if (!is.null(new_path)) {
+      file.rename(old_path, new_path)
+      migration_log[[filename]] <- new_path
+      message(sprintf("✅ Moved %s to %s", filename, dirname(new_path)))
+    } else {
+      message(sprintf("⚠️ Could not determine destination for %s", filename))
+    }
+  }
+
+  # Final validation
+  validate_directory_structure(base_path)
+
+  return(migration_log)
+}
+```
+
+## Benefits
+
+### Organization Benefits
+1. **Clear separation**: ETL, DRV, and orchestration logic physically separated
+2. **Platform isolation**: Each platform's scripts grouped together
+3. **Easy navigation**: Predictable file locations based on type and platform
+4. **Reduced clutter**: No scripts in root directory
+
+### Maintenance Benefits
+1. **Simplified debugging**: Know exactly where to find scripts
+2. **Parallel development**: Teams can work on different platforms independently
+3. **Clear ownership**: Platform-specific directories enable team assignment
+4. **Version control**: Better git history with organized directories
+
+### Operational Benefits
+1. **Selective execution**: Run specific platform pipelines easily
+2. **Deployment control**: Deploy platform-specific updates independently
+3. **Performance optimization**: Load only required platform scripts
+4. **Error isolation**: Platform failures don't affect other platforms
+
+## Validation Checklist
+
+- [ ] ETL/ directory exists with cbz/, amz/, eby/, all/ subdirectories
+- [ ] DRV/ directory exists with cbz/, amz/, eby/, all/ subdirectories
+- [ ] orchestration/ directory exists
+- [ ] NO .R files in root update_scripts/ directory
+- [ ] All ETL scripts in ETL/{platform}/ directories
+- [ ] All DRV scripts in DRV/{platform}/ directories
+- [ ] All orchestration scripts in orchestration/ directory
+- [ ] validate_directory_structure() returns TRUE
+
+## Common Violations
+
+### Violation: Scripts in Root
+```bash
+update_scripts/
+├── cbz_ETL_sales_0IM.R     # ❌ Should be in ETL/cbz/
+├── amz_DRV01_customer.R    # ❌ Should be in DRV/amz/
+└── run_full_pipeline.R     # ❌ Should be in orchestration/
+```
+
+### Violation: Missing Platform Subdirectories
+```bash
+update_scripts/
+├── ETL/
+│   ├── cbz_ETL_sales_0IM.R # ❌ Should be in ETL/cbz/
+│   └── amz_ETL_orders_1ST.R # ❌ Should be in ETL/amz/
+```
+
+### Violation: Mixed Script Types
+```bash
+update_scripts/
+├── ETL/
+│   ├── cbz/
+│   │   ├── cbz_ETL_sales_0IM.R  # ✅ Correct
+│   │   └── cbz_DRV01_customer.R # ❌ Should be in DRV/cbz/
+```
+
+## Conclusion
+
+The ETL Directory Structure Rule (DM_R041) enforces a clean, organized hierarchy for all update scripts. By mandating physical separation of ETL, DRV, and orchestration scripts into dedicated directories with platform-based subdirectories, this rule ensures maintainability, scalability, and operational efficiency.
+
+This structure is non-negotiable and must be implemented before any ETL/DRV development or execution. The provided validation and migration functions enable smooth transition to the compliant structure.

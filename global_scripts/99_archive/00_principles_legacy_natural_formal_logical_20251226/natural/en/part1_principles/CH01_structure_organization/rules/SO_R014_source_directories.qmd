@@ -1,0 +1,192 @@
+---
+title: "SO_R014: Source Directories Not Individual Files"
+subtitle: "Source entire directories of functions rather than specific files when the collection of files may change over time, ensuring maintainability and extensibility"
+chapter: "CH01"
+category: "rule"
+number: "SO_R014"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article: 
+  number: 14
+  title: "Directory Sourcing Rules"
+related_to:
+  - "SO_R007: One Function One File"
+  - "SO_R013: Initialization Files Should Only Import and Configure"
+  - "SO_R002: File Naming Convention"
+  - "MP028: Avoid Self-Reference"
+  - "MP016: Modularity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 14: Directory Sourcing Rules {#overview}
+
+**Structure & Organization Law Article 14 (Directory Sourcing Rules)**
+
+This rule establishes the principle of sourcing entire directories of functions rather than specific files when the collection of files may change over time.
+
+:::{.callout-important}
+## Core Rule
+Source entire directories of functions rather than specific files when the collection of files may change over time.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Reasons for This Rule {#reasons}
+
+When working with modules or utilities that contain multiple function files, it's more maintainable to implement a directory-sourcing approach rather than listing individual files:
+
+1. **Maintainability**: Adding new function files doesn't require modifying initialization code
+2. **Discoverability**: All functions in a directory are automatically available
+3. **Consistency**: Ensures all functions from a module are loaded together
+4. **Reduced Coupling**: Initialization files aren't tightly coupled to specific function implementations
+5. **Extensibility**: Modules can grow without requiring changes to dependent code
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Directory Sourcing Implementation {#directory-sourcing}
+
+Per Meta Principle MP028 (Avoid Self-Reference), directory sourcing code should be implemented directly in initialization files, not in utility files within the directories being sourced. This prevents self-reference issues.
+
+```r
+# In initialization file (000g_initialization_update_mode.R)
+
+# Get the absolute path to the db_utils directory
+db_utils_dir <- file.path(APP_DIR, "update_scripts", "global_scripts", "02_db_utils")
+if(dir.exists(db_utils_dir)) {
+  # Get all function files in the directory (with fn_ prefix)
+  fn_files <- list.files(
+    path = db_utils_dir, 
+    pattern = "^fn_.*\\.R$",  # Only get function files with fn_ prefix
+    full.names = TRUE,
+    ignore.case = TRUE
+  )
+  
+  # Sort files to ensure consistent loading order
+  fn_files <- sort(fn_files)
+  
+  message("Found ", length(fn_files), " database utility functions to source")
+  
+  # Source each function file directly
+  for(fn_path in fn_files) {
+    tryCatch({
+      source(fn_path)
+      message("Sourced function file: ", basename(fn_path))
+    }, error = function(e) {
+      warning("Error sourcing ", basename(fn_path), ": ", e$message)
+    })
+  }
+}
+```
+
+## Subsection 2: When to Use Pattern Matching {#pattern-matching}
+
+Use filename patterns to control which files are sourced:
+
+```r
+# Only source files with fn_ prefix (function files)
+pattern = "^fn_.*\\.R$"
+
+# Exclude utility or helper files
+pattern = "\\.R$"
+exclude_files <- grep("^(util_|helper_)", r_files, value = TRUE)
+r_files <- r_files[!r_files %in% exclude_files]
+```
+
+# Section 3: Benefits {#benefits}
+
+## Subsection 1: Implementation Benefits {#implementation-benefits}
+
+1. **Future-Proof**: Code automatically adapts to new functions added to modules
+2. **Reduced Maintenance**: No need to update initialization files when module content changes
+3. **Clarity**: Makes it clear that all functions from a module are being loaded
+4. **Consistency**: Promotes a uniform approach to importing functionality
+5. **Organization**: Encourages organizing related functions into dedicated directories
+
+# Section 4: Best Practices {#best-practices}
+
+## Subsection 1: Implementation Recommendations {#implementation-recommendations}
+
+1. **Organize by Function Type**: Group related functions in well-named directories
+2. **Use Naming Conventions**: Keep file naming consistent within directories
+3. **Provide Loading Feedback**: Include verbose options to show which files are loaded
+4. **Handle Loading Errors**: Use tryCatch to handle sourcing errors gracefully
+5. **Consider Load Order**: Use file naming to control the order of sourcing when needed
+
+# Section 5: Implementation Examples {#examples}
+
+## Subsection 1: Complete Implementation Example {#complete-example}
+
+```r
+# In initialization file
+# 000g_initialization_update_mode.R
+
+# Define directories to source
+directories_to_source <- list(
+  db_utils = file.path(APP_DIR, "update_scripts", "global_scripts", "02_db_utils"),
+  file_utils = file.path(APP_DIR, "update_scripts", "global_scripts", "03_file_utils"),
+  data_utils = file.path(APP_DIR, "update_scripts", "global_scripts", "04_data_utils")
+)
+
+# Source each directory
+for(dir_name in names(directories_to_source)) {
+  dir_path <- directories_to_source[[dir_name]]
+  
+  if(dir.exists(dir_path)) {
+    # Get all R files
+    r_files <- list.files(
+      path = dir_path,
+      pattern = "^fn_.*\\.R$",
+      full.names = TRUE,
+      ignore.case = TRUE
+    )
+    
+    # Sort for consistency
+    r_files <- sort(r_files)
+    
+    message("Sourcing ", length(r_files), " files from ", dir_name)
+    
+    # Source each file
+    for(file_path in r_files) {
+      tryCatch({
+        source(file_path)
+      }, error = function(e) {
+        warning("Failed to source ", basename(file_path), ": ", e$message)
+      })
+    }
+  } else {
+    warning("Directory does not exist: ", dir_path)
+  }
+}
+```
+
+# Section 6: Integration with Other Principles {#integration}
+
+This principle complements:
+
+- **SO_R007 (One Function One File)**: Makes it easier to follow the one function per file rule
+- **SO_R013 (Initialization Imports Only)**: Simplifies the import process in initialization files
+- **SO_R002 (File Naming Convention)**: Works well with consistent file naming patterns
+- **MP016 (Modularity)**: Enhances the organization of modules into function directories
+
+# Section 7: Considerations {#considerations}
+
+## Subsection 1: Important Notes {#important-notes}
+
+1. **Avoid Self-Reference**: Never place directory sourcing code within the directories being sourced
+2. **Error Handling**: Always include error handling to prevent single file failures from stopping the entire process
+3. **Load Order**: If there are dependencies between functions, use file naming to ensure correct loading order
+4. **Performance**: For large directories, consider lazy loading or selective loading strategies
+
+---
+
+*Based on: Structure & Organization Law Article 14*  
+*Related to: [SO_R007 One Function One File](SO_R007_one_function_one_file.qmd), [SO_R013 Initialization Imports Only](SO_R013_initialization_imports_only.qmd)*

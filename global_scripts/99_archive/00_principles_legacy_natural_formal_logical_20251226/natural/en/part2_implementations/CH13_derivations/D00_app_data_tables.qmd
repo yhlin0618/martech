@@ -1,0 +1,301 @@
+---
+title: "D00: Application Data Tables Definition"
+subtitle: "Core data table structures for the Precision Marketing application"
+chapter: "CH12"
+category: "derivation"
+number: "D00"
+date-created: "2025-04-16"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "derivation"
+law: "Derivation Workflows"
+article: "Derivation 0"
+related_to:
+  - "MP058_database_table_creation_strategy"
+  - "R080_database_naming_conventions"
+  - "R092_universal_dbi_approach"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Derivation 0: Application Data Tables {#overview}
+
+This derivation document defines the core data tables used by the Precision Marketing application. Each table is presented in both NSQL (Natural SQL Language) for human readability and RSQL (R SQL) for programmatic execution.
+
+## Section 1: Derivation Process {#process}
+
+The data table creation follows this workflow:
+
+```
+DEFINE SCHEMA → CREATE TABLES → ESTABLISH KEYS → CREATE INDEXES → VALIDATE STRUCTURE
+```
+
+## Section 2: Customer Profile Table {#customer-profile}
+
+### Subsection 1: Table Definition (D00_01_P00) {#customer-table-def}
+
+#### NSQL Specification {#nsql-spec}
+
+```nsql
+CREATE df_customer_profile AT app_data
+=== CREATE TABLE df_customer_profile ===
+CREATE OR REPLACE TABLE df_customer_profile (
+  customer_id INTEGER,
+  buyer_name VARCHAR,
+  email VARCHAR,
+  platform_id INTEGER NOT NULL,
+  display_name VARCHAR GENERATED ALWAYS AS (buyer_name || ' (' || email || ')') VIRTUAL,
+  PRIMARY KEY (customer_id, platform_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_df_customer_profile_platform_id_df_customer_profile 
+ON df_customer_profile(platform_id);
+```
+
+#### RSQL Implementation {#rsql-impl}
+
+```r
+generate_create_table_query(
+  con = app_data,
+  or_replace = TRUE,
+  target_table = "df_customer_profile",
+  source_table = NULL,
+  column_defs = list(
+    list(name = "customer_id", type = "INTEGER"),
+    list(name = "buyer_name", type = "VARCHAR"),
+    list(name = "email", type = "VARCHAR"),
+    list(name = "platform_id", type = "INTEGER", not_null = TRUE), 
+    list(name = "display_name", type = "VARCHAR",
+         generated_as = "buyer_name || ' (' || email || ')'")
+  ),
+  primary_key = c("customer_id", "platform_id"),
+  indexes = list(
+    list(columns = "platform_id")
+  )
+)
+```
+
+### Subsection 2: Table Purpose {#customer-purpose}
+
+The customer profile table stores:
+- Basic customer identification information
+- Platform association for multi-channel tracking
+- Generated display names for UI presentation
+- Composite primary key enabling cross-platform customer tracking
+
+## Section 3: DNA Analysis Table {#dna-table}
+
+### Subsection 1: Table Definition (D00_02_P00) {#dna-table-def}
+
+#### NSQL Specification {#dna-nsql}
+
+```nsql
+CREATE df_dna_by_customer AT app_data
+=== CREATE TABLE df_dna_by_customer ===
+CREATE TABLE df_dna_by_customer (
+  customer_id INTEGER NOT NULL,
+  ipt DOUBLE,
+  total_spent DOUBLE,
+  times INTEGER,
+  zipcode BOOLEAN,
+  state BOOLEAN,
+  lat BOOLEAN,
+  lng BOOLEAN,
+  ipt_mean DOUBLE,
+  m_value DOUBLE,
+  sigma_hnorm_mle DOUBLE,
+  sigma_hnorm_bcmle DOUBLE,
+  m_ecdf DOUBLE,
+  m_label ENUM('Low Value', 'Medium Value', 'High Value'),
+  ni INTEGER,
+  date TIMESTAMP,
+  sum_spent_by_date DOUBLE,
+  count_transactions_by_date INTEGER,
+  min_time_by_date TIMESTAMP,
+  ni_2 INTEGER,
+  min_time TIMESTAMP,
+  payment_time TIMESTAMP,
+  difftime INTERVAL,
+  nes_ratio DOUBLE,
+  nes_status ENUM('N', 'E0', 'S1', 'S2', 'S3') DEFAULT 'N',
+  f_value INTEGER,
+  f_ecdf DOUBLE,
+  f_label ENUM('Low Frequency', 'Medium Frequency', 'High Frequency'),
+  r_value DOUBLE,
+  r_ecdf DOUBLE,
+  r_label ENUM('Long Inactive', 'Medium Inactive', 'Recent Buyer'),
+  mle DOUBLE,
+  wmle DOUBLE,
+  cai DOUBLE,
+  cai_ecdf DOUBLE,
+  cai_label ENUM('Gradually Inactive', 'Stable', 'Increasingly Active'),
+  pcv DOUBLE,
+  total_sum DOUBLE,
+  clv DOUBLE,
+  time_first TIMESTAMP,
+  nt DOUBLE,
+  time_first_to_now DOUBLE,
+  e0t DOUBLE,
+  ge DOUBLE,
+  ie DOUBLE,
+  be DOUBLE,
+  cri DOUBLE,
+  cri_ecdf DOUBLE,
+  be2 DOUBLE,
+  nrec ENUM('nrec', 'rec'),
+  nrec_prob DOUBLE,
+  platform_id INTEGER NOT NULL,
+  product_line_id_filter VARCHAR
+);
+```
+
+#### RSQL Implementation {#dna-rsql}
+
+```r
+generate_create_table_query(
+  con = conn,
+  target_table = "df_dna_by_customer",
+  source_table = NULL,
+  column_defs = list(
+    list(name = "customer_id", type = "INTEGER", not_null = TRUE),
+    list(name = "ipt", type = "DOUBLE"),
+    list(name = "total_spent", type = "DOUBLE"),
+    list(name = "times", type = "INTEGER"),
+    list(name = "zipcode", type = "BOOLEAN"),
+    list(name = "state", type = "BOOLEAN"),
+    list(name = "lat", type = "BOOLEAN"),
+    list(name = "lng", type = "BOOLEAN"),
+    list(name = "ipt_mean", type = "DOUBLE"),
+    list(name = "m_value", type = "DOUBLE"),
+    list(name = "sigma_hnorm_mle", type = "DOUBLE"),
+    list(name = "sigma_hnorm_bcmle", type = "DOUBLE"),
+    list(name = "m_ecdf", type = "DOUBLE"),
+    list(name = "m_label", type = "ENUM('Low Value', 'Medium Value', 'High Value')"),
+    list(name = "ni", type = "INTEGER"),
+    list(name = "date", type = "TIMESTAMP"),
+    list(name = "sum_spent_by_date", type = "DOUBLE"),
+    list(name = "count_transactions_by_date", type = "INTEGER"),
+    list(name = "min_time_by_date", type = "TIMESTAMP"),
+    list(name = "ni_2", type = "INTEGER"),
+    list(name = "min_time", type = "TIMESTAMP"),
+    list(name = "payment_time", type = "TIMESTAMP"),
+    list(name = "difftime", type = "INTERVAL"),
+    list(name = "nes_ratio", type = "DOUBLE"),
+    list(name = "nes_status", type = "ENUM('N', 'E0', 'S1', 'S2', 'S3')", default="'N'"),
+    list(name = "f_value", type = "INTEGER"),
+    list(name = "f_ecdf", type = "DOUBLE"),
+    list(name = "f_label", type = "ENUM('Low Frequency', 'Medium Frequency', 'High Frequency')"),
+    list(name = "r_value", type = "DOUBLE"),
+    list(name = "r_ecdf", type = "DOUBLE"),
+    list(name = "r_label", type = "ENUM('Long Inactive', 'Medium Inactive', 'Recent Buyer')"),
+    list(name = "mle", type = "DOUBLE"),
+    list(name = "wmle", type = "DOUBLE"),
+    list(name = "cai", type = "DOUBLE"),
+    list(name = "cai_ecdf", type = "DOUBLE"),
+    list(name = "cai_label", type = "ENUM('Gradually Inactive', 'Stable', 'Increasingly Active')"),
+    list(name = "pcv", type = "DOUBLE"),
+    list(name = "total_sum", type = "DOUBLE"),
+    list(name = "clv", type = "DOUBLE"),
+    list(name = "time_first", type = "TIMESTAMP"),
+    list(name = "nt", type = "DOUBLE"),
+    list(name = "time_first_to_now", type = "DOUBLE"),
+    list(name = "e0t", type = "DOUBLE"),
+    list(name = "ge", type = "DOUBLE"),
+    list(name = "ie", type = "DOUBLE"),
+    list(name = "be", type = "DOUBLE"),
+    list(name = "cri", type = "DOUBLE"),
+    list(name = "cri_ecdf", type = "DOUBLE"),
+    list(name = "be2", type = "DOUBLE"),
+    list(name = "nrec", type = "ENUM('nrec', 'rec')"),
+    list(name = "nrec_prob", type = "DOUBLE"),
+    list(name = "platform_id", type = "INTEGER", not_null = TRUE),
+    list(name = "product_line_id_filter", type = "VARCHAR")
+  )
+)
+```
+
+### Subsection 2: DNA Metrics {#dna-metrics}
+
+The DNA table contains comprehensive customer behavior metrics:
+
+#### Core RFM Metrics {#rfm-metrics}
+- **R (Recency)**: `r_value`, `r_ecdf`, `r_label`
+- **F (Frequency)**: `f_value`, `f_ecdf`, `f_label`
+- **M (Monetary)**: `m_value`, `m_ecdf`, `m_label`
+
+#### Advanced Metrics {#advanced-metrics}
+- **IPT (Inter-Purchase Time)**: `ipt`, `ipt_mean`
+- **NES Status**: New/Existing/Sleeping classification
+- **CAI (Customer Activity Index)**: `cai`, `cai_ecdf`, `cai_label`
+- **CLV (Customer Lifetime Value)**: `clv`, `pcv`
+- **Probability Estimates**: `mle`, `wmle`, `nrec_prob`
+
+#### Temporal Metrics {#temporal-metrics}
+- Transaction timing: `payment_time`, `min_time`, `time_first`
+- Time calculations: `difftime`, `time_first_to_now`
+- Date aggregations: `date`, `sum_spent_by_date`, `count_transactions_by_date`
+
+## Section 4: Implementation Guidelines {#guidelines}
+
+### Subsection 1: Database Connection {#db-connection}
+
+Following R092 (Universal DBI Approach):
+
+```r
+# Establish connection
+app_data <- dbConnect(duckdb::duckdb(), "app_data.duckdb")
+
+# Create tables
+dbExecute(app_data, customer_profile_sql)
+dbExecute(app_data, dna_by_customer_sql)
+```
+
+### Subsection 2: Data Population {#data-population}
+
+Tables are populated through the derivation pipeline:
+1. D01 processes generate customer profiles
+2. DNA analysis calculates behavioral metrics
+3. Results are inserted using `dbWriteTable()` with `append = TRUE`
+
+### Subsection 3: Query Patterns {#query-patterns}
+
+Using R116 (Enhanced Data Access):
+
+```r
+# Access customer profiles
+customers <- tbl2(app_data, "df_customer_profile") %>%
+  filter(platform_id == 2) %>%
+  collect()
+
+# Access DNA metrics
+dna_data <- tbl2(app_data, "df_dna_by_customer") %>%
+  filter(product_line_id_filter == "jewelry") %>%
+  select(customer_id, r_value, f_value, m_value, clv) %>%
+  collect()
+```
+
+## Section 5: Schema Evolution {#evolution}
+
+### Subsection 1: Version Management {#versioning}
+
+Tables support schema evolution through:
+- `CREATE OR REPLACE` for updates
+- Virtual columns for derived values
+- ENUM types for categorical data
+- DEFAULT values for backward compatibility
+
+### Subsection 2: Index Strategy {#indexing}
+
+Indexes are created for:
+- Foreign key columns (`platform_id`)
+- Frequently filtered columns
+- Join columns in common queries
+
+---
+
+*This derivation defines the foundational data structures that support all downstream analysis and visualization components in the Precision Marketing application.*

@@ -1,0 +1,165 @@
+---
+title: "DM_R006: Cross-Platform Data Structure Rule"
+subtitle: "When working with multi-platform data, structure datasets according to analytical purpose: single combined dataset for cross-platform analytics, platform-specific datasets for intensive platform-specific processing"
+chapter: "CH02"
+category: "rule"
+number: "DM_R006"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 6
+  title: "Cross-Platform Data Structure Rules"
+related_to:
+  - "MP030: Vectorization Principle"
+  - "MP017: Separation of Concerns"
+  - "MP016: Modularity"
+  - "DM_R001: Data Frame Creation Strategy"
+  - "MP081: Lowercase Variable Naming Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 6: Cross-Platform Data Structure Rules {#overview}
+
+**Data Management Law Article 6 (Cross-Platform Data Structure Rules)**
+
+This rule establishes principles for data structure when working with multi-platform data.
+
+:::{.callout-important}
+## Core Rule
+When working with multi-platform data, structure datasets according to analytical purpose:
+
+1. **Single Combined Dataset** for cross-platform analytics and reporting
+2. **Platform-Specific Datasets** for intensive platform-specific processing
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Combined Dataset Structure {#combined-dataset}
+
+When creating a unified cross-platform dataset:
+
+```r
+all_platforms_data <- rbind(
+  transform(df_amazon, platform = "amazon"),
+  transform(df_ebay, platform = "ebay"),
+  transform(df_shopify, platform = "shopify")
+)
+```
+
+Requirements:
+- **MUST** include a `platform` identifier column
+- **MUST** standardize all column names across platforms
+- **MUST** ensure consistent data types for shared fields
+- **MAY** include platform-specific fields with NULL values for other platforms
+
+## Subsection 2: Platform-Specific Dataset Structure {#platform-specific}
+
+When maintaining separate platform datasets:
+
+```r
+df_amazon_sales_by_customer
+df_ebay_sales_by_customer
+df_shopify_sales_by_customer
+```
+
+Requirements:
+- **MUST** use consistent naming convention with platform suffix
+- **MUST** follow standard field naming within each dataset
+- **SHOULD** maintain the same core field set across platforms
+- **MAY** include platform-specific fields as needed
+
+# Section 2: Selection Criteria {#selection-criteria}
+
+## Subsection 1: When to Use Combined Dataset {#when-combined}
+
+Use **Combined Dataset** when:
+- Performing cross-platform comparisons
+- Generating aggregate reports
+- Analyzing customer behavior across platforms
+- Working with smaller data volumes
+
+## Subsection 2: When to Use Platform-Specific Datasets {#when-specific}
+
+Use **Platform-Specific Datasets** when:
+- Executing resource-intensive calculations
+- Implementing platform-specific business logic
+- Processing large volumes of platform data
+- Optimizing for performance on a single platform
+
+# Section 3: Integration with Meta-Principles {#meta-principles}
+
+This rule implements:
+- **MP030**: Vectorization Principle (optimizing resource usage)
+- **MP017**: Separation of Concerns (organizing by platform)
+- **MP016**: Modularity (platform independence)
+
+# Section 4: Code Examples {#code-examples}
+
+## Subsection 1: Cross-Platform Analysis Example {#cross-platform-example}
+
+```r
+# Create combined dataset for cross-platform analysis
+all_platforms_data <- rbind(
+  transform(df_amazon_sales_by_customer, platform = "amazon"),
+  transform(df_ebay_sales_by_customer, platform = "ebay")
+)
+
+# Calculate metrics across platforms
+platform_comparison <- all_platforms_data %>%
+  group_by(platform) %>%
+  summarize(
+    avg_order_value = mean(total_spent, na.rm = TRUE),
+    customer_count = n_distinct(customer_id),
+    total_revenue = sum(total_spent, na.rm = TRUE)
+  )
+```
+
+## Subsection 2: Platform-Specific Processing Example {#platform-specific-example}
+
+```r
+# Process each platform independently for efficiency
+amazon_dna <- analysis_dna(df_amazon_sales_by_customer, df_amazon_sales_by_customer_by_date)
+ebay_dna <- analysis_dna(df_ebay_sales_by_customer, df_ebay_sales_by_customer_by_date)
+
+# Combine results after processing for comparison if needed
+all_dna_results <- rbind(
+  transform(amazon_dna$data_by_customer, platform = "amazon"),
+  transform(ebay_dna$data_by_customer, platform = "ebay")
+)
+```
+
+# Section 5: Benefits {#benefits}
+
+By following this rule, code will:
+
+1. **Achieve optimal performance**: Through appropriate data structure selection
+2. **Maintain flexibility**: For cross-platform analysis
+3. **Improve maintainability**: Through clear structural separation
+4. **Support scalability**: Easy addition of new platforms
+5. **Optimize resource usage**: Based on processing needs
+
+# Section 6: Implementation Checklist {#implementation-checklist}
+
+When implementing cross-platform data structures:
+
+1. ☐ Determine analysis purpose (cross-platform or platform-specific)
+2. ☐ Select appropriate data structure
+3. ☐ Standardize field names and data types
+4. ☐ Implement platform identifiers (if needed)
+5. ☐ Validate data consistency
+6. ☐ Document platform-specific fields
+7. ☐ Test performance impact
+
+---
+
+*Based on: Data Management Law Article 6*  
+*Related to: [MP030 Vectorization Principle](../../CH00_fundamental_principles/meta_principles/MP030_vectorization.qmd), [DM_R001 Data Frame Creation Strategy](DM_R001_data_frame_creation_strategy.qmd)*

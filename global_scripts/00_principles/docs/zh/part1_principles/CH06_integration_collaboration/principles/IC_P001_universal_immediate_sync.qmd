@@ -1,0 +1,147 @@
+---
+title: "IC_P001: Universal Immediate Sync Principle"
+subtitle: "Every completed feature must be immediately committed, pulled, and pushed"
+category: "Integration & Collaboration"
+type: "Principle"
+status: "active"
+created: "2025-01-23"
+implements: "MP014"
+scope: "all repositories"
+---
+
+## Overview
+
+The Universal Immediate Sync Principle establishes that every completed feature or logical unit of work must be immediately synchronized with the remote repository through a commit → pull → push workflow.
+
+## Rationale
+
+1. **Prevent Work Loss**: Uncommitted work is unprotected work
+2. **Reduce Merge Conflicts**: Frequent small commits minimize conflict scope
+3. **Maintain Collaboration Transparency**: Team members see real-time progress
+4. **Enable Change Tracking**: Every feature has clear commit history
+
+## Core Rule
+
+::: {.callout-important}
+## Mandatory Workflow
+Every completed feature must be:
+
+1. **Committed immediately** (within minutes of completion)
+2. **Pulled from remote** (fetch + merge to avoid conflicts)
+3. **Pushed to remote** (no batch commits, no end-of-day pushes)
+:::
+
+## Prohibited Patterns
+
+| Pattern | Why Prohibited |
+|---------|----------------|
+| End-of-day commits | Risk of work loss, merge conflicts |
+| Batch commits | Unclear change history, harder to revert |
+| Local-only work | No backup, no visibility |
+| "I'll push later" | Forgotten commits, sync issues |
+
+## Implementation
+
+### Standard Workflow
+
+```bash
+# After completing a feature
+git add <specific files>
+git commit -m "[TYPE] Description"
+git pull origin main
+git push origin main
+```
+
+### Commit Frequency
+
+- **Minimum**: After each logical feature/fix
+- **Maximum**: Several commits per hour is normal
+- **Guideline**: If you'd be upset losing it, commit it
+
+## Relationship to Other Principles
+
+```
+MP014 (Meta-Principle: Change Tracking)
+  └── IC_P001 (Principle: Universal Immediate Sync) ← THIS PRINCIPLE
+        └── IC_R001 (Rule: Global Scripts Synchronization)
+```
+
+- **MP014**: Establishes the need for change tracking
+- **IC_P001**: Defines the universal sync pattern (this principle)
+- **IC_R001**: Strict implementation specifically for `global_scripts` subrepo
+
+## Scope
+
+This principle applies to:
+
+- All Git repositories in the project
+- All team members and AI agents
+- All types of changes (code, docs, config)
+
+::: {.callout-note}
+## IC_R001 Relationship
+`IC_R001` (Global Scripts Synchronization Rule) is a **stricter implementation** of this principle, specifically for the `global_scripts` subrepo which requires immediate sync due to its shared nature across multiple projects.
+:::
+
+## Enforcement
+
+- Pre-commit hooks may remind developers
+- CI/CD pipelines expect frequent commits
+- Code review should check commit patterns
+
+## Exceptions
+
+### Subrepo Update Protocol
+
+::: {.callout-note}
+## Applicability
+This exception **only applies** when `global_scripts` is used as a **subrepo nested within a parent project** (e.g., via `git subrepo`). If `global_scripts` is a standalone repository, simply follow the standard commit → pull → push workflow.
+:::
+
+When working with subrepos (e.g., `global_scripts` nested within a parent project):
+
+1. **Check parent repository state first** - run `git status` in parent
+2. **If parent has uncommitted changes**: commit parent changes first
+3. **Then proceed** with subrepo update/sync
+
+::: {.callout-warning}
+## Mandatory Pre-Check
+Forcing subrepo update with uncommitted parent changes can cause:
+
+- Merge conflicts that are difficult to resolve
+- Potential loss of uncommitted work
+- Unclear git history
+:::
+
+**Required Workflow**:
+
+```bash
+# Step 1: Check parent status
+git status
+
+# Step 2: If uncommitted changes exist, commit them
+git add -A
+git commit -m "WIP: Save current state before subrepo update"
+
+# Step 3: Now safe to update subrepo
+git subrepo pull scripts/global_scripts
+```
+
+**Decision Tree**:
+
+```
+Before subrepo operation:
+├── git status shows uncommitted changes?
+│   ├── YES → git commit first → then subrepo operation
+│   └── NO → proceed with subrepo operation
+```
+
+### General Rule
+
+If work is complete enough to be considered "done", it must be synced. The subrepo exception above is about **ordering**, not about avoiding sync.
+
+## Related Principles
+
+- **MP014**: Change Tracking Principle
+- **IC_R001**: Global Scripts Synchronization Rule
+- **MP122**: Triple-Track Subrepo Architecture

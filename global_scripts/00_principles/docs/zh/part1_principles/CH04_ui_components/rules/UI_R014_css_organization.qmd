@@ -1,0 +1,459 @@
+---
+title: "UI_R014: CSS 組織與集中化規則"
+subtitle: "所有 CSS 樣式必須集中存放在 global_scripts/19_CSS 目錄中，組織成模組化、目的特定的檔案，並設計為增強而非覆蓋框架預設值。應用程式必須使用提供的工具函數來載入 CSS 資源"
+chapter: "CH04"
+category: "rule"
+number: "UI_R014"
+date-created: "2025-04-10"
+date-modified: "2025-09-08"
+author: "Development Team"
+type: "rule"
+law: "UI組件法"
+article-number: 
+  number: 14
+  title: "CSS 組織與集中化規則"
+implements:
+  - "MP016: 模組化"
+  - "MP017: 關注分離"
+  - "UI_P010: 最小化 CSS 使用原則"
+related_to:
+  - "R009: UI-Server-Defaults 三元組"
+  - "UI_P005: CSS 優於條件控制"
+  - "UI_R011: bs4Dash 結構遵循"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十四條：CSS 組織與集中化規則 {#overview}
+
+**UI組件法第十四條（CSS 組織與集中化規則）**
+
+此規則強制要求所有 CSS 檔案的嚴格集中化，確保框架相容性，並為 MAMBA 系統中何時以及如何使用 CSS 建立明確的準則。
+
+:::{.callout-important}
+## 核心需求
+**強制性**：所有 CSS 檔案必須儲存在 `/scripts/global_scripts/19_CSS/` 中。不允許在任何其他位置存放 CSS 檔案。CSS 必須增強而非覆蓋 UI 框架預設值（特別是 bs4Dash）。
+:::
+
+:::{.callout-warning}
+## 重要經驗教訓
+通用的 UI 區塊分離 CSS 可能會與框架樣式衝突。組件特定的主題化（如 `dynamic_filter_theme.css`）在針對特定 ID/類別時效果很好。部署前務必使用目標框架測試 CSS。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+嚴格的 CSS 集中化和框架相容性對於系統穩定性和可維護性至關重要：
+
+1. **集中管理**：所有 CSS 在一個位置可防止分散的樣式並確保一致性
+2. **框架相容性**：CSS 必須與 bs4Dash 等框架協同工作，而非對抗
+3. **衝突預防**：集中化允許適當的衝突檢測和解決
+4. **維護效率**：所有樣式的單一真實來源使更新更安全
+5. **測試可靠性**：集中的 CSS 可以在部署前進行全面測試
+6. **版本控制**：所有 CSS 更改在一個位置追蹤，提供更好的責任制
+
+# 第二項：實施細節 {#implementation-details}
+
+## 第一款：CSS 目錄結構 {#css-directory-structure}
+
+**強制位置**：`/scripts/global_scripts/19_CSS/`
+
+```
+/scripts/global_scripts/19_CSS/
+├── main.css                        # 全域應用程式樣式
+├── sidebar-fixes.css               # 側邊欄特定修正
+├── component-styles.css            # 通用組件樣式
+├── dynamic_filter_theme.css        # ✅ 良好：組件特定主題化
+├── union_block_separation.css      # ⚠️ 警告：可能與 bs4Dash 衝突
+├── [component]_[purpose]_theme.css # 新 CSS 的命名慣例
+├── minimal.css                     # 最小必需樣式
+├── navbar.css                      # 導航特定樣式
+└── fn_load_css.R                   # CSS 載入工具函數
+```
+
+:::{.callout-caution}
+## 19_CSS 外無 CSS 檔案
+在其他目錄中發現的 CSS 檔案將被視為違反此原則，必須立即移至 `19_CSS`。
+:::
+
+## 第二款：CSS 檔案命名慣例 {#css-file-naming-conventions}
+
+### 強制命名模式
+
+所有 CSS 檔案必須遵循此命名慣例：
+
+```
+[範圍]_[目的]_[類型].css
+```
+
+**範例**：
+- `dynamic_filter_theme.css` - 動態 UI 組件過濾器主題化
+- `union_component_visibility.css` - 聯合組件可見性控制
+- `sidebar_navigation_fixes.css` - 側邊欄導航特定修正
+- `global_accessibility_enhancements.css` - 全域無障礙增強
+
+### 檔案類別
+
+1. **框架增強檔案**（首選）
+   - 與框架預設值協同工作
+   - 針對特定 ID/類別
+   - 範例：`dynamic_filter_theme.css`
+
+2. **框架覆蓋檔案**（謹慎使用）
+   - 在絕對必要時覆蓋框架預設值
+   - 必須記錄為何需要覆蓋
+   - 範例：`sidebar-fixes.css`
+
+3. **組件特定檔案**（推薦）
+   - 範圍限定於特定組件
+   - 使用組件 ID 進行定位
+   - 範例：`customer_dna_matrix_theme.css`
+
+4. **全域應用程式檔案**（最小化）
+   - 僅用於真正的全域樣式
+   - 盡可能保持最小
+   - 範例：`minimal.css`
+
+## 第三款：CSS 載入模式 {#css-loading-pattern}
+
+應用程式必須使用提供的工具函數來載入 CSS：
+
+```r
+# 載入 CSS 工具
+source(file.path("update_scripts", "global_scripts", "19_CSS", "fn_load_css.R"))
+
+# 對於 Shiny 應用程式，複製 CSS 到 www 目錄
+copy_css_to_www()
+
+# 為 UI 創建 CSS 依賴
+css_dependencies <- tags$head(
+  # 使用靜態路徑或工具函數載入 CSS 檔案
+  tags$link(rel = "stylesheet", type = "text/css", href = "main.css"),
+  tags$link(rel = "stylesheet", type = "text/css", href = "component-styles.css")
+)
+
+# 在 UI 中包含依賴
+ui <- fluidPage(
+  css_dependencies,
+  # UI 的其餘部分...
+)
+```
+
+或者，使用提供的工具函數自動載入所有 CSS 檔案：
+
+```r
+# 自動載入所有 CSS 檔案
+css_dependencies <- load_css_files(add_www_prefix = TRUE)
+```
+
+## 第四款：框架相容性準則 {#framework-compatibility-guidelines}
+
+### bs4Dash 相容性要求
+
+1. **部署前測試**：所有 CSS 必須與 bs4Dash 組件測試
+2. **增強而非覆蓋**：CSS 應增強框架預設值，而非替換它們
+3. **使用框架類別**：在創建自定義類別之前利用 bs4Dash 的內建類別
+4. **特異性管理**：保持 CSS 特異性低以避免衝突
+5. **組件定位**：使用特定 ID/類別而非通用選擇器
+
+### 衝突預防策略
+
+```css
+/* ✅ 良好：組件特定定位 */
+#dynamic-filter-container .filter-group {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* ❌ 不良：可能衝突的通用選擇器 */
+.card {
+  border: 2px solid #000;  /* 將與 bs4Dash 卡片衝突 */
+}
+
+/* ✅ 良好：使用框架類別並增強 */
+.bs4Dash-card.custom-theme {
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+```
+
+### 測試要求
+
+1. **組件測試**：與所有使用的 bs4Dash 組件測試 CSS
+2. **跨瀏覽器測試**：在 Chrome、Firefox、Safari、Edge 中驗證
+3. **響應式測試**：檢查 bs4Dash 定義的所有斷點
+4. **狀態測試**：測試懸停、活動、焦點、禁用狀態
+
+# 第三項：工具函數 {#utility-functions}
+
+在 `fn_load_css.R` 中提供以下工具函數：
+
+1. **load_css_files()**：為目錄中的所有 CSS 檔案創建 HTML 標籤
+   - 參數：css_dir（要搜尋的目錄）、add_www_prefix（是否添加 www/ 前綴）
+   - 返回：link 標籤的 tagList
+
+2. **copy_css_to_www()**：將 CSS 檔案複製到 www 目錄供 Shiny 服務
+   - 參數：source_dir、www_dir
+   - 返回：布林成功指標
+
+# 第四項：與其他規則和原則的關係 {#relationship-to-other-rules}
+
+此規則實施：
+- **MP016（模組化）**：通過在模組化、目的特定的檔案中組織 CSS
+- **MP017（關注分離）**：通過將內容結構與樣式分離
+
+相關規則：
+- **R009（UI-Server-Defaults 三元組）**：通過為 UI 組件提供標準化樣式
+
+# 第五項：內聯 CSS 與外部檔案準則 {#inline-vs-external-guidelines}
+
+## 何時可接受內聯 CSS
+
+**內聯 CSS 僅在以下特定情況下可接受**：
+
+1. **動態樣式計算**
+   ```r
+   # 可接受：基於資料的動態寬度
+   div(style = paste0("width: ", calculated_width, "px;"))
+   ```
+
+2. **一次性組件初始化**
+   ```r
+   # 可接受：初始可見性狀態
+   div(id = "panel", style = "display: none;")
+   ```
+
+3. **臨時開發測試**
+   ```r
+   # 必須在提交前移至 CSS 檔案
+   div(style = "border: 1px solid red;")  # 臨時：提交前移除
+   ```
+
+## 何時需要外部 CSS 檔案
+
+**外部 CSS 檔案對以下情況為強制性**：
+
+1. **可重用樣式**：任何使用超過一次的樣式
+2. **組件主題化**：所有組件視覺樣式
+3. **佈局定義**：網格、彈性盒、定位
+4. **響應式設計**：媒體查詢和斷點
+5. **狀態樣式**：懸停、活動、焦點狀態
+6. **動畫/過渡**：所有動畫定義
+
+:::{.callout-important}
+## 規則執行
+任何不符合「可接受」標準的內聯 CSS 必須在程式碼審查前移至 `/scripts/global_scripts/19_CSS/` 中的外部 CSS 檔案。
+:::
+
+# 第六項：實施檢查清單 {#implementation-checklist}
+
+## 實施前審查
+- [ ] 檢查 `19_CSS` 中是否已存在適用於您用例的 CSS
+- [ ] 驗證不存在衝突的 CSS 檔案
+- [ ] 單獨測試與 bs4Dash 組件
+
+## 實施要求
+- [ ] 所有 CSS 檔案儲存在 `/scripts/global_scripts/19_CSS/`
+- [ ] 遵循命名慣例：`[範圍]_[目的]_[類型].css`
+- [ ] 使用目標框架（bs4Dash）測試 CSS
+- [ ] 使用組件特定選擇器（ID/類別）
+- [ ] 記錄任何框架覆蓋並說明理由
+- [ ] 移除所有內聯樣式（批准的情況除外）
+- [ ] 使用 `fn_load_css.R` 工具函數載入
+
+## 測試檢查清單
+- [ ] 測試與應用程式中使用的所有 bs4Dash 組件
+- [ ] 驗證與框架預設值無樣式衝突
+- [ ] 檢查所有斷點的響應行為
+- [ ] 測試所有互動狀態（懸停、活動、焦點）
+- [ ] 在 Chrome、Firefox、Safari、Edge 中驗證
+- [ ] 使用瀏覽器開發工具進行性能測試
+
+## 文檔要求
+- [ ] 註釋複雜的 CSS 部分
+- [ ] 記錄任何 `!important` 使用並說明理由
+- [ ] 列出正在增強/覆蓋的框架類別
+- [ ] 如需要，包含瀏覽器相容性說明
+
+# 第七項：範例 {#examples}
+
+## 第一款：框架相容的組件樣式 {#framework-compatible-component-styles}
+
+```css
+/* 在 dynamic_filter_theme.css 中 - 良好範例 */
+
+/* 增強 bs4Dash 的組件特定定位 */
+#dynamic-filter-container {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+}
+
+/* 增強框架組件而不覆蓋 */
+#dynamic-filter-container .form-group label {
+  color: #ffffff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* 針對特定組件實例 */
+#dynamic-filter-container .selectize-control {
+  margin-bottom: 15px;
+}
+
+/* 與框架類別協同工作 */
+#dynamic-filter-container .btn-primary {
+  background: rgba(255,255,255,0.2);
+  border: 2px solid rgba(255,255,255,0.3);
+  backdrop-filter: blur(10px);
+}
+```
+
+## 第二款：在組件中使用 CSS {#using-css-in-components}
+
+開發組件時，引用通用 CSS 類別：
+
+```r
+# 組件 UI 定義
+myComponentUI <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    class = "component-container",
+    div(
+      class = "component-header",
+      h3("我的組件標題"),
+      p("組件描述")
+    ),
+    div(
+      class = "component-output",
+      plotOutput(ns("main_plot"))
+    )
+  )
+}
+```
+
+## 第三款：正確的 CSS 載入模式 {#proper-css-loading-pattern}
+
+```r
+# 在 app.R 中 - 正確的 CSS 載入模式
+library(shiny)
+library(bs4Dash)
+
+# 強制性：從集中位置載入 CSS
+source(file.path("scripts", "global_scripts", "19_CSS", "fn_load_css.R"))
+
+# 複製 CSS 到 www 目錄以供服務
+copy_result <- copy_css_to_www(
+  source_dir = file.path("scripts", "global_scripts", "19_CSS"),
+  www_dir = "www"
+)
+
+if (!copy_result) {
+  stop("關鍵：無法載入 CSS 檔案。檢查 19_CSS 目錄。")
+}
+
+# 僅載入必要的 CSS 檔案
+css_dependencies <- tags$head(
+  # 框架增強
+  tags$link(rel = "stylesheet", type = "text/css", href = "minimal.css"),
+  tags$link(rel = "stylesheet", type = "text/css", href = "dynamic_filter_theme.css"),
+  
+  # 組件特定樣式（如需要）
+  if (config$features$use_custom_theme) {
+    tags$link(rel = "stylesheet", type = "text/css", 
+              href = "customer_dna_matrix_theme.css")
+  }
+)
+
+# 使用正確的 CSS 整合定義 UI
+ui <- bs4DashPage(
+  header = bs4DashNavbar(title = "應用程式"),
+  sidebar = bs4DashSidebar(...),
+  body = bs4DashBody(
+    css_dependencies,  # CSS 在此載入
+    # 應用程式內容
+  )
+)
+```
+
+## 第四款：CSS 遷移範例 {#css-migration-example}
+
+```r
+# 之前：內聯 CSS（違規）
+div(
+  style = "background: #f0f0f0; padding: 20px; border-radius: 8px;",
+  h3("客戶分析"),
+  plotOutput("analysis_plot")
+)
+
+# 之後：外部 CSS（符合規範）
+# 在 customer_analysis_theme.css 中（在 19_CSS/ 內）：
+# .customer-analysis-container {
+#   background: #f0f0f0;
+#   padding: 20px;
+#   border-radius: 8px;
+# }
+
+div(
+  class = "customer-analysis-container",
+  h3("客戶分析"),
+  plotOutput("analysis_plot")
+)
+```
+
+# 第八項：違規範例與糾正 {#violation-examples}
+
+## 常見違規
+
+### 違規 1：CSS 檔案在 19_CSS 外
+```r
+# ❌ 違規：CSS 在應用程式目錄中
+# app/www/custom.css
+# app/styles/theme.css
+
+# ✅ 糾正：移至集中位置
+# scripts/global_scripts/19_CSS/app_custom_theme.css
+```
+
+### 違規 2：通用框架覆蓋
+```css
+/* ❌ 違規：覆蓋所有 bs4Dash 卡片 */
+.card {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ✅ 糾正：針對特定實例 */
+#my-specific-card.card {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+```
+
+### 違規 3：過度內聯樣式
+```r
+# ❌ 違規：複雜的內聯樣式
+div(
+  style = "background: linear-gradient(45deg, #ff6b6b, #4ecdc4); 
+           padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+           transition: all 0.3s ease;",
+  content
+)
+
+# ✅ 糾正：移至外部 CSS
+# 在 feature_gradient_theme.css 中：
+# .gradient-container { /* 樣式 */ }
+div(class = "gradient-container", content)
+```
+
+---
+
+*基於：UI組件法第十四條*  
+*實施：[MP016 模組化](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd)、[MP017 關注分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd)、[UI_P010 最小化 CSS 使用](../principles/UI_P010_minimal_css_usage.qmd)*  
+*相關：[UI_R011 bs4Dash 結構遵循](UI_R011_bs4dash_structure_adherence.qmd)、[UI_P005 CSS 優於條件控制](../principles/UI_P005_css_over_conditional_controls.qmd)*
+
+**最後更新**：2025-09-08  
+**狀態**：強制執行 - 所有 CSS 必須集中在 19_CSS 目錄中

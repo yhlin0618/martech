@@ -1,0 +1,234 @@
+---
+title: "DM_R008: 平台 ID 引用規則"
+subtitle: "行銷平台識別符在資料庫操作中必須使用其數字 ID 引用，遵循平台編號約定中定義的平台字典映射"
+chapter: "CH02"
+category: "rule"
+number: "DM_R008"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 8
+  title: "平台 ID 引用規則"
+related_to:
+  - "DM_R005: 平台編號約定"
+  - "SLN03: SQL 參數類型安全"
+  - "MP046: 鄰近原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第八條：平台 ID 引用規則 {#overview}
+
+**資料管理法第八條（平台 ID 引用規則）**
+
+此規則建立在資料庫操作中一致處理平台引用的標準。
+
+:::{.callout-important}
+## 核心規則
+行銷平台識別符在資料庫操作中必須使用其數字 ID 引用，遵循 DM_R005 平台編號約定中定義的平台字典映射。
+:::
+
+# 第一項：背景說明 {#background}
+
+應用程式在資料庫表和查詢中使用數字平台 ID，但向使用者呈現使用者友好的名稱或代碼。此規則建立一致的平台引用處理，以防止類型錯誤並確保與資料庫架構的相容性。
+
+# 第二項：實施要求 {#implementation}
+
+## 第一款：平台字典結構 {#dictionary-structure}
+
+平台字典在 `platform_dictionary.xlsx` 中定義，結構如下：
+
+| platform_number | platform_name_english | code_alias |
+|-----------------|----------------------|------------|
+| 1               | Amazon               | AMZ        |
+| 2               | Official Website     | WEB        |
+| 6               | eBay                 | EBY        |
+| 等              | ...                  | ...        |
+
+根據 MP046（鄰近原則），此檔案應位於：
+```
+update_scripts/global_scripts/30_global_data/parameters/platform_dictionary.xlsx
+```
+
+## 第二款：平台引用映射 {#reference-mapping}
+
+處理平台引用時，實施字串識別符和數字 ID 之間的映射：
+
+```r
+# 創建映射函數
+get_platform_id <- function(platform_reference) {
+  # 取得平台字典
+  platform_dict <- load_platform_dictionary()
+  
+  # 如果已經是數字，直接返回
+  if (is.numeric(platform_reference) || grepl("^[0-9]+$", platform_reference)) {
+    return(platform_reference)
+  }
+  
+  # 標準化輸入
+  platform_key <- tolower(platform_reference)
+  
+  # 檢查是否匹配名稱
+  for (i in 1:nrow(platform_dict)) {
+    name_key <- tolower(gsub(" ", "", platform_dict$platform_name_english[i]))
+    if (platform_key == name_key) {
+      return(platform_dict$platform_number[i])
+    }
+  }
+  
+  # 檢查是否匹配代碼別名
+  if ("code_alias" %in% colnames(platform_dict)) {
+    for (i in 1:nrow(platform_dict)) {
+      if (!is.na(platform_dict$code_alias[i])) {
+        alias_key <- tolower(platform_dict$code_alias[i])
+        if (platform_key == alias_key) {
+          return(platform_dict$platform_number[i])
+        }
+      }
+    }
+  }
+  
+  # 找不到匹配
+  return(NULL)
+}
+```
+
+## 第三款：資料庫查詢模式 {#query-pattern}
+
+在資料庫操作中使用平台識別符時：
+
+```r
+# 正確：直接使用數字 ID
+query <- "SELECT * FROM customer_data WHERE platform_id = 1"
+
+# 正確：從字串轉換為數字 ID
+platform_name <- "eBay"
+platform_id <- get_platform_id(platform_name)
+if (!is.null(platform_id)) {
+  query <- paste0("SELECT * FROM customer_data WHERE platform_id = ", platform_id)
+} else {
+  warning("未知平台：", platform_name)
+}
+
+# 錯誤：在數字欄位中直接使用字串
+query <- "SELECT * FROM customer_data WHERE platform_id = 'ebay'" # 將失敗
+```
+
+## 第四款：快取策略 {#caching-strategy}
+
+為改善效能，快取平台映射：
+
+```r
+# 啟動時初始化快取
+initialize_platform_mapping <- function() {
+  platform_dict <- load_platform_dictionary()
+  platform_dict_mapping <- list()
+  
+  if (!is.null(platform_dict)) {
+    # 映射名稱
+    for (i in 1:nrow(platform_dict)) {
+      name_key <- tolower(gsub(" ", "", platform_dict$platform_name_english[i]))
+      platform_dict_mapping[[name_key]] <- platform_dict$platform_number[i]
+    }
+    
+    # 映射代碼別名
+    if ("code_alias" %in% colnames(platform_dict)) {
+      for (i in 1:nrow(platform_dict)) {
+        if (!is.na(platform_dict$code_alias[i])) {
+          alias_key <- tolower(platform_dict$code_alias[i])
+          platform_dict_mapping[[alias_key]] <- platform_dict$platform_number[i]
+        }
+      }
+    }
+    
+    # 全域儲存
+    assign("platform_dict_mapping", platform_dict_mapping, envir = .GlobalEnv)
+  }
+}
+```
+
+# 第三項：驗證規則 {#validation-rules}
+
+1. **資料庫架構驗證**：資料庫表中的所有平台 ID 欄位必須是數字類型
+2. **查詢驗證**：所有按平台篩選的 SQL 查詢必須使用數字 ID
+3. **UI 到資料庫轉換**：UI 組件必須在資料庫操作前將使用者選擇的平台名稱轉換為數字 ID
+
+# 第四項：實施範例 {#examples}
+
+## 第一款：UI 選擇到資料庫查詢 {#ui-to-database}
+
+```r
+# 使用者從下拉選單選擇「eBay」
+selected_platform <- input$platform_selection
+
+# 轉換為數字 ID 用於資料庫查詢
+platform_id <- NULL
+if (exists("platform_dict_mapping")) {
+  platform_key <- tolower(selected_platform)
+  if (platform_key %in% names(platform_dict_mapping)) {
+    platform_id <- platform_dict_mapping[[platform_key]]
+  }
+}
+
+# 在查詢中使用
+if (!is.null(platform_id)) {
+  query <- paste0("SELECT * FROM sales WHERE platform_id = ", platform_id)
+} else {
+  # 處理未知平台
+  warning("未知平台：", selected_platform)
+  query <- "SELECT * FROM sales WHERE 1 = 0" # 返回空結果
+}
+```
+
+## 第二款：多平台處理 {#multiple-platforms}
+
+```r
+# 多平台選擇
+selected_platforms <- input$platforms
+platform_ids <- numeric(0)
+
+for (platform in selected_platforms) {
+  platform_key <- tolower(platform)
+  if (platform_key %in% names(platform_dict_mapping)) {
+    platform_ids <- c(platform_ids, platform_dict_mapping[[platform_key]])
+  }
+}
+
+if (length(platform_ids) > 0) {
+  query <- paste0("SELECT * FROM sales WHERE platform_id IN (", 
+                 paste(platform_ids, collapse = ","), ")")
+} else {
+  query <- "SELECT * FROM sales WHERE 1 = 0" # 返回空結果
+}
+```
+
+# 第五項：錯誤處理 {#error-handling}
+
+當無法解析平台 ID 時：
+
+1. **記錄警告**：在警告訊息中包含平台名稱
+2. **優雅失敗**：返回空結果而非無效 SQL
+3. **使用者反饋**：通知使用者無效的平台選擇
+
+# 第六項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **防止類型錯誤**：確保資料庫操作中的類型安全
+2. **提高一致性**：統一的平台引用處理
+3. **增強可維護性**：集中式平台映射邏輯
+4. **改善效能**：透過快取減少查找時間
+5. **支援靈活性**：允許多種平台引用方式
+
+---
+
+*基於：資料管理法第八條*  
+*相關連結：[DM_R005 平台編號約定](DM_R005_platform_numbering_convention.qmd), [MP046 鄰近原則](../../CH00_fundamental_principles/meta_principles/MP046_neighborhood_principle.qmd)*

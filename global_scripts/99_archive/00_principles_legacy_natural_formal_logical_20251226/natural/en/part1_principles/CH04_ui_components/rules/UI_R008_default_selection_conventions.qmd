@@ -1,0 +1,180 @@
+---
+title: "UI_R008: Default Selection Conventions"
+subtitle: "Default selections in dropdown menus, filters, and selection controls must follow consistent conventions based on the selection type and context, with special treatment for 'ALL' options"
+chapter: "CH04"
+category: "rule"
+number: "UI_R008"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article: 
+  number: 8
+  title: "Default Selection Convention Rules"
+related_to:
+  - "MP034: Special Treatment of ALL Category"
+  - "MP011: Sensible Defaults"
+  - "SO_P010: Config-Driven Customization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 8: Default Selection Convention Rules {#overview}
+
+**UI Components Law Article 8 (Default Selection Convention Rules)**
+
+This rule establishes consistent conventions for default selections in dropdown menus, filters, and selection controls.
+
+:::{.callout-important}
+## Core Rule
+Default selections in dropdown menus, filters, and selection controls must follow consistent conventions based on the selection type and context, with special treatment for "ALL" options.
+:::
+
+# Section 1: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: ALL Category as Default {#all-as-default}
+
+1. In filtering contexts where an "ALL" option exists, it **MUST** be the default selection
+   - Product category filters
+   - Time period filters with an "ALL" option
+   - Platform or channel selection
+   - Any multi-entity filtering context
+
+2. Implementation Pattern
+   ```r
+   # Correct implementation using first product (ALL) as default
+   pickerInput(
+     inputId = "filter_id",
+     label = "Filter Label",
+     choices = category_dictionary,  # First entry is ALL with ID "000"
+     selected = category_dictionary[[1]]  # Select first product (ALL)
+   )
+   ```
+
+## Subsection 2: Context-Specific Default Selection {#context-specific}
+
+1. **Fixed Time Periods**: Default to the most recent complete period
+   - Current month in month selection
+   - Most recent quarter in quarter selection
+   - Current year in year selection
+
+2. **Relative Time Periods**: Default to the shortest sensible period
+   - "Last 7 days" in a relative time selector
+   - "Last month" in a relative period selector
+
+3. **Location Selectors**: Default to user's current location or headquarters
+   - Based on user profile location if available
+   - Based on company HQ location otherwise
+
+4. **Sorting Controls**: Default to primary business-relevant order
+   - Most recent first for time-based lists
+   - Highest value first for financial measures
+   - Alphabetical for categorical names
+
+# Section 2: Implementation Strategy {#implementation-strategy}
+
+## Subsection 1: Configuration-Driven Defaults {#configuration-driven}
+
+```r
+# Default from configuration
+default_period <- config$defaults$time_period
+
+# Fallback to sensible default if not configured
+if (is.null(default_period)) {
+  default_period <- "last_7_days"
+}
+```
+
+## Subsection 2: User Preference Override {#user-preference}
+
+```r
+# Use user's saved preference if available
+if (!is.null(user_preferences$time_period)) {
+  default_period <- user_preferences$time_period
+}
+```
+
+## Subsection 3: Context-Aware Defaults {#context-aware}
+
+```r
+# Adjust default based on available data
+if (has_data_for_current_month()) {
+  default_period <- "current_month"
+} else {
+  default_period <- "previous_month"
+}
+```
+
+# Section 3: Default Persistence Rules {#persistence-rules}
+
+1. **Session Persistence**: Selection changes within a session should persist
+2. **Cross-Session Defaults**: Return to global defaults on new sessions
+3. **User-Specific Defaults**: Store user preferences in profile
+4. **URL Parameter Override**: Allow URL parameters to override defaults
+
+# Section 4: ID Conventions for Special Values {#id-conventions}
+
+1. **ALL Category**: Use `"000"` or `"all"`
+2. **None/Empty Selection**: Use `NA`, `NULL`, or `""`
+3. **Custom/Other**: Use `"999"` or `"other"`
+
+# Section 5: Implementation Examples {#examples}
+
+## Subsection 1: Complete Implementation Example {#complete-example}
+
+```r
+# Filter with context-aware defaults
+create_filter <- function(filter_type, user_prefs = NULL, config = NULL) {
+  # Determine default value hierarchy
+  default_value <- NULL
+  
+  # 1. URL parameters (highest priority)
+  url_value <- parseQueryString(session$clientData$url_search)[[filter_type]]
+  if (!is.null(url_value)) {
+    default_value <- url_value
+  }
+  
+  # 2. User preferences
+  if (is.null(default_value) && !is.null(user_prefs[[filter_type]])) {
+    default_value <- user_prefs[[filter_type]]
+  }
+  
+  # 3. Configuration defaults
+  if (is.null(default_value) && !is.null(config$defaults[[filter_type]])) {
+    default_value <- config$defaults[[filter_type]]
+  }
+  
+  # 4. Context defaults
+  if (is.null(default_value)) {
+    default_value <- get_context_default(filter_type)
+  }
+  
+  # 5. System default (ALL)
+  if (is.null(default_value)) {
+    default_value <- "000"  # ALL category
+  }
+  
+  return(default_value)
+}
+```
+
+# Section 6: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Improve user experience**: Reduce user effort through sensible defaults
+2. **Ensure consistency**: Predictable behavior across applications
+3. **Support personalization**: Allow user preferences and context adjustments
+4. **Simplify development**: Clear guidelines for default selection
+5. **Enhance usability**: Reduce initial configuration requirements
+
+---
+
+*Based on: UI Components Law Article 8*  
+*Related to: [MP034 Special Treatment of ALL Category](../../CH00_fundamental_principles/meta_principles/MP034_special_treatment_all.qmd), [SO_P010 Config-Driven Customization](../../CH01_structure_organization/principles/SO_P010_config_driven_customization.qmd)*

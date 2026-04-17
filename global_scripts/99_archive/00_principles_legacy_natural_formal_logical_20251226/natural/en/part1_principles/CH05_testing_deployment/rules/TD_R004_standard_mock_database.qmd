@@ -1,0 +1,216 @@
+---
+title: "TD_R004: Standard Mock Database Rule"
+subtitle: "All testing, development, and demonstration environments must use the standardized mock_data.duckdb database located in the global_scripts/30_global_data directory as the primary mock data source, ensuring consistent testing data across the application"
+chapter: "CH05"
+category: "rule"
+number: "TD_R004"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Testing & Deployment Law"
+article: 
+  number: 4
+  title: "Standard Mock Database Rule"
+related_to:
+  - "MP16: Modularity"
+  - "MP17: Separation of Concerns"
+  - "MP51: Test Data Design"
+  - "R74: Shiny Test Data Rule"
+  - "R91: Universal Data Access Pattern"
+  - "R92: Universal DBI Approach"
+  - "P9: Authentic Context Testing"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 4: Standard Mock Database Rule {#overview}
+
+**Testing & Deployment Law Article 4 (Standard Mock Database Rule)**
+
+All testing, development, and demonstration environments must use the standardized `mock_data.duckdb` database located in the `global_scripts/30_global_data` directory as the primary mock data source, ensuring consistent testing data across the application.
+
+:::{.callout-important}
+## Core Requirement
+All testing, development, and demonstration environments must use the standardized `mock_data.duckdb` database located in the `global_scripts/30_global_data` directory as the primary mock data source, ensuring consistent testing data across the application.
+:::
+
+# Section 1: Pattern Description {#pattern-description}
+
+The Standard Mock Database Rule establishes a single source of truth for mock data by centralizing it in a DuckDB database file. This approach standardizes the test data environment, ensures consistency across different development and testing contexts, and provides a realistic simulation of production data access patterns.
+
+## Subsection 1: Standardized Location and Format {#standardized-location-format}
+
+The mock database must be:
+
+- Located at `global_scripts/30_global_data/mock_data.duckdb`
+- Initialized using the provided script `sc_create_mock_duckdb.R`
+- Maintained with version control to ensure consistency
+- Accessed using standard DBI connection patterns
+
+```r
+# Standard way to connect to mock database
+mock_db_path <- file.path("update_scripts", "global_scripts", "30_global_data", "mock_data.duckdb")
+mock_db_conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE)
+```
+
+## Subsection 2: Consistent Data Model {#consistent-data-model}
+
+The mock database must maintain a consistent data model that:
+
+- Reflects the structure of production data
+- Includes all standard tables required for basic functionality
+- Contains appropriate sample data for various test scenarios
+- Preserves relationships between tables
+
+## Subsection 3: Integration with Testing Framework {#integration-with-testing-framework}
+
+All tests must use the standard mock database:
+
+```r
+# Test setup
+setup({
+  # Connect to the standard mock database
+  test_conn <- DBI::dbConnect(duckdb::duckdb(), 
+                             dbdir = "../30_global_data/mock_data.duckdb", 
+                             read_only = TRUE)
+  
+  # Make connection available to tests
+  assign("test_conn", test_conn, envir = parent.frame())
+})
+
+# Test teardown
+teardown({
+  # Disconnect from database
+  DBI::dbDisconnect(test_conn, shutdown = TRUE)
+})
+
+# Test example
+test_that("Component retrieves customer data", {
+  # Use the standard connection
+  result <- universal_data_accessor(test_conn, "customer_profile")
+  
+  # Test against known data in mock database
+  expect_equal(nrow(result), 3)  # Known row count in mock database
+  expect_true("name" %in% colnames(result))
+})
+```
+
+# Section 2: Implementation {#implementation}
+
+## Subsection 1: Database Initialization {#database-initialization}
+
+Use the provided script to initialize or update the mock database:
+
+```r
+# Run from the 01_db directory
+source("sc_create_mock_duckdb.R")
+```
+
+## Subsection 2: Connection Factory Configuration {#connection-factory-configuration}
+
+Configure the connection factory to use the standard mock database in development mode:
+
+```r
+# In db_connection_factory.R
+db_connection_factory <- function(mode = "development", ...) {
+  if (mode == "development" || mode == "testing") {
+    # Use the standard mock database
+    mock_db_path <- file.path(find_project_root(), "update_scripts", 
+                             "global_scripts", "30_global_data", "mock_data.duckdb")
+    return(DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE))
+  } else {
+    # Production connection logic
+    # ...
+  }
+}
+```
+
+## Subsection 3: Test Fixture Integration {#test-fixture-integration}
+
+Create a standard test fixture function that provides the mock database connection:
+
+```r
+# In test_helpers.R
+get_test_db_connection <- function() {
+  # Get path relative to the current script
+  script_dir <- dirname(sys.frame(1)$ofile)
+  proj_root <- dirname(dirname(dirname(script_dir)))
+  
+  mock_db_path <- file.path(proj_root, "update_scripts", 
+                           "global_scripts", "30_global_data", "mock_data.duckdb")
+  
+  # Connect to the standard mock database
+  DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE)
+}
+```
+
+# Section 3: Benefits {#benefits}
+
+1. **Consistency**: Ensures all testing uses the same baseline data
+2. **Realism**: More closely simulates production database interactions
+3. **Maintainability**: Centralizes test data definitions
+4. **Efficiency**: Eliminates need to recreate similar test data across tests
+5. **Completeness**: Provides a comprehensive data environment with proper relationships
+6. **Version Control**: Enables tracking changes to test data alongside code
+
+# Section 4: Database Structure {#database-structure}
+
+The standard mock database includes these base tables:
+
+## Subsection 1: customer_profile {#customer-profile}
+
+Basic customer information
+- id: Customer identifier
+- name: Customer name
+- signup_date: Registration date
+
+## Subsection 2: orders {#orders}
+
+Purchase records
+- order_id: Order identifier
+- customer_id: Reference to customer
+- amount: Purchase amount
+- order_date: Date of purchase
+
+Additional tables can be added to the standard database as needed, with proper documentation and consistency.
+
+# Section 5: Extending the Mock Database {#extending-mock-database}
+
+When extending the mock database:
+
+1. Update the `sc_create_mock_duckdb.R` script with new tables
+2. Document the changes in the script comments
+3. Update all dependent tests if structural changes are made
+4. Commit the updated script to version control (not the database file itself)
+
+# Section 6: Exceptions {#exceptions}
+
+In specific cases where specialized test data is required that cannot be accommodated in the standard mock database, tests may use alternative data sources, but must document the reason for deviation.
+
+# Section 7: Related Principles {#related-principles}
+
+This rule implements:
+- MP16 (Modularity): By providing a modular data source for testing
+- MP17 (Separation of Concerns): By separating test data from test logic
+- MP51 (Test Data Design): By establishing standards for test data design
+
+It relates to:
+- R74 (Shiny Test Data Rule): By providing a database implementation of test data patterns
+- R91 (Universal Data Access Pattern): By establishing a standard data source for testing
+- R92 (Universal DBI Approach): By enforcing DBI access patterns in testing
+- P9 (Authentic Context Testing): By creating a realistic test environment
+
+# Section 8: Conclusion {#conclusion}
+
+The Standard Mock Database Rule establishes a consistent approach to test data by centralizing it in a standard DuckDB database. This approach improves testing consistency, reduces duplication, and creates a more realistic test environment that closely mirrors production data access patterns. By using this rule, all components can be tested against the same baseline data, ensuring consistent behavior across the application.
+
+---
+
+*Based on: Testing & Deployment Law Article 4*  
+*Related to: [MP51 Test Data Design](../../CH00_fundamental_principles/meta_principles/MP051_test_data_design.qmd), [R91 Universal Data Access Pattern](../../CH02_data_management/rules/DM_R002_universal_data_access.qmd)*

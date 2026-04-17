@@ -1,0 +1,234 @@
+---
+title: "ETL Design Decision Tree"
+subtitle: "Quick Guide to Choosing the Right ETL Pattern"
+category: "ETL Pipelines"
+level: "CH09"
+status: "Active"
+created: "2025-08-29"
+version: "1.0"
+principle_refs:
+  - "MP104: ETL Data Flow Separation"
+  - "DM_R037: Company-Specific ETL Naming"
+  - "DM_R040: Structural JOIN Pattern"
+---
+
+# ETL Design Decision Tree
+
+## Start Here: What Are You Building?
+
+```mermaid
+graph TD
+    START[Need to build ETL?] --> Q1{What is your<br/>data source?}
+    
+    Q1 -->|Platform API| Q2[Standard platform<br/>e.g., eBay API]
+    Q1 -->|Company Database| Q3[Company-owned<br/>e.g., SQL Server]
+    Q1 -->|Mixed/Unknown| Q4[Need analysis]
+    
+    Q2 --> Q5{What data type?}
+    Q3 --> Q5
+    Q4 --> ANALYZE[Analyze data<br/>structure first]
+    
+    Q5 -->|Sales transactions| SALES[Use Sales Pipeline<br/>01_sales_pipeline/]
+    Q5 -->|Customer profiles| CUST[Use Customer Pipeline<br/>02_customers_pipeline/]
+    Q5 -->|Order headers| ORD[Use Orders Pipeline<br/>03_orders_pipeline/]
+    Q5 -->|Product catalog| PROD[Use Products Pipeline<br/>04_products_pipeline/]
+    Q5 -->|Multiple types| MULTI[Separate pipelines<br/>per MP104]
+    
+    SALES --> Q6{Company-specific?}
+    CUST --> Q6
+    ORD --> Q6
+    PROD --> Q6
+    
+    Q6 -->|Yes| COMPANY[Add ___COMPANY suffix<br/>per DM_R037]
+    Q6 -->|No| STANDARD[Use standard naming]
+    
+    MULTI --> Q7{Single API call<br/>returns all?}
+    Q7 -->|Yes| SHARED[Use shared import<br/>pattern]
+    Q7 -->|No| SEPARATE[Independent<br/>pipelines]
+```
+
+## Decision Points Explained
+
+### 1. Data Source Type
+
+| Source Type | Characteristics | ETL Approach | Example |
+|-------------|----------------|--------------|---------|
+| **Platform API** | • Public/standard API<br>• Generic authentication<br>• Standard data format | Use standard ETL patterns | `eby_ETL_sales_0IM.R` |
+| **Company Database** | • Company owns server<br>• Custom schema<br>• Private access | Add company suffix | `eby_ETL_sales_0IM___MAMBA.R` |
+| **Mixed Source** | • Multiple data origins<br>• Complex requirements | Analyze first, may need multiple ETLs | Various patterns |
+
+### 2. Data Type Selection
+
+| Data Type | Key Identifiers | Pipeline Location | Output Tables |
+|-----------|-----------------|-------------------|---------------|
+| **Sales** | • Transactions<br>• Revenue<br>• Line items | `01_sales_pipeline/` | `df_{platform}_sales___*` |
+| **Customers** | • User profiles<br>• Contact info<br>• Preferences | `02_customers_pipeline/` | `df_{platform}_customers___*` |
+| **Orders** | • Order headers<br>• Order status<br>• Shipping info | `03_orders_pipeline/` | `df_{platform}_orders___*` |
+| **Products** | • SKUs<br>• Descriptions<br>• Categories | `04_products_pipeline/` | `df_{platform}_products___*` |
+
+### 3. Company-Specific Indicators
+
+**Requires Company Suffix (___COMPANY) When:**
+
+```yaml
+indicators:
+  infrastructure:
+    - "Company owns the database server"
+    - "Uses SSH tunnel to private network"
+    - "Connects via VPN"
+    
+  business_logic:
+    - "Custom SKU mapping rules"
+    - "Proprietary calculations"
+    - "Company-specific filters"
+    
+  examples:
+    MAMBA:
+      - "SSH to 220.128.138.146"
+      - "SQL Server at 125.227.84.85"
+      - "MAMBA product categories"
+```
+
+## Common Scenarios
+
+### Scenario 1: Standard eBay Sales Import
+
+```mermaid
+graph LR
+    A[eBay API] --> B[Standard source]
+    B --> C[Sales data]
+    C --> D[No company logic]
+    D --> E[eby_ETL_sales_0IM.R]
+```
+
+**Result**: Use standard naming, follow generic pattern in `01_sales_pipeline/generic/`
+
+### Scenario 2: MAMBA's Custom eBay Database
+
+```mermaid
+graph LR
+    A[MAMBA SQL Server] --> B[Company database]
+    B --> C[Sales data]
+    C --> D[Custom logic]
+    D --> E[eby_ETL_sales_0IM___MAMBA.R]
+```
+
+**Result**: Add ___MAMBA suffix, document in `01_sales_pipeline/implementations/eby_sales/MAMBA/`
+
+### Scenario 3: Mixed Data in Single API Response
+
+```mermaid
+graph LR
+    A[Cyberbiz API] --> B[Returns all data]
+    B --> C[cbz_ETL_shared_0IM.R]
+    C --> D[Split by type]
+    D --> E[Sales pipeline]
+    D --> F[Customer pipeline]
+    D --> G[Order pipeline]
+```
+
+**Result**: Use shared import pattern from `05_special_patterns/shared_import/`
+
+### Scenario 4: Denormalizing Orders and Details
+
+```mermaid
+graph LR
+    A[Separate tables] --> B[Orders headers]
+    A --> C[Order details]
+    B --> D[Keep separate<br/>in 0IM and 1ST]
+    C --> D
+    D --> E[JOIN in 2TR only]
+    E --> F[Create sales table]
+```
+
+**Result**: Use structural JOIN pattern from `05_special_patterns/structural_join/`
+
+## Quick Decision Matrix
+
+| Question | Yes → | No → |
+|----------|-------|------|
+| **Multiple data types in source?** | Create separate pipelines | Single pipeline OK |
+| **Company owns the infrastructure?** | Add ___COMPANY suffix | Use standard naming |
+| **Need to JOIN tables?** | Only in 2TR phase | Keep separate |
+| **Custom business logic?** | Company-specific ETL | Generic pattern |
+| **SSH tunnel required?** | See `05_special_patterns/ssh_tunnel/` | Standard connection |
+| **API returns everything?** | Consider shared import | Independent imports |
+
+## ETL Phase Decisions
+
+### Phase 0IM (Import)
+
+```mermaid
+graph TD
+    IM[0IM Phase] --> IMQ1{Data encoding OK?}
+    IMQ1 -->|No| FIX[Fix encoding only]
+    IMQ1 -->|Yes| PRESERVE[Preserve as-is]
+    
+    FIX --> IMQ2{Multiple types<br/>in one table?}
+    PRESERVE --> IMQ2
+    
+    IMQ2 -->|Yes| SPLIT[Split into<br/>type-specific tables]
+    IMQ2 -->|No| WRITE[Write to raw table]
+```
+
+**Allowed**: Character encoding, basic validation
+**Forbidden**: JOINs, business logic, column renaming
+
+### Phase 1ST (Staging)
+
+```mermaid
+graph TD
+    ST[1ST Phase] --> STQ1{Columns need<br/>renaming?}
+    STQ1 -->|Yes| RENAME[Standardize names]
+    STQ1 -->|No| KEEP[Keep names]
+    
+    RENAME --> STQ2{Types need<br/>conversion?}
+    KEEP --> STQ2
+    
+    STQ2 -->|Yes| CONVERT[Convert types]
+    STQ2 -->|No| PRESERVE[Keep types]
+```
+
+**Allowed**: Column renaming, type conversion
+**Forbidden**: JOINs, calculations, aggregations
+
+### Phase 2TR (Transform)
+
+```mermaid
+graph TD
+    TR[2TR Phase] --> TRQ1{Need denormalized<br/>output?}
+    TRQ1 -->|Yes| JOIN[Structural JOIN]
+    TRQ1 -->|No| TRANSFORM[Transform only]
+    
+    JOIN --> TRQ2{Business rules?}
+    TRANSFORM --> TRQ2
+    
+    TRQ2 -->|Yes| APPLY[Apply rules]
+    TRQ2 -->|No| OUTPUT[Output as-is]
+```
+
+**Allowed**: Structural JOINs, business rules, schema mapping
+**Forbidden**: Analytical JOINs, ML processing (those go in Derivations)
+
+## Need More Help?
+
+### Pattern Documentation
+- **Generic patterns**: Check `{datatype}_pipeline/generic/`
+- **Special techniques**: See `05_special_patterns/`
+- **Real examples**: Browse `06_case_studies/`
+
+### Principle References
+- **MP104**: ETL Data Flow Separation - [View](../../part1_principles/CH00_fundamental_principles/04_data_management/MP104_etl_data_flow_separation.qmd)
+- **DM_R037**: Company-Specific Naming - [View](../../part1_principles/CH02_data_management/rules/DM_R037_company_specific_etl_naming.qmd)
+- **DM_R040**: Structural JOIN Pattern - [View](../../part1_principles/CH02_data_management/rules/DM_R040_structural_join_pattern.qmd)
+
+### Still Unsure?
+
+1. Start with the generic pattern for your data type
+2. Check if similar implementations exist
+3. Review case studies for comparable scenarios
+4. Follow the strictest interpretation of principles
+
+---
+
+**Remember**: When in doubt, separate! It's easier to combine later than to untangle mixed concerns.

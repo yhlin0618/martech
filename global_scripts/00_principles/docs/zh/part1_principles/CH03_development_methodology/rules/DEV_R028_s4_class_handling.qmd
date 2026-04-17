@@ -1,0 +1,176 @@
+---
+title: "DEV_R028: S4 類別安全處理規則"
+subtitle: "與 S4 類別物件（特別是資料庫連接）互動時，始終使用標準存取方法而非使用 $ 運算子直接存取插槽，因為後者對 S4 類別未定義"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R028"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 28
+  title: "S4 類別安全處理規則"
+related_to:
+  - "R91: 通用資料存取模式"
+  - "R92: 通用 DBI 方法"
+  - "R100: 通過 tbl() 的資料庫存取規則"
+  - "R101: 統一 tbl 型資料存取模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十八條：S4 類別安全處理規則 {#overview}
+
+**開發方法法第二十八條（S4 類別安全處理規則）**
+
+此規則確保所有代碼正確處理 S4 物件，避免與 S4 類別相關的常見運行時錯誤。
+
+:::{.callout-important}
+## 主要聲明
+與 S4 類別物件（特別是資料庫連接）互動時，始終使用標準存取方法而非使用 `$` 運算子直接存取插槽，因為後者對 S4 類別未定義。
+:::
+
+# 第一項：說明 {#explanation}
+
+S4 是 R 的正式物件導向類別系統，與更常見的 S3 類別相比，使用不同的存取機制。當代碼嘗試在 S4 物件上使用 `$` 運算子時，這種差異經常導致問題，導致錯誤「$ 運算子未為此 S4 類別定義」。此規則確保所有代碼正確處理 S4 物件。
+
+# 第二項：實施 {#implementation}
+
+## 第一款：正確方法 {#correct-approaches}
+
+### 使用標準存取器函數 {#standard-accessor-functions}
+
+```r
+# 正確
+result <- dbGetQuery(conn, query)
+
+# 錯誤
+result <- conn$dbGetQuery(query)  # 對 S4 類別會失敗
+```
+
+### 使用 @ 運算子直接存取插槽（必要時） {#at-operator-slot-access}
+
+```r
+# 正確
+slot_value <- object@slot_name
+
+# 錯誤
+slot_value <- object$slot_name  # 對 S4 類別會失敗
+```
+
+### 對於 DBI 資料庫連接，始終使用標準 DBI 界面函數 {#dbi-interface-functions}
+
+```r
+# 正確
+dbConnect()
+dbGetQuery()
+dbExecute()
+dbDisconnect()
+
+# 錯誤
+conn$query()
+conn$execute()
+```
+
+### 對於過濾和查詢操作，使用 dbplyr 和 dplyr {#filtering-query-operations}
+
+```r
+# 正確
+tbl_ref <- dplyr::tbl(conn, table_name)
+filtered <- tbl_ref %>% filter(condition)
+results <- dplyr::collect(filtered)
+
+# 對於 SQL 查詢也正確
+tbl_ref <- dplyr::tbl(conn, dbplyr::sql(query))
+results <- dplyr::collect(tbl_ref)
+```
+
+## 第二款：檢測和預防 {#detection-and-prevention}
+
+### 使用 inherits() 檢查繼承而非類別檢查 {#inherits-check}
+
+```r
+# 正確
+if (inherits(conn, "DBIConnection")) {
+  # 使用 DBI 方法
+}
+
+# 避免可能脆弱的直接類別檢查
+if (class(conn)[1] == "DBIConnection") {
+  # 不推薦
+}
+```
+
+### 在 tryCatch 中包裝 DBI 操作以處理潛在的 S4 類別錯誤 {#trycatch-wrapper}
+
+```r
+tryCatch({
+  result <- dbGetQuery(conn, query)
+}, error = function(e) {
+  if (grepl("S4 class", e$message)) {
+    # 適當處理 S4 類別錯誤
+  }
+  stop(e)  # 重新拋出其他錯誤
+})
+```
+
+# 第三項：優點 {#benefits}
+
+- **相容性**：代碼與所有類型的資料庫連接一致工作
+- **穩健性**：避免與 S4 類別相關的常見運行時錯誤
+- **可維護性**：創建遵循標準化模式的更清晰代碼
+- **可擴展性**：使在資料庫後端之間切換更容易
+
+# 第四項：相關規則 {#related-rules}
+
+- R91：通用資料存取模式
+- R92：通用 DBI 方法
+- R100：通過 tbl() 的資料庫存取規則
+- R101：統一 tbl 型資料存取模式
+
+# 第五項：範例 {#examples}
+
+## 第一款：問題範例 {#problem-example}
+
+```r
+# 這對像 DuckDB 連接這樣的 S4 類別物件會失敗
+fetch_data <- function(conn, table_name) {
+  # 錯誤：在潛在的 S4 物件上使用 $ 運算子
+  result <- conn$query(paste("SELECT * FROM", table_name))
+  return(result)
+}
+```
+
+## 第二款：解決方案範例 {#solution-example}
+
+```r
+# 這正確處理 S3 和 S4 類別物件
+fetch_data <- function(conn, table_name) {
+  # 檢查這是否為 DBI 連接
+  if (inherits(conn, "DBIConnection")) {
+    # 使用標準 DBI 方法
+    return(dbReadTable(conn, table_name))
+  } else if (is.function(conn$query)) {
+    # 僅對支援它的物件回退到 $ 存取
+    return(conn$query(paste("SELECT * FROM", table_name)))
+  } else {
+    stop("不支援的連接類型")
+  }
+}
+```
+
+# 第六項：背景 {#background}
+
+S4 類別系統被引入以在 R 中提供更正式的物件導向框架，與 S3 相比具有更嚴格的類型和驗證。雖然這為像資料庫界面這樣的複雜系統提供了優點，但它需要不同的存取模式。此規則解決了在 R 中使用 DBI 資料庫連接時遇到的最常見錯誤之一，特別是使用 S4 類別實施 DBI 規範的 DuckDB、PostgreSQL 和 SQLite 等後端。
+
+---
+
+*基於：開發方法法第二十八條*  
+*相關連結：[R91 通用資料存取模式](../../CH02_data_management/rules/DM_R002_universal_data_access.qmd), [R92 通用 DBI 方法](../../CH02_data_management/rules/DM_R006_universal_dbi_approach.qmd)*

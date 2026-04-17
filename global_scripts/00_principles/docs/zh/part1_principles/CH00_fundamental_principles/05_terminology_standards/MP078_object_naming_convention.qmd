@@ -1,0 +1,317 @@
+---
+title: "MP077: 物件命名約定"
+subtitle: "精準行銷系統中的所有物件必須遵循標準化的命名約定，使用點符號分離階層組件，保持從一般到特定的一致排序，並包含識別物件性質的型別前綴"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP077"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "terminology-standard"
+law: "基本原則法"
+article-number: 
+  number: 77
+  title: "物件命名約定"
+related_to:
+  - "DEV_P004: 點符號屬性存取原則"
+  - "MP024: 自然SQL語言"
+  - "MP017: 關注點分離"
+  - "MP001: 原始術語和定義"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七十七條：物件命名約定 {#overview}
+
+**基本原則法第七十七條（物件命名約定）**
+
+精準行銷系統中的所有物件必須遵循標準化的命名約定，使用點符號分離階層組件，保持從一般到特定的一致排序，並包含識別物件性質的型別前綴。
+
+:::{.callout-important}
+## 核心要求
+透過建立全面的命名系統，此規則增強程式碼清晰度、維護一致性，並與自然SQL語言自然整合。
+:::
+
+# 第一項：基本命名方程式 {#fundamental-equation}
+
+## 第一款：物件命名方程式 {#naming-equation}
+
+```
+object_name = rigid_identifier + optional_descriptors
+```
+
+其中：
+- `rigid_identifier` 是識別物件的唯一、不變部分
+- `optional_descriptors` 是表徵狀態或處理的可變、描述性標籤
+
+在實施中：
+- 剛性識別符用於物件載入和識別（get_rigid_id(object)）
+- 可選描述符透過三重底線（___）與剛性識別符分離
+- 同一物件的多個版本可以使用不同的描述符存在
+
+## 第二款：與 MP001 對齊的型別前綴 {#type-prefixes}
+
+| 前綴 | 物件型別 | MP001 術語 | 描述 |
+|------|----------|------------|------|
+| df. | 資料框 | 處理資料 | 為分析處理的表格資料結構 |
+| raw. | 原始資料 | 原始資料 | 直接從平台收集的未處理資料 |
+| dt. | 資料轉換 | 函數 | 轉換資料的函數 |
+| calc. | 計算 | 函數 | 執行計算的函數 |
+| util. | 工具 | 函數 | 常見操作的工具函數 |
+| mdl. | 模型 | - | 統計或機器學習模型 |
+| lst. | 列表 | - | 命名元素的集合 |
+| vec. | 向量 | - | 一維陣列 |
+| par. | 參數 | 參數 | 外部指定的配置值 |
+| def. | 預設值 | 預設值 | 內部指定的備援值 |
+| SCOPE. | 常數 | - | 不變的固定值（使用大寫） |
+| tmp. | 臨時 | - | 臨時計算物件 |
+| comp. | 組件 | 組件 | 模組化功能的自包含部分 |
+| iface. | 介面 | 介面 | 互動的定義方法和契約 |
+| impl. | 實施 | 實施 | 實現介面契約的特定程式碼 |
+| g. | 全域 | - | 全域範圍變數 |
+| mod. | 模組 | 模組 | 相關組件的集合（M） |
+| seq. | 序列 | 序列 | 有序處理工作流程（S） |
+| deriv. | 衍生 | 衍生 | 完整轉換過程（D） |
+
+# 第二項：命名約定原則 {#naming-principles}
+
+## 第一款：組件分離與單詞分離 {#component-vs-word-separation}
+
+在所有命名模式中，遵守這些關鍵區別：
+- **點（.）** 分離階層組件並指示屬性/領域存取
+- **底線（_）** 分離單一組件內的單詞
+
+例如：
+- `df.amazon.sales_by_region.at_ALL.current_month.001`
+  - 點分離組件：df、amazon、sales_by_region、at_ALL、current_month、001
+  - 底線分離組件內的單詞：sales_by_region、at_ALL、current_month
+
+## 第二款：型別特定命名模式 {#type-specific-patterns}
+
+### 資料框/處理資料 {#data-frames}
+
+```
+df.platform.purpose.by_id1.by_id2.by_id3.at_dimension1.at_dimension2.at_dimension3[___identifier]
+```
+
+其中：
+- `by_id` 組件識別我們按什麼實體分組（可以有 0-N 個組件）
+- `at_dimension` 組件識別我們在什麼維度切片（可以有 0-N 個組件）
+
+範例：
+- `df.amazon.sales.by_product_index.at_ALL.at_now.at_001___clean`
+- `df.official_website.comment_property.by_all_products.at_NY.at_m1month.at_000___manual`
+- `df.sales.transactions.by_customer.at_CT.at_q1_2025.at_000___agg`
+
+注意：三重底線（`___`）符號清楚地分離可選識別符。載入或識別物件時，只使用三重底線之前的部分。
+
+### 函數 {#functions}
+
+```
+type.purpose
+```
+
+注意：'fn_' 前綴只出現在檔名中（fn_type_purpose.R），不在實際物件名稱本身中。這確保了更乾淨的函數呼叫，同時在檔案系統中維護型別識別。
+
+範例：
+- `dt.calculate_sales`
+- `calc.aggregate_transactions`
+- `util.clean_data`
+
+### 模型 {#models}
+
+```
+mdl.algorithm.target.features
+```
+
+範例：
+- `mdl.regression.sales.price_seasonality`
+- `mdl.cluster.customers.purchase_behavior`
+- `mdl.forecast.inventory.seasonal_trends`
+
+### 常數 {#constants}
+
+```
+SCOPE.RIGID
+```
+
+注意：常數使用大寫字母來區別於變數。它們不使用可選描述符並維護更簡單的兩部分結構。
+
+範例：
+- `GLOBAL.API_VERSION`
+- `SYSTEM.MAX_RETRY_ATTEMPTS`
+- `VALIDATION.MAX_NAME_LENGTH`
+
+# 第三項：組件定義 {#component-definitions}
+
+## 第一款：資料框組件 {#data-frame-components}
+
+1. **platform**：MP001 中定義的資料來源平台
+   - `amazon`：Amazon 市場資料
+   - `official_website`：公司網站資料
+   - 空白：組合或衍生資料
+
+2. **purpose**：資料的主要功能
+   - `product_property`：產品資訊
+   - `sales_data`：銷售交易
+   - `comment_property`：產品評論
+
+3. **by_id 組件**：實體分組識別符
+   - `by_product_index`：按產品識別符分組
+   - `by_customer`：按客戶分組
+   - `by_date`：按日期分組
+
+4. **at_dimension 組件**：維度切片
+   - **位置維度**：
+     - `at_ALL`：所有位置組合
+     - `at_NY`：僅紐約位置
+     - `at_CT`：僅康涅狄格位置
+   
+   - **時間維度**：
+     - `at_now`：當前期間
+     - `at_m1year`：前一年
+     - `at_m1month`：前一個月
+   
+   - **產品維度**：
+     - `at_000`：所有產品
+     - `at_001`：electric_can_opener
+     - `at_002`：milk_frother
+
+## 第二款：列名標準 {#column-naming-standards}
+
+### 標準列名 {#standard-column-names}
+
+- `product_name`：產品名稱
+- `sku`：庫存單位
+- `product_line`：產品類別
+- `asin`：Amazon 標準識別號
+- `product_index`：SKU 或 ASIN
+- `product_id`：選擇模型的識別符
+- `brand`：品牌名稱
+- `subject_id`：主題識別符
+
+### 列名的標準化前綴 {#standardized-prefixes}
+
+- `id_*`：識別符（id_customer、id_order）
+- `dt_*`：日期（dt_order、dt_delivery）
+- `amt_*`：金額（amt_total、amt_tax）
+- `cnt_*`：計數（cnt_orders、cnt_products）
+- `pct_*`：百分比（pct_discount、pct_growth）
+- `flg_*`：標誌/布林值（flg_active、flg_promotional）
+
+# 第四項：實施要求 {#implementation-requirements}
+
+## 第一款：一致性 {#consistency}
+
+- 所有新物件必須遵循這些命名約定
+- 修訂時應重命名現有物件
+- 腳本應始終使用一致的命名
+
+## 第二款：文檔 {#documentation}
+
+- 為複雜物件包含解釋組件選擇的註釋
+- 記錄任何非標準組件值
+- 維護所有組件值的中央註冊表
+
+## 第三款：驗證 {#validation}
+
+- 腳本應根據約定驗證物件名稱
+- 對不符合的名稱應發出警告
+- 關鍵系統應強制執行命名合規性
+
+## 第四款：資料字典 {#data-dictionaries}
+
+- 維護將物件名稱映射到描述的資料字典
+- 在字典中包含資料型別、單位和約束
+- 將物件連結到其來源定義
+
+# 第五項：資料庫表實施 {#database-tables}
+
+## 第一款：資料庫與物件名稱關係 {#database-object-relationship}
+
+資料庫表名必須直接對應資料框物件名稱，使用 R027 中的轉換原則：
+
+| 物件名稱 | 資料庫表名 |
+|----------|------------|
+| df.amazon.sales_data.by_product_index | df_amazon_sales_data_by_product_index |
+| df.website.comment_property | df_website_comment_property |
+
+## 第二款：表創建策略模式 {#table-creation-strategy}
+
+表創建函數應使用策略模式來確保一致的創建，同時支援不同的表型別：
+
+```r
+# 表創建策略的中央註冊表
+table_creators <- list()
+
+# 註冊函數
+register_table_creator <- function(table_type, creator_fn) {
+  table_creators[[table_type]] <- creator_fn
+}
+
+# 調度函數
+create_or_replace_table <- function(object_name, data, table_type = "standard") {
+  # 使用 R027 原則將物件名稱轉換為表名
+  table_name <- gsub("\\.", "_", strsplit(object_name, "___")[[1]][1])
+  
+  # 取得正確的策略
+  creator <- table_creators[[table_type]]
+  
+  if (is.null(creator)) {
+    stop("沒有為型別註冊表創建器：", table_type)
+  }
+  
+  # 執行策略
+  return(creator(table_name, data))
+}
+```
+
+# 第六項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與點符號屬性存取原則的關聯（DEV_P004）{#relation-to-dot-notation}
+
+此規則透過以下方式實施 DEV_P004：
+1. **使用點符號**：採用點作為命名組件之間的分隔符
+2. **階層結構**：從一般到特定組織組件
+3. **一致存取**：創建與屬性存取模式相符的命名系統
+
+## 第二款：與自然SQL語言的關聯（MP024）{#relation-to-natural-sql}
+
+此規則透過以下方式支援 MP024：
+1. **相似符號**：使用與 NSQL 階層引用相同的 A.B 符號
+2. **概念對齊**：創建與查詢模式對齊的名稱
+3. **資料可存取性**：使資料來源在查詢中易於引用
+
+## 第三款：與原始術語和定義的關聯（MP001）{#relation-to-primitive-terms}
+
+此規則透過以下方式實施 MP001：
+1. **術語對齊**：為型別前綴使用 MP001 中定義的精確術語
+2. **型別階層尊重**：維護 MP001 中定義的型別階層
+3. **分類區別**：尊重分類區別（例如，參數與預設值）
+4. **變數/常數區別**：區分變數和常數
+
+# 第七項：優點 {#benefits}
+
+## 第一款：程式碼品質優點 {#code-quality-benefits}
+
+1. **清晰性**：名稱清楚傳達物件目的和內容
+2. **一致性**：在專案中創建統一的命名系統
+3. **可導航性**：使程式碼更容易導航和理解
+4. **自我文檔**：名稱作為微文檔
+
+## 第二款：系統優點 {#system-benefits}
+
+1. **分類法**：透過命名創建自然的分類結構
+2. **整合**：促進與查詢語言的整合
+3. **型別安全**：透過一致的前綴促進型別感知
+4. **公司適應性**：在維護共同模式的同時支援公司特定的實施
+
+---
+
+*基於：基本原則法第七十七條*  
+*相關連結：[DEV_P004 點符號屬性存取原則](../../CH03_development_methodology/principles/DEV_P004_dot_notation_property_access.qmd), [MP001 原始術語和定義](../meta_principles/MP001_primitive_terms_definitions.qmd)*

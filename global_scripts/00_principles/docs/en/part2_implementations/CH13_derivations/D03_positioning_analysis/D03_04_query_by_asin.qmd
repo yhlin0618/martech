@@ -1,0 +1,175 @@
+---
+
+title: "D03_04: Query by ASIN"
+subtitle: "Aggregate property ratings by product (ASIN)"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_04"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_03_process_reviews"
+outputs_to:
+  - "D03_05_position_table"
+implements:
+  - script: "amz_D03_07.R"
+    path: "update_scripts/DRV/amz/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_04: Query by ASIN {#overview}
+
+This task aggregates property ratings by product (ASIN), calculating average ratings for each property across all reviews. Optionally, missing values can be imputed using the mice package.
+
+## Implementation Scripts
+
+| Platform | Script | Location |
+|----------|--------|----------|
+| Amazon | `amz_D03_07.R` | `update_scripts/DRV/amz/` |
+
+## Task Definition (NSQL)
+
+```nsql
+# Layer 4CL: Output to cleansed_data (aggregated by ASIN)
+AGGREGATE cleansed_data.df_comment_property_ratingonly_{product_line_id}___cleansed
+BY product_id (ASIN)
+OPTIONAL impute_missing WITH mice
+TO cleansed_data.df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed
+```
+
+**Layer**: 4CL (Cleanse) - Per MP144, output uses `___cleansed` suffix.
+
+## Detailed Aggregation (NSQL)
+
+```nsql
+# D03_04: Aggregate Ratings by ASIN [Layer: 4CL]
+AGGREGATE D03_04_aggregate_by_asin:
+  FOR EACH product_line_id IN vec_product_line_id:
+    FROM cleansed_data.df_comment_property_ratingonly_{product_line_id}___cleansed
+
+    # Step 1: Group by product
+    GROUP BY product_id
+
+    # Step 2: Calculate property averages
+    CALCULATE:
+      FOR EACH property_column IN prop_*:
+        {property}_avg: MEAN(property_column)
+        {property}_std: STDDEV(property_column)
+        {property}_count: COUNT_NON_NULL(property_column)
+
+    # Step 3: Calculate overall metrics
+    CALCULATE:
+      review_count: COUNT(*)
+      overall_rating_avg: MEAN(rating)
+      property_coverage: COUNT_NON_NULL(prop_*) / TOTAL_PROPERTIES
+
+    # Step 4: Optional missing value imputation
+    IF app_config.impute_missing = TRUE:
+      IMPUTE missing_values WITH mice:
+        method: "pmm"  # Predictive Mean Matching
+        m: 5  # Number of imputations
+        maxit: 20  # Maximum iterations
+
+    # Step 5: Output to cleansed_data with ___cleansed suffix
+    OUTPUT TO cleansed_data.df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed
+```
+
+## Aggregation Metrics (NSQL)
+
+```nsql
+# D03_04: Aggregation Metrics
+METRICS D03_04_aggregation:
+  # Per-property metrics
+  FOR EACH property IN properties:
+    avg: MEAN(property_rating)
+    std: STDDEV(property_rating)
+    min: MIN(property_rating)
+    max: MAX(property_rating)
+    count: COUNT_NON_NULL(property_rating)
+    pct_missing: 1 - (count / total_reviews)
+
+  # Product-level metrics
+  review_count: COUNT(reviews)
+  overall_rating: MEAN(star_rating)
+  property_coverage: SUM(property_count) / (review_count * property_count_total)
+```
+
+## Missing Value Imputation (NSQL)
+
+```nsql
+# D03_04: Missing Value Imputation (Optional)
+IMPUTE D03_04_mice_imputation:
+  CONDITION: app_config.impute_missing = TRUE
+
+  # Use mice package for multiple imputation
+  METHOD: "pmm"  # Predictive Mean Matching
+  PARAMETERS:
+    m: 5  # Number of imputed datasets
+    maxit: 20  # Maximum iterations
+    seed: 12345  # For reproducibility
+
+  # Imputation rules
+  RULES:
+    # Only impute if >50% of values exist
+    IF pct_missing > 0.5:
+      SKIP imputation
+      MARK as "insufficient_data"
+
+    # Use property correlations for imputation
+    PREDICTORS: all_other_properties
+
+  # Pool imputed results
+  POOL:
+    method: "rubin"  # Rubin's rules for pooling
+```
+
+## Implementation Reference {#implementation}
+
+See platform implementation scripts listed in "Implementation Scripts" section above.
+
+Key implementation features:
+- Uses `fn_process_comment_property_ratings_by_asin()` for aggregation
+- Aggregates ratings from multiple reviews per product
+- Optional missing value imputation using mice package
+- Outputs average ratings per property per product
+
+## Failure Behavior
+
+- Missing input or output tables for any configured `product_line_id` must trigger an explicit stop.
+- `amz_D03_07.R` now treats `FALSE`/missing outputs from `fn_process_comment_property_ratings_by_asin()` as hard failures.
+- D03 target must only be marked complete when all configured product lines are successfully written.
+
+Scripts follow [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) Five-Part Structure.
+
+## Output Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `product_id` | VARCHAR | Product ASIN |
+| `product_line_id` | INTEGER | Product line identifier |
+| `review_count` | INTEGER | Number of reviews aggregated |
+| `overall_rating_avg` | FLOAT | Average star rating |
+| `prop_durability_avg` | FLOAT | Average durability rating |
+| `prop_value_avg` | FLOAT | Average value rating |
+| `prop_quality_avg` | FLOAT | Average quality rating |
+| `prop_*_avg` | FLOAT | Average for other properties |
+| `property_coverage` | FLOAT | % of properties with ratings |
+| `imputation_flag` | BOOLEAN | Whether imputation was used |
+
+## Key Principle
+
+Product-level aggregation provides **competitive positioning data** by:
+1. Consolidating multiple review perspectives per product
+2. Calculating reliable property averages with sample sizes
+3. Enabling fair comparison across products with different review counts
+
+## Next Task
+
+After ASIN aggregation, proceed to [D03_05: Position Table](D03_05_position_table.qmd).

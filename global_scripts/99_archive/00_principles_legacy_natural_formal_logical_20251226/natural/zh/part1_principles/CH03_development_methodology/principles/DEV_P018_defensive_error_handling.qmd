@@ -1,0 +1,824 @@
+---
+title: "DEV_P018: 防禦性錯誤處理原則"
+subtitle: "應用程式應在所有關鍵節點實施全面的防禦性錯誤處理，提供優雅的回退機制、有意義的錯誤訊息，並在發生非預期狀況時盡可能維持功能"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P018"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article: 
+  number: 18
+  title: "防禦性錯誤處理原則"
+related_to:
+  - "MP031: 初始化優先原則"
+  - "DEV_P013: 錯誤處理模式"
+  - "DEV_P014: 性能優化原則"
+  - "UI_P010: 最小化CSS使用原則"
+  - "DM_R002: 通用資料存取模式"
+  - "UI_R001: UI-Server-Defaults三元組規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十八條：防禦性錯誤處理原則 {#overview}
+
+**開發方法法第十八條（防禦性錯誤處理原則）**
+
+應用程式應在所有關鍵節點實施全面的防禦性錯誤處理，提供優雅的回退機制、有意義的錯誤訊息，並在發生非預期狀況時盡可能維持功能。
+
+:::{.callout-important}
+## 核心原則
+透過在各層級實施防禦性錯誤處理，確保應用程式的韌性、維持良好的使用者體驗，並促進快速的問題診斷與解決。
+:::
+
+# 第一項：實施原理 {#implementation-rationale}
+
+## 第一款：防禦性錯誤處理的優勢 {#defensive-error-handling-advantages}
+
+**採用防禦性錯誤處理的理由：**
+
+1. **韌性**：防禦性錯誤處理創建能夠承受非預期輸入、缺失組件或失敗操作而不完全系統崩潰的應用程式
+
+2. **使用者體驗**：優雅的錯誤處理即使在問題發生時也能維持正面的使用者體驗，允許使用者繼續使用應用程式
+
+3. **診斷效率**：具有清晰訊息的適當錯誤處理有助於更快的故障排除和問題解決
+
+4. **漸進式降級**：當錯誤發生時，應用程式應透過提供有限但功能性的替代方案來優雅降級，而非完全失敗
+
+5. **安全性**：防禦性錯誤處理有助於防止暴露敏感資訊或可能洩露實作細節的堆疊追蹤
+
+**錯誤處理策略比較：**
+
+| 策略類型 | 韌性程度 | 使用者體驗 | 診斷能力 | 安全性 |
+|---------|---------|-----------|---------|--------|
+| 防禦性處理 | ✅ 高 | ✅ 優良 | ✅ 詳細 | ✅ 安全 |
+| 基本處理 | ⚠️ 中等 | ⚠️ 可接受 | ⚠️ 有限 | ⚠️ 適中 |
+| 無處理 | ❌ 低 | ❌ 差 | ❌ 困難 | ❌ 風險高 |
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：策略性使用 Try-Catch 區塊 {#strategic-try-catch}
+
+**Try-Catch 實施標準：**
+
+- 將關鍵操作包裝在 try-catch 區塊中
+- 適當時針對不同錯誤類型進行不同處理
+- 記錄詳細錯誤資訊以供除錯
+- 向使用者呈現簡化、可操作的錯誤訊息
+
+**實施範例：**
+
+```r
+# 良好：策略性錯誤處理
+output$data_display <- renderUI({
+  tryCatch({
+    # 驗證依賴項
+    if (!exists("data_connection")) {
+      return(div(
+        class = "alert alert-warning",
+        h4("連線錯誤"),
+        p("無法連接到資料來源，請檢查設定。")
+      ))
+    }
+    
+    # 嘗試取得資料
+    data <- fetch_data(data_connection)
+    
+    # 渲染正常內容
+    render_data_view(data)
+    
+  }, warning = function(w) {
+    # 處理警告
+    message("警告：", w$message)
+    div(
+      class = "alert alert-info",
+      h4("注意"),
+      p("資料載入時出現警告：", w$message)
+    )
+  }, error = function(e) {
+    # 處理錯誤
+    message("錯誤：", e$message)
+    div(
+      class = "alert alert-danger",
+      h4("載入失敗"),
+      p("無法載入資料，請重新整理頁面或聯繫支援。")
+    )
+  })
+})
+```
+
+## 第二款：提供回退組件 {#fallback-components}
+
+**回退組件標準：**
+
+- 創建當預期組件失敗時顯示的佔位組件
+- 確保回退維持基本功能
+- 設計回退以視覺上與應用程式一致
+- 包含清晰指示正在顯示回退
+
+**實施範例：**
+
+```r
+# 創建回退組件函數
+createPlaceholderComponent <- function(error_msg = "組件載入失敗") {
+  div(
+    class = "placeholder-component",
+    style = "padding: 20px; border: 1px dashed #ccc; background: #f9f9f9;",
+    icon("exclamation-triangle", class = "text-warning"),
+    h4(error_msg, class = "mt-2"),
+    p("此組件暫時無法使用，但您可以繼續使用其他功能。"),
+    actionButton("retry_load", "重試", icon = icon("refresh"))
+  )
+}
+
+# 使用回退組件
+loadComponent <- function(component_name) {
+  tryCatch({
+    # 嘗試載入組件
+    component <- source(paste0("components/", component_name, ".R"))$value
+    
+    # 驗證組件結構
+    if (!is.function(component$render)) {
+      stop("組件缺少 render 函數")
+    }
+    
+    return(component)
+  }, error = function(e) {
+    message("載入組件失敗：", component_name, " - ", e$message)
+    # 返回回退組件
+    return(list(
+      render = function() createPlaceholderComponent(
+        paste("無法載入", component_name)
+      )
+    ))
+  })
+}
+```
+
+# 第三項：輸入驗證與依賴檢查 {#input-validation-dependencies}
+
+## 第一款：全面輸入驗證 {#comprehensive-input-validation}
+
+**輸入驗證標準：**
+
+- 驗證所有必需輸入的存在性和類型
+- 在呼叫前檢查函數和方法是否存在
+- 在存取屬性前驗證複雜物件的結構
+- 明確處理 null、undefined 和空值
+
+**實施範例：**
+
+```r
+# 全面輸入驗證
+processUserInput <- function(input_data, config = NULL) {
+  # 第一層：檢查輸入存在性
+  if (is.null(input_data)) {
+    message("輸入資料為 NULL")
+    return(list(
+      success = FALSE,
+      message = "未提供輸入資料",
+      data = NULL
+    ))
+  }
+  
+  # 第二層：類型驗證
+  if (!is.list(input_data) && !is.data.frame(input_data)) {
+    message("輸入類型錯誤：", class(input_data))
+    # 嘗試轉換
+    input_data <- tryCatch({
+      as.list(input_data)
+    }, error = function(e) {
+      return(list())
+    })
+  }
+  
+  # 第三層：結構驗證
+  required_fields <- c("user_id", "action", "timestamp")
+  missing_fields <- setdiff(required_fields, names(input_data))
+  
+  if (length(missing_fields) > 0) {
+    message("缺少必要欄位：", paste(missing_fields, collapse = ", "))
+    # 填充預設值
+    for (field in missing_fields) {
+      input_data[[field]] <- switch(field,
+        user_id = "unknown",
+        action = "default",
+        timestamp = Sys.time()
+      )
+    }
+  }
+  
+  # 第四層：配置驗證
+  if (!is.null(config)) {
+    if (!is.list(config) || is.null(config$mode)) {
+      message("配置無效，使用預設配置")
+      config <- list(mode = "default", debug = FALSE)
+    }
+  }
+  
+  # 處理資料
+  tryCatch({
+    # 實際處理邏輯
+    result <- perform_processing(input_data, config)
+    
+    return(list(
+      success = TRUE,
+      message = "處理成功",
+      data = result
+    ))
+  }, error = function(e) {
+    message("處理過程錯誤：", e$message)
+    return(list(
+      success = FALSE,
+      message = paste("處理失敗：", e$message),
+      data = input_data  # 返回原始資料
+    ))
+  })
+}
+```
+
+## 第二款：依賴檢查 {#dependency-checking}
+
+**依賴檢查標準：**
+
+```r
+# 檢查函數依賴
+checkDependencies <- function() {
+  dependencies <- list(
+    packages = c("shiny", "bs4Dash", "DBI"),
+    functions = c("dbConnect", "tbl2", "renderPlot"),
+    files = c("config/app_config.yaml", "data/init.rds")
+  )
+  
+  status <- list()
+  
+  # 檢查套件
+  for (pkg in dependencies$packages) {
+    status[[paste0("package_", pkg)]] <- requireNamespace(pkg, quietly = TRUE)
+  }
+  
+  # 檢查函數
+  for (fn in dependencies$functions) {
+    status[[paste0("function_", fn)]] <- exists(fn, mode = "function")
+  }
+  
+  # 檢查檔案
+  for (file in dependencies$files) {
+    status[[paste0("file_", file)]] <- file.exists(file)
+  }
+  
+  # 報告缺失的依賴
+  missing <- names(status)[!unlist(status)]
+  if (length(missing) > 0) {
+    warning("缺少依賴項：", paste(missing, collapse = ", "))
+  }
+  
+  return(status)
+}
+```
+
+# 第四項：分層錯誤處理 {#layered-error-handling}
+
+## 第一款：多層級錯誤處理架構 {#multi-level-error-architecture}
+
+**分層處理架構：**
+
+```r
+# 第一層：UI 渲染層
+ui_layer_handler <- function(render_function) {
+  tryCatch({
+    render_function()
+  }, error = function(e) {
+    div(class = "ui-error", "介面渲染錯誤")
+  })
+}
+
+# 第二層：業務邏輯層
+logic_layer_handler <- function(process_function, input) {
+  tryCatch({
+    # 驗證輸入
+    validated_input <- validate_input(input)
+    # 執行處理
+    process_function(validated_input)
+  }, error = function(e) {
+    message("業務邏輯錯誤：", e$message)
+    # 返回安全預設值
+    return(default_result())
+  })
+}
+
+# 第三層：資料存取層
+data_layer_handler <- function(query_function, params) {
+  tryCatch({
+    # 檢查連線
+    if (!check_connection()) {
+      stop("資料庫連線失敗")
+    }
+    # 執行查詢
+    query_function(params)
+  }, error = function(e) {
+    message("資料存取錯誤：", e$message)
+    # 返回快取或空資料
+    return(get_cached_data() %||% empty_dataset())
+  })
+}
+
+# 組合使用
+output$result <- renderUI({
+  ui_layer_handler(function() {
+    data <- data_layer_handler(fetch_data, list(filter = input$filter))
+    processed <- logic_layer_handler(process_data, data)
+    render_result(processed)
+  })
+})
+```
+
+## 第二款：錯誤邊界設置 {#error-boundaries}
+
+**錯誤邊界實施：**
+
+```r
+# 創建錯誤邊界組件
+createErrorBoundary <- function(id, render_function) {
+  ns <- NS(id)
+  
+  list(
+    ui = function() {
+      div(
+        id = ns("container"),
+        uiOutput(ns("content"))
+      )
+    },
+    
+    server = function(input, output, session) {
+      # 錯誤狀態
+      error_state <- reactiveVal(NULL)
+      
+      # 渲染內容
+      output$content <- renderUI({
+        if (!is.null(error_state())) {
+          # 顯示錯誤介面
+          div(
+            class = "error-boundary",
+            h4("組件載入失敗", class = "text-danger"),
+            p(error_state()),
+            actionButton(ns("reset"), "重置", class = "btn-warning")
+          )
+        } else {
+          # 嘗試渲染正常內容
+          tryCatch({
+            render_function()
+          }, error = function(e) {
+            error_state(e$message)
+            NULL
+          })
+        }
+      })
+      
+      # 重置按鈕
+      observeEvent(input$reset, {
+        error_state(NULL)
+      })
+    }
+  )
+}
+```
+
+# 第五項：狀態完整性維護 {#state-integrity-maintenance}
+
+## 第一款：狀態保護機制 {#state-protection}
+
+**狀態保護實施：**
+
+```r
+# 狀態管理器與錯誤保護
+createStateManager <- function(initial_state = list()) {
+  # 私有狀態儲存
+  .state <- reactiveValues()
+  .state$data <- initial_state
+  .state$history <- list(initial_state)
+  .state$error_count <- 0
+  
+  list(
+    # 安全更新狀態
+    update = function(key, value) {
+      tryCatch({
+        # 儲存當前狀態作為備份
+        backup <- .state$data
+        
+        # 嘗試更新
+        .state$data[[key]] <- value
+        
+        # 驗證新狀態
+        if (!validate_state(.state$data)) {
+          stop("狀態驗證失敗")
+        }
+        
+        # 添加到歷史
+        .state$history <- append(.state$history, list(.state$data))
+        
+        TRUE
+      }, error = function(e) {
+        message("狀態更新失敗：", e$message)
+        # 回滾到備份
+        .state$data <- backup
+        .state$error_count <- .state$error_count + 1
+        
+        # 如果錯誤過多，重置到初始狀態
+        if (.state$error_count > 5) {
+          message("錯誤次數過多，重置狀態")
+          .state$data <- initial_state
+          .state$error_count <- 0
+        }
+        
+        FALSE
+      })
+    },
+    
+    # 取得狀態
+    get = function(key = NULL) {
+      if (is.null(key)) {
+        return(.state$data)
+      }
+      return(.state$data[[key]] %||% NULL)
+    },
+    
+    # 重置狀態
+    reset = function() {
+      .state$data <- initial_state
+      .state$history <- list(initial_state)
+      .state$error_count <- 0
+    },
+    
+    # 回滾到前一個狀態
+    rollback = function() {
+      if (length(.state$history) > 1) {
+        .state$history <- .state$history[-length(.state$history)]
+        .state$data <- .state$history[[length(.state$history)]]
+        TRUE
+      } else {
+        FALSE
+      }
+    }
+  )
+}
+
+# 狀態驗證函數
+validate_state <- function(state) {
+  # 檢查必要欄位
+  required <- c("user", "session", "data")
+  all(required %in% names(state))
+}
+```
+
+## 第二款：錯誤恢復日誌 {#error-recovery-logging}
+
+**錯誤恢復日誌系統：**
+
+```r
+# 錯誤日誌管理器
+errorLogger <- function(log_file = "error_log.txt") {
+  
+  logError <- function(error_type, message, context = list()) {
+    log_entry <- list(
+      timestamp = Sys.time(),
+      type = error_type,
+      message = message,
+      context = context,
+      session_info = sessionInfo()$R.version$version.string,
+      stack_trace = traceback(max.lines = 5)
+    )
+    
+    # 寫入日誌檔案
+    tryCatch({
+      log_text <- paste(
+        "\n===== ERROR LOG =====",
+        paste("Time:", log_entry$timestamp),
+        paste("Type:", log_entry$type),
+        paste("Message:", log_entry$message),
+        paste("Context:", paste(names(context), context, sep = "=", collapse = ", ")),
+        "Stack Trace:",
+        paste(log_entry$stack_trace, collapse = "\n"),
+        "==================\n",
+        sep = "\n"
+      )
+      
+      cat(log_text, file = log_file, append = TRUE)
+    }, error = function(e) {
+      # 如果無法寫入檔案，至少在控制台顯示
+      message("無法寫入日誌檔案：", e$message)
+      print(log_entry)
+    })
+    
+    invisible(log_entry)
+  }
+  
+  return(logError)
+}
+
+# 使用錯誤日誌
+logger <- errorLogger()
+
+# 在錯誤處理中使用
+tryCatch({
+  # 危險操作
+  risky_operation()
+}, error = function(e) {
+  logger("CRITICAL", e$message, list(
+    operation = "risky_operation",
+    user = session$user,
+    input = input$values
+  ))
+  # 返回安全值
+  return(safe_default())
+})
+```
+
+# 第六項：完整實施範例 {#complete-implementation-examples}
+
+## 第一款：完整的防禦性應用程式 {#complete-defensive-app}
+
+**應用程式實施：**
+
+```r
+# app.R - 防禦性錯誤處理應用程式
+library(shiny)
+library(bs4Dash)
+
+# 初始化錯誤日誌
+logger <- errorLogger("app_errors.log")
+
+# 創建狀態管理器
+state_manager <- createStateManager(list(
+  user = NULL,
+  data = NULL,
+  config = NULL
+))
+
+ui <- bs4DashPage(
+  title = "防禦性錯誤處理示範",
+  
+  header = bs4DashNavbar(
+    title = "應用程式"
+  ),
+  
+  sidebar = bs4DashSidebar(
+    bs4SidebarMenu(
+      bs4SidebarMenuItem(
+        text = "資料面板",
+        tabName = "data_panel",
+        icon = icon("database")
+      ),
+      bs4SidebarMenuItem(
+        text = "分析面板",
+        tabName = "analysis_panel",
+        icon = icon("chart-line")
+      )
+    )
+  ),
+  
+  body = bs4DashBody(
+    # 全域錯誤處理樣式
+    tags$style(HTML("
+      .error-boundary {
+        padding: 20px;
+        border: 2px solid #dc3545;
+        border-radius: 5px;
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .placeholder-component {
+        padding: 20px;
+        border: 2px dashed #ffc107;
+        background: #fff3cd;
+        color: #856404;
+      }
+    ")),
+    
+    bs4TabItems(
+      bs4TabItem(
+        tabName = "data_panel",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "資料載入",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("data_content")
+            )
+          )
+        )
+      ),
+      
+      bs4TabItem(
+        tabName = "analysis_panel",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "分析結果",
+              status = "info",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("analysis_content")
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # 資料載入與錯誤處理
+  data_reactive <- reactive({
+    tryCatch({
+      # 檢查依賴
+      deps <- checkDependencies()
+      if (!all(unlist(deps))) {
+        stop("缺少必要依賴")
+      }
+      
+      # 載入資料
+      showNotification("正在載入資料...", type = "message")
+      data <- read.csv("data/main_data.csv")
+      
+      # 驗證資料
+      if (nrow(data) == 0) {
+        stop("資料檔案為空")
+      }
+      
+      # 更新狀態
+      state_manager$update("data", data)
+      showNotification("資料載入成功", type = "success")
+      
+      return(data)
+      
+    }, warning = function(w) {
+      logger("WARNING", w$message, list(context = "data_loading"))
+      showNotification(paste("警告：", w$message), type = "warning")
+      return(data.frame())
+      
+    }, error = function(e) {
+      logger("ERROR", e$message, list(context = "data_loading"))
+      showNotification("資料載入失敗", type = "error")
+      
+      # 嘗試載入備份資料
+      backup_data <- tryCatch({
+        readRDS("data/backup.rds")
+      }, error = function(e2) {
+        # 返回示範資料
+        data.frame(
+          id = 1:10,
+          value = rnorm(10),
+          category = sample(LETTERS[1:3], 10, replace = TRUE)
+        )
+      })
+      
+      return(backup_data)
+    })
+  })
+  
+  # 資料內容渲染
+  output$data_content <- renderUI({
+    tryCatch({
+      data <- data_reactive()
+      
+      if (is.null(data) || nrow(data) == 0) {
+        return(createPlaceholderComponent("無可用資料"))
+      }
+      
+      tagList(
+        h4("資料摘要"),
+        verbatimTextOutput("data_summary"),
+        hr(),
+        h4("資料預覽"),
+        DT::dataTableOutput("data_table")
+      )
+      
+    }, error = function(e) {
+      logger("ERROR", e$message, list(context = "data_render"))
+      createPlaceholderComponent("資料顯示錯誤")
+    })
+  })
+  
+  output$data_summary <- renderPrint({
+    tryCatch({
+      summary(data_reactive())
+    }, error = function(e) {
+      "無法生成摘要"
+    })
+  })
+  
+  output$data_table <- DT::renderDataTable({
+    tryCatch({
+      DT::datatable(
+        data_reactive(),
+        options = list(pageLength = 10)
+      )
+    }, error = function(e) {
+      DT::datatable(data.frame(Error = "無法顯示資料"))
+    })
+  })
+  
+  # 分析內容渲染
+  output$analysis_content <- renderUI({
+    tryCatch({
+      data <- data_reactive()
+      
+      if (is.null(data) || nrow(data) == 0) {
+        return(div(
+          class = "alert alert-info",
+          "請先載入資料"
+        ))
+      }
+      
+      tagList(
+        plotOutput("analysis_plot"),
+        hr(),
+        verbatimTextOutput("analysis_stats")
+      )
+      
+    }, error = function(e) {
+      logger("ERROR", e$message, list(context = "analysis_render"))
+      createPlaceholderComponent("分析顯示錯誤")
+    })
+  })
+  
+  output$analysis_plot <- renderPlot({
+    tryCatch({
+      data <- data_reactive()
+      
+      # 檢查必要欄位
+      if (!"value" %in% names(data)) {
+        plot.new()
+        text(0.5, 0.5, "資料缺少必要欄位", cex = 2)
+        return()
+      }
+      
+      hist(data$value, main = "數值分布", xlab = "值", ylab = "頻率")
+      
+    }, error = function(e) {
+      plot.new()
+      text(0.5, 0.5, "無法生成圖表", cex = 2, col = "red")
+    })
+  })
+  
+  output$analysis_stats <- renderPrint({
+    tryCatch({
+      data <- data_reactive()
+      list(
+        rows = nrow(data),
+        columns = ncol(data),
+        missing = sum(is.na(data))
+      )
+    }, error = function(e) {
+      "無法計算統計資料"
+    })
+  })
+  
+  # 會話結束時清理
+  session$onSessionEnded(function() {
+    tryCatch({
+      # 儲存狀態
+      saveRDS(state_manager$get(), "session_state.rds")
+      # 記錄會話結束
+      logger("INFO", "Session ended", list(
+        duration = difftime(Sys.time(), session$clientData$session_start)
+      ))
+    }, error = function(e) {
+      # 即使清理失敗也不影響會話結束
+      NULL
+    })
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# 第七項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **實施 MP031（初始化優先）**：在操作前確保所有組件正確初始化
+2. **補充 DEV_P013（錯誤處理模式）**：提供具體的防禦性處理實施方法
+3. **支援 DEV_P014（性能優化）**：透過避免崩潰和重試來改善性能
+4. **增強 UI_P010（最小化CSS使用）**：確保錯誤狀態的簡潔視覺呈現
+5. **應用 DM_R002（通用資料存取）**：在資料存取層實施防禦性處理
+6. **遵循 UI_R001（UI-Server-Defaults三元組）**：在所有三個組件中實施錯誤處理
+
+---
+
+*基於：開發方法法第十八條*  
+*相關連結：[MP031 初始化優先原則](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [DEV_P013 錯誤處理模式](DEV_P013_error_handling_patterns.qmd)*

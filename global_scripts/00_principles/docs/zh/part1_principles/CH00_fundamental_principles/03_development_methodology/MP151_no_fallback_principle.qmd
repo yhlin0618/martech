@@ -1,0 +1,90 @@
+---
+title: "MP151: 無 fallback 原則"
+subtitle: "不得以 fallback 掩蓋失敗"
+author: "MAMBA Architecture Team"
+date: "2026-02-28"
+version: "1.0.0"
+category: "Meta-Principle"
+tags: ["development", "reliability", "error-handling", "ai", "maintainability"]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+---
+
+## 原則聲明
+
+**對核心流程，不得在失敗或資源缺失時使用 fallback 行為。**
+
+當必要的相依、輸入、檔案、設定或環境前提條件不成立時，系統必須立即失敗並給出明確的錯誤訊息與修正指引；使用 fallback 來掩蓋問題，會降低可觀察性並放大後續修正成本。
+
+## 核心規則
+
+### 1) 快速且明確地失敗
+
+```r
+# 錯誤：缺檔時回傳預設值
+load_settings <- function(path) {
+  if (!file.exists(path)) {
+    return(list(env = "prod", timeout = 30))
+  }
+  yaml::read_yaml(path)
+}
+
+# 正確：失敗時直接回報
+load_settings <- function(path) {
+  if (!file.exists(path)) {
+    stop(
+      "設定檔不存在：", path,
+      "\n請先建立設定檔後再重試。"
+    )
+  }
+  yaml::read_yaml(path)
+}
+```
+
+### 2) 禁止隱性 `tryCatch` 預設值
+
+不要在錯誤發生時悄悄回傳 `tibble()`、空字串或空白物件；若需不同路徑，必須透過明確參數與驗證流程分支。
+
+```r
+# 錯誤：失敗時以空資料替代
+result <- tryCatch(load_data(source), error = function(e) tibble())
+
+# 正確：保留錯誤，讓呼叫端決定處理策略
+result <- load_data(source)  # load_data 應自行驗證並在失敗時 stop
+```
+
+### 3) 不接受部分更新後繼續執行
+
+批次轉換/改版不應在某些項目失敗時繼續局部寫入；一旦任務失敗，應回報並要求從可追溯狀態重試。
+
+## 適用範圍
+
+- 核心初始化、設定載入、部署與遷移流程
+- 生產路徑的資料讀取與轉換
+- AI 協作下的全域大範圍修改（替代方案）
+
+## 零容忍條款
+
+本原則採取零容忍原則：核心流程不得使用任何 fallback。
+
+- 必要條件缺失時，作業必須中止。
+- 必要資源遺失時，作業必須中止。
+- 設定不合法時，作業必須中止並提示修正步驟。
+
+## 合規檢查
+
+1. 搜尋所有 `if`/`else` 在錯誤時返回預設值的分支。
+2. 拒絕捕捉後回傳「假成功」的 `catch` 實作。
+3. 為前置條件缺失加入單元測試，預期為錯誤而非 fallback。
+4. 在變更說明中記錄失敗訊息與修復指引。
+
+## 相關原則
+
+- **MP095**: Claude Code-Driven System Changes
+- **MP084**: Deterministic Codebase Transformations
+- **MP037**: Principle-Guided Modifications
+- **MP004**: Sensible Defaults

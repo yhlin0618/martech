@@ -1,0 +1,260 @@
+# Platform Configuration Template using Three-Letter Codes
+# Implements MP092: Platform ID Standard
+# Date: 2025-08-27
+
+# Application Information
+app_info:
+  name: "Precision Marketing Application"
+  version: "2.0.0"
+  tier: "l3_enterprise"
+  description: "Multi-platform marketing analytics system"
+
+# Platform Definitions (using three-letter codes exclusively)
+platforms:
+  # eBay Platform
+  eby:
+    name: "eBay"
+    full_name: "eBay Marketplace"
+    description: "eBay online marketplace platform"
+    active: true
+    api:
+      endpoint: "https://api.ebay.com/v1"
+      auth_type: "oauth2"
+      rate_limit: 5000  # requests per hour
+    data:
+      source_type: "api"
+      format: "json"
+      encoding: "utf-8"
+    features:
+      - "product_listing"
+      - "sales_analytics"
+      - "customer_insights"
+      - "competitor_analysis"
+    
+  # Cyberbiz Platform  
+  cbz:
+    name: "Cyberbiz"
+    full_name: "Cyberbiz E-commerce"
+    description: "Cyberbiz e-commerce platform"
+    active: true
+    api:
+      endpoint: "https://api.cyberbiz.com/v2"
+      auth_type: "api_key"
+      rate_limit: 10000
+    data:
+      source_type: "csv_export"
+      format: "csv"
+      encoding: "utf-8"
+    features:
+      - "product_listing"
+      - "sales_analytics"
+      - "inventory_management"
+      
+  # Amazon Platform
+  amz:
+    name: "Amazon"
+    full_name: "Amazon Marketplace"
+    description: "Amazon marketplace platform"
+    active: false  # Currently inactive
+    api:
+      endpoint: "https://mws.amazonservices.com"
+      auth_type: "signature_v4"
+      rate_limit: 3600
+    data:
+      source_type: "api"
+      format: "xml"
+      encoding: "utf-8"
+    features:
+      - "product_listing"
+      - "sales_analytics"
+      - "fba_integration"
+      
+  # Official Website
+  web:
+    name: "Official Website"
+    full_name: "Company Website"
+    description: "Company's own e-commerce website"
+    active: true
+    api:
+      endpoint: "internal"
+      auth_type: "session"
+      rate_limit: null  # No limit for internal
+    data:
+      source_type: "database"
+      format: "direct_query"
+      encoding: "utf-8"
+    features:
+      - "full_control"
+      - "custom_analytics"
+      - "direct_integration"
+      
+  # Retail Stores
+  ret:
+    name: "Retail"
+    full_name: "Physical Retail Stores"
+    description: "Physical retail store locations"
+    active: true
+    api:
+      endpoint: null
+      auth_type: null
+      rate_limit: null
+    data:
+      source_type: "pos_export"
+      format: "excel"
+      encoding: "utf-8"
+    features:
+      - "pos_integration"
+      - "inventory_sync"
+      - "store_analytics"
+      
+  # All Platforms (special aggregation code)
+  all:
+    name: "All Platforms"
+    full_name: "Multi-Platform Aggregate"
+    description: "Aggregated data from all platforms"
+    active: true
+    api:
+      endpoint: null
+      auth_type: null
+      rate_limit: null
+    data:
+      source_type: "aggregated"
+      format: "internal"
+      encoding: "utf-8"
+    features:
+      - "cross_platform_analytics"
+      - "unified_reporting"
+      - "comparative_analysis"
+
+# Platform Selection Configuration
+platform_selection:
+  default: "eby"  # Default platform_id
+  allow_multiple: true
+  ui_display_format: "name"  # Show friendly name in UI
+  ui_value_format: "code"    # Use three-letter code as value
+  
+  # UI Choice Mapping
+  ui_choices:
+    - display: "eBay"
+      value: "eby"
+      icon: "fab fa-ebay"
+    - display: "Cyberbiz"
+      value: "cbz"
+      icon: "fas fa-shopping-cart"
+    - display: "Amazon"
+      value: "amz"
+      icon: "fab fa-amazon"
+      disabled: true  # Show but disable if inactive
+    - display: "Official Website"
+      value: "web"
+      icon: "fas fa-globe"
+    - display: "Retail Stores"
+      value: "ret"
+      icon: "fas fa-store"
+    - display: "All Platforms"
+      value: "all"
+      icon: "fas fa-layer-group"
+
+# Database Configuration with Platform IDs
+database:
+  tables:
+    # Sales tables use platform_ids
+    sales:
+      primary_key: "transaction_id"
+      platform_column: "platform_id"  # VARCHAR(3)
+      platform_constraint: "CHECK (platform_id IN ('eby','cbz','amz','web','ret','all'))"
+      
+    customers:
+      primary_key: "customer_id"
+      platform_column: "platform_id"
+      composite_key: ["customer_id", "platform_id"]
+      
+    products:
+      primary_key: "product_id"
+      platform_column: "platform_id"
+      composite_key: ["product_id", "platform_id"]
+
+# Data Processing Rules by Platform
+processing:
+  # eBay specific processing
+  eby:
+    date_format: "YYYY-MM-DD HH:MM:SS"
+    currency: "USD"
+    tax_included: false
+    
+  # Cyberbiz specific processing  
+  cbz:
+    date_format: "YYYY/MM/DD HH:MM"
+    currency: "TWD"
+    tax_included: true
+    
+  # Amazon specific processing
+  amz:
+    date_format: "ISO8601"
+    currency: "USD"
+    tax_included: false
+    
+  # Default processing for unknown
+  default:
+    date_format: "YYYY-MM-DD"
+    currency: "USD"
+    tax_included: false
+
+# Validation Rules
+validation:
+  platform_id:
+    pattern: "^[a-z]{3}$"  # Exactly 3 lowercase letters
+    required: true
+    error_message: "Platform ID must be exactly 3 lowercase letters"
+    
+  valid_codes:
+    - "eby"
+    - "cbz"
+    - "amz"
+    - "web"
+    - "ret"
+    - "dst"
+    - "soc"
+    - "all"
+    
+# Feature Flags by Platform
+features:
+  dna_analysis:
+    enabled_for: ["eby", "cbz", "all"]
+    
+  competitor_tracking:
+    enabled_for: ["eby", "amz"]
+    
+  inventory_sync:
+    enabled_for: ["cbz", "web", "ret"]
+    
+  ai_insights:
+    enabled_for: ["all"]  # Only for aggregated data
+
+# Logging Configuration
+logging:
+  platform_format: "code"  # Log using three-letter codes
+  include_platform: true
+  log_pattern: "[{timestamp}] [{level}] [{platform_id}] {message}"
+
+# API Rate Limiting by Platform
+rate_limiting:
+  eby:
+    requests_per_hour: 5000
+    burst_limit: 100
+    
+  cbz:
+    requests_per_hour: 10000
+    burst_limit: 200
+    
+  amz:
+    requests_per_hour: 3600
+    burst_limit: 60
+
+# Notes
+notes:
+  - "All platform references use three-letter codes per MP092"
+  - "Numeric platform IDs are completely eliminated from the system"
+  - "Platform IDs are consistent across database, config, and UI"
+  - "The 'all' code represents multi-platform aggregations"
+  - "New platforms should follow the three-letter code standard"

@@ -1,0 +1,192 @@
+---
+title: "UI_R011: bs4Dash Structure Adherence Rule"
+subtitle: "When using the bs4Dash package in Shiny applications, adhere strictly to its intended structural patterns and component hierarchy. Never attempt to override the core structural components with custom CSS or JavaScript"
+chapter: "CH04"
+category: "rule"
+number: "UI_R011"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article: 
+  number: 11
+  title: "bs4Dash Structure Adherence Rule"
+implements:
+  - "MP099: UI Separation Meta Principle"
+  - "P062: Separation of Concerns"
+  - "P072: UI Package Consistency Principle"
+related_to:
+  - "R009: UI-Server-Defaults Triple Rule"
+  - "R011: Hybrid Sidebar Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 11: bs4Dash Structure Adherence Rule {#overview}
+
+**UI Components Law Article 11 (bs4Dash Structure Adherence Rule)**
+
+This rule establishes structural standards when using the bs4Dash package in Shiny applications.
+
+:::{.callout-important}
+## Core Rule
+When using the bs4Dash package in Shiny applications, adhere strictly to its intended structural patterns and component hierarchy. Never attempt to override the core structural components with custom CSS or JavaScript.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Compatibility {#compatibility}
+
+bs4Dash is built on AdminLTE and Bootstrap 4, which have specific structural dependencies. Adhering to these structures ensures compatibility across components.
+
+## Subsection 2: Maintainability {#maintainability}
+
+Following bs4Dash's conventions and structure ensures that code remains maintainable as the package evolves.
+
+## Subsection 3: Consistency {#consistency}
+
+By using standard bs4Dash patterns, the application maintains a consistent look and feel with other AdminLTE/bs4Dash applications.
+
+## Subsection 4: Stability {#stability}
+
+The structure of bs4Dash components is tested and optimized for stability. Custom modifications can break this stability.
+
+## Subsection 5: Performance {#performance}
+
+bs4Dash's structure is optimized for performance in Shiny applications, particularly for layout rendering and reactivity.
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Use Standard Layout Components {#standard-layout-components}
+
+- Always use `dashboardPage` as the top-level container
+- Always use `dashboardHeader`, `dashboardSidebar`, and `dashboardBody` as direct children
+- Never attempt to relocate or restructure these core components
+
+## Subsection 2: Follow Component Conventions {#follow-component-conventions}
+
+- Use bs4Dash components exactly as documented in their API
+- Adhere to the proper nesting hierarchy of components
+- Use the expected parameters and child components for each bs4Dash element
+
+## Subsection 3: Styling Approach {#styling-approach}
+
+- Use bs4Dash's built-in parameters for styling (status, color, etc.)
+- Add classes to existing components rather than changing their structure
+- Use bs4Dash themes and skins rather than custom CSS overrides when possible
+
+## Subsection 4: Avoid Structural Modification {#avoid-structural-modification}
+
+- Never use CSS to hide, reposition, or fundamentally alter bs4Dash structural components
+- Avoid JavaScript that changes the DOM structure of bs4Dash components
+- Do not try to convert or transform one bs4Dash component type into another
+
+## Subsection 5: Proper Navbars and Sidebars {#proper-navbars-sidebars}
+
+- Use `tabItems` and `tabItem` for content organization
+- Use `sidebarMenu` and `menuItem` for sidebar navigation
+- Use `dropdownMenu` and its child components for header notifications
+
+# Section 3: Examples {#examples}
+
+## Subsection 1: Good Implementation (Following the Rule) {#good-implementation}
+
+```r
+# Proper bs4Dash structure
+ui <- bs4Dash::dashboardPage(
+  header = bs4Dash::dashboardHeader(
+    title = "My Dashboard",
+    # Using proper header content
+    rightUi = bs4Dash::dropdownMenu(
+      type = "notifications",
+      bs4Dash::notificationItem(
+        text = "System update completed",
+        icon = icon("info")
+      )
+    )
+  ),
+  sidebar = bs4Dash::dashboardSidebar(
+    # Using proper sidebar content
+    bs4Dash::sidebarMenu(
+      bs4Dash::menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+      bs4Dash::menuItem("Reports", tabName = "reports", icon = icon("file"))
+    )
+  ),
+  body = bs4Dash::dashboardBody(
+    # Using proper body content
+    bs4Dash::tabItems(
+      bs4Dash::tabItem(tabName = "dashboard", 
+        bs4Dash::box(
+          title = "Summary", 
+          plotOutput("summaryPlot")
+        )
+      ),
+      bs4Dash::tabItem(tabName = "reports", 
+        bs4Dash::box(
+          title = "Reports",
+          tableOutput("reportsTable")
+        )
+      )
+    )
+  )
+)
+```
+
+## Subsection 2: Poor Implementation (Violating the Rule) {#poor-implementation}
+
+```r
+# Violating bs4Dash structure
+ui <- bs4Dash::dashboardPage(
+  # Improper structure - custom elements for core components
+  header = div(class = "custom-header", 
+    h2("Dashboard Title"), 
+    div(class = "nav-buttons", actionButton("tab1", "Tab 1"), actionButton("tab2", "Tab 2"))
+  ),
+  
+  # Using CSS to modify core structure
+  sidebar = tags$head(tags$style(
+    ".main-sidebar { width: 300px !important; }"
+  )),
+  
+  # Improper content organization
+  body = fluidPage(
+    div(id = "my-custom-tabs",
+      div(id = "tab1-content", "Tab 1 content"),
+      div(id = "tab2-content", style = "display: none;", "Tab 2 content")
+    ),
+    
+    # JavaScript to handle custom navigation
+    tags$script("
+      $('#tab1').click(function() {
+        $('#tab1-content').show();
+        $('#tab2-content').hide();
+      });
+      $('#tab2').click(function() {
+        $('#tab2-content').show();
+        $('#tab1-content').hide();
+      });
+    ")
+  )
+)
+```
+
+# Section 4: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Ensure Application Stability**: Core structure remains intact
+2. **Simplify Maintenance**: Code follows known patterns
+3. **Guarantee Compatibility**: Compatible with bs4Dash updates
+4. **Improve User Experience**: Consistent interface behavior
+5. **Reduce Errors**: Avoid structural conflicts and rendering issues
+
+---
+
+*Based on: UI Components Law Article 11*  
+*Related to: [R009 UI-Server-Defaults Triple](./UI_R001_ui_server_defaults_ntuple.qmd), [P072 UI Package Consistency Principle](../principles/UI_P003_package_consistency.qmd)*

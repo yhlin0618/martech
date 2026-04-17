@@ -1,0 +1,139 @@
+---
+title: "IC_R007: GitHub Issue Attachment Workflow"
+subtitle: "Standard procedure for uploading and referencing images in GitHub Issues"
+chapter: "CH06"
+category: "rule"
+number: "IC_R007"
+date-created: "2026-02-11"
+date-modified: "2026-02-11"
+author: "Claude"
+type: "rule"
+law: "Integration & Collaboration Law Implementation Rules"
+article-number: "Article 7"
+implements:
+  - "CH00.MP029: No Fake Information"
+related_to:
+  - "IC_R001: Global Scripts Synchronization"
+  - "IC_R006: Subrepo Completeness Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Integration & Collaboration Law Implementation Rules Article 7 (GitHub Issue Attachment Workflow)**
+
+This article establishes the standard procedure for uploading images and files to GitHub Issues in private repositories. Since private repos cannot use public image URLs, a dedicated GitHub Release is used as an attachment CDN.
+
+:::{.callout-important}
+## Core Rule
+All issue attachments (screenshots, diagrams, documents) MUST be uploaded to the `attachments` Release in the target repository and referenced via the release download URL.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: The Private Repo Problem {#private-repo-problem}
+
+GitHub does not provide a public API for uploading images to issues. The web UI uses an internal `user-attachments/assets/` endpoint that is not accessible via `gh` CLI or the REST API.
+
+For **private repositories**, raw file URLs (`raw.githubusercontent.com`) require authentication tokens that expire, making them unreliable for long-term references.
+
+## Subsection 2: Release Assets as CDN {#release-cdn}
+
+GitHub Release assets in private repos are accessible to anyone with repository read access. Since issue viewers already have repo access, release asset URLs work reliably within the same repository's issues, PRs, and discussions.
+
+# Section 2: Setup {#setup}
+
+## Subsection 1: One-Time Setup {#one-time-setup}
+
+Create the `attachments` release once per repository:
+
+```bash
+gh release create attachments \
+  --repo {owner}/{repo} \
+  --title "Issue Attachments" \
+  --notes "Images and file attachments for GitHub Issues."
+```
+
+This creates a permanent release tag that serves as the attachment store.
+
+# Section 3: Upload Workflow {#upload-workflow}
+
+## Subsection 1: Upload a File {#upload-file}
+
+```bash
+gh release upload attachments <file> \
+  --repo {owner}/{repo} \
+  --clobber
+```
+
+The `--clobber` flag overwrites existing files with the same name.
+
+## Subsection 2: Naming Convention {#naming-convention}
+
+Attachment filenames MUST follow this pattern:
+
+```
+issue_{number}_{description}.{ext}
+```
+
+Examples:
+
+- `issue_147_qef_dashboard_suggestions.png`
+- `issue_016_vital_signs_zero_data.png`
+- `issue_098_map_analysis_screenshot.png`
+
+## Subsection 3: Reference in Issues {#reference-in-issues}
+
+After uploading, reference the image in an issue body or comment using Markdown:
+
+```markdown
+![Description](https://github.com/{owner}/{repo}/releases/download/attachments/{filename})
+```
+
+Example:
+
+```markdown
+![QEF Dashboard Screenshot](https://github.com/kiki830621/ai_martech_global_scripts/releases/download/attachments/issue_147_qef_dashboard_suggestions.png)
+```
+
+# Section 4: Complete Example {#complete-example}
+
+Full workflow for creating an issue with an image attachment:
+
+```bash
+# 1. Upload the image
+gh release upload attachments screenshot.png \
+  --repo kiki830621/ai_martech_global_scripts --clobber
+
+# 2. Create the issue with the image reference
+IMG_URL="https://github.com/kiki830621/ai_martech_global_scripts/releases/download/attachments/screenshot.png"
+
+gh issue create \
+  --repo kiki830621/ai_martech_global_scripts \
+  --title "Bug: Feature X not working" \
+  --label "bug" \
+  --body "$(cat <<EOF
+## Description
+Feature X shows incorrect data.
+
+## Screenshot
+![Screenshot]($IMG_URL)
+EOF
+)"
+```
+
+# Section 5: Constraints {#constraints}
+
+| Constraint | Detail |
+|------------|--------|
+| **Repo visibility** | URLs only work for users with repo read access |
+| **File size** | GitHub Release assets: max 2 GB per file |
+| **Overwrites** | `--clobber` replaces same-name files without warning |
+| **No folders** | Release assets are flat (no directory structure) |
+| **Naming collisions** | Use `issue_{number}_` prefix to avoid name conflicts |

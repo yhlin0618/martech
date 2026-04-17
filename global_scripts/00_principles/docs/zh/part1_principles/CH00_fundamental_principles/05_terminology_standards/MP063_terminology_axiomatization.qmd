@@ -1,0 +1,245 @@
+---
+title: "MP008: Terminology Axiomatization"
+subtitle: "術語公理化原則"
+chapter: "CH00"
+category: "MP"
+number: "008"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP000: Axiomatization System"
+  - "MP001: Primitive Terms and Definitions"
+extends:
+  - "MP006: Data Source Hierarchy"
+influences:
+  - "R004: YAML Configuration"
+  - "R009: UI-Server-Defaults Triple Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 核心概念 {#core-concept}
+
+精確的術語是系統設計的基礎。通過正式定義關鍵術語及其關係，我們創建了一個公理化系統，所有參與者共享對核心概念的共同理解，減少歧義和實作錯誤。
+
+:::{.callout-important}
+## 術語精確性
+本原則為整個精準行銷應用程式建立關鍵術語的明確定義，確保一致的理解和實作。
+:::
+
+# 術語層級 {#terminology-hierarchy}
+
+## 資料來源術語 {#data-origin-terms}
+
+:::{.panel-tabset}
+
+### Platform（平台）
+原始資料收集的來源系統或通道（例如「Amazon」、「Official Website」）。平台定義在 `app_data/scd_type1/source.xlsx` 中，並通過品牌特定參數中的 `source_dictionary` 存取。
+
+:::{.callout-note}
+## 歷史注意
+在程式碼庫中歷史上稱為「source」
+:::
+
+### Raw Data（原始資料）
+直接從平台收集的未處理資料，以最少修改的原始形式儲存在 `raw_data/` 目錄中。
+
+### Raw Data Folder（原始資料夾）
+包含按平台組織的原始資料的目錄（`../rawdata_WISER`）。
+
+:::
+
+## 資料處理術語 {#data-processing-terms}
+
+| 術語 | 定義 | 儲存位置 |
+|------|------|----------|
+| **Processed Data** | 經過轉換、清理和整合的資料 | `processed_data/` |
+| **Cleansed Data** | 經過資料清理操作以移除錯誤、不一致和無效值的處理資料子集 | `cleansed_data/` |
+| **Intermediate Data** | 介於原始和最終處理形式之間的過渡狀態資料 | `intermediate_data/` |
+
+## 資料存取術語 {#data-access-terms}
+
+:::{.callout-note}
+## 關鍵術語
+- **Data Source（資料來源）**：應用程式組件使用的特定資料集的命名引用，代表可存取的資料而不考慮實體儲存位置
+- **Data Table（資料表）**：可作為單元查詢、過濾和操作的結構化記錄集合
+- **View（檢視）**：由查詢定義的虛擬資料表，呈現來自一個或多個基礎表或資料來源的資料
+:::
+
+## 組件資料術語 {#component-data-terms}
+
+:::{.panel-tabset}
+
+### Parameters（參數）
+控制組件行為的配置值，與資料來源不同。參數不包含記錄，而是設定如 `show_kpi: true`。
+
+### Role（角色）
+在多來源配置中，組件內資料來源的功能目的（例如「primary」、「history」、「reference」）。
+
+### Data Role（資料角色）
+資料來源和組件之間的特定關係（例如，「primary」資料角色可能代表組件的主要資料集）。
+
+:::
+
+## 導航與組件組織術語 {#navigation-terms}
+
+```{mermaid}
+%%| fig-cap: "導航層級結構"
+%%| fig-align: "center"
+
+graph TD
+    TL[Top-Level Navigation<br/>頂層導航]
+    SL[Second-Level Navigation<br/>第二層導航]
+    C[Component<br/>組件]
+    U[Union<br/>聯合]
+    
+    TL --> SL
+    SL --> C
+    C --> U
+    
+    style TL fill:#e6ffe6
+    style SL fill:#e6f3ff
+    style C fill:#fff0e6
+    style U fill:#ffe6f3
+```
+
+- **Top-Level Navigation**：應用程式的主要導航結構，通常實作為主標題中的標籤或按鈕
+- **Second-Level Navigation**：頂層部分內的導航，通常實作為顯示區域頂部的導航列
+- **Component**：具有 UI（過濾器和顯示）、伺服器邏輯和預設值的自包含模組
+- **Union**：通過組合多個組件創建的複合組件
+
+# 術語關係公理 {#term-axioms}
+
+:::{.callout-important}
+## 基本關係
+
+1. **平台-資料關係**：平台生成原始資料，原始資料轉換為處理資料
+2. **資料來源-組件關係**：組件消費資料來源，資料來源代表處理資料的可存取版本
+3. **角色-組件關係**：當組件使用多個資料來源時，每個來源都有定義其在組件內目的的特定角色
+4. **參數-組件關係**：參數配置組件行為但不提供記錄級資料
+5. **導航-目錄關係**：應用程式的導航層級對應其目錄結構
+6. **組件-聯合關係**：多個組件可通過聯合組合形成複合組件
+:::
+
+# YAML 配置中的實作 {#yaml-implementation}
+
+YAML 配置原則建立了實作這些術語關係的模式：
+
+```yaml
+# 模式 1：簡單字串格式 - 直接資料來源引用
+component_name: data_source_name
+
+# 模式 3：具有角色的物件格式 - 具有特定角色的多個資料來源
+component_name:
+  role1: data_source1
+  role2: data_source2
+
+# 模式 4a：具有參數的單一資料來源
+component_name:
+  data_source: data_source_name  # 提供記錄的資料來源
+  parameters:                    # 配置值（非記錄資料）
+    param1: value1
+```
+
+# 平台與資料來源的區別 {#platform-vs-datasource}
+
+:::{.callout-warning}
+## 關鍵區別
+
+**平台**與**資料來源**之間存在關鍵區別：
+
+- **平台**：原始收集資料的來源系統（例如 Amazon、Official Website）
+- **資料來源**：應用程式組件使用的處理過的、可存取的資料，通常在 ETL 流程之後
+
+### 範例
+- **平台**可能是「Amazon」（儲存在 `source.xlsx`，歷史上稱為「source」）
+- **資料來源**可能是「sales_by_customer_dta」（包含來自一個或多個平台資料的處理表或檔案）
+:::
+
+# 使用範例 {#usage-examples}
+
+```r
+# 存取平台資訊（原始資料來源）
+# 注意：檔案歷史上稱為 "source.xlsx" 但包含平台資訊
+platform_info <- read_excel(file.path("app_data", "scd_type1", "source.xlsx"))
+
+# 將平台映射到可讀名稱
+# 注意：變數歷史上命名為 "source" 但代表平台
+platform_dictionary <- as.list(setNames(
+  source_dtah$source, 
+  source_dtah[[paste0("source_", language)]]
+))
+
+# 存取資料來源（組件使用的處理資料）
+data <- read_from_app_data("sales_by_customer_dta.rds")
+
+# 引用資料來源的 YAML 配置
+# components:
+#   micro: sales_by_customer_dta  # 'sales_by_customer_dta' 是資料來源，不是平台
+```
+
+# 最佳實務 {#best-practices}
+
+:::{.callout-tip}
+## 術語使用指南
+
+1. **明確性**：始終使用精確的術語來指稱概念
+2. **一致命名**：使用一致的命名模式
+   - 平台名稱：小寫無空格（例如 `amazon`、`officialwebsite`）
+   - 資料來源名稱：snake_case 並描述內容（例如 `sales_by_customer_dta`）
+   - 組件名稱：camelCase 並描述功能（例如 `microCustomer`、`macroOverview`）
+3. **基於導航的組織**：根據導航層級組織組件
+4. **文檔**：引入新術語時，記錄其與現有術語的關係
+5. **交叉引用**：記錄資料來源時，引用其資料來自哪個平台
+6. **避免重載**：不要在不同上下文中使用相同術語描述不同概念
+7. **傳統意識**：注意歷史程式碼使用「source」指稱我們現在稱為「platform」的內容
+8. **組件結構一致性**：所有組件應遵循 UI-Server-Defaults 三重規則
+:::
+
+# 與其他原則的關係 {#relationships}
+
+此原則形式化了跨其他原則使用的術語：
+
+```{mermaid}
+%%| fig-cap: "術語公理化的關係網絡"
+%%| fig-align: "center"
+
+graph LR
+    MP008[MP008: 術語公理化]
+    MP006[MP006: 資料來源層級]
+    R004[R004: YAML 配置]
+    P004[P004: 應用建構]
+    R009[R009: UI-Server-Defaults]
+    MP056[MP056: 連接組件]
+    
+    MP008 --> MP006
+    MP008 --> R004
+    MP008 --> P004
+    MP008 --> R009
+    MP008 --> MP056
+    
+    style MP008 fill:#ffd700,stroke:#333,stroke-width:3px
+```
+
+1. **資料來源層級原則** (MP006)：澄清不同類型資料來源在系統層級中的位置
+2. **YAML 配置原則** (R004)：建立在配置中指定資料來源的模式
+3. **應用建構原則** (P004)：為應用程式組件使用標準化術語
+4. **UI-Server-Defaults 三重規則** (R009)：定義組件的標準結構
+5. **連接組件原則** (MP056)：建立組件應如何結構化以啟用連接
+6. **聯合模式** (Union.md)：定義如何在保持結構的同時組合組件
+
+# 結論 {#conclusion}
+
+通過公理化我們的術語，我們創建了對關鍵概念的共享理解，減少歧義，改善溝通，並確保整個系統的一致實作。這個基礎使得關於系統設計的精確討論和新團隊成員的快速入職成為可能。
+
+:::{.callout-important}
+## 關鍵要點
+精確的術語是有效系統設計和實作的基石。通過建立和維護清晰的定義，我們確保所有利益相關者能夠有效溝通並一致地建構系統。
+:::

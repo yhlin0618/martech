@@ -1,0 +1,397 @@
+---
+title: "WA01: Web Architecture Paradigms - Blocking vs Async"
+subtitle: "Understanding the design trade-offs between R/Shiny blocking model and Node.js async architecture"
+chapter: "CH22"
+category: "web_architecture"
+number: "WA01"
+date-created: "2025-01-09"
+date-modified: "2025-01-09"
+author: "Claude"
+type: "domain_knowledge"
+law: "Web Architecture"
+article-number: "Knowledge Article 1"
+related_to:
+  - "TD_P004: No Parallel in Shiny Cloud"
+  - "TD_P001: Deployment Patterns"
+  - "MP099: Realtime Progress Reporting"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Knowledge Article 1: Web Architecture Paradigms {#overview}
+
+## Section 1: Introduction {#introduction}
+
+This article explores the fundamental differences between traditional web architectures (Node.js, Python async) and R/Shiny's blocking model. Understanding these paradigms is essential for making informed decisions about technology selection and deployment strategies.
+
+:::{.callout-note}
+## Key Insight
+R/Shiny's blocking architecture is a **deliberate design choice**, not a limitation. It optimizes for code simplicity and data correctness at the cost of concurrent request handling.
+:::
+
+# Section 2: Architecture Comparison {#comparison}
+
+## Subsection 1: Traditional Web (Node.js) {#nodejs}
+
+Node.js uses an **asynchronous event loop** model:
+
+```
+Traditional Node.js Server
+┌─────────────────────────────────────────────────┐
+│  1 Server = 10,000+ concurrent connections      │
+│  (Non-blocking I/O via event loop)              │
+└─────────────────────────────────────────────────┘
+```
+
+**Characteristics**:
+
+- **Non-blocking I/O**: Network requests, file reads, and database queries don't block execution
+- **Event-driven**: Callbacks/Promises handle completion
+- **Single-threaded event loop**: But doesn't wait for I/O operations
+- **High concurrency**: Can handle thousands of simultaneous connections
+
+### Example: Non-blocking Code
+
+```javascript
+// Node.js - Execution order != Code order
+
+console.log("1. Start");
+
+fetch("https://api.example.com/data")
+  .then(response => console.log("2. Got data"));
+
+console.log("3. End");
+
+// Actual output:
+// 1. Start
+// 3. End        <- Prints BEFORE data arrives!
+// 2. Got data   <- Prints last
+```
+
+## Subsection 2: R/Shiny {#shiny}
+
+R/Shiny uses a **blocking/sequential** model:
+
+```
+R/Shiny Worker Model
+┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+│ Worker 1 │ │ Worker 2 │ │ Worker 3 │ │ Worker 4 │
+│ = 1 user │ │ = 1 user │ │ = 1 user │ │ = 1 user │
+│(blocking)│ │(blocking)│ │(blocking)│ │(blocking)│
+└──────────┘ └──────────┘ └──────────┘ └──────────┘
+```
+
+**Characteristics**:
+
+- **Blocking I/O**: Each operation completes before the next begins
+- **Sequential execution**: Code order = execution order (always!)
+- **Single-threaded per worker**: Each R process handles one user at a time
+- **Simple mental model**: What you write is what you get
+
+### Example: Blocking Code
+
+```r
+# R/Shiny - Code order = Execution order (ALWAYS)
+
+print("1. Start")
+data <- httr::GET("https://api.example.com/data")
+print("2. Got data")
+print("3. End")
+
+# Output is ALWAYS:
+# 1. Start
+# 2. Got data
+# 3. End
+```
+
+## Subsection 3: Side-by-Side Comparison {#side-by-side}
+
+| Aspect | Node.js (Async) | R/Shiny (Blocking) |
+|--------|-----------------|-------------------|
+| **Execution model** | Event loop, non-blocking | Sequential, blocking |
+| **Concurrency** | 10,000+ connections/server | 1 user/worker |
+| **Code complexity** | Higher (async/await, callbacks) | Lower (linear flow) |
+| **Race conditions** | Possible, must handle explicitly | Impossible by design |
+| **Target users** | Web developers | Statisticians, data scientists |
+| **Primary use case** | High-traffic APIs | Data analysis dashboards |
+
+# Section 3: Why R Chose Blocking {#design-rationale}
+
+## Subsection 1: R's Original Purpose {#r-purpose}
+
+R was designed for **interactive statistical analysis**:
+
+```
+R's Intended Workflow:
+┌─────────────────────────────────────────────────┐
+│  Statistician sits at computer                  │
+│  ↓                                              │
+│  Runs a piece of code                           │
+│  ↓                                              │
+│  【Waits for result】 ← Blocking is EXPECTED!   │
+│  ↓                                              │
+│  Examines output, thinks                        │
+│  ↓                                              │
+│  Runs next piece of code                        │
+└─────────────────────────────────────────────────┘
+```
+
+In this context, blocking is not a problem - it's the **expected behavior**.
+
+## Subsection 2: Simplicity as a Feature {#simplicity}
+
+Blocking architecture provides significant benefits:
+
+```r
+# R's elegant simplicity: code = execution order
+data <- read_csv("sales.csv")
+cleaned <- data %>% filter(!is.na(amount))
+model <- lm(amount ~ category, data = cleaned)
+summary(model)
+
+# No need for:
+# - async/await
+# - Promise chains
+# - Callback handling
+# - Race condition prevention
+```
+
+**For statisticians, this is invaluable**:
+
+- No need to learn web development concepts
+- Code logic is "what you see is what you get"
+- Debugging is straightforward (execution order = code order)
+
+## Subsection 3: Analogies in Other Tools {#analogies}
+
+R/Shiny isn't alone in choosing blocking for simplicity:
+
+| Tool | Also Blocking | Nobody calls it "bad" because... |
+|------|---------------|----------------------------------|
+| **Excel** | Change one cell, whole sheet recalculates | Target users aren't web developers |
+| **Jupyter Notebook** | One cell runs at a time | Designed for interactive analysis |
+| **MATLAB** | Sequential execution | Designed for numerical computing |
+| **R/Shiny** | Sequential per worker | Designed to let R users make web apps |
+
+# Section 4: The Hidden Cost of Async {#async-costs}
+
+## Subsection 1: Race Conditions {#race-conditions}
+
+Async architectures introduce **race condition risks**:
+
+```javascript
+// Node.js - Classic race condition bug
+let userBalance = 1000;
+
+async function withdraw(amount) {
+  if (userBalance >= amount) {
+    // ⚠️ DANGER: Time gap here!
+    await updateDatabase(amount);
+    userBalance -= amount;
+  }
+}
+
+// Two requests arrive "simultaneously"
+withdraw(800);  // Check: 1000 >= 800 ✓
+withdraw(800);  // Check: 1000 >= 800 ✓ (hasn't deducted yet!)
+
+// Result: Deducted 1600 from balance of 1000
+// 💸 Money vanishes into thin air
+```
+
+```r
+# R/Shiny - This CAN'T happen
+# Because of blocking, the first withdraw() completes
+# before the second one even starts checking
+```
+
+## Subsection 2: Execution Order Surprises {#order-surprises}
+
+Async code can produce unexpected execution orders:
+
+```javascript
+// What developers expect vs what happens
+
+// Expected order: 1, 2, 3
+console.log("1");
+await someAsyncOperation();
+console.log("2");
+console.log("3");
+
+// But with multiple async operations...
+async function A() { await fetch(url1); console.log("A done"); }
+async function B() { await fetch(url2); console.log("B done"); }
+
+A();
+B();
+// Output could be "A done, B done" OR "B done, A done"
+// Depends on which fetch completes first!
+```
+
+## Subsection 3: The SQL Transaction Analogy {#sql-analogy}
+
+SQL databases face the same concurrency problem and solve it with **transactions**:
+
+```sql
+-- Without transaction (dangerous)
+UPDATE accounts SET balance = balance - 800 WHERE user_id = 1;
+-- ⚠️ System crash here = money lost!
+UPDATE accounts SET balance = balance + 800 WHERE user_id = 2;
+
+-- With transaction (safe)
+BEGIN TRANSACTION;
+  UPDATE accounts SET balance = balance - 800 WHERE user_id = 1;
+  UPDATE accounts SET balance = balance + 800 WHERE user_id = 2;
+COMMIT;
+-- All or nothing - atomicity guaranteed
+```
+
+**R/Shiny's blocking model = implicit application-level transaction**
+
+Each user's operations are naturally "atomic" - they can't be interleaved with other users' operations within the same worker.
+
+# Section 5: Shiny Worker Architecture {#worker-architecture}
+
+## Subsection 1: Understanding the Model {#worker-model}
+
+```
+Posit Connect Cloud
+├── N CPUs (physical resources)
+└── M Workers (each is an R process)
+    └── Each worker is SINGLE-THREADED
+        └── Max connections = users per worker
+```
+
+**Key insight**: CPUs determine how many workers can run in parallel, but each worker is still single-threaded internally.
+
+```
+Worker 1 (Max connections = 2)
+├── User A: Triggers scoring → 50 reviews × 3-5 sec/call = 2.5-4 min BLOCKING
+└── User B: In same worker → Sees blank screen (waiting for User A)
+
+Worker 2 (on another CPU)
+├── User C: Can score simultaneously (unaffected by User A)
+└── User D: Waiting for User C
+```
+
+## Subsection 2: Runtime Settings Best Practices {#runtime-settings}
+
+| Setting | Recommended Value | Rationale |
+|---------|------------------|-----------|
+| Max workers | = CPU count | Avoid resource contention |
+| Max connections | **1** | Each user gets dedicated worker |
+| Worker load factor | 50% | Aggressively spawn new workers |
+
+**The "Max connections = 1" strategy**:
+
+- Forces each user to have their own worker
+- Eliminates within-worker blocking
+- Users only compete for available workers, not for execution time
+
+### Capacity Formula
+
+```
+Max concurrent non-blocking users = workers × instances
+
+Example:
+4 workers × 5 instances = 20 users can use the app simultaneously
+without blocking each other
+```
+
+## Subsection 3: Multi-Instance Architecture {#multi-instance}
+
+```
+Portal (round-robin load balancing)
+         │
+         ├──→ Instance 00 (4 workers = 4 users)
+         ├──→ Instance 01 (4 workers = 4 users)
+         ├──→ Instance 02 (4 workers = 4 users)
+         ├──→ Instance 03 (4 workers = 4 users)
+         └──→ Instance 04 (4 workers = 4 users)
+
+Total capacity: 5 instances × 4 workers = 20 concurrent users
+```
+
+**Best practices**:
+
+- Use a portal/gateway for load balancing
+- Deploy multiple instances
+- Use counter-based distribution for even load
+
+# Section 6: Technology Selection Guide {#tech-selection}
+
+## Subsection 1: When to Use What {#when-to-use}
+
+| Use Case | Recommended Technology | Rationale |
+|----------|----------------------|-----------|
+| High-concurrency API | Node.js / Go / Rust | Async I/O, massive scalability |
+| Data analysis + Web UI | **R/Shiny** | Simple, correct, fast to develop |
+| ML Pipeline | Python | Complete ecosystem |
+| Financial transactions | Traditional sync systems | Data correctness is paramount |
+
+## Subsection 2: Decision Flowchart {#decision-flow}
+
+```
+Need to build a web application?
+│
+├── Will it serve 1000+ concurrent users?
+│   └── YES → Node.js, Go, or similar async framework
+│
+├── Is the core logic data analysis/statistics?
+│   └── YES → R/Shiny (leverage R ecosystem)
+│
+├── Is data correctness more important than speed?
+│   └── YES → Consider blocking/synchronous architecture
+│
+└── Are your developers statisticians, not web devs?
+    └── YES → R/Shiny (lower learning curve)
+```
+
+## Subsection 3: BrandEdge Case Study {#case-study}
+
+The BrandEdge application demonstrates proper technology selection:
+
+**Why Shiny was the right choice**:
+
+- Core functionality is **data analysis** (sentiment scoring)
+- Users are **marketing analysts**, not developers
+- Correctness of scores matters more than serving millions of users
+- Development speed with R ecosystem (dplyr, ggplot2) was critical
+
+**How to handle the concurrency limitation**:
+
+- Portal with round-robin load balancing
+- 5 instances × 4 workers = 20 concurrent users
+- Max connections = 1 to prevent intra-worker blocking
+- Sequential scoring with `withProgress()` for UX
+
+# Section 7: Conclusion {#conclusion}
+
+## Key Takeaways
+
+1. **Blocking is a feature, not a bug**: R/Shiny's blocking architecture is a deliberate design choice optimizing for simplicity and correctness.
+
+2. **Async comes with hidden costs**: Race conditions, execution order surprises, and increased code complexity are the price of high concurrency.
+
+3. **Scale horizontally, not vertically**: For Shiny apps, add more workers/instances rather than trying to make a single worker handle more users.
+
+4. **Match technology to use case**: Choose R/Shiny for data analysis applications; choose Node.js/Go for high-traffic APIs.
+
+5. **Max connections = 1 is your friend**: In cloud deployments, dedicate one worker per user to eliminate blocking issues entirely.
+
+:::{.callout-important}
+## Remember
+There is no "best" architecture - only the right architecture for your specific use case. R/Shiny excels at turning statistical analysis into interactive web applications for small-to-medium user bases. Don't fight its architecture; embrace it and scale appropriately.
+:::
+
+---
+
+*This knowledge article provides conceptual understanding of web architecture paradigms. For specific implementation rules, see TD_P004 (No Parallel in Shiny Cloud) and TD_P001 (Deployment Patterns).*
+
+*Date: 2025-01-09*
+*Origin: BrandEdge deployment analysis and architecture discussion*

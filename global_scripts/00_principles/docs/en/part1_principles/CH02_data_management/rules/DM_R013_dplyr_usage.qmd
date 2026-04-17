@@ -1,0 +1,316 @@
+---
+title: "DM_R013: dplyr Usage Rules"
+subtitle: "All data manipulation in precision marketing applications must follow consistent dplyr usage patterns that prioritize clarity, maintainability, and performance while avoiding common pitfalls and warning messages"
+chapter: "CH02"
+category: "rule"
+number: "DM_R013"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 13
+  title: "dplyr Usage Rules"
+related_to:
+  - "MP30: Vectorization Principle"
+  - "MP47: Functional Programming"
+  - "MP60: Parsimony"
+  - "R49: Apply Over Loops"
+  - "R48: Switch Over If-Else"
+  - "P77: Performance Optimization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 13: dplyr Usage Rules {#overview}
+
+**Data Management Law Article 13 (dplyr Usage Rules)**
+
+All data manipulation in precision marketing applications must follow consistent dplyr usage patterns that prioritize clarity, maintainability, and performance while avoiding common pitfalls and warning messages.
+
+:::{.callout-important}
+## Core Requirement
+All data manipulation in precision marketing applications must follow consistent dplyr usage patterns that prioritize clarity, maintainability, and performance while avoiding common pitfalls and warning messages.
+:::
+
+# Section 1: Pattern Description {#pattern-description}
+
+The dplyr Usage Rules standardize how data manipulation is performed throughout the application, ensuring consistency, readability, and optimal performance. These rules establish best practices for using dplyr's grammar of data manipulation and address common issues that can lead to warnings, errors, or inefficient code.
+
+## Subsection 1: Group Management {#group-management}
+
+When using grouped operations, always explicitly manage group status:
+
+```r
+# CORRECT: Explicitly handle grouping
+df %>%
+  group_by(customer_id) %>%
+  summarize(
+    purchase_count = n(),
+    total_spent = sum(amount),
+    .groups = "drop"  # Explicitly drop grouping
+  )
+
+# CORRECT: Maintain grouping when needed for further operations
+df %>%
+  group_by(customer_id, product_category) %>%
+  summarize(
+    purchase_count = n(),
+    .groups = "keep"  # Explicitly keep grouping (maintains customer_id grouping)
+  ) %>%
+  # Continue with grouped operations
+  mutate(category_percentage = purchase_count / sum(purchase_count))
+```
+
+## Subsection 2: Function Namespacing {#function-namespacing}
+
+Always namespace dplyr functions in package code and complex scripts:
+
+```r
+# CORRECT: Explicitly namespace functions
+df %>%
+  dplyr::filter(amount > 100) %>%
+  dplyr::mutate(tax = amount * 0.05) %>%
+  dplyr::select(customer_id, product_id, amount, tax)
+
+# INCORRECT: Implicit function usage (don't do this)
+df %>%
+  filter(amount > 100) %>%
+  mutate(tax = amount * 0.05) %>%
+  select(customer_id, product_id, amount, tax)
+```
+
+## Subsection 3: Handling dplyr-Generated Warnings {#handling-warnings}
+
+When using grouped operations that might trigger warnings, use the appropriate strategies:
+
+```r
+# CORRECT: Using .groups parameter
+result <- df %>%
+  dplyr::group_by(customer_id, date) %>%
+  dplyr::summarize(
+    total = sum(amount),
+    count = dplyr::n(),
+    .groups = "drop"  # Explicitly drops all grouping
+  )
+
+# CORRECT: Using ungroup() when needed
+result <- df %>%
+  dplyr::group_by(customer_id, date) %>%
+  dplyr::summarize(
+    total = sum(amount),
+    count = dplyr::n()
+  ) %>%
+  dplyr::ungroup()  # Explicitly removes all grouping
+```
+
+## Subsection 4: Variable Selection {#variable-selection}
+
+Use consistent patterns for selecting or referring to variables:
+
+```r
+# CORRECT: Using all_of() for external vectors of column names
+selected_cols <- c("customer_id", "product_id", "amount")
+df %>% dplyr::select(dplyr::all_of(selected_cols))
+
+# CORRECT: Using any_of() when some columns might be missing
+optional_cols <- c("discount", "coupon_code", "referrer")
+df %>% dplyr::select(dplyr::any_of(optional_cols))
+
+# CORRECT: Using across() for applying functions to multiple columns
+df %>%
+  dplyr::mutate(dplyr::across(
+    .cols = dplyr::where(is.numeric),
+    .fns = ~ replace(., is.na(.), 0)
+  ))
+```
+
+## Subsection 5: Join Operations {#join-operations}
+
+Use explicit join variants and always specify by:
+
+```r
+# CORRECT: Explicit join type with by parameter
+customers %>%
+  dplyr::left_join(
+    orders,
+    by = "customer_id"
+  )
+
+# CORRECT: Handling differently named join columns
+customers %>%
+  dplyr::left_join(
+    orders,
+    by = c("customer_id" = "buyer_id")
+  )
+```
+
+# Section 2: Implementation {#implementation}
+
+## Subsection 1: Handling Missing Values {#handling-missing-values}
+
+Always be explicit about handling missing values:
+
+```r
+# CORRECT: Explicit NA handling in aggregations
+df %>%
+  dplyr::group_by(customer_id) %>%
+  dplyr::summarize(
+    total_purchases = sum(amount, na.rm = TRUE),
+    avg_value = mean(amount, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## Subsection 2: Function Composition {#function-composition}
+
+Prefer the pipe operator for composing operations:
+
+```r
+# CORRECT: Using pipe for clarity
+df %>%
+  dplyr::filter(!is.na(customer_id)) %>%
+  dplyr::group_by(customer_id) %>%
+  dplyr::summarize(
+    purchase_count = dplyr::n(),
+    total_spent = sum(amount, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(dplyr::desc(total_spent))
+```
+
+## Subsection 3: Ensuring Reproducibility {#ensuring-reproducibility}
+
+Always set random seeds before random operations:
+
+```r
+# CORRECT: Setting seed before sample_n/sample_frac
+set.seed(123)
+df %>% dplyr::sample_n(10)
+```
+
+## Subsection 4: Handling Large Data {#handling-large-data}
+
+Use appropriate strategies for large data:
+
+```r
+# CORRECT: Using slice operations for large data
+df %>% 
+  dplyr::arrange(date) %>%
+  dplyr::slice_tail(n = 1000)  # More efficient than tail()
+```
+
+## Subsection 5: Model Formula Construction with Factors {#model-formula-construction}
+
+When preparing data for modeling, use explicit factor conversion and proper formula construction:
+
+```r
+# PROBLEM: Incorrect factor handling for machine learning models
+train_data <- train_data %>% 
+  mutate(product_id=as.factor(product_id), prev_product_id=as.factor(prev_product_id))
+
+formula_str <- paste("(product_id) ~", 
+                     paste(c("(prev_product_id)", covariate_cols), collapse = " + "))
+# This will fail because product_id and prev_product_id are missing the as.factor() wrapper
+# Additionally, trying to add as.factor() in the formula is redundant if already converted
+
+# CORRECT: Proper factor conversion with namespacing
+train_data <- train_data %>% 
+  dplyr::mutate(
+    product_id = as.factor(product_id),
+    prev_product_id = as.factor(prev_product_id)
+  )
+
+# CORRECT: Formula references the column names directly (already factors)
+formula_str <- paste("product_id ~", 
+                     paste(c("prev_product_id", covariate_cols), collapse = " + "))
+
+model <- randomForest::randomForest(
+  formula = as.formula(formula_str),
+  data = train_data,
+  ntree = 100
+)
+```
+
+# Section 3: Common Warnings and Solutions {#common-warnings}
+
+## Subsection 1: "Adding missing grouping variables" {#adding-missing-grouping}
+
+This warning occurs when a summarize operation drops some grouping variables:
+
+```r
+# Problem: Creates warning about missing grouping variables
+df %>%
+  dplyr::group_by(customer_id, product_id) %>%
+  dplyr::summarize(total = sum(amount))  # Warning occurs here
+
+# Solution 1: Use .groups parameter
+df %>%
+  dplyr::group_by(customer_id, product_id) %>%
+  dplyr::summarize(
+    total = sum(amount),
+    .groups = "drop"  # Explicitly drop all grouping
+  )
+```
+
+## Subsection 2: "Unknown or uninitialised column" {#unknown-column}
+
+This error occurs when referring to columns that don't exist or haven't been created yet:
+
+```r
+# Solution: Use any_of() to safely select columns that might not exist
+df %>%
+  dplyr::mutate(
+    tax = amount * 0.05,
+    total = amount + tax
+  ) %>%
+  dplyr::select(dplyr::any_of(c("sales_id", "total")))
+```
+
+## Subsection 3: "Joining with `by = NULL`" {#joining-by-null}
+
+This warning occurs when performing a join without specifying the join columns:
+
+```r
+# Problem:
+df1 %>% dplyr::left_join(df2)  # Warning: Joining with `by = NULL`
+
+# Solution: Always specify join columns explicitly
+df1 %>% dplyr::left_join(df2, by = "customer_id")
+```
+
+# Section 4: Benefits {#benefits}
+
+1. **Consistency**: Uniform data manipulation patterns across the application
+2. **Readability**: Clear, predictable code that is easier to maintain
+3. **Performance**: Optimized data operations that avoid common inefficiencies
+4. **Reproducibility**: Deterministic results through consistent approaches
+5. **Maintainability**: Easier debugging and fewer warning messages
+6. **Explicit Intent**: Code that clearly communicates the developer's intentions
+
+# Section 5: Related Principles {#related-principles}
+
+This rule implements:
+- MP30 (Vectorization Principle): By promoting vectorized operations over loops
+- MP47 (Functional Programming): By using functional data transformation approaches
+- MP60 (Parsimony): By creating concise, readable data manipulation code
+
+It relates to:
+- R49 (Apply Over Loops): By providing dplyr alternatives to imperative loops
+- R48 (Switch Over If-Else): By promoting declarative patterns over imperative ones
+- P77 (Performance Optimization): By establishing efficient data manipulation patterns
+
+# Section 6: Conclusion {#conclusion}
+
+The dplyr Usage Rules standardize data manipulation throughout the application, ensuring consistent, readable, and performant code. By following these rules, developers can avoid common pitfalls, minimize warnings, and create code that is easier to maintain and extend. These rules build on the functional programming paradigm and vectorization principles to establish a declarative, pipeline-oriented approach to data transformation.
+
+---
+
+*Based on: Data Management Law Article 13*  
+*Related to: [MP30 Vectorization Principle](../../CH00_fundamental_principles/meta_principles/MP030_vectorization.qmd), [MP47 Functional Programming](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd)*

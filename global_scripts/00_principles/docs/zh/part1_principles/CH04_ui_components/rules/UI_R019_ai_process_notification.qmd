@@ -1,0 +1,1232 @@
+---
+title: "UI_R019: AI 處理過程通知規則"
+subtitle: "所有預期執行時間超過 2 秒的 AI/OpenAI API 處理過程必須提供即時的階段式通知，以避免使用者焦慮並傳達系統狀態"
+chapter: "CH04"
+category: "rule"
+number: "UI_R019"
+date-created: "2025-11-02"
+date-modified: "2025-11-02"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article-number:
+  number: 19
+  title: "AI 處理過程通知規則"
+related_to:
+  - "MP099: 即時進度報告"
+  - "UI_R007: UI 文字標準化規則"
+  - "MP052: 單向資料流"
+  - "UI_R001: UI-伺服器-預設值三元組規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十九條：AI 處理過程通知規則 {#overview}
+
+**UI組件法第十九條（AI 處理過程通知規則）**
+
+所有預期執行時間超過 2 秒的 AI/OpenAI API 處理過程必須提供即時的階段式通知，以有效避免使用者焦慮並傳達系統狀態。
+
+:::{.callout-important}
+## 核心要求
+任何使用 AI/OpenAI API 呼叫、非同步處理或多階段資料分析的組件都必須實施漸進式通知，以達成：
+
+1. **避免「系統故障」感受**：超過 10 秒的靜態訊息會讓使用者認為系統當機
+2. **降低感知等待時間**：漸進式回饋在心理上減少等待體驗
+3. **建立使用者信任**：透明的處理階段展現系統正在積極運作
+4. **促成明智決策**：使用者可評估是否等待或繼續其他工作
+:::
+
+# 第一項：何時需要通知 {#when-required}
+
+## 第一款：強制通知情境 {#mandatory-scenarios}
+
+**以下情況必須實施通知：**
+
+1. **AI/OpenAI API 呼叫**：任何對 OpenAI API (GPT-4, GPT-3.5 等) 的呼叫
+2. **長時間運算**：任何預期超過 2 秒的操作
+3. **多階段處理**：具有多個循序步驟的操作
+4. **篩選觸發重新生成**：篩選條件變更觸發 AI 內容重新生成時
+5. **非同步處理**：使用 `later::later()` 或類似非同步模式的操作
+6. **批次處理**：循序處理多個項目的操作
+
+## 第二款：處理時長門檻 {#duration-thresholds}
+
+| 時長 | 通知要求 | 通知類型 |
+|------|---------|---------|
+| < 2 秒 | 選用 | 簡單載入指示器 |
+| 2-10 秒 | 必要 | 初始通知 |
+| > 10 秒 | **強制** | 多階段漸進式通知 |
+| > 30 秒 | **強制** | 多階段含預估時間/進度百分比 |
+
+## 第三款：豁免情況 {#exemptions}
+
+**以下情況可省略通知：**
+
+1. **即時操作**：一致性地在 < 1 秒內完成的操作
+2. **背景同步**：靜默背景同步（在其他地方有狀態指示器）
+3. **即時串流**：透過串流 API 即時更新 UI 時
+
+# 第二項：通知內容要求 {#content-requirements}
+
+## 第一款：語言要求 {#language-requirements}
+
+**依據 UI_R007（UI 文字標準化規則）：**
+
+1. **繁體中文 UI**：所有通知必須使用繁體中文
+2. **英文 UI**：所有通知必須使用英文
+3. **不可混用語言**：中文 UI 絕不使用英文，反之亦然
+4. **必須翻譯**：所有通知文字必須透過翻譯系統處理
+
+```r
+# ✅ 正確：繁體中文 UI 使用繁體中文
+showNotification(
+  "📊 正在提取資料...",
+  id = "process_stage",
+  duration = NULL,
+  type = "default"
+)
+
+# ❌ 錯誤：中文 UI 使用英文
+showNotification(
+  "Extracting data...",  # 錯誤 - 違反 UI_R007
+  id = "process_stage",
+  duration = NULL
+)
+```
+
+## 第二款：表情符號使用 {#emoji-usage}
+
+**視覺清晰度所需的表情符號模式：**
+
+| 處理類型 | 表情符號 | 使用範例 |
+|---------|---------|---------|
+| 資料處理 | 📊 | "📊 正在提取資料..." |
+| 分析/計算 | 🔍 | "🔍 正在執行分析..." |
+| AI 命名/標記 | 🏷️ | "🏷️ 正在產生分群名稱..." |
+| AI 報告/文字 | 📝 | "📝 正在產生AI報告..." |
+| 分群/分組 | 🎯 | "🎯 正在執行分群..." |
+| 完成 | ✅ | "✅ 完成！" |
+| 錯誤 | ❌ | "❌ 處理失敗" |
+
+```r
+# 標準表情符號模式
+STAGE_MESSAGES <- list(
+  data_extract = "📊 正在提取資料...",
+  clustering = "🎯 正在執行分群...",
+  ai_naming = "🏷️ 正在產生分群名稱...",
+  ai_report = "📝 正在產生AI報告...",
+  complete = "✅ 完成！"
+)
+```
+
+## 第三款：訊息結構 {#message-structure}
+
+**必要的通知訊息格式：**
+
+```
+[表情符號] [進行式動詞] [受詞] [選用脈絡]
+```
+
+**範例：**
+- "📊 正在提取資料..."（資料提取）
+- "🎯 正在執行分群 (K=5)..."（含脈絡的分群）
+- "🏷️ 正在產生分群名稱 (2/5 已完成)..."（進度脈絡）
+- "📝 正在產生AI報告..."（AI 報告生成）
+
+# 第三項：實施模式 {#implementation-patterns}
+
+## 第一款：單階段通知 {#single-stage-notification}
+
+**適用於單一主要階段的操作（2-10 秒）：**
+
+```r
+#' 具有通知的單階段 AI 操作
+#'
+#' @param input Shiny input 物件
+#' @param ai_prompt 傳送給 OpenAI 的提示
+#' @return AI 回應
+ai_single_stage_operation <- function(input, ai_prompt) {
+
+  # 初始通知
+  notification_id <- showNotification(
+    "🤖 正在呼叫AI...",
+    duration = NULL,  # 持續直到移除
+    type = "default",
+    id = "ai_process"
+  )
+
+  tryCatch({
+    # AI 操作
+    result <- call_openai_api(ai_prompt)
+
+    # 完成通知
+    removeNotification("ai_process")
+    showNotification(
+      "✅ AI 處理完成！",
+      duration = 3,  # 3 秒後自動關閉
+      type = "message"
+    )
+
+    return(result)
+
+  }, error = function(e) {
+    # 錯誤通知
+    removeNotification("ai_process")
+    showNotification(
+      paste0("❌ AI 處理失敗: ", e$message),
+      duration = 5,
+      type = "error"
+    )
+    return(NULL)
+  })
+}
+```
+
+## 第二款：多階段漸進式通知 {#multi-stage-notification}
+
+**適用於多個循序階段的操作（> 10 秒）：**
+
+```r
+#' 具有漸進式通知的多階段 AI 分析
+#'
+#' @param session Shiny session 物件
+#' @param filtered_data 反應式資料來源
+#' @param k_clusters 分群數量
+#' @return 分析結果
+ai_multi_stage_analysis <- function(session, filtered_data, k_clusters) {
+
+  # 定義階段訊息
+  STAGE_MESSAGES <- list(
+    stage1_data = "📊 正在提取資料...",
+    stage2_cluster = paste0("🎯 正在執行分群 (K=", k_clusters, ")..."),
+    stage3_naming = "🏷️ 正在產生分群名稱...",
+    stage4_report = "📝 正在產生AI報告...",
+    complete = "✅ 分析完成！"
+  )
+
+  # 階段 1：資料提取
+  showNotification(
+    STAGE_MESSAGES$stage1_data,
+    id = "ai_progress",
+    duration = NULL,
+    type = "default"
+  )
+
+  tryCatch({
+    # 提取資料
+    data <- filtered_data()
+    Sys.sleep(1)  # 模擬處理
+
+    # 階段 2：分群
+    removeNotification("ai_progress")
+    showNotification(
+      STAGE_MESSAGES$stage2_cluster,
+      id = "ai_progress",
+      duration = NULL,
+      type = "default"
+    )
+
+    # 執行分群
+    cluster_result <- perform_clustering(data, k_clusters)
+    Sys.sleep(2)  # 模擬處理
+
+    # 階段 3：AI 命名
+    removeNotification("ai_progress")
+    showNotification(
+      STAGE_MESSAGES$stage3_naming,
+      id = "ai_progress",
+      duration = NULL,
+      type = "default"
+    )
+
+    # 產生 AI 名稱
+    cluster_names <- generate_ai_cluster_names(cluster_result)
+    Sys.sleep(3)  # AI API 呼叫
+
+    # 階段 4：AI 報告生成
+    removeNotification("ai_progress")
+    showNotification(
+      STAGE_MESSAGES$stage4_report,
+      id = "ai_progress",
+      duration = NULL,
+      type = "default"
+    )
+
+    # 產生 AI 報告
+    ai_report <- generate_ai_report(cluster_result, cluster_names)
+    Sys.sleep(5)  # AI API 呼叫
+
+    # 完成
+    removeNotification("ai_progress")
+    showNotification(
+      STAGE_MESSAGES$complete,
+      duration = 3,
+      type = "message"
+    )
+
+    return(list(
+      clusters = cluster_result,
+      names = cluster_names,
+      report = ai_report
+    ))
+
+  }, error = function(e) {
+    # 錯誤處理
+    removeNotification("ai_progress")
+    showNotification(
+      paste0("❌ 分析失敗: ", e$message),
+      duration = 5,
+      type = "error"
+    )
+    return(NULL)
+  })
+}
+```
+
+## 第三款：篩選變更處理模式 {#filter-change-handler}
+
+**篩選變更觸發 AI 重新生成的模式：**
+
+```r
+#' 具有重新生成通知的篩選變更處理器
+#'
+#' @description 篩選變更時適當通知並重新生成 AI
+observeEvent(c(input$filter1, input$filter2, input$filter3), {
+
+  # 清除先前的 AI 結果
+  ai_results$clusters <- NULL
+  ai_results$names <- NULL
+  ai_results$report <- NULL
+
+  # 通知使用者
+  showNotification(
+    "🔄 篩選條件已變更。AI 分析將重新產生...",
+    duration = 3,
+    type = "warning"
+  )
+
+  # 使用 later::later() 安排非同步重新生成
+  later::later(function() {
+    # 執行具有漸進式通知的多階段分析
+    new_results <- ai_multi_stage_analysis(
+      session = session,
+      filtered_data = reactive({ get_filtered_data() }),
+      k_clusters = input$k_clusters
+    )
+
+    # 更新反應式值
+    ai_results$clusters <- new_results$clusters
+    ai_results$names <- new_results$names
+    ai_results$report <- new_results$report
+  }, delay = 0.5)  # 小延遲以允許 UI 更新
+}, ignoreInit = TRUE, ignoreNULL = FALSE)
+```
+
+# 第四項：UX 心理學基礎 {#ux-psychology}
+
+## 第一款：靜態訊息問題 {#static-message-problem}
+
+**使用者回饋證據：**
+
+> "我覺得『Filters changed. AI analysis will be regenerated...』光是這個很難讓人覺得要等而會感覺好向壞掉了"
+
+**靜態訊息的心理問題：**
+
+1. **無進度指示**：使用者無法判斷系統是在運作還是當機
+2. **不確定性焦慮**：未知的時長造成壓力和挫折
+3. **系統故障感受**：超過 10 秒後，使用者假設發生錯誤
+4. **信任喪失**：重複的不確定等待降低對系統的信心
+
+## 第二款：漸進式通知效益 {#progressive-benefits}
+
+**心理學效益（Nielsen Norman Group 研究）：**
+
+1. **降低感知等待時間**：
+   - 漸進式回饋可降低感知等待時間達 40%
+   - 當使用者了解進度時，他們能容忍更長的等待
+
+2. **增加信任**：
+   - 透明的階段展現系統能力
+   - 使用者感到「參與其中」了解發生的事情
+
+3. **降低焦慮**：
+   - 已知的階段取代不確定性為期望
+   - 使用者可規劃是否等待或多工處理
+
+4. **專業感受**：
+   - 設計良好的回饋表示高品質軟體
+   - 使用者感知系統更快速、更可靠
+
+## 第三款：階段通知心理學 {#stage-psychology}
+
+**為何多階段通知優於靜態訊息：**
+
+```
+靜態通知（不良）：
+[0秒]  "AI 分析將重新產生..."
+[10秒] ... 仍是相同訊息 ...（使用者想：壞掉了？）
+[20秒] ... 仍是相同訊息 ...（使用者想：絕對壞掉了）
+[30秒] 完成（使用者想：那真痛苦）
+
+漸進式通知（良好）：
+[0秒]  "📊 正在提取資料..."
+[2秒]  "🎯 正在執行分群..."（使用者想：哦，現在在分群）
+[8秒]  "🏷️ 正在產生分群名稱..."（使用者想：合理，接下來命名）
+[15秒] "📝 正在產生AI報告..."（使用者想：快完成了！）
+[25秒] "✅ 完成！"（使用者想：好快又專業）
+```
+
+**關鍵差異**：相同的 25 秒時長，截然不同的使用者體驗。
+
+# 第五項：技術實施細節 {#technical-implementation}
+
+## 第一款：通知 ID 管理 {#notification-id-management}
+
+**階段進展時使用一致的通知 ID：**
+
+```r
+# ✅ 正確：階段進展時重複使用相同 ID
+showNotification("階段 1...", id = "process_progress", duration = NULL)
+removeNotification("process_progress")
+showNotification("階段 2...", id = "process_progress", duration = NULL)
+removeNotification("process_progress")
+showNotification("完成！", duration = 3)
+
+# ❌ 錯誤：創建多個通知
+showNotification("階段 1...", duration = NULL)  # 無 ID - 無法移除
+showNotification("階段 2...", duration = NULL)  # 堆疊在上方
+# 結果：通知堆疊，UI 雜亂
+```
+
+## 第二款：時長參數 {#duration-parameters}
+
+**duration 參數的正確使用：**
+
+| 通知類型 | Duration | 原因 |
+|---------|---------|------|
+| 進行中階段 | `NULL` | 必須持續到下一階段 |
+| 完成訊息 | `3` | 3 秒後自動關閉 |
+| 錯誤訊息 | `5` | 允許閱讀錯誤細節的時間 |
+| 警告訊息 | `4` | 平衡可見性與自動關閉 |
+
+```r
+# 進度通知 - 必須持續
+showNotification("處理中...", duration = NULL)  # ✅ 正確
+
+# 完成 - 自動關閉
+showNotification("完成！", duration = 3)  # ✅ 正確
+
+# 錯誤 - 允許閱讀時間
+showNotification("錯誤: ...", duration = 5)  # ✅ 正確
+```
+
+## 第三款：與 later::later() 整合 {#later-integration}
+
+**具有通知的適當非同步處理：**
+
+```r
+#' 具有通知的非同步 AI 處理
+#'
+#' @param trigger 反應式觸發器
+observeEvent(trigger(), {
+
+  # 初始通知
+  showNotification(
+    "🔄 開始處理...",
+    id = "async_process",
+    duration = NULL
+  )
+
+  # 安排非同步工作
+  later::later(function() {
+
+    tryCatch({
+      # 階段 1
+      removeNotification("async_process")
+      showNotification("📊 正在提取資料...", id = "async_process", duration = NULL)
+      data <- extract_data()
+
+      # 階段 2
+      removeNotification("async_process")
+      showNotification("🤖 正在呼叫AI...", id = "async_process", duration = NULL)
+      result <- call_ai_api(data)
+
+      # 完成
+      removeNotification("async_process")
+      showNotification("✅ 完成！", duration = 3, type = "message")
+
+      # 更新反應式值
+      ai_result$value <- result
+
+    }, error = function(e) {
+      removeNotification("async_process")
+      showNotification(
+        paste0("❌ 處理失敗: ", e$message),
+        duration = 5,
+        type = "error"
+      )
+    })
+
+  }, delay = 0.1)  # 小延遲以確保通知顯示
+})
+```
+
+# 第六項：合規要求 {#compliance-requirements}
+
+## 第一款：組件稽核檢核表 {#component-audit}
+
+**所有組件必須稽核 UI_R019 合規性：**
+
+- [ ] **OpenAI API 呼叫**：所有 OpenAI API 呼叫是否都有通知？
+- [ ] **長時間操作**：超過 2 秒的操作是否有初始通知？
+- [ ] **多階段**：超過 10 秒的操作是否有漸進式階段通知？
+- [ ] **篩選變更**：觸發 AI 重新生成的篩選變更是否通知使用者？
+- [ ] **非同步處理**：`later::later()` 操作是否有通知？
+- [ ] **語言合規**：所有通知是否使用正確語言（UI_R007）？
+- [ ] **表情符號使用**：通知是否使用適當的處理類型表情符號？
+- [ ] **錯誤處理**：錯誤是否移除進度通知並顯示錯誤訊息？
+
+## 第二款：必須稽核的組件 {#required-components-audit}
+
+**必須實施 UI_R019 的組件：**
+
+1. **市場區隔分析**（`marketSegmentAnalysis/`）
+   - 分群操作
+   - AI 分群命名
+   - AI 區隔報告
+
+2. **競爭分析**（`competitiveAnalysis/`）
+   - 多品牌比較
+   - AI 策略洞察
+
+3. **產品定位**（`productPositioning/`）
+   - 定位計算
+   - AI 建議
+
+4. **顧客 DNA**（`customerDNA/`）
+   - 區隔生成
+   - AI 角色創建
+
+5. **品牌健康度**（`brandHealth/`）
+   - 健康度分數計算
+   - AI 診斷報告
+
+6. **趨勢分析**（`trendAnalysis/`）
+   - 時間序列分析
+   - AI 趨勢詮釋
+
+## 第三款：新組件要求 {#new-component-requirements}
+
+**所有新組件必須：**
+
+1. **設計階段**：在組件設計中包含通知流程
+2. **實施階段**：從一開始就實施漸進式通知
+3. **測試階段**：測試通知時機和使用者體驗
+4. **文件階段**：在組件 README 中記錄通知階段
+5. **程式碼審查**：合併前驗證通知合規性
+
+# 第七項：測試與驗證 {#testing-validation}
+
+## 第一款：手動測試程序 {#manual-testing}
+
+**通知合規性測試程序：**
+
+```r
+# 測試腳本：UI_R019 通知合規性
+test_notification_compliance <- function(component_name) {
+
+  cat("測試 UI_R019 合規性：", component_name, "\n")
+
+  # 測試 1：初始通知出現
+  cat("1. 觸發 AI 處理...\n")
+  # 手動觸發處理
+  # ✅ 通過：500 毫秒內出現通知
+  # ❌ 失敗：無通知或延遲 > 1 秒
+
+  # 測試 2：漸進式階段更新
+  cat("2. 監控階段進展...\n")
+  # 觀察通知變更
+  # ✅ 通過：通知在各階段更新
+  # ❌ 失敗：靜態通知或缺少階段
+
+  # 測試 3：時機驗證
+  cat("3. 驗證時機門檻...\n")
+  # 測量操作時長
+  # ✅ 通過：超過 2 秒的操作有通知
+  # ❌ 失敗：長時間操作無通知
+
+  # 測試 4：語言合規
+  cat("4. 檢查語言一致性...\n")
+  # 驗證通知語言符合 UI 語言
+  # ✅ 通過：所有通知使用正確語言
+  # ❌ 失敗：語言混用（中文 UI 中有英文）
+
+  # 測試 5：完成處理
+  cat("5. 驗證完成通知...\n")
+  # 等待處理完成
+  # ✅ 通過：完成通知顯示並自動關閉
+  # ❌ 失敗：進度通知持續或無完成訊息
+
+  # 測試 6：錯誤處理
+  cat("6. 測試錯誤情境...\n")
+  # 觸發錯誤條件
+  # ✅ 通過：錯誤通知顯示細節
+  # ❌ 失敗：進度通知持續或無錯誤訊息
+}
+```
+
+## 第二款：自動化測試 {#automated-testing}
+
+**通知存在的自動化測試模式：**
+
+```r
+#' 測試通知實施
+#'
+#' @param component 要測試的組件
+#' @param test_data 測試資料
+test_that("UI_R019: AI 處理具有漸進式通知", {
+
+  # 設定測試環境
+  testServer(componentServer, {
+
+    # 觸發 AI 處理
+    session$setInputs(trigger_ai = TRUE)
+
+    # 測試 1：初始通知
+    expect_true(
+      notification_exists("ai_progress"),
+      "應出現初始通知"
+    )
+
+    # 測試 2：第一階段通知
+    Sys.sleep(0.5)
+    expect_match(
+      get_notification_text("ai_progress"),
+      "正在提取資料|Extracting data",
+      "第一階段通知應顯示資料提取"
+    )
+
+    # 測試 3：階段進展
+    Sys.sleep(2)
+    expect_match(
+      get_notification_text("ai_progress"),
+      "正在執行分群|Clustering|正在呼叫AI|Calling AI",
+      "通知應更新到下一階段"
+    )
+
+    # 測試 4：完成
+    session$flushReact()
+    Sys.sleep(5)
+    expect_match(
+      get_notification_text(),
+      "完成|Complete|✅",
+      "應出現完成通知"
+    )
+  })
+})
+```
+
+# 第八項：範例與反模式 {#examples-anti-patterns}
+
+## 第一款：完整良好範例 {#good-example}
+
+**市場區隔分析組件（合規）：**
+
+```r
+#' 市場區隔分析伺服器
+#'
+#' @description 實施符合 UI_R019 的 AI 通知
+marketSegmentAnalysisServer <- function(id, filtered_data) {
+  moduleServer(id, function(input, output, session) {
+
+    # AI 結果的反應式值
+    ai_results <- reactiveValues(
+      clusters = NULL,
+      names = NULL,
+      report = NULL
+    )
+
+    # 具有重新生成通知的篩選變更處理器
+    observeEvent(c(input$date_range, input$product_filter), {
+
+      # 清除先前結果
+      ai_results$clusters <- NULL
+      ai_results$names <- NULL
+      ai_results$report <- NULL
+
+      # 通知使用者
+      showNotification(
+        "🔄 篩選條件已變更。AI 分析將重新產生...",
+        duration = 3,
+        type = "warning"
+      )
+
+      # 安排非同步重新生成
+      later::later(function() {
+
+        # 階段訊息
+        STAGE_MESSAGES <- list(
+          data = "📊 正在提取資料...",
+          cluster = paste0("🎯 正在執行分群 (K=", input$k_clusters, ")..."),
+          naming = "🏷️ 正在產生分群名稱...",
+          report = "📝 正在產生AI報告...",
+          complete = "✅ 分析完成！"
+        )
+
+        tryCatch({
+          # 階段 1：資料
+          showNotification(STAGE_MESSAGES$data, id = "ai_progress", duration = NULL)
+          data <- filtered_data()
+
+          # 階段 2：分群
+          removeNotification("ai_progress")
+          showNotification(STAGE_MESSAGES$cluster, id = "ai_progress", duration = NULL)
+          clusters <- perform_clustering(data, input$k_clusters)
+
+          # 階段 3：AI 命名
+          removeNotification("ai_progress")
+          showNotification(STAGE_MESSAGES$naming, id = "ai_progress", duration = NULL)
+          names <- generate_ai_cluster_names(clusters)
+
+          # 階段 4：AI 報告
+          removeNotification("ai_progress")
+          showNotification(STAGE_MESSAGES$report, id = "ai_progress", duration = NULL)
+          report <- generate_ai_report(clusters, names)
+
+          # 更新結果
+          ai_results$clusters <- clusters
+          ai_results$names <- names
+          ai_results$report <- report
+
+          # 完成
+          removeNotification("ai_progress")
+          showNotification(STAGE_MESSAGES$complete, duration = 3, type = "message")
+
+        }, error = function(e) {
+          removeNotification("ai_progress")
+          showNotification(
+            paste0("❌ 分析失敗: ", e$message),
+            duration = 5,
+            type = "error"
+          )
+        })
+      }, delay = 0.5)
+    }, ignoreInit = TRUE)
+
+    # 輸出：AI 報告
+    output$ai_report <- renderText({
+      req(ai_results$report)
+      ai_results$report
+    })
+  })
+}
+```
+
+## 第二款：反模式範例 {#anti-patterns}
+
+### 反模式 1：無通知（違規）
+
+```r
+# ❌ 違規：長時間 AI 操作無通知
+observeEvent(input$generate_report, {
+
+  # 靜默處理 - 使用者看不到任何東西
+  data <- get_data()
+  result <- call_openai_api(data)  # 需時 15 秒
+
+  # 更新輸出
+  output$report <- renderText(result)
+})
+```
+
+**問題：**
+1. 無系統運作指示
+2. 10 秒後使用者假設系統故障
+3. 違反 UI_R019 核心要求
+
+### 反模式 2：僅靜態訊息（違規）
+
+```r
+# ❌ 違規：長處理使用靜態通知
+observeEvent(input$analyze, {
+
+  showNotification("處理中...", duration = NULL)  # 靜態訊息
+
+  # 長時間多階段處理
+  data <- extract_data()  # 3 秒
+  clusters <- cluster_data(data)  # 5 秒
+  names <- ai_generate_names(clusters)  # 10 秒
+  report <- ai_generate_report(clusters, names)  # 15 秒
+
+  removeNotification()
+  showNotification("完成！", duration = 3)
+})
+```
+
+**問題：**
+1. 使用者看「處理中...」達 33 秒
+2. 無各階段進度指示
+3. 違反漸進式通知要求
+
+### 反模式 3：中文 UI 使用英文（違規）
+
+```r
+# ❌ 違規：語言混用（違反 UI_R007）
+observeEvent(input$trigger, {
+
+  # 中文 UI 但英文通知
+  showNotification(
+    "Generating AI report...",  # 錯誤 - 違反 UI_R007
+    duration = NULL
+  )
+
+  result <- generate_ai_report()
+
+  showNotification("Complete!", duration = 3)  # 錯誤
+})
+```
+
+**問題：**
+1. 違反 UI_R007 語言標準化
+2. 使用者體驗不一致
+3. 不專業外觀
+
+### 反模式 4：通知 ID 管理不當（違規）
+
+```r
+# ❌ 違規：未移除先前通知
+observeEvent(input$process, {
+
+  # 階段 1
+  showNotification("階段 1...", duration = NULL)  # 無 ID！
+  process_stage_1()
+
+  # 階段 2
+  showNotification("階段 2...", duration = NULL)  # 無 ID！
+  process_stage_2()
+
+  # 階段 3
+  showNotification("階段 3...", duration = NULL)  # 無 ID！
+  process_stage_3()
+
+  # 結果：3 個堆疊的通知
+})
+```
+
+**問題：**
+1. 通知堆疊而非替換
+2. UI 變得雜亂
+3. 使用者對目前階段感到困惑
+
+# 第九項：與其他原則的關係 {#relationship-to-other-principles}
+
+## 第一款：與 MP099（即時進度報告）的關係 {#relation-to-mp099}
+
+UI_R019 是 MP099 的 **UI 特定實施**：
+
+- **MP099**：所有進度報告的一般原則（主控台、日誌、監控）
+- **UI_R019**：Shiny UI 通知的特定要求
+
+**整合模式：**
+
+```r
+# 後端遵循 MP099
+message("MAIN: 開始 AI 分析...")  # 主控台進度
+message("  步驟 1/4: 提取資料...")
+data <- extract_data()
+
+# 前端遵循 UI_R019
+showNotification("📊 正在提取資料...", id = "progress", duration = NULL)  # UI 通知
+```
+
+## 第二款：與 UI_R007（UI 文字標準化）的關係 {#relation-to-ui-r007}
+
+UI_R019 **依賴於** UI_R007：
+
+- 所有通知文字必須遵循 UI_R007 語言要求
+- 通知必須使用 `translate()` 函數進行國際化
+- 不允許語言混用
+
+```r
+# ✅ 同時符合 UI_R019 和 UI_R007
+showNotification(
+  translate("Generating AI report..."),  # 使用 UI_R007 翻譯
+  id = "ai_progress",  # 遵循 UI_R019 ID 管理
+  duration = NULL
+)
+```
+
+## 第三款：與 MP052（單向資料流）的關係 {#relation-to-mp052}
+
+UI_R019 通知應**不修改資料流**：
+
+- 通知**僅供資訊**
+- 不使用通知觸發反應式更新
+- 通知追隨資料變更，而非驅動資料變更
+
+```r
+# ✅ 正確：通知追隨資料更新
+observeEvent(input$filter, {
+  # 資料流
+  new_data <- filter_data(input$filter)
+  ai_result$value <- new_data
+
+  # 通知追隨（僅供資訊）
+  showNotification("資料已更新", duration = 2)
+})
+
+# ❌ 錯誤：使用通知驅動更新
+observeEvent(show_notification_trigger(), {
+  # 錯誤 - 通知不應驅動資料流
+  update_data()
+})
+```
+
+## 第四款：與 UI_R001（UI-伺服器-預設值三元組）的關係 {#relation-to-ui-r001}
+
+通知邏輯屬於**伺服器組件**：
+
+```
+Component/
+├── componentUI.R         # 無通知邏輯
+├── componentServer.R     # ✅ 通知邏輯在此
+└── componentDefaults.R   # 無通知邏輯
+```
+
+# 第十項：現有組件的遷移指南 {#migration-guide}
+
+## 第一款：識別不合規組件 {#identifying-non-compliant}
+
+**搜尋違規模式：**
+
+```bash
+# 找出有 AI 呼叫但可能無通知的組件
+grep -r "openai" scripts/global_scripts/10_rshinyapp_components/ | \
+  grep -v "showNotification"
+
+# 找出無通知的長時間操作
+grep -r "Sys.sleep" scripts/global_scripts/10_rshinyapp_components/ | \
+  grep -v "showNotification"
+
+# 找出無通知的篩選變更處理器
+grep -r "observeEvent.*input.*filter" scripts/global_scripts/10_rshinyapp_components/ | \
+  grep -v "showNotification"
+```
+
+## 第二款：逐步遷移 {#step-by-step-migration}
+
+**現有組件的遷移流程：**
+
+### 步驟 1：識別 AI/長時間操作
+
+```r
+# 找出所有 OpenAI API 呼叫和長時間操作
+# 標記各操作的預期時長
+# 分類：< 2秒、2-10秒、> 10秒
+```
+
+### 步驟 2：定義階段訊息
+
+```r
+# 建立階段訊息清單
+STAGE_MESSAGES <- list(
+  stage1 = "📊 正在提取資料...",
+  stage2 = "🎯 正在執行分群...",
+  stage3 = "🏷️ 正在產生名稱...",
+  complete = "✅ 完成！"
+)
+```
+
+### 步驟 3：加入初始通知
+
+```r
+# 第一個操作之前
+showNotification(
+  STAGE_MESSAGES$stage1,
+  id = "process_progress",
+  duration = NULL
+)
+```
+
+### 步驟 4：加入階段進展
+
+```r
+# 各後續階段之前
+removeNotification("process_progress")
+showNotification(
+  STAGE_MESSAGES$stage2,
+  id = "process_progress",
+  duration = NULL
+)
+```
+
+### 步驟 5：加入完成/錯誤處理
+
+```r
+# 包裝在 tryCatch 中
+tryCatch({
+  # ... 處理 ...
+
+  removeNotification("process_progress")
+  showNotification(STAGE_MESSAGES$complete, duration = 3)
+
+}, error = function(e) {
+  removeNotification("process_progress")
+  showNotification(
+    paste0("❌ 處理失敗: ", e$message),
+    duration = 5,
+    type = "error"
+  )
+})
+```
+
+### 步驟 6：測試使用者體驗
+
+```r
+# 手動測試檢核表：
+# [ ] 通知立即出現（< 500 毫秒）
+# [ ] 各階段顯示正確訊息
+# [ ] 完成自動關閉
+# [ ] 錯誤處理有效
+# [ ] 無通知堆疊
+# [ ] 正確語言（無混用）
+```
+
+## 第三款：優先遷移清單 {#priority-migration}
+
+**建議遷移順序（最高影響優先）：**
+
+1. **市場區隔分析** - 最顯眼，時長最長
+2. **競爭分析** - 多次 AI 呼叫，使用者期待回饋
+3. **顧客 DNA** - AI 角色生成，等待時間長
+4. **產品定位** - 策略分析，專業外觀重要
+5. **趨勢分析** - 時間序列計算，預估時間有助益
+6. **品牌健康度** - 診斷報告，使用者焦慮高
+
+# 第十一項：效能考量 {#performance-considerations}
+
+## 第一款：通知額外負擔 {#notification-overhead}
+
+**通知的效能影響：**
+
+- **極小**：每次 `showNotification()` 呼叫增加 < 10 毫秒
+- **網路**：無網路呼叫，僅客戶端
+- **記憶體**：可忽略（每個通知 < 1KB）
+- **建議最大值**：每處理最多 10 個階段更新
+
+```r
+# 效能比較
+without_notifications <- system.time({
+  result <- long_ai_operation()
+})
+# 時間：25.3 秒
+
+with_notifications <- system.time({
+  showNotification("處理中...", id = "progress", duration = NULL)
+  result <- long_ai_operation()
+  removeNotification("progress")
+  showNotification("完成！", duration = 3)
+})
+# 時間：25.32 秒（< 1% 額外負擔）
+```
+
+## 第二款：通知頻率指南 {#notification-frequency}
+
+**通知頻率最佳實務：**
+
+| 處理時長 | 建議階段 | 更新頻率 |
+|---------|---------|---------|
+| 2-5 秒 | 1-2 階段 | 初始 + 完成 |
+| 5-15 秒 | 2-3 階段 | 每 3-5 秒 |
+| 15-30 秒 | 3-5 階段 | 每 5-7 秒 |
+| > 30 秒 | 4-6 階段 + 預估時間 | 每 7-10 秒 |
+
+```r
+# ✅ 良好：適當的階段細緻度（15 秒處理）
+階段 1：資料提取（0-3 秒）
+階段 2：分群（3-8 秒）
+階段 3：AI 命名（8-15 秒）
+完成（15 秒）
+
+# ❌ 不良：過多階段（15 秒處理）
+階段 1：初始化（0-1 秒）
+階段 2：載入資料（1-2 秒）
+階段 3：驗證資料（2-3 秒）
+階段 4：轉換資料（3-5 秒）
+階段 5：分群（5-8 秒）
+階段 6：驗證分群（8-9 秒）
+階段 7：呼叫 AI（9-12 秒）
+階段 8：處理 AI（12-14 秒）
+階段 9：驗證 AI（14-15 秒）
+完成（15 秒）
+# 使用者被更新淹沒
+```
+
+# 第十二項：無障礙考量 {#accessibility}
+
+## 第一款：螢幕閱讀器相容性 {#screen-reader-compatibility}
+
+**確保通知可存取：**
+
+```r
+# ✅ 可存取：使用 ARIA 即時區域
+showNotification(
+  "📊 正在提取資料...",
+  id = "progress",
+  duration = NULL,
+  type = "default"
+)
+# Shiny 自動建立 ARIA 即時區域
+# 螢幕閱讀器宣告通知內容
+
+# 額外的無障礙性：提供文字替代
+output$progress_text <- renderText({
+  req(ai_processing())
+  current_stage()  # 目前階段的文字描述
+})
+```
+
+## 第二款：視覺替代方案 {#visual-alternatives}
+
+**通知搭配視覺進度指示器：**
+
+```r
+# 通知旁的進度條
+output$progress_bar <- renderUI({
+  req(ai_processing())
+
+  progress_percent <- calculate_progress()
+
+  div(
+    class = "progress",
+    div(
+      class = "progress-bar",
+      role = "progressbar",
+      style = paste0("width: ", progress_percent, "%"),
+      `aria-valuenow` = progress_percent,
+      `aria-valuemin` = "0",
+      `aria-valuemax` = "100",
+      paste0(progress_percent, "%")
+    )
+  )
+})
+```
+
+# 第十三項：國際化 {#internationalization}
+
+## 第一款：多語言支援 {#multi-language-support}
+
+**通知的適當國際化：**
+
+```r
+# 在翻譯字典中定義階段訊息
+ui_terminology_dict <- data.frame(
+  English = c(
+    "Extracting data...",
+    "Performing clustering...",
+    "Generating AI names...",
+    "Generating AI report...",
+    "Complete!"
+  ),
+  Chinese = c(
+    "正在提取資料...",
+    "正在執行分群...",
+    "正在產生分群名稱...",
+    "正在產生AI報告...",
+    "完成！"
+  ),
+  stringsAsFactors = FALSE
+)
+
+# 依據 UI_R007 使用 translate() 函數
+showNotification(
+  translate("Extracting data..."),  # 根據應用程式語言自動翻譯
+  id = "progress",
+  duration = NULL
+)
+```
+
+## 第二款：跨語言的表情符號一致性 {#emoji-consistency}
+
+**表情符號使用與語言無關：**
+
+```r
+# ✅ 良好：跨語言使用相同表情符號
+英文："📊 Extracting data..."
+中文："📊 正在提取資料..."
+
+# 表情符號提供跨語言的視覺一致性
+# 使用者不論語言都能辨識處理類型
+```
+
+# 第十四項：未來增強 {#future-enhancements}
+
+## 第一款：計畫改進 {#planned-improvements}
+
+**UI_R019 的潛在未來增強：**
+
+1. **進度百分比**：在通知中加入完成百分比
+   ```r
+   showNotification(
+     "📊 正在提取資料... (20%)",
+     id = "progress",
+     duration = NULL
+   )
+   ```
+
+2. **預估時間**：計算並顯示剩餘預估時間
+   ```r
+   showNotification(
+     "🏷️ 正在產生分群名稱... (約 15 秒)",
+     id = "progress",
+     duration = NULL
+   )
+   ```
+
+3. **取消支援**：允許使用者取消長時間操作
+   ```r
+   showNotification(
+     tagList(
+       "📝 正在產生AI報告...",
+       actionButton("cancel_ai", "取消", size = "xs")
+     ),
+     id = "progress",
+     duration = NULL
+   )
+   ```
+
+4. **通知聲音**：完成時的選用音效回饋
+   ```r
+   showNotification(
+     "✅ 完成！",
+     duration = 3,
+     type = "message",
+     sound = TRUE  # 播放完成音效
+   )
+   ```
+
+## 第二款：研究機會 {#research-opportunities}
+
+**UX 研究領域：**
+
+1. **最佳階段細緻度**：研究不同時長的理想階段數量
+2. **表情符號效能**：測量表情符號對使用者理解的影響
+3. **時長門檻**：透過使用者測試驗證 2 秒和 10 秒門檻
+4. **通知疲勞**：研究何時使用者對過多更新感到厭煩
+
+---
+
+**實施優先級**：高 - 對 AI 驅動組件至關重要
+**必須驗證**：所有使用 OpenAI API 或非同步處理的組件
+**使用者影響**：高 - 直接影響系統品質和信任的感知
+**相關原則**：MP099、UI_R007、MP052、UI_R001
+
+*基於：UI組件法第十九條*
+*使用者回饋：「光是這個很難讓人覺得要等而會感覺好向壞掉了」（2025-11-02）*
+*研究基礎：Nielsen Norman Group - 進度指示器*

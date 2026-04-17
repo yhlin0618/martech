@@ -1,0 +1,250 @@
+---
+title: "UI_R012: bs4Dash 導航欄導航規則"
+subtitle: "在 bs4Dash 應用程式中，頂層導航應使用 bs4Dash 導航欄導航元件實施。這提供了一致、可維護和高效的導航模式，充分利用 bs4Dash 套件的內建功能"
+chapter: "CH04"
+category: "rule"
+number: "UI_R012"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article: 
+  number: 12
+  title: "bs4Dash 導航欄導航規則"
+implements:
+  - "R090: bs4Dash 結構遵循規則"
+  - "MP099: UI 分離元原則"
+  - "P062: 關注分離"
+  - "P072: UI 套件一致性原則"
+related_to:
+  - "P073: Server-to-UI 資料流原則"
+  - "MP017: 模組化原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十二條：bs4Dash 導航欄導航規則 {#overview}
+
+**UI組件法第十二條（bs4Dash 導航欄導航規則）**
+
+此規則建立了在 bs4Dash 應用程式中實施頂層導航的標準。
+
+:::{.callout-important}
+## 核心規則
+在 bs4Dash 應用程式中，頂層導航應使用 bs4Dash 導航欄導航元件實施。
+:::
+
+# 第一項：理由 {#rationale}
+
+## 第一款：一致性 {#consistency}
+
+使用 bs4Dash 導航欄元件進行頂層導航創建一致的使用者體驗，遵循 Bootstrap 4 Admin Dashboard 慣例。
+
+## 第二款：內建功能 {#built-in-functionality}
+
+bs4Dash 導航欄元件提供內建功能，包括響應式設計、下拉選單和適當的樣式，只需最少的自訂程式碼。
+
+## 第三款：可維護性 {#maintainability}
+
+標準導航欄模式比自訂導航實施或基於按鈕的替代方案更容易維護。
+
+## 第四款：性能 {#performance}
+
+bs4Dash 導航欄元件利用優化的 Bootstrap 4 元件進行高效渲染和互動。
+
+## 第五款：可存取性 {#accessibility}
+
+使用適當的語義導航元素改善鍵盤導航和螢幕閱讀器相容性。
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：使用 bs4Dash 導航欄元件進行頂層導航 {#use-navbar-components}
+
+- 使用適當的 navbarMenu 結構實施 `bs4Dash::dashboardHeader()`
+- 使用 `bs4Dash::navbarMenu()` 作為導航項目的容器
+- 使用 `bs4Dash::navbarTab()` 作為個別導航連結
+- 使用嵌套的 navbarTab 元素創建層級導航選單
+
+## 第二款：使用動作按鈕進行第二層導航 {#second-level-buttons}
+
+- 使用一排 `actionButton()` 元件實施第二層導航
+- 將按鈕放置在每個標籤內容頂部的顯眼位置
+- 使用 `class` 參數一致地設置按鈕樣式
+- 使用條件樣式指示活動的第二層標籤
+
+```r
+actionButton(
+  inputId = paste0(comp_name, "_subtab_", subtab_name),
+  label = subtab_title,
+  icon = icon(subtab_icon),
+  class = paste0("btn ", if(active_subtab() == subtab_name) "btn-primary" else "btn-default"),
+  style = "margin: 5px; min-width: 120px;"
+)
+```
+
+## 第三款：側邊欄導航 {#sidebar-navigation}
+
+- 繼續使用 bs4Dash 的 `sidebarMenu()` 和 `menuItem()` 元件
+- 側邊欄應補充導航欄，而不是重複它
+- 使用側邊欄進行上下文特定或次要導航
+
+## 第四款：導航結構 {#navigation-structure}
+
+- 頂部導航欄：主要應用程式部分/模組
+- 第二層按鈕：模組內的子元件/視圖
+- 側邊欄：當前部分的上下文特定選項
+- 使用一致的 ID 和命名慣例
+
+## 第五款：樣式和布局 {#styling-layout}
+
+- 為頂層導航使用內建的導航欄類別和樣式
+- 為第二層導航使用標準 Bootstrap 按鈕類別
+- 以適當的對齊維持標準布局
+- 遵循 P0099：單行 UI 元素原則進行所有導航元件
+
+## 第六款：事件處理 {#event-handling}
+
+- 為頂層標籤使用內建的基於標籤的導航
+- 為第二層導航，為每個按鈕創建直接的 `observeEvent()` 處理程式
+- 使用 `updateNavbarTabs()` 進行程式化頂層導航
+- 使用反應值追蹤活動的第二層標籤
+
+```r
+# 創建反應值追蹤活動子標籤
+active_subtab <- reactiveVal("details")
+
+# 處理按鈕點擊
+observeEvent(input[[paste0(comp_name, "_subtab_", subtab_name)]], {
+  active_subtab(subtab_name)
+  
+  # 顯示/隱藏適當的內容部分
+  for (section in subtab_names) {
+    shinyjs::toggle(paste0(comp_name, "_section_", section), condition = section == subtab_name)
+  }
+})
+```
+
+# 第三項：範例 {#examples}
+
+## 第一款：良好實施（遵循規則）{#good-implementation}
+
+```r
+if (interactive()) {
+  library(shiny)
+  library(bs4Dash)
+  library(shinyjs)
+  
+  # 為主體內容創建帶有第二層導航的標籤項目
+  tabs <- tabItems(
+    # 帶有使用按鈕的第二層導航的第一個標籤
+    tabItem(
+      tabName = "Tab1",
+      fluidRow(
+        column(
+          width = 12,
+          # 使用動作按鈕的第二層導航
+          box(
+            title = "標籤 1 導航",
+            width = 12,
+            status = "primary",
+            solidHeader = FALSE,
+            # 第二層導航的按鈕列
+            div(
+              class = "d-flex justify-content-center",
+              actionButton("tab1_subtab_details", "詳情", 
+                           icon = icon("info-circle"), 
+                           class = "btn btn-primary mx-2"),
+              actionButton("tab1_subtab_history", "歷史", 
+                           icon = icon("history"), 
+                           class = "btn btn-default mx-2"),
+              actionButton("tab1_subtab_settings", "設定", 
+                           icon = icon("cog"), 
+                           class = "btn btn-default mx-2")
+            )
+          )
+        )
+      ),
+      # 每個第二層標籤的內容
+      div(id = "tab1_content_details", plotOutput("detailsPlot")),
+      div(id = "tab1_content_history", style = "display: none;", tableOutput("historyTable")),
+      div(id = "tab1_content_settings", style = "display: none;", verbatimTextOutput("settingsText"))
+    ),
+    
+    # 沒有第二層導航的簡單標籤
+    tabItem(
+      tabName = "Tab2",
+      h2("標籤 2 內容"),
+      plotOutput("tab2Plot")
+    )
+  )
+  
+  shinyApp(
+    ui = dashboardPage(
+      header = dashboardHeader(
+        # 使用 navbarMenu 元件進行頂層導航
+        navbarMenu(
+          id = "navmenu",
+          # 直接標籤連結
+          navbarTab(tabName = "Tab1", text = "標籤 1"),
+          navbarTab(tabName = "Tab2", text = "標籤 2")
+        )
+      ),
+      body = dashboardBody(
+        useShinyjs(),  # 啟用 shinyjs 以切換內容
+        tabs
+      ),
+      sidebar = dashboardSidebar(disable = TRUE)
+    ),
+    server = function(input, output, session) {
+      # 用於第二層導航的事件處理
+      # ...伺服器邏輯...
+    }
+  )
+}
+```
+
+## 第二款：錯誤實施（違反規則）{#poor-implementation}
+
+```r
+# 避免 bs4Dash navbarMenu 並實施自訂導航 - 違反規則
+ui <- bs4Dash::dashboardPage(
+  header = bs4Dash::dashboardHeader(
+    title = "我的儀表板",
+    # 沒有使用適當的導航欄元件
+    leftUi = NULL,
+    rightUi = NULL
+  ),
+  sidebar = bs4Dash::dashboardSidebar(),
+  body = bs4Dash::dashboardBody(
+    # 自訂導航 div 而不是使用 navbarMenu 元件
+    div(
+      class = "navigation-container",
+      uiOutput("dynamicNavigation")
+    ),
+    
+    # 內容容器
+    uiOutput("dynamicContent")
+  )
+)
+```
+
+# 第四項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **提供一致的導航體驗**：遵循 Bootstrap 4 標準
+2. **減少自訂程式碼**：利用內建功能
+3. **改善響應式設計**：自動適應不同裝置
+4. **增強可存取性**：更好的鍵盤和輔助技術支援
+5. **簡化維護**：遵循已建立的模式
+
+---
+
+*基於：UI組件法第十二條*  
+*相關連結：[R090 bs4Dash 結構遵循規則](./UI_R011_bs4dash_structure_adherence.qmd), [P072 UI 套件一致性原則](../principles/UI_P003_package_consistency.qmd)*

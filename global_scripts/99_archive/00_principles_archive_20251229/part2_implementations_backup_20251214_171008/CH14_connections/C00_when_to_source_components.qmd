@@ -1,0 +1,161 @@
+---
+title: "C00: When to Source Components"
+subtitle: "Guidance on when, where, and how to source components in the application lifecycle"
+chapter: "CH13"
+category: "connection"
+number: "C00"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "connection"
+law: "Connections Framework"
+article-number: "Article 1"
+related_to:
+  - "MP31_initialization_first"
+  - "P55_ntuple_independent_loading"
+  - "R56_folder_based_sourcing"
+  - "R54_component_folder_organization"
+  - "MP17_separation_of_concerns"
+  - "R33_recursive_sourcing"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 1: When to Source Components {#overview}
+
+## Section 1: General Principles {#general-principles}
+
+### Subsection 1: Core Principle {#core-principle}
+All component sourcing should occur during initialization following MP31 (Initialization First), using folder-based sourcing per R56, with independent aspect-based loading per P55.
+
+### Subsection 2: Scope {#scope}
+This principle applies to all Shiny application components including UI, Server, Filters, and Defaults components.
+
+## Section 2: Decision Tree {#decision-tree}
+
+### Subsection 1: When to Source {#when-to-source}
+
+#### Item 1: Initialization Phase Only {#initialization-only}
+Following MP31 (Initialization First):
+- Components should be sourced during the application initialization phase
+- Runtime sourcing is prohibited
+- Dynamic loading should be handled through initialization-time configurations
+
+#### Item 2: Ordered by Aspect {#ordered-by-aspect}
+Following P55 (N-tuple Independent Loading):
+1. UI components first
+2. Server components second
+3. Filters components third
+4. Defaults components fourth
+
+### Subsection 2: How to Source {#how-to-source}
+
+#### Item 1: Folder-Based Sourcing {#folder-based}
+Following R56 (Folder-Based Sourcing):
+- Source entire directories rather than individual files
+- Use pattern matching to target specific component types
+- Define sourcing functions once in initialization scripts
+
+#### Item 2: Component Organization {#component-organization}
+Following R54 (Component Folder Organization):
+- Each component should have its own folder
+- All aspects of a component should be in the same folder
+- Folder names should match component names
+
+### Subsection 3: Where to Define Sourcing {#where-to-define}
+
+#### Item 1: Initialization Scripts {#initialization-scripts}
+- All sourcing logic belongs in `sc_initialization_*.R` scripts
+- Application code should never contain source() calls
+- Component usage is separate from component loading
+
+#### Item 2: Environment-Specific Loading {#environment-specific}
+- APP_MODE: Load stable components and interfaces only
+- UPDATE_MODE: Load all components including experimental ones
+- Always document which components are loaded in each mode
+
+## Section 3: Implementation Pattern {#implementation-pattern}
+
+### Subsection 1: Sourcing Function Definition {#sourcing-function}
+
+```r
+# In initialization script:
+
+# 1. Define sourcing function
+source_component_directory <- function(dir_path, pattern, recursive = TRUE) {
+  files <- list.files(path = dir_path, pattern = pattern, 
+                     full.names = TRUE, recursive = recursive)
+  files <- sort(files)  # Ensure consistent order
+  lapply(files, source)
+  invisible(length(files))
+}
+
+# 2. Define component directory
+components_dir <- file.path(APP_DIR, "components")
+
+# 3. Source by aspect type (P55)
+source_component_directory(components_dir, pattern = "UI\\.R$")
+source_component_directory(components_dir, pattern = "Server\\.R$")
+source_component_directory(components_dir, pattern = "Filters\\.R$")
+source_component_directory(components_dir, pattern = "Defaults\\.R$")
+```
+
+## Section 4: Anti-patterns to Avoid {#anti-patterns}
+
+### Subsection 1: Runtime Sourcing {#runtime-sourcing}
+```r
+# BAD: Sourcing at runtime
+observeEvent(input$load_module, {
+  source("components/newModule/newModuleUI.R")
+})
+```
+
+### Subsection 2: Individual File Sourcing {#individual-file-sourcing}
+```r
+# BAD: Sourcing individual files
+source("components/sidebar/marketingChannelUI.R")
+source("components/sidebar/marketingChannelServer.R")
+```
+
+### Subsection 3: Component-based Sourcing {#component-based-sourcing}
+```r
+# BAD: Sourcing all aspects of one component before moving to next
+source_all_in_directory("components/sidebar")
+source_all_in_directory("components/dataTable")
+```
+
+## Section 5: Related Principles Reference {#related-principles}
+
+### Subsection 1: Core Principles {#core-references}
+- MP31: Initialization First
+- MP17: Separation of Concerns
+
+### Subsection 2: Implementation Rules {#implementation-rules}
+- P55: N-tuple Independent Loading
+- R56: Folder-Based Sourcing
+- R54: Component Folder Organization
+- R33: Recursive Sourcing
+
+## Section 6: Execution Guidelines {#execution-guidelines}
+
+### Subsection 1: Checklist {#checklist}
+- [ ] All sourcing logic is in initialization scripts
+- [ ] Using folder sourcing rather than file sourcing
+- [ ] Sourcing ordered by aspect type
+- [ ] No runtime sourcing
+- [ ] Document what is loaded in each mode
+
+### Subsection 2: Best Practices {#best-practices}
+1. Always source all components during initialization
+2. Use consistent naming patterns for easy pattern matching
+3. Keep component organization structure clear
+4. Document any special sourcing requirements
+5. Test loading behavior in different modes
+
+---
+*This document provides comprehensive guidance on component sourcing decisions and implementation patterns.*

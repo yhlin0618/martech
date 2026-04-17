@@ -1,0 +1,361 @@
+---
+title: "DM_R004: Data Storage Organization Rule"
+subtitle: "Organized storage of data files by type and purpose in designated directories"
+chapter: "CH02"
+category: "rule"
+number: "DM_R004"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Data Management Law Implementation Rules"
+article: "Article 4"
+related_to:
+  - "SO_R006: Archiving Standard"
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Data Management Law Implementation Rules Article 4 (Data Storage Organization Rule)**
+
+This article mandates that data files must be organized by type and purpose in designated directories, with database files specifically stored in the `app_data` folder rather than in the application root directory.
+
+:::{.callout-important}
+## Core Rule
+Data files must be organized by type and purpose in designated directories, with database files specifically stored in the `app_data` folder rather than in the application root directory.
+:::
+
+# Section 1: Directory Structure {#structure}
+
+## Subsection 1: Database Files {#database}
+
+第一項：資料庫檔案位置 (Database file location)
+
+All database files MUST be stored in the `app_data` directory:
+- Files include: `.db`, `.sqlite`, `.duckdb` extensions
+- Correct: `app_data/app_data.duckdb`
+- Incorrect: `app_data.duckdb` in root directory
+
+## Subsection 2: Data Type Separation {#separation}
+
+第一項：資料類型分離 (Data type separation)
+
+Data files shall be organized by purpose:
+
+```
+app_data/
+├── raw/           # Raw input data files
+├── processed/     # Processed intermediate files
+├── exports/       # Exported output files
+├── temp/          # Temporary working files
+├── cache/         # Cached results
+└── backups/       # Backup files
+    ├── db/        # Database backups
+    └── config/    # Configuration backups
+```
+
+第二項：目錄用途說明 (Directory purpose descriptions)
+
+- **raw/**: Original data files as received, unmodified
+- **processed/**: Data after transformation or cleaning
+- **exports/**: Files generated for external use
+- **temp/**: Working files that can be safely deleted
+- **cache/**: Performance optimization caches
+- **backups/**: Historical versions and safety copies
+
+## Subsection 3: Backup Organization {#backup}
+
+第一項：備份檔案組織 (Backup file organization)
+
+- Database backups: `app_data/backups/db/`
+- Configuration backups: `app_data/backups/config/`
+- Date-based naming: `app_data.duckdb.YYYY-MM-DD.bak`
+
+# Section 2: Naming Conventions {#naming}
+
+## Subsection 1: Database File Names {#db-names}
+
+第一項：資料庫檔案命名 (Database file naming)
+
+Standard database file names:
+- Primary application database: `app_data.duckdb`
+- Test database: `test_data.duckdb`
+- Development database: `dev_data.duckdb`
+- Production database: `prod_data.duckdb`
+
+## Subsection 2: Data File Names {#data-names}
+
+第一項：資料檔案命名格式 (Data file naming format)
+
+Use the format: `[purpose]_[source]_[date].[extension]`
+
+Examples:
+- `customers_platform07_20250406.csv`
+- `products_amazon_20250407.json`
+- `sales_report_20250408.xlsx`
+
+第二項：命名元素說明 (Naming element descriptions)
+
+- **purpose**: What the data represents (customers, products, sales)
+- **source**: Where the data comes from (platform ID, system name)
+- **date**: When the data was created/extracted (YYYYMMDD format)
+- **extension**: File format indicator
+
+# Section 3: Implementation Guidelines {#implementation}
+
+## Subsection 1: Directory Creation {#creation}
+
+第一項：目錄建立函數 (Directory creation function)
+
+When initializing the application, ensure proper directory structure:
+
+```r
+create_data_directories <- function() {
+  dirs <- c(
+    "app_data",
+    "app_data/raw", 
+    "app_data/processed",
+    "app_data/exports",
+    "app_data/temp",
+    "app_data/cache",
+    "app_data/backups/db",
+    "app_data/backups/config"
+  )
+  
+  for (dir in dirs) {
+    if (!dir.exists(dir)) {
+      dir.create(dir, recursive = TRUE)
+      message(paste("Created directory:", dir))
+    }
+  }
+}
+```
+
+## Subsection 2: Database Connection {#connection}
+
+第一項：資料庫連接模式 (Database connection pattern)
+
+Always use correct paths when connecting to databases:
+
+```r
+connect_to_app_db <- function(mode = "production") {
+  require(duckdb)
+  
+  # Select database based on mode
+  db_file <- switch(mode,
+    "production" = "app_data/app_data.duckdb",
+    "test" = "app_data/test_data.duckdb",
+    "development" = "app_data/dev_data.duckdb",
+    "app_data/app_data.duckdb"  # default
+  )
+  
+  # Ensure directory exists
+  if (!dir.exists("app_data")) {
+    dir.create("app_data")
+  }
+  
+  # Connect to database
+  con <- dbConnect(duckdb(), db_file)
+  return(con)
+}
+```
+
+## Subsection 3: Data Import/Export {#import-export}
+
+第一項：資料匯入函數 (Data import function)
+
+```r
+import_raw_data <- function(file_name) {
+  # Correct: raw data stored in app_data/raw directory
+  file_path <- file.path("app_data/raw", file_name)
+  
+  if (!file.exists(file_path)) {
+    stop(paste("File not found:", file_path))
+  }
+  
+  # Detect file type and read accordingly
+  ext <- tools::file_ext(file_name)
+  data <- switch(ext,
+    "csv" = read.csv(file_path),
+    "json" = jsonlite::fromJSON(file_path),
+    "xlsx" = readxl::read_excel(file_path),
+    stop(paste("Unsupported file type:", ext))
+  )
+  
+  return(data)
+}
+```
+
+第二項：資料匯出函數 (Data export function)
+
+```r
+export_processed_data <- function(data, file_name, add_timestamp = TRUE) {
+  # Add timestamp if requested
+  if (add_timestamp) {
+    base_name <- tools::file_path_sans_ext(file_name)
+    ext <- tools::file_ext(file_name)
+    timestamp <- format(Sys.Date(), "%Y%m%d")
+    file_name <- paste0(base_name, "_", timestamp, ".", ext)
+  }
+  
+  # Correct: exports stored in app_data/exports directory
+  file_path <- file.path("app_data/exports", file_name)
+  
+  # Ensure directory exists
+  if (!dir.exists("app_data/exports")) {
+    dir.create("app_data/exports", recursive = TRUE)
+  }
+  
+  # Export based on file type
+  ext <- tools::file_ext(file_name)
+  switch(ext,
+    "csv" = write.csv(data, file_path, row.names = FALSE),
+    "json" = jsonlite::write_json(data, file_path),
+    "xlsx" = writexl::write_xlsx(data, file_path),
+    stop(paste("Unsupported file type:", ext))
+  )
+  
+  message(paste("Data exported to:", file_path))
+}
+```
+
+# Section 4: Benefits and Rationale {#benefits}
+
+## Subsection 1: Primary Advantages {#advantages}
+
+第一項：主要優勢 (Primary advantages)
+
+1. **Logical Separation**: Keeps data files separate from application code
+2. **Backup Simplicity**: Makes it easier to backup and restore data files
+3. **Enhanced Security**: Simplifies access control for sensitive data
+4. **Reduced Clutter**: Prevents root directory pollution
+5. **Consistency**: Ensures all team members follow the same structure
+6. **Scalability**: Supports growth without reorganization
+
+## Subsection 2: Security Considerations {#security}
+
+第一項：安全性考量 (Security considerations)
+
+- Centralized data location enables focused security measures
+- Easier to implement access controls on data directories
+- Simplified audit logging for data access
+- Clear separation between code and data
+
+# Section 5: Enforcement and Validation {#enforcement}
+
+## Subsection 1: Code Review Checklist {#review}
+
+第一項：程式碼審查清單 (Code review checklist)
+
+During code reviews, check specifically for:
+
+1. Database files in the root directory
+2. Data files outside their appropriate directories
+3. Inconsistent naming patterns
+4. Missing directory creation logic
+5. Hard-coded paths instead of using `file.path()`
+
+## Subsection 2: Automated Validation {#validation}
+
+第一項：自動驗證函數 (Automated validation function)
+
+```r
+validate_data_organization <- function() {
+  issues <- character()
+  
+  # Check for database files in root
+  root_db_files <- list.files(".", pattern = "\\.(db|sqlite|duckdb)$")
+  if (length(root_db_files) > 0) {
+    issues <- c(issues, paste("Database files in root:", 
+                             paste(root_db_files, collapse = ", ")))
+  }
+  
+  # Check required directories exist
+  required_dirs <- c("app_data", "app_data/raw", "app_data/processed", 
+                     "app_data/exports", "app_data/temp", "app_data/cache")
+  
+  for (dir in required_dirs) {
+    if (!dir.exists(dir)) {
+      issues <- c(issues, paste("Missing directory:", dir))
+    }
+  }
+  
+  # Check for improperly named files
+  if (dir.exists("app_data/raw")) {
+    raw_files <- list.files("app_data/raw")
+    invalid_names <- raw_files[!grepl("^[a-z]+_[a-z0-9]+_[0-9]{8}\\.", raw_files)]
+    if (length(invalid_names) > 0) {
+      issues <- c(issues, paste("Invalid file names in raw/:", 
+                               paste(invalid_names, collapse = ", ")))
+    }
+  }
+  
+  if (length(issues) > 0) {
+    cat("Data Organization Issues Found:\n")
+    cat(paste("-", issues), sep = "\n")
+    return(FALSE)
+  } else {
+    cat("Data organization validation passed.\n")
+    return(TRUE)
+  }
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Data Storage Organization Checklist
+
+**Directory Structure:**
+- [ ] app_data/ directory exists
+- [ ] raw/ subdirectory created
+- [ ] processed/ subdirectory created
+- [ ] exports/ subdirectory created
+- [ ] temp/ subdirectory created
+- [ ] cache/ subdirectory created
+- [ ] backups/db/ structure created
+- [ ] backups/config/ structure created
+
+**Database Files:**
+- [ ] All .db files in app_data/
+- [ ] All .sqlite files in app_data/
+- [ ] All .duckdb files in app_data/
+- [ ] No database files in root
+
+**Naming Conventions:**
+- [ ] Database files follow standard names
+- [ ] Data files use purpose_source_date format
+- [ ] Backup files include timestamps
+- [ ] Extensions match file content
+
+**Implementation:**
+- [ ] Directory creation function implemented
+- [ ] Database connection uses correct paths
+- [ ] Import functions reference app_data/raw/
+- [ ] Export functions use app_data/exports/
+- [ ] Validation function in place
+
+**Documentation:**
+- [ ] README describes directory structure
+- [ ] Data flow documented
+- [ ] Backup procedures defined
+- [ ] Team trained on conventions
+:::
+
+# Conclusion {#conclusion}
+
+The Data Storage Organization Rule ensures consistent, secure, and maintainable data management across all applications. By centralizing data storage in the `app_data` directory with clear subdirectory purposes, we achieve better organization, simplified backups, enhanced security, and improved team collaboration. This structured approach scales well from development through production environments.
+
+---
+
+*Based on: Data Management Law Implementation Rules Article 4*  
+*Related to: [SO_R006 Archiving Standard](../../CH01_structure_organization/rules/SO_R006_archiving_standard.qmd), [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*

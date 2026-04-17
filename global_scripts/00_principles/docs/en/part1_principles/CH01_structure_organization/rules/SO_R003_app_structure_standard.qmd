@@ -1,0 +1,132 @@
+---
+title: "SO_R003: Application Structure Standard Rule (L1 Basic)"
+subtitle: "L1 Basic tier applications must follow a standardized directory structure, specifically must include scripts/global_scripts/ as the connection point for shared code libraries"
+chapter: "CH01"
+category: "rule"
+number: "SO_R003"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article-number: 
+  number: 3
+  title: "Application Structure Standard Rule"
+related_to:
+  - "SO_P001: Layered Architecture Principle"
+  - "SO_R001: Directory Structure Rule"
+  - "SO_R002: Git Management Strategy"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 3: Application Structure Standard Rule (L1 Basic) {#overview}
+
+**Structure & Organization Law Article 3 (Application Structure Standard Rule)**
+
+L1 Basic tier applications must follow a standardized directory structure, specifically must include `scripts/global_scripts/` as the connection point for shared code libraries.
+
+:::{.callout-important}
+## Rule Overview
+L1 Basic tier applications must follow a standardized directory structure, specifically must include `scripts/global_scripts/` as the connection point for shared code libraries.
+:::
+
+# Section 1: Scope {#scope}
+
+- **Applicable to**: All applications under the l1_basic directory
+- **Not applicable to**: l2_pro and l4_enterprise (these tiers may have different architectural requirements)
+
+# Section 2: Mandatory Structure Requirements {#mandatory-structure}
+
+Every L1 Basic tier application must include:
+
+```
+app_name/
+├── scripts/
+│   └── global_scripts/     # [Mandatory] global_scripts repository
+├── app.R                   # [Mandatory] Main application
+├── README.md               # [Mandatory] Documentation
+└── .gitignore              # [Mandatory] Git ignore rules
+```
+
+# Section 3: Global Scripts Integration Methods {#global-scripts-integration}
+
+## Subsection 1: Git Submodule (Recommended) {#git-submodule}
+
+```bash
+cd app_name
+mkdir -p scripts
+cd scripts
+git submodule add git@github.com:kiki830621/precision_marketing_global_scripts.git global_scripts
+```
+
+## Subsection 2: Git Subrepo {#git-subrepo}
+
+```bash
+cd app_name
+git subrepo clone git@github.com:kiki830621/precision_marketing_global_scripts.git scripts/global_scripts
+```
+
+## Subsection 3: Direct Copy (Development Stage Only) {#direct-copy}
+
+```bash
+cd app_name
+mkdir -p scripts
+cp -r ../global_scripts scripts/
+```
+
+# Section 4: Code Reference Standards {#code-reference-standard}
+
+## Subsection 1: Correct Practice {#correct-practice}
+
+```r
+# Correct: Use path relative to app.R
+source("scripts/global_scripts/22_initializations/sc_initialization_app_mode.R")
+```
+
+## Subsection 2: Incorrect Practice {#incorrect-practice}
+
+```r
+# Incorrect: Use absolute path
+source("/Users/xxx/global_scripts/...")
+
+# Incorrect: Assume global_scripts is in parent directory
+source("../global_scripts/...")
+```
+
+# Section 5: Violation Consequences {#violation-consequences}
+
+1. Application cannot be deployed independently
+2. Code sharing mechanism fails
+3. Version control becomes chaotic
+4. Team collaboration becomes difficult
+
+# Section 6: Exemption Conditions {#exemption-conditions}
+
+None. This is a mandatory rule, all applications must comply.
+
+# Section 7: Validation Method {#validation-method}
+
+```bash
+# Automatic check script
+if [ ! -d "scripts/global_scripts" ]; then
+  echo "ERROR: Missing required scripts/global_scripts directory"
+  exit 1
+fi
+```
+
+# Section 8: Related Principles {#related-principles}
+
+- **SO_P001: Layered Architecture Principle** - L1 Basic is part of the layered architecture
+- **SO_R001: Directory Structure Rule** - Defines overall directory structure standards
+- **SO_R002: Git Management Strategy** - Defines Git management methods
+
+---
+
+*Based on: Structure & Organization Law Article 3*  
+*Related to: [SO_P001 Layered Architecture Principle](../principles/SO_P001_layered_architecture.qmd), [SO_R001 Directory Structure Rule](SO_R001_directory_structure.qmd)*

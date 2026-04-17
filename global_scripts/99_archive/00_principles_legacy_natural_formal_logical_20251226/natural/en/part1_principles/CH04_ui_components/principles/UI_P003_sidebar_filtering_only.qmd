@@ -1,0 +1,634 @@
+---
+title: "UI_P003: Sidebar Filtering Only Principle"
+subtitle: "Sidebars should be dedicated exclusively to data filtering controls"
+chapter: "CH04"
+category: "principle"
+number: "UI_P003"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI Components Law"
+article: "Article 3"
+derives_from:
+  - "CH00.MP017: Separation of Concerns"
+related_to:
+  - "UI_P004: Component N-tuple Pattern"
+  - "UI_R054: Component Folder Organization"
+  - "UI_R001: UI-Server-Defaults N-tuple"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**UI Components Law Article 3 (Sidebar Filtering Only Principle)**
+
+This article establishes that sidebars in applications should be used exclusively for data filtering controls, maintaining a clear separation from navigation, content display, and action controls.
+
+:::{.callout-important}
+## Core Principle
+Sidebars must contain only filtering controls and related functionality. Navigation, actions, content display, and settings belong in other UI regions, creating a consistent and predictable user experience.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Design Philosophy {#philosophy}
+
+The sidebar is a key navigational and organizational element in modern web applications. By dedicating sidebars solely to filtering functionality, we achieve:
+
+1. **Consistent Mental Model**: Users know exactly where to find filtering controls
+2. **Clear Purpose**: No confusion between filtering and navigation actions
+3. **Reinforced User Patterns**: Strengthens the user's mental model of data filtering
+4. **Component Modularity**: Simplifies component reuse and testing
+5. **Predictable Interaction**: Users can predict sidebar behavior across different views
+
+## Subsection 2: Benefits {#benefits}
+
+第一項：使用者體驗優勢 (User experience benefits)
+
+- Reduced cognitive load through consistent placement
+- Faster task completion with predictable controls
+- Clear visual hierarchy and information architecture
+- Improved accessibility through consistent patterns
+- Better mobile adaptation with dedicated filter regions
+
+第二項：開發維護優勢 (Development and maintenance benefits)
+
+- Simplified component architecture
+- Easier testing of filtering logic
+- Clear separation of concerns
+- Reusable filter components
+- Reduced coupling between UI elements
+
+# Section 2: What Belongs in Sidebars {#belongs}
+
+## Subsection 1: Appropriate Sidebar Content {#appropriate}
+
+第一項：資料篩選控制 (Data filtering controls)
+
+```r
+# CORRECT: Pure filtering controls
+sidebarUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # Filter section headers
+    h4("Filter Options", class = "sidebar-header"),
+    
+    # Selection filters
+    selectInput(
+      ns("region"),
+      "Region",
+      choices = c("All", "North", "South", "East", "West"),
+      selected = "All"
+    ),
+    
+    # Multi-select filters
+    selectizeInput(
+      ns("categories"),
+      "Categories",
+      choices = product_categories,
+      multiple = TRUE,
+      options = list(placeholder = "Select categories")
+    ),
+    
+    # Range filters
+    dateRangeInput(
+      ns("date_range"),
+      "Date Range",
+      start = Sys.Date() - 30,
+      end = Sys.Date()
+    ),
+    
+    # Numeric range filters
+    sliderInput(
+      ns("price_range"),
+      "Price Range",
+      min = 0,
+      max = 1000,
+      value = c(0, 1000),
+      step = 10
+    ),
+    
+    # Boolean filters
+    checkboxGroupInput(
+      ns("status"),
+      "Status",
+      choices = c("Active", "Pending", "Completed"),
+      selected = c("Active", "Pending")
+    )
+  )
+}
+```
+
+第二項：篩選應用控制 (Filter application controls)
+
+```r
+# Filter action buttons
+filterActionsUI <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    class = "filter-actions",
+    
+    # Apply filters button
+    actionButton(
+      ns("apply_filters"),
+      "Apply Filters",
+      icon = icon("filter"),
+      class = "btn-primary"
+    ),
+    
+    # Reset filters button
+    actionButton(
+      ns("reset_filters"),
+      "Reset All",
+      icon = icon("undo"),
+      class = "btn-secondary"
+    ),
+    
+    # Save filter preset
+    actionButton(
+      ns("save_preset"),
+      "Save Preset",
+      icon = icon("save"),
+      class = "btn-outline"
+    )
+  )
+}
+```
+
+## Subsection 2: Filter State Indicators {#indicators}
+
+第一項：篩選狀態顯示 (Filter state display)
+
+```r
+# Show active filter summary
+filterSummaryUI <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    class = "filter-summary",
+    
+    # Active filter count
+    textOutput(ns("active_count")),
+    
+    # Applied filters list
+    uiOutput(ns("applied_filters")),
+    
+    # Filter state indicator
+    conditionalPanel(
+      condition = "output.has_filters",
+      ns = ns,
+      tags$span(
+        class = "filter-indicator",
+        icon("filter"),
+        "Filters Active"
+      )
+    )
+  )
+}
+```
+
+第二項：可摺疊篩選群組 (Collapsible filter groups)
+
+```r
+# Organized filter groups
+filterGroupsUI <- function(id) {
+  ns <- NS(id)
+  
+  accordion(
+    id = ns("filter_accordion"),
+    
+    accordionItem(
+      title = "Time Filters",
+      icon = icon("calendar"),
+      dateRangeInput(ns("dates"), "Date Range"),
+      selectInput(ns("time_unit"), "Group By", 
+                  choices = c("Day", "Week", "Month"))
+    ),
+    
+    accordionItem(
+      title = "Geographic Filters",
+      icon = icon("map"),
+      selectInput(ns("country"), "Country", choices = countries),
+      selectInput(ns("region"), "Region", choices = NULL),
+      selectInput(ns("city"), "City", choices = NULL)
+    ),
+    
+    accordionItem(
+      title = "Product Filters",
+      icon = icon("box"),
+      selectInput(ns("category"), "Category", choices = categories),
+      selectInput(ns("brand"), "Brand", choices = brands),
+      sliderInput(ns("price"), "Price Range", 0, 1000, c(0, 1000))
+    )
+  )
+}
+```
+
+# Section 3: What Does NOT Belong in Sidebars {#not-belong}
+
+## Subsection 1: Inappropriate Content {#inappropriate}
+
+第一項：導航元素 (Navigation elements)
+
+```r
+# INCORRECT: Navigation in sidebar
+badSidebarUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # DON'T: Navigation links in sidebar
+    navlistPanel(
+      tabPanel("Dashboard", icon = icon("dashboard")),
+      tabPanel("Reports", icon = icon("file")),
+      tabPanel("Settings", icon = icon("cog"))
+    ),
+    
+    # DON'T: Page navigation
+    actionButton(ns("prev_page"), "Previous"),
+    actionButton(ns("next_page"), "Next"),
+    
+    # DON'T: View switchers
+    radioButtons(ns("view_type"), "View",
+                 choices = c("Table", "Chart", "Map"))
+  )
+}
+
+# CORRECT: Navigation in header/navbar
+correctNavUI <- function(id) {
+  navbarPage(
+    title = "Application",
+    tabPanel("Dashboard", dashboardUI("dash")),
+    tabPanel("Reports", reportsUI("reports")),
+    tabPanel("Settings", settingsUI("settings"))
+  )
+}
+```
+
+第二項：動作按鈕 (Action buttons unrelated to filtering)
+
+```r
+# INCORRECT: Non-filter actions in sidebar
+badActionsUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # DON'T: Data manipulation actions
+    actionButton(ns("save_data"), "Save Data"),
+    actionButton(ns("export_excel"), "Export to Excel"),
+    
+    # DON'T: CRUD operations
+    actionButton(ns("add_record"), "Add New Record"),
+    actionButton(ns("delete_selected"), "Delete Selected"),
+    
+    # DON'T: Application controls
+    actionButton(ns("refresh_app"), "Refresh Application"),
+    actionButton(ns("logout"), "Logout")
+  )
+}
+
+# CORRECT: Actions in main content area or toolbar
+correctActionsUI <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    class = "action-toolbar",
+    actionButton(ns("export"), "Export", icon = icon("download")),
+    actionButton(ns("save"), "Save", icon = icon("save")),
+    actionButton(ns("refresh"), "Refresh", icon = icon("sync"))
+  )
+}
+```
+
+## Subsection 2: Content Display {#content}
+
+第一項：資料視覺化 (Data visualizations)
+
+```r
+# INCORRECT: Visualizations in sidebar
+badContentUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # DON'T: Charts in sidebar
+    plotOutput(ns("summary_chart"), height = "200px"),
+    
+    # DON'T: Data tables
+    DTOutput(ns("summary_table")),
+    
+    # DON'T: Metrics display
+    valueBoxOutput(ns("total_sales")),
+    
+    # DON'T: Content preview
+    htmlOutput(ns("preview_pane"))
+  )
+}
+```
+
+第二項：使用者資訊 (User information)
+
+```r
+# INCORRECT: User info in sidebar
+badUserInfoUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # DON'T: User profile in sidebar
+    div(
+      class = "user-profile",
+      img(src = "user.png", class = "profile-pic"),
+      h4("John Doe"),
+      p("john@example.com")
+    ),
+    
+    # DON'T: Settings in sidebar
+    h4("Preferences"),
+    selectInput(ns("theme"), "Theme", 
+                choices = c("Light", "Dark")),
+    selectInput(ns("language"), "Language",
+                choices = c("English", "Chinese"))
+  )
+}
+```
+
+# Section 4: Implementation Patterns {#patterns}
+
+## Subsection 1: Correct Sidebar Structure {#structure}
+
+第一項：標準側邊欄架構 (Standard sidebar architecture)
+
+```r
+# Complete sidebar implementation
+createFilterSidebar <- function(id, config = NULL) {
+  ns <- NS(id)
+  
+  sidebar <- sidebarPanel(
+    width = 3,
+    class = "filter-sidebar",
+    
+    # Header
+    div(
+      class = "sidebar-header",
+      h3("Filters"),
+      textOutput(ns("filter_count"), inline = TRUE)
+    ),
+    
+    # Filter groups
+    div(
+      class = "filter-groups",
+      
+      # Primary filters always visible
+      div(
+        class = "primary-filters",
+        selectInput(ns("main_category"), "Category",
+                    choices = config$categories),
+        dateRangeInput(ns("date_range"), "Date Range")
+      ),
+      
+      # Secondary filters in collapsible
+      conditionalPanel(
+        condition = "input.show_advanced",
+        ns = ns,
+        div(
+          class = "advanced-filters",
+          selectInput(ns("sub_category"), "Sub-category",
+                      choices = NULL),
+          sliderInput(ns("value_range"), "Value Range",
+                      min = 0, max = 1000, value = c(0, 1000)),
+          checkboxGroupInput(ns("options"), "Options",
+                             choices = config$filter_options)
+        )
+      ),
+      
+      # Toggle for advanced filters
+      checkboxInput(ns("show_advanced"), 
+                    "Show Advanced Filters", 
+                    value = FALSE)
+    ),
+    
+    # Filter actions
+    div(
+      class = "filter-actions",
+      actionButton(ns("apply"), "Apply", 
+                   class = "btn-primary btn-block"),
+      actionButton(ns("reset"), "Reset", 
+                   class = "btn-secondary btn-block")
+    ),
+    
+    # Filter presets
+    div(
+      class = "filter-presets",
+      selectInput(ns("preset"), "Load Preset",
+                  choices = c("None", "Last Week", "This Month")),
+      actionLink(ns("save_preset"), "Save Current")
+    )
+  )
+  
+  return(sidebar)
+}
+```
+
+## Subsection 2: Server Logic {#server}
+
+第一項：篩選邏輯實作 (Filter logic implementation)
+
+```r
+# Server-side filter handling
+filterServer <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    
+    # Reactive values for filters
+    filters <- reactiveValues(
+      active = list(),
+      presets = list()
+    )
+    
+    # Apply filters
+    filtered_data <- reactive({
+      df <- data()
+      
+      # Apply each active filter
+      if (!is.null(input$main_category) && 
+          input$main_category != "All") {
+        df <- df[df$category == input$main_category, ]
+      }
+      
+      if (!is.null(input$date_range)) {
+        df <- df[df$date >= input$date_range[1] & 
+                 df$date <= input$date_range[2], ]
+      }
+      
+      if (!is.null(input$value_range)) {
+        df <- df[df$value >= input$value_range[1] & 
+                 df$value <= input$value_range[2], ]
+      }
+      
+      return(df)
+    })
+    
+    # Filter count display
+    output$filter_count <- renderText({
+      count <- sum(
+        !is.null(input$main_category) && input$main_category != "All",
+        !is.null(input$date_range),
+        !is.null(input$value_range) && 
+          !all(input$value_range == c(0, 1000))
+      )
+      
+      if (count > 0) {
+        sprintf("(%d active)", count)
+      } else {
+        ""
+      }
+    })
+    
+    # Reset filters
+    observeEvent(input$reset, {
+      updateSelectInput(session, "main_category", selected = "All")
+      updateDateRangeInput(session, "date_range",
+                           start = Sys.Date() - 30,
+                           end = Sys.Date())
+      updateSliderInput(session, "value_range", value = c(0, 1000))
+    })
+    
+    return(filtered_data)
+  })
+}
+```
+
+# Section 5: Design Guidelines {#guidelines}
+
+## Subsection 1: Visual Design {#visual}
+
+第一項：視覺層級 (Visual hierarchy)
+
+```css
+/* CSS for filter sidebar */
+.filter-sidebar {
+  background-color: #f8f9fa;
+  border-right: 1px solid #dee2e6;
+  padding: 15px;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  border-bottom: 2px solid #dee2e6;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+}
+
+.filter-groups {
+  margin-bottom: 20px;
+}
+
+.filter-groups .form-group {
+  margin-bottom: 15px;
+}
+
+.filter-actions {
+  position: sticky;
+  bottom: 0;
+  background-color: #f8f9fa;
+  padding-top: 15px;
+  border-top: 1px solid #dee2e6;
+}
+
+.filter-indicator {
+  color: #007bff;
+  font-weight: bold;
+}
+```
+
+## Subsection 2: Responsive Design {#responsive}
+
+第一項：行動裝置適配 (Mobile adaptation)
+
+```r
+# Responsive sidebar implementation
+responsiveSidebar <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # Mobile: Collapsible filter panel
+    div(
+      class = "d-block d-md-none",
+      actionButton(
+        ns("toggle_filters"),
+        "Filters",
+        icon = icon("filter"),
+        class = "btn-primary btn-block mb-3"
+      ),
+      conditionalPanel(
+        condition = "input.toggle_filters % 2 == 1",
+        ns = ns,
+        div(
+          class = "mobile-filter-panel",
+          createFilterContent(ns)
+        )
+      )
+    ),
+    
+    # Desktop: Fixed sidebar
+    div(
+      class = "d-none d-md-block",
+      sidebarPanel(
+        width = 3,
+        createFilterContent(ns)
+      )
+    )
+  )
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Sidebar Implementation Checklist
+
+**Appropriate Content:**
+- [ ] Data filtering controls only
+- [ ] Filter application buttons (Apply/Reset)
+- [ ] Filter state indicators
+- [ ] Filter presets/saved filters
+- [ ] Collapsible filter groups
+
+**Excluded Content:**
+- [ ] No navigation links or tabs
+- [ ] No non-filter action buttons
+- [ ] No data visualizations
+- [ ] No user profile information
+- [ ] No application settings
+
+**Design Considerations:**
+- [ ] Clear visual hierarchy
+- [ ] Consistent control placement
+- [ ] Responsive mobile design
+- [ ] Accessibility compliance
+- [ ] Performance optimization
+
+**Implementation:**
+- [ ] Modular filter components
+- [ ] Reactive filter logic
+- [ ] Filter state management
+- [ ] Error handling
+- [ ] Testing coverage
+:::
+
+# Conclusion {#conclusion}
+
+The Sidebar Filtering Only Principle creates a consistent and predictable user experience by dedicating sidebars exclusively to filtering functionality. This separation improves usability, simplifies development, and enhances maintainability. By following this principle, applications provide users with a clear mental model and developers with a clean architecture for filter management.
+
+---
+
+*Based on: UI Components Law Article 3*  
+*Derives from: [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*  
+*Related to: [UI_R001 UI-Server-Defaults N-tuple](../rules/UI_R001_ui_server_defaults_ntuple.qmd)*

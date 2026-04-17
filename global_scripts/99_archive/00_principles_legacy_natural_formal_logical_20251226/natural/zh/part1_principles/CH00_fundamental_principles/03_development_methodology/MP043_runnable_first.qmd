@@ -1,0 +1,177 @@
+---
+title: "MP042: 可運行優先開發元原則 (Runnable-First Development)"
+subtitle: "始終維持應用程式處於可運行狀態，當應用程式無法運行時停止修改"
+author: "System"
+date: "2025-04-07"
+date-modified: "2025-08-16"
+categories: [meta-principle, development-methodology, quality-assurance, continuous-delivery]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 定義
+
+始終維持應用程式處於可運行狀態。當應用程式變得無法運行時停止修改，要麼修復當前問題，要麼回滾到最後已知的良好狀態。基本不變式是在進入下一個修改之前，應用程式必須始終處於可運行狀態。
+
+## 說明
+
+處於無法運行狀態的軟體價值為零，無論其理論上的改進如何。此原則確立了：
+
+1. 功能較少但可運行的應用程式比功能較多但無法運行的應用程式更有價值
+2. "可運行"狀態形成了開發過程中不應跨越的檢查點邊界
+3. 當錯誤累積並使應用程式無法運行時，必須停止進展直到恢復可運行性
+
+此原則作為安全機制，防止開發人員繼續在已經破壞的代碼上堆積更改的"死亡行軍"，使診斷和恢復變得越來越困難。
+
+## 數學基礎
+
+此原則可以形式化為：
+
+設 S 為應用程式所有可能狀態的集合
+設 R ⊂ S 為可運行狀態的子集
+設 T: S → S 為轉換（修改）
+
+此原則規定對於任何轉換 T：
+- 如果 s ∈ R，則 T(s) 也必須在 R 中
+- 如果 s ∈ R 但 T(s) ∉ R，則拒絕 T 並保持在 s
+
+這在開發過程中形成了嚴格的不變式：∀ 修改，應用程式 ∈ R
+
+## 實施指南
+
+### 1. 提交前驗證可運行性 {#verify-before-commit}
+
+```bash
+# 提交更改前，驗證應用程式可以運行
+./check_app.R  # 驗證應用程式可以啟動的腳本
+./run_tests.sh # 運行自動化測試
+
+# 只有兩者都成功時
+git commit -m "實施功能 X 並保持應用程式可運行"
+```
+
+### 2. 無法運行時立即回滾 {#immediate-rollback}
+
+當應用程式變得無法運行時：
+
+```bash
+# 選項 1：立即修復
+git stash  # 保存當前更改
+./check_app.R  # 驗證應用程式再次可運行
+
+# 選項 2：如果修復複雜則回滾
+git reset --hard HEAD  # 完全丟棄更改
+# 或
+git checkout -b broken-feature  # 將更改保存到單獨分支
+git checkout main  # 返回到工作狀態
+```
+
+### 3. 建立明確的可運行性標準 {#runnability-criteria}
+
+定義"可運行"意味著什麼的明確標準：
+
+```r
+# 範例 check_app.R 腳本
+verify_app <- function() {
+  # 1. 語法檢查
+  tryCatch(parse("app.R"), error = function(e) stop("語法錯誤：", e$message))
+  
+  # 2. 啟動檢查
+  app <- shinyApp(ui = fluidPage(), server = function(input, output) {})
+  testServer(app, {})
+  
+  # 3. 關鍵路徑檢查
+  # ...
+  
+  return(TRUE)
+}
+```
+
+## 好處
+
+1. **持續交付準備就緒**：應用程式始終處於可交付狀態
+2. **降低調試複雜性**：問題在引入點被識別
+3. **心理安全**：開發人員有信心系統不會崩潰
+4. **增量進展**：強制真正的增量開發而不是大爆炸式更改
+5. **團隊協調**：防止一個開發人員的破壞代碼阻礙其他人
+
+## 反模式
+
+### 1. "我稍後會修復"綜合症 {#fix-it-later}
+
+避免：
+```r
+# 不好：故意提交破壞的代碼
+# TODO：稍後修復，它破壞了應用程式但我現在需要提交
+```
+
+### 2. 累積多個不相關的更改 {#accumulating-changes}
+
+避免：
+```bash
+# 不好：在測試可運行性之前進行多個不相關的更改
+git add file1.R file2.R file3.R # 修改了幾個不同的功能
+git commit -m "大功能更新" # 沒有單獨驗證每個更改
+```
+
+### 3. 缺少自動化可運行性檢查 {#missing-automation}
+
+避免：
+```bash
+# 不好：僅手動驗證
+# 提交前"在我的機器上工作"
+```
+
+改為：
+```bash
+# 好：自動驗證腳本
+./check_app.R
+```
+
+## 與版本控制的關係
+
+此原則特別重視以下能力：
+
+1. 頻繁提交可運行狀態
+2. 輕鬆回滾到最後已知的良好狀態
+3. 分支實驗而不破壞主應用程式
+
+## 實施範例
+
+典型的工作流程實施：
+
+```bash
+# 當前狀態：可運行的應用程式
+
+# 1. 為功能 X 進行更改
+vim app.R
+
+# 2. 驗證可運行性
+./check_app.R
+
+# 3A. 如果可運行，提交
+git commit -m "添加功能 X"
+
+# 3B. 如果不可運行，要麼修復要麼回滾
+# 修復選項：
+vim app.R # 進行必要的修復
+./check_app.R # 驗證修復有效
+git commit -m "添加功能 X"
+
+# 回滾選項：
+git reset --hard HEAD
+echo "功能 X 實施失敗，返回到已知良好狀態"
+```
+
+## 相關原則
+
+- MP0038：增量單功能發布
+- MP0037：僅為臨時或不確定代碼添加註釋
+- MP0014：變更追蹤
+- R58：演進優於替換

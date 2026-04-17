@@ -1,0 +1,330 @@
+---
+title: "MP122: Dual-Track Subrepo Architecture Principle"
+subtitle: "Separation of framework and application layers through independent subrepo management"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP122"
+date-created: "2025-09-30"
+date-modified: "2025-09-30"
+author: "Claude (Principle Revisor)"
+type: "meta-principle"
+law: "System Architecture Law"
+article:
+  number: 122
+  title: "Dual-Track Subrepo Architecture"
+related_to:
+  - "MP093: Script Separation Principle"
+  - "MP044: Functor-Module Correspondence"
+  - "MP097: Principle-Implementation Separation"
+  - "MP104: Script Organization Evolution"
+  - "SO_R001: Directory Structure"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 122: Dual-Track Subrepo Architecture {#overview}
+
+**System Architecture Law Article 122 (Dual-Track Subrepo Architecture)**
+
+The system SHALL adopt a dual-track subrepo architecture that separates the **framework layer** (`global_scripts`) from the **application layer** (`update_scripts`) as independent git subrepos, achieving an optimal balance between stability and flexibility while maximizing cross-project reusability.
+
+:::{.callout-important}
+## Core Architecture Principle
+- **global_scripts/**: Framework layer - stable, reusable, cross-project components
+- **update_scripts/**: Application layer - business-specific, frequently updated logic
+- Both managed as **independent git subrepos** with separate version control
+- **Unidirectional dependency**: update_scripts → global_scripts (never reverse)
+:::
+
+# Section 1: Architectural Philosophy {#philosophy}
+
+## Subsection 1: Design Rationale {#rationale}
+
+The dual-track architecture recognizes that software systems have two fundamentally different types of code:
+
+1. **Framework Code**: General-purpose, stable, reusable across projects
+2. **Application Code**: Business-specific, frequently changing, project-specific
+
+By separating these into independent subrepos, we achieve:
+- **Independent evolution** of framework and application layers
+- **Cross-project sharing** of framework components
+- **Isolated change management** for different change velocities
+- **Clear architectural boundaries** enforced by git
+
+## Subsection 2: Category Theory Foundation {#category-theory}
+
+From a category theory perspective:
+
+- **Objects**: The two subrepos represent distinct categories
+- **Morphisms**: Dependencies flow unidirectionally (application → framework)
+- **Functors**: Interfaces between layers preserve categorical structure
+- **Natural Transformations**: Version upgrades maintain compatibility
+
+# Section 2: Framework Layer (global_scripts) {#framework-layer}
+
+## Subsection 1: Characteristics {#framework-characteristics}
+
+The `global_scripts` subrepo contains:
+
+**Content Types**:
+- Reusable utility functions (`04_utils/`)
+- Database abstraction layers (`01_db/`, `02_db_utils/`)
+- Configuration frameworks (`03_config/`)
+- UI component libraries (`10_rshinyapp_components/`)
+- System principles and documentation (`00_principles/`)
+- Language frameworks (NSQL, AIMETA)
+- Testing utilities (`98_test/`)
+
+**Properties**:
+- **Stability**: Changes infrequently, maintains backward compatibility
+- **Generality**: Solves general problems, not specific business cases
+- **Reusability**: Designed for use across multiple projects
+- **Versioning**: Semantic versioning with clear deprecation policies
+
+## Subsection 2: Management Rules {#framework-management}
+
+```yaml
+# Subrepo configuration for global_scripts
+remote: git@github.com:org/global_scripts.git
+branch: main
+version_policy: semantic
+breaking_changes: major_version_only
+deprecation_period: 3_months
+cross_project: true
+```
+
+# Section 3: Application Layer (update_scripts) {#application-layer}
+
+## Subsection 1: Characteristics {#application-characteristics}
+
+The `update_scripts` subrepo contains:
+
+**Content Types**:
+- ETL pipelines (`*_ETL*.R` scripts)
+- Data derivation logic (`*_D*.R` scripts)
+- Business-specific transformations
+- Platform-specific integrations
+- Migration and update scripts
+- One-time fixes and patches
+
+**Properties**:
+- **Volatility**: Changes frequently with business requirements
+- **Specificity**: Solves specific business problems
+- **Statefulness**: Modifies system state and data
+- **Versioning**: Feature-based versioning aligned with business releases
+
+## Subsection 2: Management Rules {#application-management}
+
+```yaml
+# Subrepo configuration for update_scripts
+remote: git@github.com:org/project_update_scripts.git
+branch: main
+version_policy: feature_based
+change_frequency: high
+project_specific: true
+depends_on: global_scripts
+```
+
+# Section 4: Dependency Architecture {#dependencies}
+
+## Subsection 1: Permitted Dependencies {#permitted}
+
+**update_scripts → global_scripts** ✅
+```r
+# In update_scripts/platform_ETL01.R
+source("../global_scripts/01_db/dbConnect.R")
+source("../global_scripts/04_utils/fn_process.R")
+```
+
+**Cross-project global_scripts sharing** ✅
+```bash
+# Project A and Project B can share the same global_scripts
+ProjectA/scripts/global_scripts -> shared/global_scripts.git
+ProjectB/scripts/global_scripts -> shared/global_scripts.git
+```
+
+## Subsection 2: Forbidden Dependencies {#forbidden}
+
+**global_scripts → update_scripts** ❌
+```r
+# NEVER in global_scripts
+source("../../update_scripts/specific_logic.R")  # FORBIDDEN
+```
+
+**Circular subrepo dependencies** ❌
+```yaml
+# FORBIDDEN configuration
+global_scripts:
+  depends_on: update_scripts  # Creates circular dependency
+```
+
+# Section 5: Implementation Patterns {#patterns}
+
+## Subsection 1: Subrepo Initialization {#initialization}
+
+```bash
+# Initialize dual-track architecture
+cd scripts/
+
+# Add framework layer as subrepo
+git subrepo clone git@github.com:org/global_scripts.git global_scripts
+
+# Add application layer as subrepo
+git subrepo clone git@github.com:org/update_scripts.git update_scripts
+
+# Verify structure
+git subrepo status
+```
+
+## Subsection 2: Update Patterns {#update-patterns}
+
+**Framework Updates** (Low frequency, high impact):
+```bash
+# Pull latest framework changes
+git subrepo pull scripts/global_scripts
+
+# Run compatibility tests
+Rscript scripts/global_scripts/98_test/test_compatibility.R
+
+# Update only after verification
+git commit -m "Update global_scripts to v2.1.0"
+```
+
+**Application Updates** (High frequency, low impact):
+```bash
+# Regular business logic updates
+cd scripts/update_scripts
+# Make changes...
+
+# Push changes frequently
+git subrepo push scripts/update_scripts
+```
+
+# Section 6: Decision Matrix {#decision-matrix}
+
+## When to place code in each layer:
+
+| Criteria | global_scripts | update_scripts |
+|----------|----------------|----------------|
+| **Reusability** | Cross-project | Project-specific |
+| **Stability** | Stable API | Frequently changing |
+| **State** | Stateless functions | Stateful operations |
+| **Business Logic** | Generic patterns | Specific rules |
+| **Dependencies** | Minimal, stable | Can depend on global |
+| **Testing** | Comprehensive unit tests | Integration tests |
+| **Documentation** | Full API docs | Usage examples |
+| **Versioning** | Semantic | Feature-based |
+
+# Section 7: Benefits {#benefits}
+
+The dual-track subrepo architecture provides:
+
+1. **Separation of Concerns**: Clear boundary between framework and application
+2. **Independent Evolution**: Each layer evolves at its natural pace
+3. **Cross-Project Reusability**: Framework improvements benefit all projects
+4. **Risk Isolation**: Application changes don't affect framework stability
+5. **Team Scalability**: Different teams can own different layers
+6. **Version Control**: Independent git histories for different concerns
+7. **Deployment Flexibility**: Can update layers independently
+8. **Testing Strategy**: Different test approaches for each layer
+
+# Section 8: Migration Strategy {#migration}
+
+## For existing monolithic codebases:
+
+### Phase 1: Identify {#identify}
+```r
+# Analyze codebase for separation candidates
+source("scripts/global_scripts/00_principles/analyze_separation.R")
+report <- analyze_code_separation(".")
+```
+
+### Phase 2: Extract {#extract}
+```r
+# Extract reusable components to global_scripts
+move_to_global <- report$reusable_functions
+migrate_functions(move_to_global, "scripts/global_scripts/04_utils/")
+```
+
+### Phase 3: Establish {#establish}
+```bash
+# Convert directories to subrepos
+git subrepo init scripts/global_scripts
+git subrepo init scripts/update_scripts
+
+# Push to remote repositories
+git subrepo push scripts/global_scripts
+git subrepo push scripts/update_scripts
+```
+
+# Section 9: Relationship to Other Principles {#relationships}
+
+## Supporting Principles:
+
+**MP093 (Script Separation)**: Provides the conceptual separation this architecture implements physically
+
+**MP044 (Functor-Module Correspondence)**: Organizes content within each track
+
+**MP097 (Principle-Implementation Separation)**: Principles in global_scripts, implementations in update_scripts
+
+**SO_R001 (Directory Structure)**: Defines the internal organization of each track
+
+## Enhanced Principles:
+
+This architecture enhances existing principles by:
+- Providing git-enforced boundaries
+- Enabling cross-project sharing
+- Supporting independent versioning
+- Facilitating team collaboration
+
+# Section 10: Enforcement and Compliance {#enforcement}
+
+## Code Review Checklist:
+
+- [ ] New reusable functions go in global_scripts
+- [ ] Business-specific logic stays in update_scripts
+- [ ] No reverse dependencies (global → update)
+- [ ] Proper subrepo commit messages
+- [ ] Version compatibility verified before updates
+- [ ] Documentation updated in both layers
+- [ ] Tests appropriate to each layer
+
+## CI/CD Integration:
+
+```yaml
+# .github/workflows/dual-track-ci.yml
+name: Dual-Track CI
+on: [push, pull_request]
+
+jobs:
+  framework-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Test global_scripts
+        run: |
+          cd scripts/global_scripts
+          Rscript 98_test/run_all_tests.R
+
+  application-tests:
+    runs-on: ubuntu-latest
+    needs: framework-tests
+    steps:
+      - uses: actions/checkout@v2
+      - name: Test update_scripts
+        run: |
+          cd scripts/update_scripts
+          Rscript test_integration.R
+```
+
+---
+
+*Effective Date: 2025-09-30*
+*System Architecture Law Article 122*
+*Architectural Pattern: Dual-Track Subrepo*
+*Status: Active*

@@ -1,0 +1,550 @@
+---
+title: "DEV_R032: Script Structure Standard Rule"
+subtitle: "All update scripts and ETL implementation scripts MUST follow a standardized five-part structure: INITIALIZE, MAIN, TEST, SUMMARIZE, and DEINITIALIZE. This ensures proper resource management, clear separation of concerns, and reliable cleanup normalization."
+chapter: "CH03"
+category: "rule"
+number: "DEV_R032"
+date-created: "2025-08-18"
+date-modified: "2025-08-28"
+author: "Claude Code"
+type: "rule"
+law: "Development Methodology Law"
+article-number: 
+  number: 32
+  title: "Script Structure Standard Rule"
+related_to:
+  - "MP031: Initialization First"
+  - "MP033: Deinitialization Final"
+  - "MP103: Autodeinit Behavior"
+  - "MP105: Principle Documentation Lifecycle"
+  - "DM_R036: ETL Return Value Patterns"
+  - "DM_R039: Database Connection Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 32: Script Structure Standard Rule {#overview}
+
+**Development Methodology Law Article 32 (Script Structure Standard Rule)**
+
+All update scripts (`sc_` prefix files) and ETL implementation scripts MUST follow a standardized five-part structure: INITIALIZE, MAIN, TEST, SUMMARIZE, and DEINITIALIZE. This structure provides superior separation of concerns, enables proper variable access for reporting, and maintains clean resource management.
+
+:::{.callout-important}
+## Summary
+The five-part structure separates reporting/metrics (SUMMARIZE) from cleanup (DEINITIALIZE), enabling full variable access for reporting while maintaining mandatory cleanup for proper system normalization.
+:::
+
+# Section 1: Motivation {#motivation}
+
+The five-part structure provides critical architectural advantages:
+
+1. **Clean Separation of Concerns** - Each section has a single, clear responsibility
+2. **Proper Variable Access** - Reporting logic can access all variables before cleanup
+3. **Return Value Handling** - ETL scripts can prepare return values before cleanup
+4. **Debugging Flexibility** - Can skip cleanup while preserving all reporting
+5. **Resource Management** - Guaranteed cleanup through autodeinit()
+
+## Architectural Foundation
+
+The five-part structure aligns with core MAMBA principles:
+
+- **MP031**: Initialization First - Proper setup before operations
+- **MP033**: Deinitialization Final - Guaranteed cleanup
+- **MP103**: Autodeinit Behavior - Variables removed at script end
+- **MP105**: Documentation Lifecycle - Current standards only
+
+# Section 2: Implementation {#implementation}
+
+Every script following this pattern MUST contain these five sections, clearly marked:
+
+```r
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+# Environment setup, dependency loading, connection establishment
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# Core processing logic with error handling
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+# Verification that changes were applied correctly
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+# All reporting, metrics, logging, and return value preparation
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+# MANDATORY: Only cleanup operations, autodeinit() must be the last statement
+```
+
+## Subsection 1: INITIALIZE Section {#initialize-section}
+
+The INITIALIZE section MUST be organized into two logical subsections:
+
+### 1.1: Basic Initialization
+
+- Source the appropriate initialization script (autoinit)
+- Load required packages and dependencies
+- Configure environment variables
+- Initialize tracking variables
+
+### 1.2: Database Connections (Following DM_R039)
+
+- Establish database connections at the END of INITIALIZE
+- Use dbConnectDuckdb() wrapper function
+- Use paths from db_path_list configuration
+
+```r
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+message("INITIALIZE: Setting up environment...")
+init_start <- Sys.time()
+
+# ------------------------------------------------------------------------------
+# 1.1: Basic Initialization
+# ------------------------------------------------------------------------------
+# Following MP031: Initialization First
+# Source initialization for appropriate mode (calls autoinit internally)
+source(file.path("scripts", "global_scripts", "22_initializations", 
+                 "sc_initialization_update_mode.R"))
+
+# Load required libraries
+library(dplyr)
+library(DBI)
+
+# Initialize tracking variables
+main_error <- FALSE
+test_passed <- FALSE
+rows_processed <- 0
+
+# ------------------------------------------------------------------------------
+# 1.2: Database Connections
+# ------------------------------------------------------------------------------
+# Following DM_R039: Database Connection Pattern
+# Connections MUST be established at END of INITIALIZE using dbConnectDuckdb
+if (!exists("con") || !DBI::dbIsValid(con)) {
+  con <- dbConnectDuckdb(db_path_list$main_db, read_only = FALSE)
+  connection_created <- TRUE
+  message("  Connected to database")
+} else {
+  connection_created <- FALSE
+}
+
+init_elapsed <- as.numeric(Sys.time() - init_start, units = "secs")
+message(sprintf("INITIALIZE: Complete (%.2fs)", init_elapsed))
+```
+
+## Subsection 2: MAIN Section {#main-section}
+
+The MAIN section MUST:
+
+- Be wrapped in a tryCatch block
+- Set error tracking variables on failure
+- Perform the core functionality
+- Log progress appropriately
+
+```r
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+message("MAIN: Starting core processing...")
+main_start <- Sys.time()
+
+tryCatch({
+  # Core operation code
+  df_sales <- tbl(con, "raw_sales") %>%
+    filter(date >= "2024-01-01") %>%
+    collect()
+  
+  # Processing logic
+  df_processed <- df_sales %>%
+    mutate(quarter = quarter(date)) %>%
+    group_by(quarter) %>%
+    summarize(total = sum(amount))
+  
+  # Write results
+  DBI::dbWriteTable(con, "quarterly_sales", df_processed, overwrite = TRUE)
+  rows_processed <- nrow(df_processed)
+  
+  message(sprintf("  Processed %d rows", rows_processed))
+  
+}, error = function(e) {
+  message("ERROR in MAIN: ", e$message)
+  main_error <- TRUE
+})
+
+main_elapsed <- as.numeric(Sys.time() - main_start, units = "secs")
+message(sprintf("MAIN: Complete (%.2fs)", main_elapsed))
+```
+
+## Subsection 3: TEST Section {#test-section}
+
+The TEST section MUST:
+
+- Verify that changes were applied correctly
+- Only run if the MAIN section succeeded
+- Set test_passed variable for SUMMARIZE section
+- Include appropriate error handling
+
+```r
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+if (!main_error) {
+  message("TEST: Verifying results...")
+  test_start <- Sys.time()
+  
+  tryCatch({
+    # Verification queries
+    table_exists <- DBI::dbExistsTable(con, "quarterly_sales")
+    row_count <- DBI::dbGetQuery(con, "SELECT COUNT(*) as n FROM quarterly_sales")$n
+    
+    if (table_exists && row_count > 0) {
+      message(sprintf("  ✓ Table exists with %d rows", row_count))
+      test_passed <- TRUE
+    } else {
+      message("  ✗ Verification failed")
+      test_passed <- FALSE
+    }
+    
+  }, error = function(e) {
+    message("ERROR in TEST: ", e$message)
+    test_passed <- FALSE
+  })
+  
+  test_elapsed <- as.numeric(Sys.time() - test_start, units = "secs")
+  message(sprintf("TEST: Complete (%.2fs)", test_elapsed))
+  
+} else {
+  message("TEST: Skipped due to MAIN error")
+  test_passed <- FALSE
+}
+```
+
+## Subsection 4: SUMMARIZE Section {#summarize-section}
+
+The SUMMARIZE section handles all reporting, metrics, and return value preparation:
+
+```r
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+message("SUMMARIZE: Generating final report...")
+summary_start <- Sys.time()
+
+# Compile final metrics (all variables still accessible)
+final_metrics <- list(
+  success = test_passed && !main_error,
+  rows_processed = rows_processed,
+  execution_time = as.numeric(Sys.time() - init_start, units = "secs"),
+  memory_used = sum(gc()[, "(Mb)"]),
+  timestamp = Sys.time()
+)
+
+# Generate comprehensive summary
+message("=" * 70)
+message("📊 SCRIPT EXECUTION SUMMARY")
+message("=" * 70)
+message(sprintf("  Status: %s", ifelse(final_metrics$success, "✅ SUCCESS", "❌ FAILED")))
+message(sprintf("  Rows Processed: %d", final_metrics$rows_processed))
+message(sprintf("  Execution Time: %.2fs", final_metrics$execution_time))
+message(sprintf("  Memory Used: %.1f MB", final_metrics$memory_used))
+message(sprintf("  Completed: %s", format(final_metrics$timestamp, "%Y-%m-%d %H:%M:%S")))
+
+# Performance breakdown
+message("-" * 70)
+message("⏱️  PERFORMANCE BREAKDOWN:")
+message(sprintf("  Initialize: %.2fs", init_elapsed))
+message(sprintf("  Main:       %.2fs", main_elapsed))
+if (exists("test_elapsed")) {
+  message(sprintf("  Test:       %.2fs", test_elapsed))
+}
+message(sprintf("  Summarize:  %.2fs", as.numeric(Sys.time() - summary_start, units = "secs")))
+
+# Prepare return value for pipeline orchestration
+final_return_status <- final_metrics$success
+
+# Optional: Save metrics to file for external monitoring
+if (Sys.getenv("SAVE_METRICS", "FALSE") == "TRUE") {
+  metrics_file <- sprintf("metrics/run_%s.rds", format(Sys.time(), "%Y%m%d_%H%M%S"))
+  saveRDS(final_metrics, metrics_file)
+  message(sprintf("  Metrics saved to: %s", metrics_file))
+}
+
+summary_elapsed <- as.numeric(Sys.time() - summary_start, units = "secs")
+message(sprintf("SUMMARIZE: Complete (%.2fs)", summary_elapsed))
+message("=" * 70)
+```
+
+## Subsection 5: DEINITIALIZE Section {#deinitialize-section}
+
+The DEINITIALIZE section handles ONLY cleanup operations:
+
+```r
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+# MANDATORY: Only cleanup operations
+# autodeinit() must be the absolute last statement
+
+message("DEINITIALIZE: Cleaning up resources...")
+
+# Close connections created in this script
+if (exists("connection_created") && connection_created) {
+  if (exists("con") && DBI::dbIsValid(con)) {
+    DBI::dbDisconnect(con)
+    message("  Database connection closed")
+  }
+}
+
+# Final cleanup - removes ALL variables
+# No variable access after this point!
+autodeinit()
+```
+
+# Section 3: Key Architectural Benefits {#benefits}
+
+## Complete Variable Access Control
+
+The five-part structure provides complete control over variable lifecycle:
+
+```r
+# ✅ CORRECT: Five-part structure
+# PART 4: SUMMARIZE
+final_status <- calculate_status()  # Variables accessible
+message("Status:", final_status)    # Can use variables
+save_metrics(final_status)          # Can save to file
+
+# PART 5: DEINITIALIZE  
+autodeinit()  # No variable access needed after this
+```
+
+## Clean Separation of Concerns
+
+Each section has a single, clear responsibility:
+
+1. **INITIALIZE**: Set up environment
+2. **MAIN**: Perform core operations
+3. **TEST**: Verify success
+4. **SUMMARIZE**: Report and prepare returns
+5. **DEINITIALIZE**: Clean up only
+
+This separation enables:
+- Better code organization
+- Easier debugging
+- Cleaner testing
+- Improved maintainability
+
+## Enhanced Debugging Capabilities
+
+```r
+# Skip cleanup for debugging while preserving all reporting
+if (Sys.getenv("DEBUG_MODE", "FALSE") == "TRUE") {
+  message("DEBUG: Skipping DEINITIALIZE")
+  return(final_return_status)  # Early return with value
+}
+
+# Normal cleanup
+autodeinit()
+```
+
+# Section 4: Implementation Patterns {#patterns}
+
+## ETL Script Pattern
+
+```r
+#!/usr/bin/env Rscript
+# cbz_ETL_sales.R
+# Purpose: Process sales data with five-part structure
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+# 1.1: Basic Initialization
+source("scripts/global_scripts/22_initializations/sc_initialization_etl_mode.R")
+library(dplyr)
+
+# 1.2: Database Connections (Following DM_R039)
+con <- dbConnectDuckdb(db_path_list$sales_db, read_only = FALSE)
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+df_raw <- DBI::dbReadTable(con, "raw_sales")
+df_processed <- process_sales_data(df_raw)
+DBI::dbWriteTable(con, "processed_sales", df_processed, overwrite = TRUE)
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+test_passed <- DBI::dbExistsTable(con, "processed_sales")
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+message(sprintf("Processed %d sales records", nrow(df_processed)))
+final_status <- list(success = test_passed, rows = nrow(df_processed))
+saveRDS(final_status, "etl_status.rds")
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+DBI::dbDisconnect(con)
+autodeinit()
+```
+
+## Update Script Pattern
+
+```r
+# sc_update_database_schema.R
+# Purpose: Update database schema with five-part structure
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+source("scripts/global_scripts/22_initializations/sc_initialization_update_mode.R")
+# ... initialization code ...
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# ... main processing ...
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+# ... verification ...
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+# ... reporting ...
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+autodeinit()
+```
+
+# Section 5: Validation and Enforcement {#enforcement}
+
+## Validation Function
+
+```r
+validate_five_part_structure <- function(script_path) {
+  lines <- readLines(script_path)
+  
+  # Check for all five parts
+  parts <- c("INITIALIZE", "MAIN", "TEST", "SUMMARIZE", "DEINITIALIZE")
+  found_parts <- sapply(parts, function(p) {
+    any(grepl(sprintf("PART [1-5]: %s", p), lines))
+  })
+  
+  # Check autodeinit placement
+  autodeinit_line <- grep("autodeinit\\(\\)", lines)
+  if (length(autodeinit_line) > 0) {
+    # Check if it's in DEINITIALIZE section
+    deinit_start <- grep("PART 5: DEINITIALIZE", lines)[1]
+    in_deinitialize <- autodeinit_line > deinit_start
+    
+    # Check for variable references after
+    remaining <- lines[(max(autodeinit_line) + 1):length(lines)]
+    has_refs <- any(grepl("\\b(df_|final_|status|metrics)\\b", remaining))
+    
+    list(
+      has_all_parts = all(found_parts),
+      autodeinit_correct = in_deinitialize && !has_refs,
+      missing_parts = parts[!found_parts]
+    )
+  }
+}
+```
+
+## Template Updates
+
+All script templates must use five-part structure:
+
+```r
+# Template files to update:
+# - template_update_script_five_part.R
+# - template_ETL_five_part.R
+# - fn_generate_script_structure.R
+```
+
+# Section 6: Relationships to Other Principles {#relationships}
+
+## Core Dependencies
+
+- **MP031**: Initialization First - Establishes proper setup
+- **MP033**: Deinitialization Final - Ensures cleanup
+- **MP103**: Autodeinit Behavior - Documents cleanup mechanics
+- **MP105**: Documentation Lifecycle - Maintains current standards
+
+## ETL Integration
+
+- **DM_R036**: ETL Return Values - Works seamlessly with SUMMARIZE section
+- **MP058**: Database Table Creation - Aligns with MAIN section patterns
+- **P076**: Error Handling - Integrated throughout all sections
+
+# Section 7: FAQ {#faq}
+
+## Q: Is five-part structure mandatory?
+
+Yes, it's required (MUST) for all new update scripts and ETL scripts. This ensures consistency across the codebase.
+
+## Q: Can I skip SUMMARIZE if not needed?
+
+Yes, but include an empty section with a comment:
+
+```r
+# PART 4: SUMMARIZE
+# No summary needed for this simple operation
+```
+
+## Q: What about simple scripts?
+
+Even simple scripts benefit from the structure. It takes minimal effort and ensures consistency.
+
+## Q: How do I handle early returns?
+
+Use the SUMMARIZE section to prepare return values before DEINITIALIZE:
+
+```r
+# PART 4: SUMMARIZE
+final_return <- prepare_return_value()
+
+# PART 5: DEINITIALIZE
+if (debug_mode) return(final_return)  # Before autodeinit
+autodeinit()
+```
+
+# Section 8: Conclusion {#conclusion}
+
+The five-part script structure is the standard for MAMBA development:
+
+1. **Solves** variable access challenges completely
+2. **Improves** code organization through separation
+3. **Enables** comprehensive reporting and metrics
+4. **Ensures** proper resource management
+5. **Simplifies** debugging and maintenance
+
+This structure must be adopted for all new script development.
+
+---
+
+*Based on: Development Methodology Law Article 32*  
+*Status: ACTIVE - Current standard for script structure*  
+*Related to: [MP103 Autodeinit Behavior](../../CH00_fundamental_principles/02_structure_organization/MP103_autodeinit_behavior.qmd), [DM_R036 ETL Return Values](../../CH02_data_management/rules/DM_R036_etl_return_values.qmd)*

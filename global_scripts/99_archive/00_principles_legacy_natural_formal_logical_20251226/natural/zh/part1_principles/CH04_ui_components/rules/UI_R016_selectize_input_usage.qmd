@@ -1,0 +1,259 @@
+---
+title: "UI_R016: Selectize 輸入使用規則"
+subtitle: "此規則建立了在 Shiny 應用程式中實施和自訂 selectize 輸入的標準方法，確保所有選擇組件的一致性、性能和使用者體驗"
+chapter: "CH04"
+category: "rule"
+number: "UI_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article: 
+  number: 16
+  title: "Selectize 輸入使用規則"
+related_to:
+  - "R102: Shiny 反應式觀察規則"
+  - "P77: 性能優化"
+  - "P75: 搜尋輸入優化"
+  - "P71: 行對齊表格"
+  - "SLN05: 避免 Shiny 中的嵌套 UI 渲染"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十六條：Selectize 輸入使用規則 {#overview}
+
+**UI組件法第十六條（Selectize 輸入使用規則）**
+
+此規則建立了實施和自訂 selectize 輸入的標準方法，確保選擇界面的一致性和優化性能。
+
+:::{.callout-important}
+## 目的
+此規則建立了在 Shiny 應用程式中實施和自訂 selectize 輸入的標準方法，確保所有選擇組件的一致性、性能和使用者體驗。
+:::
+
+# 第一項：定義 {#definitions}
+
+- **Selectize 輸入**：基於 selectize.js JavaScript 函式庫的增強選擇輸入，提供搜尋功能、自訂渲染和更好的選擇界面使用者體驗。
+- **客戶端 Selectize**：所有選項載入到客戶端，由 JavaScript 處理過濾的實施。
+- **伺服器端 Selectize**：基於使用者輸入在伺服器上執行選項過濾的實施。
+
+# 第二項：需求 {#requirements}
+
+## 第一款：選擇方法判定 {#selection-method-determination}
+
+1. **基本選擇規則**：對於少於 20 個選項的簡單選擇場景使用標準 `selectInput()`
+2. **Selectize 需求**：當適用這些條件之一時使用 `selectizeInput()`：
+   - 選擇列表包含超過 20 個選項
+   - 使用者需要在選項內搜尋
+   - 需要自訂選項渲染
+   - 需要帶標籤的多重選擇
+3. **伺服器端需求**：當以下情況時使用伺服器端 selectize：
+   - 選擇列表包含超過 100 個選項
+   - 選項需要從資料庫或大型資料集動態過濾
+   - 性能優化至關重要
+
+## 第二款：初始化標準 {#initialization-standards}
+
+### 客戶端初始化 {#client-side-initialization}
+
+```r
+selectizeInput(
+  inputId = "selection_id",
+  label = "選擇標籤",
+  choices = option_list,
+  selected = default_option,
+  multiple = FALSE,
+  options = list(
+    placeholder = "選擇一個選項...",
+    onDropdownOpen = I("function($dropdown) { /* 一致性代碼 */ }")
+  )
+)
+```
+
+### 伺服器端初始化 {#server-side-initialization}
+
+```r
+# 在 UI 中
+selectizeInput(
+  inputId = "selection_id",
+  label = "選擇標籤",
+  choices = NULL,  # 初始為空
+  multiple = FALSE,
+  options = list(placeholder = "開始輸入以搜尋...")
+)
+
+# 在伺服器中
+updateSelectizeInput(
+  session = session,
+  inputId = "selection_id",
+  choices = full_option_dataset,
+  server = TRUE,
+  options = list(
+    maxOptions = 15,
+    searchField = c("label", "keywords"),
+    searchConjunction = "and"
+  )
+)
+```
+
+## 第三款：核心配置標準 {#core-configuration-standards}
+
+1. **必需選項設定**：
+   - 始終指定 `placeholder` 選項
+   - 始終設定 `maxOptions` 以限制顯示的產品（預設：15）
+   - 對於多重選擇，設定 `maxproducts` 以建立選擇限制
+
+2. **性能配置**：
+   - 對伺服器端輸入使用 `selectize_throttle = 300` 以限制請求頻率
+   - 設定 `load_throttle = 300` 以控制搜尋時機
+
+3. **UI 一致性選項**：
+```r
+options = list(
+  plugins = list("remove_button"),
+  render = selectize_render_template,
+  onDropdownOpen = I(standard_dropdown_js),
+  onDropdownClose = I(standard_cleanup_js)
+)
+```
+
+## 第四款：自訂渲染需求 {#custom-rendering-requirements}
+
+### 標準渲染函數 {#standard-render-function}
+
+```r
+selectize_render_template <- I('{
+  option: function(product, escape) {
+    return "<div class=\"selectize-option\">" +
+      "<span class=\"option-label\">" + escape(product.label) + "</span>" +
+      (product.description ? "<span class=\"option-description\">" + 
+        escape(product.description) + "</span>" : "") +
+      "</div>";
+  },
+  product: function(product, escape) {
+    return "<div class=\"selectize-selected-product\">" + 
+      escape(product.label) + "</div>";
+  }
+}')
+```
+
+## 第五款：資料結構需求 {#data-structure-requirements}
+
+1. **標準結構**：客戶端 selectize 資料應準備為：
+```r
+choices <- c("選項 1" = "value1", "選項 2" = "value2")
+```
+
+2. **豐富資料結構**：對於具有擴展資訊的伺服器端過濾：
+```r
+choices_df <- data.frame(
+  label = c("選項 1", "選項 2"),
+  value = c("value1", "value2"),
+  description = c("描述 1", "描述 2"),
+  keywords = c("key1 alt1", "key2 alt2"),
+  stringsAsFactors = FALSE
+)
+```
+
+## 第六款：事件處理需求 {#event-handling-requirements}
+
+### 標準觀察者 {#standard-observers}
+
+```r
+observeEvent(input$selection_id, {
+  req(input$selection_id)
+  if(input$selection_id == "") {
+    # 處理空選擇情況
+  } else {
+    # 處理選擇
+  }
+})
+```
+
+### 載入狀態 {#loading-states}
+
+```r
+# 在伺服器端過濾期間顯示載入指示器
+options = list(
+  onType = I('function() { 
+    Shiny.setInputValue("selection_id_loading", true);
+  }'),
+  onLoad = I('function() {
+    Shiny.setInputValue("selection_id_loading", false);
+  }')
+)
+```
+
+# 第三項：範例 {#examples}
+
+## 第一款：基本客戶端範例 {#basic-client-side-example}
+
+```r
+selectizeInput(
+  inputId = "state",
+  label = "選擇州：",
+  choices = state.name,
+  options = list(
+    placeholder = "選擇一個州...",
+    maxOptions = 10,
+    plugins = list("remove_button")
+  )
+)
+```
+
+## 第二款：伺服器端過濾範例 {#server-side-filtering-example}
+
+```r
+# UI
+selectizeInput(
+  "customer_id", 
+  "選擇客戶：",
+  choices = NULL,
+  options = list(placeholder = "開始輸入客戶名稱...")
+)
+
+# 伺服器
+customer_data <- reactive({
+  universal_data_accessor(connection, "customer_profile") %>%
+    select(
+      value = customer_id, 
+      label = customer_name,
+      keywords = search_terms
+    )
+})
+
+observe({
+  updateSelectizeInput(
+    session, 
+    "customer_id",
+    choices = customer_data(),
+    server = TRUE,
+    options = list(
+      valueField = "value",
+      labelField = "label",
+      searchField = c("label", "keywords"),
+      maxOptions = 15
+    )
+  )
+})
+```
+
+# 第四項：實施注意事項 {#implementation-notes}
+
+1. 始終使用 `I()` 包裝 JavaScript 函數以防止 R 轉義內容
+2. 使用一致的 CSS 類別來設計 selectize 組件的樣式
+3. 對於非常大的資料集（10,000+ 選項），實施伺服器端分頁
+4. 當 `multiple=TRUE` 時，始終在觀察者中明確處理空字串情況
+5. 在大多數情況下設定 `closeAfterSelect = TRUE` 以獲得更好的使用者體驗
+
+---
+
+*基於：UI組件法第十六條*  
+*相關連結：[R102 Shiny 反應式觀察規則](../../CH03_development_methodology/rules/DEV_R026_shiny_reactive_observation.qmd), [P75 搜尋輸入優化](../../CH04_ui_components/principles/UI_P007_search_input_optimization.qmd)*

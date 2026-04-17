@@ -1,0 +1,343 @@
+---
+title: "TS_R003: NSQL 語言規範 v3"
+subtitle: "NSQL（Natural SQL Language）是一種專門用於描述反應式應用程式中資料操作、轉換和流程的文件語言，結合了 SQL 的聲明式清晰度與增強語法"
+chapter: "CH00"
+category: "rule"
+number: "TS_R003"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "基本原則法"
+article: 
+  number: 3
+  title: "NSQL 語言規範"
+related_to:
+  - "MP27: 整合自然 SQL 語言"
+  - "MP24: 自然 SQL 語言"
+  - "MP65: NSQL 中的激進翻譯"
+  - "MP52: 單向資料流"
+  - "P73: 伺服器到 UI 資料流"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三條：NSQL 語言規範 v3 {#overview}
+
+**基本原則法第三條（NSQL 語言規範）**
+
+NSQL（Natural SQL Language）是一種專門用於描述反應式應用程式中資料操作、轉換和流程的文件語言。它結合了 SQL 的聲明式清晰度與用於記錄 UI 組件、反應式依賴、視覺化、圖論關係和測試需求的增強語法。
+
+:::{.callout-important}
+## 概述
+NSQL（Natural SQL Language）是一種專門用於描述反應式應用程式中資料操作、轉換和流程的文件語言。
+:::
+
+# 第一項：核心原則 {#core-principles}
+
+1. **清晰性**：表達式必須清楚指示來源、轉換和目的地
+2. **精確性**：語法必須消除資料操作描述中的歧義
+3. **對齊性**：文件必須與實施模式對齊
+4. **完整性**：資料流的所有方面都必須可記錄
+5. **視覺化**：支援生成流程圖和視覺化
+6. **層級組織**：為文件提供清晰的結構層次
+7. **圖論表示**：支援組件關係的正式表示
+8. **整合**：與現有文件系統無縫融合
+9. **激進翻譯**：在保留語義的同時實現表示系統間的轉換
+
+# 第二項：NSQL 整合模型 {#integration-model}
+
+NSQL 現在整合五個主要組件系統：
+
+1. **核心 NSQL**：資料操作和轉換語法
+2. **圖論擴展**：組件關係和流程視覺化
+3. **LaTeX/Markdown 術語**：文件結構和格式化
+4. **Roxygen2 風格註釋**：函數和組件文件
+5. **激進翻譯系統**：跨語言和跨範式轉換
+
+# 第三項：基本語法 {#basic-syntax}
+
+## 第一款：資料操作表達式 {#data-operation-expression}
+
+NSQL 的基本單位是資料操作表達式：
+
+```
+OPERATION(SOURCE → TRANSFORM → DESTINATION)
+```
+
+範例：
+```sql
+FILTER(transactions → WHERE date > '2023-01-01' → recent_transactions)
+```
+
+## 第二款：組件文件 {#component-documentation}
+
+UI 組件與其資料來源和操作一起記錄：
+
+```sql
+-- COMPONENT: component_name
+-- Type: component_type
+-- Data Source: data_source_name
+-- Operation: operation_description
+-- SQL Query:
+SELECT ...
+```
+
+## 第三款：資料流文件 {#data-flow-documentation}
+
+記錄完整的反應式資料流：
+
+```sql
+DATA_FLOW(name: "flow_name") {
+  SOURCE: source_1, source_2
+  BRANCH: "branch_name_1" {
+    TRANSFORM(source → operation → destination)
+    DISPLAY(destination → component)
+  }
+  BRANCH: "branch_name_2" {
+    TRANSFORM(source → operation → destination)
+    DISPLAY(destination → component)
+  }
+}
+```
+
+# 第四項：NSQL 元素 {#nsql-elements}
+
+## 第一款：資料來源 {#data-sources}
+
+```sql
+-- 簡單來源
+SOURCE: customers
+
+-- 多個來源
+SOURCE: customers, transactions, products
+
+-- 帶元資料的來源
+SOURCE: customers {
+  Primary: true
+  Update_Frequency: "Daily"
+  Fields: [
+    { Name: "customer_id", Type: "INTEGER", Key: true },
+    { Name: "name", Type: "VARCHAR(255)" },
+    { Name: "email", Type: "VARCHAR(255)" }
+  ]
+}
+```
+
+## 第二款：操作 {#operations}
+
+```sql
+-- 過濾操作
+FILTER(customers → WHERE status = 'active' → active_customers)
+
+-- 連接操作
+JOIN(orders → WITH customers ON orders.customer_id = customers.id → order_details)
+
+-- 聚合操作
+AGGREGATE(sales → GROUP BY product_id | SUM(amount) AS total → product_totals)
+
+-- 轉換操作
+TRANSFORM(raw_data → CLEAN DUPLICATES | FORMAT DATES → clean_data)
+
+-- 提取操作
+EXTRACT(transactions → DISTINCT customer_id → unique_customers)
+```
+
+## 第三款：流程控制 {#flow-control}
+
+```sql
+-- 簡單流程
+FLOW: input.date_range 
+  → FILTER(transactions BY date BETWEEN input.date_range.start AND input.date_range.end) 
+  → display_table
+
+-- 分支流程
+FLOW: "Dashboard Update" {
+  TRIGGER: input.refresh_button
+  BRANCH: "Sales Data" {
+    FILTER(transactions → RECENT 30 DAYS → recent_sales)
+    DISPLAY(recent_sales → sales_chart)
+  }
+  BRANCH: "Customer Data" {
+    FILTER(customers → ACTIVE STATUS → active_customers)
+    COUNT(active_customers → total_active)
+    DISPLAY(total_active → customer_counter)
+  }
+}
+```
+
+## 第四款：組件映射 {#component-mapping}
+
+```sql
+-- 輸入組件
+COMPONENT: date_filter {
+  Type: dateRangeInput
+  Default: [CURRENT_DATE - 30 DAYS, CURRENT_DATE]
+  Label: "Select Date Range"
+  Effects: [
+    TRIGGER: FILTER(transactions BY date BETWEEN input.date_filter.start AND input.date_filter.end)
+  ]
+}
+
+-- 輸出組件
+COMPONENT: sales_summary {
+  Type: valueBox
+  Data_Source: filtered_transactions
+  Operation: AGGREGATE(SUM(amount) AS total_sales)
+  Format: "$#,##0.00"
+  Icon: "dollar-sign"
+  Color: "success"
+}
+```
+
+## 第五款：反應式依賴 {#reactive-dependencies}
+
+```sql
+-- 簡單反應式依賴
+REACTIVE: filtered_customers {
+  DEPENDS_ON: [input.status_filter, input.date_range]
+  OPERATION: FILTER(customers → WHERE status = input.status_filter AND 
+                   date BETWEEN input.date_range.start AND input.date_range.end)
+}
+
+-- 複雜反應連鎖
+REACTIVE_CHAIN: "Customer Analysis" {
+  STEP 1: filtered_customers {
+    DEPENDS_ON: [input.status_filter]
+    OPERATION: FILTER(customers → WHERE status = input.status_filter)
+  }
+  
+  STEP 2: customer_metrics {
+    DEPENDS_ON: [filtered_customers]
+    OPERATION: JOIN(filtered_customers → WITH transactions ON customer_id)
+  }
+  
+  STEP 3: summary_statistics {
+    DEPENDS_ON: [customer_metrics]
+    OPERATION: AGGREGATE(customer_metrics → GROUP BY status | AVG(amount) AS avg_spend)
+  }
+  
+  OUTPUT: DISPLAY(summary_statistics → summary_table)
+}
+```
+
+## 第六款：表創建和資料庫結構 {#table-creation}
+
+NSQL 提供用於定義和記錄資料庫表及其關係的語法。這允許清晰規範可在各種資料庫系統中實施的資料結構。
+
+```sql
+-- 在特定資料庫連接處創建新表
+CREATE df_customer_profile AT app_data
+===
+CREATE OR REPLACE TABLE df_customer_profile (
+  customer_id INTEGER,
+  buyer_name VARCHAR,
+  email VARCHAR,
+  platform_id INTEGER NOT NULL,
+  display_name VARCHAR GENERATED ALWAYS AS (buyer_name || ' (' || email || ')') VIRTUAL,
+  PRIMARY KEY (customer_id, platform_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_df_customer_profile_platform_id_df_customer_profile 
+ON df_customer_profile(platform_id);
+===
+```
+
+CREATE 語法使用三部分格式：
+1. 高層級意圖聲明：`CREATE table_name AT connection[.schema]`
+2. 分隔符標記：`===`
+3. 分隔符之間的實際 SQL 實施
+
+## 第七款：激進翻譯 {#radical-translation}
+
+NSQL 支援在保留語義等價性的同時在不同表示系統之間進行激進翻譯。這使得能夠在不同語言和範式之間轉換資料操作。
+
+```sql
+-- SQL 到 R 翻譯範例
+TRANSLATION: "Customer Table Schema" {
+  SOURCE: SQL {
+    CREATE TABLE customers (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  }
+  
+  TARGET: R {
+    generate_create_table_query(
+      con = con,
+      target_table = "customers",
+      column_defs = list(
+        list(name = "id", type = "INTEGER", not_null = TRUE),
+        list(name = "name", type = "TEXT", not_null = TRUE),
+        list(name = "email", type = "TEXT", unique = TRUE),
+        list(name = "created_at", type = "TIMESTAMP", default = "CURRENT_TIMESTAMP")
+      ),
+      primary_key = "id"
+    )
+  }
+  
+  PROPERTIES_PRESERVED: [
+    "structure",
+    "constraints",
+    "data_types",
+    "defaults"
+  ]
+}
+```
+
+# 第五項：最佳實踐 {#best-practices}
+
+1. **明確資料類型**：
+   ```sql
+   -- 好
+   FILTER(customers → WHERE customer_id = as.integer(input.customer_filter))
+   
+   -- 不好
+   FILTER(customers → WHERE customer_id = input.customer_filter)
+   ```
+
+2. **記錄所有反應式依賴**：
+   ```sql
+   -- 好
+   REACTIVE(filtered_data) {
+     DEPENDS_ON: [input.filter_a, input.filter_b, source_data]
+     ...
+   }
+   
+   -- 不好
+   REACTIVE(filtered_data) {
+     DEPENDS_ON: [input.filter_a] -- 缺少依賴
+     ...
+   }
+   ```
+
+3. **使用清晰的操作表達式**：
+   ```sql
+   -- 好
+   TRANSFORM(source → operation → destination)
+   
+   -- 不好
+   process the data and show it
+   ```
+
+# 第六項：相關原則 {#related-principles}
+
+- **MP27**：整合自然 SQL 語言
+- **MP24**：自然 SQL 語言
+- **MP65**：NSQL 中的激進翻譯
+- **MP52**：單向資料流
+- **P73**：伺服器到 UI 資料流
+- **P79**：狀態管理
+- **P81**：Tidyverse-Shiny 術語對齊
+
+---
+
+*基於：基本原則法第三條*  
+*相關連結：[MP27 整合自然 SQL 語言](../meta_principles/MP027_integrated_natural_sql_language.qmd), [MP65 NSQL 中的激進翻譯](../meta_principles/MP065_radical_translation_in_nsql.qmd)*

@@ -1,0 +1,280 @@
+---
+title: "DM_R024: List Column Handling Rule"
+subtitle: "R list columns must be converted to JSON strings before storing in DuckDB, as DuckDB cannot directly store R's nested list data type"
+chapter: "CH02"
+category: "rule"
+number: "DM_R024"
+date-created: "2025-08-27"
+date-modified: "2025-08-27"
+author: "Claude (Principle Revisor)"
+type: "rule"
+law: "Data Management Law"
+article:
+  number: 24
+  title: "List Column Handling in DuckDB"
+related_to:
+  - "MP063: Data Processing Trinity"
+  - "MP064: ETL-Derivation Separation"
+  - "DM_R023: Universal DBI Approach"
+  - "DM_R025: Type Conversion Between R and DuckDB"
+  - "DM_R026: JSON Serialization Strategy"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 24: List Column Handling in DuckDB {#overview}
+
+**Data Management Law Article 24 (List Column Handling Rule)**
+
+This rule establishes the requirement to convert R list columns to JSON strings before storing in DuckDB, addressing a fundamental incompatibility between R's nested list structure and DuckDB's storage capabilities.
+
+:::{.callout-important}
+## Core Rule
+R list columns MUST be converted to JSON strings before storing in DuckDB. DuckDB cannot directly store R's nested list data type, even though it supports its own LIST and nested types.
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Detection of List Columns {#detection}
+
+Before writing to DuckDB, detect list columns:
+
+```r
+# Check for list columns in a data frame
+list_columns <- sapply(df, is.list)
+if (any(list_columns)) {
+  list_col_names <- names(df)[list_columns]
+  message("Detected list columns: ", paste(list_col_names, collapse = ", "))
+}
+```
+
+## Subsection 2: JSON Conversion {#json-conversion}
+
+Convert list columns to JSON strings:
+
+```r
+# Convert list columns to JSON strings
+for (col in names(df)[sapply(df, is.list)]) {
+  df[[col]] <- sapply(df[[col]], jsonlite::toJSON, auto_unbox = TRUE)
+}
+```
+
+## Subsection 3: Safe Write Function {#safe-write}
+
+Implement a safe write function that handles list columns:
+
+```r
+#' Write data frame to DuckDB with automatic list column handling
+#' @param conn DuckDB connection
+#' @param name Table name
+#' @param value Data frame to write
+#' @param ... Additional arguments to dbWriteTable
+dbWriteTableSafe <- function(conn, name, value, ...) {
+  # Detect list columns
+  list_cols <- sapply(value, is.list)
+  
+  if (any(list_cols)) {
+    # Create a copy to avoid modifying original
+    value_safe <- value
+    
+    # Convert list columns to JSON strings
+    for (col in names(value_safe)[list_cols]) {
+      value_safe[[col]] <- sapply(value_safe[[col]], 
+                                   jsonlite::toJSON, 
+                                   auto_unbox = TRUE)
+    }
+    
+    message(sprintf("Converted %d list columns to JSON strings", sum(list_cols)))
+    dbWriteTable(conn, name, value_safe, ...)
+  } else {
+    dbWriteTable(conn, name, value, ...)
+  }
+}
+```
+
+# Section 2: Common Scenarios {#common-scenarios}
+
+## Subsection 1: API Response Data {#api-responses}
+
+When handling nested API responses:
+
+```r
+# Example: Cyberbiz API returns orders with nested line_items
+api_response <- httr::content(response, "text", encoding = "UTF-8")
+df_orders <- jsonlite::fromJSON(api_response, flatten = TRUE)
+
+# line_items column will be a list - must convert before storing
+if ("line_items" %in% names(df_orders) && is.list(df_orders$line_items)) {
+  df_orders$line_items_json <- sapply(df_orders$line_items, 
+                                       jsonlite::toJSON, 
+                                       auto_unbox = TRUE)
+  df_orders$line_items <- NULL  # Remove original list column
+}
+
+# Now safe to write to DuckDB
+dbWriteTable(conn, "orders", df_orders, overwrite = TRUE)
+```
+
+## Subsection 2: Unnesting Before Storage {#unnesting}
+
+Alternative approach - unnest nested data before storage:
+
+```r
+# If the nested structure represents multiple rows, unnest instead
+if ("line_items" %in% names(df_orders)) {
+  df_sales <- df_orders %>%
+    tidyr::unnest(line_items, keep_empty = TRUE)
+  
+  # After unnesting, data is flat and safe to store
+  dbWriteTable(conn, "sales", df_sales, overwrite = TRUE)
+}
+```
+
+## Subsection 3: Retrieving JSON Data {#retrieving}
+
+When reading JSON columns back from DuckDB:
+
+```r
+# Read data with JSON columns
+df <- dbGetQuery(conn, "SELECT * FROM orders")
+
+# Parse JSON columns back to R objects if needed
+if ("line_items_json" %in% names(df)) {
+  df$line_items <- lapply(df$line_items_json, jsonlite::fromJSON)
+}
+```
+
+# Section 3: Error Prevention {#error-prevention}
+
+## Subsection 1: Common Error Messages {#error-messages}
+
+Recognize these errors that indicate list column issues:
+
+```
+Error: Can't convert <list> to <character>.
+Error: rapi_prepare: Failed to prepare query SELECT * FROM data_frame...
+Error: Unable to transform to native DuckDB type
+```
+
+## Subsection 2: Debugging Strategy {#debugging}
+
+When encountering write errors:
+
+```r
+# Debug function to identify problematic columns
+debug_duckdb_write <- function(df) {
+  for (col in names(df)) {
+    cat(sprintf("Column '%s': class=%s, typeof=%s\n", 
+                col, 
+                paste(class(df[[col]]), collapse=","),
+                typeof(df[[col]])))
+    
+    if (is.list(df[[col]])) {
+      cat(sprintf("  WARNING: List column detected - needs conversion\n"))
+      sample_val <- df[[col]][[1]]
+      cat(sprintf("  Sample value type: %s\n", class(sample_val)))
+    }
+  }
+}
+```
+
+# Section 4: Performance Considerations {#performance}
+
+## Subsection 1: Serialization Overhead {#serialization-overhead}
+
+JSON serialization adds overhead:
+
+- **Small datasets (<10k rows)**: Negligible impact
+- **Large datasets (>100k rows)**: Consider alternative strategies
+  - Store in separate normalized tables
+  - Use Arrow format for complex types
+  - Process in chunks
+
+## Subsection 2: Storage Efficiency {#storage-efficiency}
+
+JSON strings are less efficient than native types:
+
+```r
+# Compare storage sizes
+object.size(list_column)           # Original list
+object.size(json_string_column)    # After JSON conversion
+
+# JSON typically 2-5x larger due to string representation
+```
+
+# Section 5: Integration with ETL Pipeline {#etl-integration}
+
+## Subsection 1: ETL Phase 0IM (Import) {#etl-import}
+
+In the import phase, handle list columns immediately:
+
+```r
+# ETL01_0IM.R pattern
+df_raw <- fetch_from_api()
+
+# Immediately handle list columns before any storage
+df_raw <- prepare_for_duckdb(df_raw)
+
+dbWriteTable(raw_data, "df_platform_raw", df_raw, overwrite = TRUE)
+```
+
+## Subsection 2: Helper Function for ETL {#etl-helper}
+
+Standard helper for all ETL scripts:
+
+```r
+#' Prepare data frame for DuckDB storage
+#' Handles all type conversions needed for DuckDB compatibility
+prepare_for_duckdb <- function(df) {
+  # Handle list columns
+  list_cols <- sapply(df, is.list)
+  
+  for (col in names(df)[list_cols]) {
+    # Check if it's truly nested or just a character vector stored as list
+    if (all(sapply(df[[col]], length) == 1)) {
+      # Simple list - just unlist
+      df[[col]] <- unlist(df[[col]])
+    } else {
+      # Complex nested structure - convert to JSON
+      df[[paste0(col, "_json")]] <- sapply(df[[col]], 
+                                            jsonlite::toJSON, 
+                                            auto_unbox = TRUE)
+      df[[col]] <- NULL
+    }
+  }
+  
+  return(df)
+}
+```
+
+# Section 6: Benefits {#benefits}
+
+Following this rule ensures:
+
+1. **Prevents runtime errors**: Avoids DuckDB write failures
+2. **Data preservation**: Maintains complex nested structures
+3. **Predictable behavior**: Consistent handling across all ETL pipelines
+4. **Debugging clarity**: Clear error messages and solutions
+5. **Future compatibility**: Works with DuckDB's JSON functions
+
+# Section 7: Implementation Checklist {#checklist}
+
+When working with data that may contain list columns:
+
+1. ☐ Check for list columns before any DuckDB write operation
+2. ☐ Decide strategy: flatten (unnest) or serialize (JSON)
+3. ☐ Implement conversion using appropriate method
+4. ☐ Test with sample data containing nested structures
+5. ☐ Document any JSON columns in schema documentation
+6. ☐ Add retrieval logic if JSON needs to be parsed back
+7. ☐ Monitor performance impact for large datasets
+
+---
+
+*Based on: DuckDB documentation and empirical testing with R DBI interface*
+*Critical for: API data imports, nested JSON handling, complex data structures*

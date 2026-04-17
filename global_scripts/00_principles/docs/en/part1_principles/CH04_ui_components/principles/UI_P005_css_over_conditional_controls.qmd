@@ -1,0 +1,332 @@
+---
+title: "UI_P005: CSS Controls Over Conditional Rendering Principle"
+subtitle: "Using CSS-based visibility control for better performance than conditional rendering"
+chapter: "CH04"
+category: "principle"
+number: "UI_P005"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI Components Law"
+article-number: "Article 5"
+related_to:
+  - "CH00.MP039: One-Time Operations At Start"
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+  - "UI_P003: Sidebar Filtering Only"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**UI Components Law Article 5 (CSS Controls Over Conditional Rendering Principle)**
+
+Use CSS-based visibility control for UI elements when it offers better performance than Shiny's conditional constructs (such as `conditionalPanel` or `renderUI`), especially for frequently toggled elements, complex widgets, or elements that need to preserve state when hidden.
+
+:::{.callout-important}
+## Core Principle
+When UI elements need frequent visibility toggling and should maintain internal state, use CSS to control visibility rather than re-rendering the DOM.
+:::
+
+# Section 1: Technical Rationale {#technical-rationale}
+
+## Subsection 1: Performance Differences {#performance-difference}
+
+**Overhead of conditional rendering**:
+- Shiny conditional rendering completely removes and rebuilds elements from DOM
+- Each toggle triggers a complete render cycle
+- Input values and state are lost during rebuilding
+
+**Advantages of CSS control**:
+- Elements always exist in DOM, only visibility changes
+- Toggling only involves style attribute modification
+- Input values and state are fully preserved
+
+## Subsection 2: Implementation Mechanism {#implementation-mechanism}
+
+```r
+# CSS control approach (recommended)
+div(
+  id = ns("filter_panel"),
+  class = "sidebar-filters",
+  style = "padding: 10px 15px; display: none;",  # Initially hidden
+  
+  # Content maintains state when hidden
+  selectInput(ns("region"), "Region", choices = regions),
+  dateRangeInput(ns("dates"), "Date Range")
+)
+
+# Server-side control
+observeEvent(input$tab, {
+  if(input$tab == "analysis") {
+    shinyjs::show("filter_panel")  # Simple CSS toggle
+  } else {
+    shinyjs::hide("filter_panel")  # No state is lost
+  }
+})
+```
+
+# Section 2: Use Cases {#use-cases}
+
+## Subsection 1: When to Use CSS Controls {#when-css}
+
+1. **Frequently toggled elements**
+   - Tab content switching
+   - Expand/collapse panels
+   - Tooltips and popups
+
+2. **Elements needing state preservation**
+   - Filter settings
+   - Form input values
+   - User selections
+
+3. **Complex widgets**
+   - DataTable components
+   - Chart components
+   - Map components
+
+## Subsection 2: When to Use Conditional Rendering {#when-conditional}
+
+1. **Content based on complex logic**
+   ```r
+   conditionalPanel(
+     condition = "input.data_source == 'api' && input.load_status == 'complete'",
+     ns = ns,
+     downloadButton(ns("export"), "Export API Data")
+   )
+   ```
+
+2. **Security-related elements**
+   - Features requiring permissions to display
+   - Access control for sensitive data
+
+3. **Resource-intensive components**
+   - Large components loaded only when needed
+   - Dynamically generated content
+
+# Section 3: Selection Guide {#selection-guide}
+
+## Subsection 1: Comparison Table {#comparison-table}
+
+| Factor | CSS Controls | Conditional Rendering |
+|--------|--------------|-----------------------|
+| Toggle Performance | ✅ Fast | ❌ Slower (DOM rebuild) |
+| State Preservation | ✅ Maintains input values | ❌ Resets values |
+| Memory Usage | ✅ Lower (elements always exist) | ❌ Higher (rebuilds elements) |
+| Reactivity | ❌ Manual implementation needed | ✅ Automatic dependency tracking |
+| Complex Conditions | ❌ Requires custom logic | ✅ Simple declarative conditions |
+| User Experience | ✅ Smooth transitions | ❌ Potential flicker |
+
+## Subsection 2: Mixed Approach {#mixed-approach}
+
+```r
+# Good practice: Mixed approach
+# Outer container uses conditionalPanel for infrequent existence changes
+conditionalPanel(
+  condition = "input.module == 'analysis'",
+  ns = ns,
+  
+  # Inner tabs use CSS for frequent visibility toggling
+  div(
+    id = ns("subtab1"),
+    style = "display: block;",
+    # Tab 1 content
+  ),
+  div(
+    id = ns("subtab2"),
+    style = "display: none;", 
+    # Tab 2 content - hidden but state preserved
+  )
+)
+```
+
+# Section 4: Implementation Patterns {#implementation-patterns}
+
+## Subsection 1: Basic CSS Control {#basic-css}
+
+```r
+# UI definition
+ui <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # Enable shinyjs support
+    shinyjs::useShinyjs(),
+    
+    # Toggle button
+    actionButton(ns("toggle"), "Show/Hide Filters"),
+    
+    # Toggleable panel
+    div(
+      id = ns("filters"),
+      style = "display: none;",  # Initially hidden
+      
+      h4("Filter Options"),
+      selectInput(ns("category"), "Category", choices = categories),
+      sliderInput(ns("range"), "Range", min = 0, max = 100, value = c(20, 80))
+    )
+  )
+}
+
+# Server logic
+server <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # Toggle visibility
+    observeEvent(input$toggle, {
+      shinyjs::toggle("filters")
+    })
+  })
+}
+```
+
+## Subsection 2: Advanced Conditional Control {#advanced-conditional}
+
+```r
+# Using custom CSS classes
+tags$style("
+  .hidden-panel { display: none !important; }
+  .visible-panel { display: block; }
+  .panel-transition { transition: all 0.3s ease; }
+")
+
+# Dynamic class toggling
+observeEvent(input$view_mode, {
+  if (input$view_mode == "compact") {
+    shinyjs::addClass("details_panel", "hidden-panel")
+    shinyjs::removeClass("details_panel", "visible-panel")
+  } else {
+    shinyjs::removeClass("details_panel", "hidden-panel")
+    shinyjs::addClass("details_panel", "visible-panel")
+  }
+})
+```
+
+# Section 5: Best Practices {#best-practices}
+
+## Subsection 1: Performance Measurement {#performance-measurement}
+
+Test performance impact before choosing an approach:
+
+```r
+# Measure toggle time
+measure_toggle_performance <- function() {
+  start_time <- Sys.time()
+  
+  # CSS method
+  for(i in 1:100) {
+    shinyjs::show("element")
+    shinyjs::hide("element")
+  }
+  css_time <- Sys.time() - start_time
+  
+  # Compare with conditional rendering time
+  # ...
+  
+  list(css = css_time, conditional = conditional_time)
+}
+```
+
+## Subsection 2: Documentation {#documentation}
+
+Clearly comment your choice rationale:
+
+```r
+# Using CSS visibility for performance reasons
+# This preserves filter states when switching tabs
+div(
+  id = ns("filters"), 
+  style = "display: none;",
+  # ...
+)
+
+# Using conditionalPanel because content depends on user permissions
+# Only admins can see this functionality
+conditionalPanel(
+  condition = "output.is_admin == true",
+  ns = ns,
+  # ...
+)
+```
+
+# Section 6: Anti-Patterns {#anti-patterns}
+
+## Subsection 1: Overusing CSS {#overuse-css}
+
+**Avoid**:
+```r
+# Bad: Using CSS for genuinely conditional content
+div(
+  id = "api_panel",
+  style = "display: none;",  # Initially hidden
+  # API-specific controls that make no sense for other data sources
+)
+
+# Requires complex server-side management
+observe({
+  if (input$data_source == "api" && 
+      input$authenticated == TRUE && 
+      !is.null(credentials$permissions$api_access)) {
+    shinyjs::show("api_panel")
+  } else {
+    shinyjs::hide("api_panel")
+  }
+})
+```
+
+## Subsection 2: Overusing Conditionals {#overuse-conditional}
+
+**Avoid**:
+```r
+# Bad: Using conditionalPanel for simple tab toggles
+conditionalPanel(
+  condition = "input.currentTab == 'tab1'",
+  ns = ns,
+  # Tab 1 content with inputs that lose state when tab changes
+)
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## CSS Control Implementation Checklist
+
+**Evaluation Phase**:
+- [ ] Identify frequently toggled UI elements
+- [ ] Determine which elements need state preservation
+- [ ] Measure toggle performance impact
+- [ ] Choose appropriate control method
+
+**Implementation Phase**:
+- [ ] Set initial styles for CSS-controlled elements
+- [ ] Implement shinyjs or custom CSS classes
+- [ ] Set up appropriate toggle logic
+- [ ] Ensure state is properly preserved
+
+**Mixed Approach**:
+- [ ] Use conditional rendering for outer major logic
+- [ ] Use CSS for inner frequent toggles
+- [ ] Test interaction between both methods
+- [ ] Confirm performance improvements
+
+**Documentation**:
+- [ ] Comment choice rationale
+- [ ] Document state preservation requirements
+- [ ] Explain toggle logic
+- [ ] Provide performance test results
+:::
+
+# Conclusion {#conclusion}
+
+The CSS Controls Over Conditional Rendering Principle provides clear guidance for developers to make the best choice between performance and functionality. By understanding the advantages and disadvantages of both approaches and applying the right technique in appropriate scenarios, you can create efficient and responsive user interfaces. Remember, the best approach is often a mix of both techniques, choosing the most suitable solution based on specific requirements.
+
+---
+
+*Based on: UI Components Law Article 5*  
+*Related to: [MP039 One-Time Operations At Start](../../CH00_fundamental_principles/MP039_one_time_operations_at_start.qmd), [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd)*

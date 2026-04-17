@@ -1,0 +1,283 @@
+---
+title: "DM_R057: Unit Suffix Column Naming"
+subtitle: "Include unit suffix in column names when values contain specific units to ensure clarity and prevent unit confusion"
+chapter: "CH02"
+category: "rule"
+number: "DM_R057"
+date-created: "2026-01-26"
+date-modified: "2026-01-26"
+author: "Claude (Principle Revisor)"
+type: "rule"
+law: "Data Management Law"
+article-number:
+  number: 57
+  title: "Unit Suffix Column Naming"
+related_to:
+  - "DM_R025: Type Conversion Between R and DuckDB"
+  - "DM_R016: Lowercase Natural Key"
+  - "SO_R002: File Naming Convention"
+  - "P005: Naming Principles"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 57: Unit Suffix Column Naming {#overview}
+
+**Data Management Law Article 57 (Unit Suffix Column Naming)**
+
+This rule establishes the standard for including unit suffixes in column names when the column value represents a quantity with a specific unit.
+
+:::{.callout-important}
+## Core Rule
+When a column contains values with a specific unit of measurement, the column name MUST include a unit suffix in the format `_{unit}` to explicitly declare the unit and prevent ambiguity.
+:::
+
+# Section 1: Standard Unit Suffixes {#standard-suffixes}
+
+## Subsection 1: Time-Based Suffixes {#time-suffixes}
+
+| Suffix | Unit | Example Column Name | Use Case |
+|--------|------|---------------------|----------|
+| `_secs` | Seconds | `execution_time_secs` | Short durations, difftime results |
+| `_minutes` | Minutes | `timeout_minutes` | Medium durations |
+| `_hours` | Hours | `ipt_hours`, `work_hours` | Hour-based measurements |
+| `_days` | Days | `customer_tenure_days`, `age_days` | Day counts, age |
+| `_weeks` | Weeks | `campaign_duration_weeks` | Week counts |
+| `_months` | Months | `subscription_length_months` | Month counts |
+| `_years` | Years | `employee_tenure_years` | Year counts |
+
+## Subsection 2: Data Size Suffixes {#size-suffixes}
+
+| Suffix | Unit | Example Column Name | Use Case |
+|--------|------|---------------------|----------|
+| `_bytes` | Bytes | `file_size_bytes` | Small file sizes |
+| `_kb` | Kilobytes | `attachment_size_kb` | Medium file sizes |
+| `_mb` | Megabytes | `download_size_mb` | Large file sizes |
+| `_gb` | Gigabytes | `storage_used_gb` | Very large sizes |
+
+## Subsection 3: Percentage and Ratio Suffixes {#ratio-suffixes}
+
+| Suffix | Unit | Example Column Name | Use Case |
+|--------|------|---------------------|----------|
+| `_pct` | Percentage (0-100) | `discount_pct`, `completion_pct` | Percentage values |
+| `_ratio` | Ratio (0-1) | `conversion_ratio` | Decimal ratios |
+| `_bps` | Basis points | `interest_rate_bps` | Financial rates |
+
+## Subsection 4: Distance Suffixes {#distance-suffixes}
+
+| Suffix | Unit | Example Column Name | Use Case |
+|--------|------|---------------------|----------|
+| `_km` | Kilometers | `distance_km` | Long distances |
+| `_m` | Meters | `height_m` | Medium distances |
+| `_cm` | Centimeters | `length_cm` | Short distances |
+| `_mm` | Millimeters | `precision_mm` | Very short distances |
+
+## Subsection 5: Currency Suffixes {#currency-suffixes}
+
+| Suffix | Unit | Example Column Name | Use Case |
+|--------|------|---------------------|----------|
+| `_usd` | US Dollar | `revenue_usd` | US dollar amounts |
+| `_twd` | Taiwan Dollar | `cost_twd` | Taiwan dollar amounts |
+| `_jpy` | Japanese Yen | `price_jpy` | Japanese yen amounts |
+
+# Section 2: Mandatory Application Scenarios {#mandatory-scenarios}
+
+## Subsection 1: difftime Conversion {#difftime}
+
+When converting `difftime` objects to numeric values, the unit suffix is **MANDATORY**:
+
+```r
+# WRONG - Ambiguous unit
+df <- df %>%
+  mutate(
+    processing_time = as.numeric(difftime(end_time, start_time))
+  )
+
+# CORRECT - Explicit unit suffix
+df <- df %>%
+  mutate(
+    processing_time_secs = as.numeric(difftime(end_time, start_time, units = "secs"))
+  )
+```
+
+:::{.callout-warning}
+## Common Pitfall
+`difftime()` defaults to "auto" units, which can produce different units depending on the time span. Always specify `units` parameter AND use corresponding suffix.
+:::
+
+## Subsection 2: Time Interval Calculations {#time-intervals}
+
+```r
+# Customer tenure calculation
+df_customer <- df_customer %>%
+  mutate(
+    # Explicit: days since first purchase
+    customer_tenure_days = as.numeric(difftime(Sys.Date(), first_purchase_date, units = "days")),
+
+    # Explicit: hours between events
+    inter_purchase_time_hours = as.numeric(difftime(purchase_date, lag(purchase_date), units = "hours"))
+  )
+```
+
+## Subsection 3: File and Data Sizes {#file-sizes}
+
+```r
+# File size handling
+df_files <- df_files %>%
+  mutate(
+    # Size from file.info() is in bytes
+    file_size_bytes = file.info(file_path)$size,
+
+    # Convert for display
+    file_size_mb = file_size_bytes / (1024^2)
+  )
+```
+
+# Section 3: When NOT to Use Unit Suffix {#exceptions}
+
+## Subsection 1: Self-Explanatory Names {#self-explanatory}
+
+Some column names inherently imply their unit:
+
+```r
+# No suffix needed - unit is implied by context
+temperature  # Context-dependent (Celsius or Fahrenheit should be documented)
+price        # Implied currency from context
+quantity     # Count, unitless
+age          # Could need suffix if unit unclear: age_days vs age_years
+```
+
+## Subsection 2: Standard Dimensions {#standard-dims}
+
+Columns with universally understood meanings:
+
+```r
+# No suffix typically needed
+latitude     # Degrees (universal)
+longitude    # Degrees (universal)
+timestamp    # POSIXct (universal)
+date         # Date (universal)
+```
+
+## Subsection 3: Counts and IDs {#counts}
+
+```r
+# No suffix - these are counts or identifiers
+order_count       # Count, unitless
+customer_id       # Identifier, unitless
+n_transactions    # Count, unitless
+row_number        # Count, unitless
+```
+
+# Section 4: Implementation Guidelines {#guidelines}
+
+## Subsection 1: Consistency Within Dataset {#consistency}
+
+All time-related columns in the same dataset should use consistent units:
+
+```r
+# GOOD - Consistent unit (all in days)
+df_customer %>%
+  mutate(
+    tenure_days = as.numeric(difftime(Sys.Date(), first_purchase, units = "days")),
+    recency_days = as.numeric(difftime(Sys.Date(), last_purchase, units = "days")),
+    avg_ipt_days = mean_ipt * 1  # Already in days
+  )
+
+# BAD - Mixed units without suffixes
+df_customer %>%
+  mutate(
+    tenure = as.numeric(difftime(Sys.Date(), first_purchase)),  # Days? Weeks? Seconds?
+    recency = as.numeric(difftime(Sys.Date(), last_purchase)),  # Unknown unit
+    avg_ipt = mean_ipt  # What unit?
+  )
+```
+
+## Subsection 2: Documentation in Schema {#schema-docs}
+
+When defining database schemas, document units in comments:
+
+```sql
+-- DuckDB table with unit documentation
+CREATE TABLE df_customer_metrics (
+    customer_id INTEGER PRIMARY KEY,
+    tenure_days DOUBLE,              -- Days since first purchase
+    recency_days DOUBLE,             -- Days since last purchase
+    avg_order_value_twd DOUBLE,      -- Average order value in TWD
+    lifetime_value_twd DOUBLE,       -- Customer lifetime value in TWD
+    avg_ipt_hours DOUBLE             -- Average inter-purchase time in hours
+);
+```
+
+## Subsection 3: Conversion Function Pattern {#conversion-pattern}
+
+When converting units, create explicit conversion functions:
+
+```r
+#' Convert seconds to days with proper naming
+#' @param time_secs Time in seconds
+#' @return Time in days
+secs_to_days <- function(time_secs) {
+  time_secs / (60 * 60 * 24)
+}
+
+# Usage
+df <- df %>%
+  mutate(
+    processing_time_days = secs_to_days(processing_time_secs)
+  )
+```
+
+# Section 5: Existing Codebase Examples {#examples}
+
+The following patterns already exist in the MAMBA codebase:
+
+```r
+# From derivation scripts
+customer_tenure_days     # Days since first purchase
+execution_time_secs      # Script execution duration
+difftime_secs           # Time difference in seconds
+ipt_hours               # Inter-purchase time in hours
+file_size_bytes         # File size in bytes
+discount_pct            # Discount percentage
+```
+
+# Section 6: Integration with Type Conversion {#integration}
+
+This rule complements DM_R025 (Type Conversion Between R and DuckDB):
+
+1. **difftime to numeric**: Always specify units AND use suffix
+2. **Numeric precision**: Unit suffix helps identify required precision
+3. **Data validation**: Suffix enables unit-aware validation rules
+
+```r
+# Combined with DM_R025 patterns
+df <- df %>%
+  mutate(
+    # Type conversion with unit tracking
+    duration_secs = as.numeric(difftime(end, start, units = "secs")),
+    duration_minutes = duration_secs / 60
+  )
+```
+
+# Section 7: Validation Checklist {#checklist}
+
+When reviewing code for unit suffix compliance:
+
+1. [ ] All `difftime()` conversions have explicit `units` parameter
+2. [ ] All numeric time columns have appropriate `_{unit}` suffix
+3. [ ] All size columns specify unit (`_bytes`, `_kb`, `_mb`, `_gb`)
+4. [ ] All percentage columns use `_pct` or `_ratio` suffix
+5. [ ] Currency columns specify currency code (`_usd`, `_twd`, etc.)
+6. [ ] Database schema comments document units
+7. [ ] Unit is consistent within related columns
+
+---
+
+*Based on: Existing MAMBA codebase patterns and data clarity best practices*
+*Essential for: All ETL scripts, derivation scripts, and data processing functions*

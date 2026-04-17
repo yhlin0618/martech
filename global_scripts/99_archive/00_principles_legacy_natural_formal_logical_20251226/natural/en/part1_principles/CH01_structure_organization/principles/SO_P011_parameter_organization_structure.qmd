@@ -1,0 +1,536 @@
+---
+title: "SO_P011: Parameter Organization Structure Principle"
+subtitle: "Organize parameters by scope with company-specific and global separation"
+chapter: "CH01"
+category: "principle"
+number: "SO_P011"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Structure & Organization Law"
+article: "Article 11"
+implements:
+  - "CH00.MP017: Separation of Concerns"
+related_to:
+  - "SO_R016: YAML Parameter Configuration"
+  - "CH00.MP006: Data Source Hierarchy"
+  - "CH00.MP041: Configuration-Driven UI Composition"
+  - "DM_P004: Dual Parameter Sources"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure & Organization Law Article 11 (Parameter Organization Structure Principle)**
+
+This article establishes that parameter files should be organized according to a consistent structure where company-specific parameters are stored in app-specific locations (`app_data/parameters/[company]`) and global parameters are stored in the global scripts location (`global_scripts/30_global_data/parameters`).
+
+:::{.callout-important}
+## Core Principle
+Parameters must be organized hierarchically by scope: global parameters shared across all implementations in `global_scripts/30_global_data/parameters`, and company-specific parameters in `app_data/parameters/[company]`. Loading follows a fallback pattern from specific to general.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Organizational Benefits {#benefits}
+
+This structured approach provides:
+
+1. **Clear Organization**: Parameters are clearly organized by scope and owner
+2. **Simplified Maintenance**: Company-specific parameters can be maintained separately
+3. **Reduced Duplication**: Global parameters are shared rather than duplicated
+4. **Consistent Access**: Parameters are accessed through a consistent mechanism
+5. **Transparent Fallback**: Fallback to global parameters is transparent to application code
+6. **Reusable Implementation**: Parameter loading logic can be reused across applications
+7. **Company Isolation**: Company-specific configurations are isolated from each other
+8. **Upgrade Path**: Clear path for migrating from default to company-specific configurations
+
+## Subsection 2: Design Philosophy {#philosophy}
+
+第一項：範圍分離 (Scope separation)
+
+- Global parameters define system-wide defaults
+- Company parameters override for specific needs
+- Clear ownership and responsibility boundaries
+- Minimal duplication of configuration
+
+第二項：漸進式客製化 (Progressive customization)
+
+- Start with global defaults
+- Override only what differs
+- Maintain backward compatibility
+- Support gradual migration
+
+# Section 2: Directory Structure {#structure}
+
+## Subsection 1: Standard Organization {#standard-org}
+
+第一項：目錄結構 (Directory structure)
+
+```
+/app_root
+├── app_data/
+│   └── parameters/
+│       ├── KitchenMAMA/               # Company-specific folder
+│       │   ├── platform.xlsx          # Marketing channels specific to KitchenMAMA
+│       │   ├── product_line.xlsx      # Product lines specific to KitchenMAMA
+│       │   └── ui_terminology_dictionary.xlsx
+│       └── WISER/                     # Another company's folder
+│           ├── platform.xlsx
+│           └── product_line.xlsx
+└── update_scripts/
+    └── global_scripts/
+        └──X_global_data/
+            └── parameters/            # Global parameters folder
+                ├── platform.xlsx      # Default marketing channels
+                ├── product_line.xlsx  # Default product lines
+                └── regions.xlsx       # Global parameter used by all companies
+```
+
+## Subsection 2: Content Classification {#content-class}
+
+第一項：公司特定參數 (Company-specific parameters)
+
+Location: `app_data/parameters/[company]/`
+
+Contents:
+- Marketing channels (`platform.xlsx`)
+- Product lines (`product_line.xlsx`)
+- UI terminology dictionaries (`ui_terminology_dictionary.xlsx`)
+- Company-specific reference data
+- Custom business rules
+- Branding elements
+
+第二項：全域參數 (Global parameters)
+
+Location: `global_scripts/30_global_data/parameters/`
+
+Contents:
+- System-wide reference data
+- Default values that can be overridden
+- Common configurations shared across all implementations
+- Standard code mappings
+- Regional data
+- Industry standards
+
+# Section 3: Parameter Loading Implementation {#loading}
+
+## Subsection 1: Loading Sequence {#sequence}
+
+第一項：載入順序 (Loading order)
+
+```r
+# Standard loading sequence
+load_parameters <- function(config) {
+  company <- config$brand$name
+  
+  # 1. Load global parameters first (base layer)
+  global_params <- load_global_parameters()
+  
+  # 2. Load company-specific parameters (override layer)
+  company_params <- load_company_parameters(company)
+  
+  # 3. Merge with company overriding global
+  params <- merge_parameters(global_params, company_params)
+  
+  # 4. Apply any runtime overrides
+  params <- apply_runtime_overrides(params, config)
+  
+  return(params)
+}
+```
+
+## Subsection 2: Fallback Mechanism {#fallback}
+
+第一項：後備機制實作 (Fallback implementation)
+
+```r
+# Function to load parameters with proper fallback
+load_parameter_file <- function(filename, company = NULL) {
+  # Build search paths
+  search_paths <- character()
+  
+  # Try company-specific location first
+  if (!is.null(company)) {
+    company_path <- file.path("app_data", "parameters", 
+                              company, filename)
+    search_paths <- c(search_paths, company_path)
+  }
+  
+  # Add global location to search
+  global_path <- file.path("update_scripts", "global_scripts", 
+                           "30_global_data", "parameters", filename)
+  search_paths <- c(search_paths, global_path)
+  
+  # Try each path in order
+  for (path in search_paths) {
+    if (file.exists(path)) {
+      message(sprintf("Loading parameter from: %s", path))
+      
+      # Load based on file type
+      ext <- tools::file_ext(filename)
+      
+      if (ext == "xlsx") {
+        return(readxl::read_excel(path))
+      } else if (ext == "csv") {
+        return(read.csv(path, stringsAsFactors = FALSE))
+      } else if (ext == "yaml" || ext == "yml") {
+        return(yaml::read_yaml(path))
+      }
+    }
+  }
+  
+  # Neither exists, return empty structure
+  warning(sprintf("Parameter file not found: %s", filename))
+  return(data.frame())
+}
+```
+
+第二項：智慧合併 (Smart merging)
+
+```r
+# Merge parameters with override logic
+merge_parameters <- function(global, company) {
+  merged <- global
+  
+  # For each company parameter
+  for (name in names(company)) {
+    if (!is.null(company[[name]])) {
+      if (name %in% names(global)) {
+        # Override or merge based on type
+        if (is.data.frame(company[[name]])) {
+          # For data frames, replace entirely
+          merged[[name]] <- company[[name]]
+        } else if (is.list(company[[name]])) {
+          # For lists, merge recursively
+          merged[[name]] <- merge_lists(
+            global[[name]], 
+            company[[name]]
+          )
+        } else {
+          # For simple values, override
+          merged[[name]] <- company[[name]]
+        }
+      } else {
+        # Add new parameter
+        merged[[name]] <- company[[name]]
+      }
+    }
+  }
+  
+  return(merged)
+}
+
+# Recursive list merging
+merge_lists <- function(base, override) {
+  if (is.null(base)) return(override)
+  if (is.null(override)) return(base)
+  
+  result <- base
+  for (key in names(override)) {
+    if (key %in% names(base) && 
+        is.list(base[[key]]) && 
+        is.list(override[[key]])) {
+      # Recursive merge
+      result[[key]] <- merge_lists(base[[key]], override[[key]])
+    } else {
+      # Direct override
+      result[[key]] <- override[[key]]
+    }
+  }
+  
+  return(result)
+}
+```
+
+# Section 4: File Naming Conventions {#naming}
+
+## Subsection 1: Standard Naming {#standard-naming}
+
+第一項：命名規則 (Naming rules)
+
+```r
+# Standard file naming patterns
+parameter_files <- list(
+  # Business data
+  platform = "platform.xlsx",
+  product_line = "product_line.xlsx",
+  
+  # UI configuration
+  ui_terminology = "ui_terminology_dictionary.xlsx",
+  ui_components = "ui_components.yaml",
+  
+  # Reference data
+  regions = "regions.csv",
+  currencies = "currencies.csv",
+  
+  # Mappings
+  category_mapping = "category_mapping.xlsx",
+  code_mapping = "code_mapping.xlsx"
+)
+```
+
+第二項：版本管理 (Version management)
+
+```r
+# Versioned parameter files
+# Format: filename_vX.extension
+
+# Check for versioned files
+get_latest_version <- function(base_filename, directory) {
+  # Extract base name and extension
+  parts <- tools::file_path_sans_ext(base_filename)
+  ext <- tools::file_ext(base_filename)
+  
+  # Pattern for versioned files
+  pattern <- sprintf("%s_v[0-9]+\\.%s$", parts, ext)
+  
+  # Find all matching files
+  files <- list.files(directory, pattern = pattern, 
+                      full.names = FALSE)
+  
+  if (length(files) == 0) {
+    # No versioned files, use base
+    return(base_filename)
+  }
+  
+  # Extract version numbers
+  versions <- gsub(sprintf("%s_v([0-9]+)\\.%s", parts, ext), 
+                   "\\1", files)
+  versions <- as.integer(versions)
+  
+  # Return highest version
+  latest_file <- files[which.max(versions)]
+  return(latest_file)
+}
+```
+
+# Section 5: Common Patterns and Anti-Patterns {#patterns}
+
+## Subsection 1: Correct Patterns {#correct}
+
+第一項：正確實作 (Correct implementation)
+
+```r
+# CORRECT: Use loading function with fallback
+initialize_parameters <- function(config) {
+  company <- config$brand$name
+  
+  # Load with fallback mechanism
+  params <- list(
+    platform = load_parameter_file("platform.xlsx", company),
+    products = load_parameter_file("product_line.xlsx", company),
+    terminology = load_parameter_file("ui_terminology_dictionary.xlsx", 
+                                       company),
+    regions = load_parameter_file("regions.xlsx")  # Global only
+  )
+  
+  return(params)
+}
+
+# CORRECT: Clear separation of concerns
+get_marketing_channels <- function(params, company) {
+  # Check company-specific first
+  if (!is.null(params[[company]]$platform)) {
+    return(params[[company]]$platform)
+  }
+  
+  # Fall back to global
+  return(params$global$platform)
+}
+```
+
+## Subsection 2: Anti-Patterns {#anti-patterns}
+
+第一項：錯誤模式 (Incorrect patterns)
+
+```r
+# INCORRECT: Hardcoded paths
+load_platform <- function() {
+  # Don't hardcode paths
+  platform <- readxl::read_excel(
+    "app_data/parameters/KitchenMAMA/platform.xlsx"
+  )
+  return(platform)
+}
+
+# INCORRECT: No fallback mechanism
+get_products <- function(company) {
+  # Don't assume file exists
+  path <- paste0("app_data/parameters/", company, "/products.xlsx")
+  return(readxl::read_excel(path))  # Will fail if missing
+}
+
+# INCORRECT: Mixed organization
+# Don't mix company and global parameters in same folder
+parameters/
+├── platform_kitchenmama.xlsx  # Wrong: company suffix
+├── platform_global.xlsx        # Wrong: global suffix
+└── regions.xlsx                # Unclear scope
+```
+
+# Section 6: Error Handling {#errors}
+
+## Subsection 1: Common Errors and Solutions {#error-solutions}
+
+第一項：檔案不存在 (File not found)
+
+```r
+# Handle missing files gracefully
+safe_load_parameter <- function(filename, company = NULL, 
+                                 required = FALSE) {
+  tryCatch({
+    data <- load_parameter_file(filename, company)
+    
+    if (nrow(data) == 0 && required) {
+      stop(sprintf("Required parameter file empty: %s", filename))
+    }
+    
+    return(data)
+    
+  }, error = function(e) {
+    if (required) {
+      stop(sprintf("Failed to load required parameter %s: %s", 
+                   filename, e$message))
+    } else {
+      warning(sprintf("Optional parameter %s not loaded: %s", 
+                      filename, e$message))
+      return(data.frame())
+    }
+  })
+}
+```
+
+第二項：權限問題 (Permission issues)
+
+```r
+# Check file permissions
+check_parameter_access <- function(directory) {
+  if (!dir.exists(directory)) {
+    warning(sprintf("Parameter directory does not exist: %s", 
+                    directory))
+    return(FALSE)
+  }
+  
+  if (!file.access(directory, mode = 4) == 0) {  # Check read access
+    warning(sprintf("No read access to parameter directory: %s", 
+                    directory))
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+# Section 7: Best Practices {#best-practices}
+
+## Subsection 1: Documentation {#documentation}
+
+```yaml
+# Document parameter structure in parameters.yaml
+parameters:
+  global:
+    location: "global_scripts/30_global_data/parameters"
+    files:
+      - name: "regions.xlsx"
+        description: "Global region definitions"
+        required: true
+      - name: "currencies.csv"
+        description: "Currency codes and symbols"
+        required: false
+        
+  company_specific:
+    location: "app_data/parameters/{company}"
+    files:
+      - name: "platform.xlsx"
+        description: "Marketing channels configuration"
+        overrides_global: true
+      - name: "product_line.xlsx"
+        description: "Product catalog"
+        overrides_global: true
+```
+
+## Subsection 2: Migration Strategy {#migration}
+
+```r
+# Support migration from old to new structure
+migrate_parameters <- function(old_path, new_structure_root) {
+  # Identify parameter files in old location
+  old_files <- list.files(old_path, pattern = "\\.(xlsx|csv|yaml)$", 
+                          full.names = TRUE)
+  
+  for (file in old_files) {
+    filename <- basename(file)
+    
+    # Determine target location
+    if (is_global_parameter(filename)) {
+      target_dir <- file.path(new_structure_root, 
+                               "global_scripts/30_global_data/parameters")
+    } else {
+      company <- detect_company_from_path(old_path)
+      target_dir <- file.path(new_structure_root, 
+                               "app_data/parameters", company)
+    }
+    
+    # Create directory if needed
+    dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+    
+    # Copy file
+    file.copy(file, file.path(target_dir, filename))
+    message(sprintf("Migrated %s to %s", filename, target_dir))
+  }
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Parameter Organization Checklist
+
+**Directory Structure:**
+- [ ] Global parameters in `global_scripts/30_global_data/parameters`
+- [ ] Company parameters in `app_data/parameters/[company]`
+- [ ] Clear separation between global and company-specific
+- [ ] Consistent folder naming
+
+**Loading Implementation:**
+- [ ] Fallback mechanism implemented
+- [ ] Loading order: global then company
+- [ ] Merge logic for overrides
+- [ ] Error handling for missing files
+
+**File Management:**
+- [ ] Consistent file naming conventions
+- [ ] Version management strategy
+- [ ] Documentation of parameter files
+- [ ] Migration path from old structure
+
+**Best Practices:**
+- [ ] No hardcoded paths
+- [ ] Required vs optional parameters defined
+- [ ] Permission checks implemented
+- [ ] Graceful degradation
+
+**Testing:**
+- [ ] Test with missing company parameters
+- [ ] Test with missing global parameters
+- [ ] Test override mechanism
+- [ ] Test permission failures
+:::
+
+# Conclusion {#conclusion}
+
+The Parameter Organization Structure Principle establishes a clear and consistent organization for parameter files, separating company-specific parameters from global ones. This structure enables clean multi-tenancy, reduces duplication, simplifies maintenance, and provides a robust fallback mechanism. By following this principle, applications can efficiently manage parameters across multiple companies while maintaining a single codebase.
+
+---
+
+*Based on: Structure & Organization Law Article 11*  
+*Implements: [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*  
+*Related to: [MP006 Data Source Hierarchy](../../CH00_fundamental_principles/MP006_data_source_hierarchy.qmd), [DM_P004 Dual Parameter Sources](../../CH02_data_management/principles/DM_P004_dual_parameter_sources.qmd)*

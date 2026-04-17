@@ -1,0 +1,137 @@
+---
+title: "DEV_R017: 明確優於隱式評估"
+subtitle: "在傳遞變數參數列表或處理不確定類型或結構的資料時，優先使用像 do.call() 這樣的明確、受控評估機制，而不是像 !!! 這樣的隱式、元編程運算符"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R017"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 17
+  title: "明確評估規則"
+related_to:
+  - "MP041: 類型相依操作"
+  - "DEV_P010: 反應式值存取安全"
+  - "SLN01: 在邏輯上下文中處理非邏輯資料類型"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十七條：明確評估規則 {#overview}
+
+**開發方法法第十七條（明確評估規則）**
+
+此規則建立了在參數傳遞中使用明確評估機制的標準。
+
+:::{.callout-important}
+## 核心規則
+在傳遞變數參數列表或處理不確定類型或結構的資料時，優先使用像 `do.call()` 這樣的明確、受控評估機制，而不是像 `!!!` 這樣的隱式、元編程運算符。
+:::
+
+# 第一項：背景說明 {#background}
+
+R 提供多種向函數傳遞參數的方式，包括標準函數呼叫、`do.call()` 和 tidyverse 風格的元編程運算符如 `!!!`（展開運算符）。每種方式對於評估和傳遞參數有不同的語義，當使用不當時可能導致微妙的錯誤和類型錯誤。
+
+# 第二項：理由 {#rationale}
+
+1. **評估控制**：像 `do.call()` 這樣的明確評估機制提供對何時以及如何評估參數的精確控制
+2. **類型安全**：元編程運算符在嘗試在類型不相容的上下文中評估表達式時可能導致類型錯誤
+3. **可預測性**：像 `do.call()` 這樣的基礎 R 函數遵循在不同上下文中更可預測的標準評估規則
+4. **錯誤清晰度**：明確評估的錯誤往往更有資訊性，更直接指向根本原因
+5. **防禦性編程**：明確評估允許預先驗證參數並優雅地處理邊界情況
+
+# 第三項：實施範例 {#examples}
+
+## 第一款：參數列表構建 {#argument-list}
+
+```r
+# 有問題：使用 !!! 展開運算符可能導致類型錯誤
+# 如果 tab_filters 的結構不完全符合預期
+filters <- oneTimeUnionUI2(
+  !!!tab_filters,  # 錯誤：無效的參數類型
+  id = ns("tab_filters"),
+  initial_visibility = initial_visibility
+)
+
+# 推薦：使用 do.call 進行明確評估控制
+arg_list <- list(id = ns("tab_filters"), initial_visibility = initial_visibility)
+if (length(tab_filters) > 0) {
+  for (name in names(tab_filters)) {
+    if (!is.null(name) && !is.null(tab_filters[[name]])) {
+      arg_list[[name]] <- tab_filters[[name]]
+    }
+  }
+}
+filters <- do.call(oneTimeUnionUI2, arg_list)
+```
+
+## 第二款：參數驗證 {#parameter-validation}
+
+```r
+# 有問題：參數在驗證前被評估
+result <- render_component(!!!params)  # 無效參數可能失敗
+
+# 推薦：在傳遞給函數前驗證
+validated_params <- validate_params(params)
+result <- do.call(render_component, validated_params)
+```
+
+## 第三款：條件參數 {#conditional-arguments}
+
+```r
+# 有問題：使用 !!! 難以有條件地包含參數
+if (include_details) {
+  ui_call <- function_call(!!!base_args, details = detail_data)
+} else {
+  ui_call <- function_call(!!!base_args)
+}
+
+# 推薦：有條件地構建參數列表
+args <- base_args
+if (include_details) {
+  args$details <- detail_data
+}
+ui_call <- do.call(function_call, args)
+```
+
+# 第四項：形式化表示 {#formal-representation}
+
+在 NSQL 記法中，此規則可以表示為：
+
+$$\text{對於函數 } f \text{ 和參數 } A = \{a_1, a_2, ..., a_n\}:$$
+$$f(A) \text{ via } do.call(f, A) \succ f(!!!A)$$
+
+其中 $\succ$ 表示在評估安全性和控制方面「優於」。
+
+# 第五項：應用場景 {#applications}
+
+此規則應該應用於：
+
+- 向函數傳遞變數參數列表時
+- 處理不確定類型或結構的資料時
+- 需要精確控制參數評估時
+- 創建必須處理邊界情況的防禦性、健壯代碼時
+- 在評估時機至關重要的反應式上下文中
+
+# 第六項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **提高安全性**：減少類型錯誤和評估錯誤
+2. **增強控制**：精確控制參數評估時機和方式
+3. **改善除錯**：錯誤訊息更清晰、更有用
+4. **提升健壯性**：更好地處理邊界情況和異常輸入
+5. **確保可預測性**：行為在不同上下文中更一致
+
+---
+
+*基於：開發方法法第十七條*  
+*相關連結：[MP041 類型相依操作](../../CH00_fundamental_principles/meta_principles/MP041_type_dependent_operations.qmd), [DEV_P010 反應式值存取安全](../principles/DEV_P010_reactive_access_safety.qmd)*

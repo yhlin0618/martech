@@ -1,0 +1,192 @@
+---
+title: "UI_R011: bs4Dash 結構遵循規則"
+subtitle: "使用 bs4Dash 套件時，必須嚴格遵循其預定的結構模式和元件層級。絕不嘗試使用自訂 CSS 或 JavaScript 覆蓋核心結構元件"
+chapter: "CH04"
+category: "rule"
+number: "UI_R011"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article-number: 
+  number: 11
+  title: "bs4Dash 結構遵循規則"
+implements:
+  - "MP099: UI 分離元原則"
+  - "P062: 關注分離原則"
+  - "P072: UI 套件一致性原則"
+related_to:
+  - "R009: UI-Server-Defaults 三元組規則"
+  - "R011: 混合側邊欄模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十一條：bs4Dash 結構遵循規則 {#overview}
+
+**UI組件法第十一條（bs4Dash 結構遵循規則）**
+
+此規則建立了在 Shiny 應用程式中使用 bs4Dash 套件時的結構標準。
+
+:::{.callout-important}
+## 核心規則
+使用 bs4Dash 套件時，必須嚴格遵循其預定的結構模式和元件層級。絕不嘗試使用自訂 CSS 或 JavaScript 覆蓋核心結構元件。
+:::
+
+# 第一項：理由 {#rationale}
+
+## 第一款：相容性 {#compatibility}
+
+bs4Dash 建立在 AdminLTE 和 Bootstrap 4 之上，具有特定的結構依賴關係。遵循這些結構確保元件之間的相容性。
+
+## 第二款：可維護性 {#maintainability}
+
+遵循 bs4Dash 的慣例和結構確保隨著套件發展，程式碼仍然可維護。
+
+## 第三款：一致性 {#consistency}
+
+使用標準 bs4Dash 模式，應用程式與其他 AdminLTE/bs4Dash 應用程式保持一致的外觀和感覺。
+
+## 第四款：穩定性 {#stability}
+
+bs4Dash 元件的結構經過測試和優化以確保穩定性。自訂修改可能破壞這種穩定性。
+
+## 第五款：性能 {#performance}
+
+bs4Dash 的結構針對 Shiny 應用程式的性能進行了優化，特別是布局渲染和反應性。
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：使用標準布局元件 {#standard-layout-components}
+
+- 始終使用 `dashboardPage` 作為頂層容器
+- 始終使用 `dashboardHeader`、`dashboardSidebar` 和 `dashboardBody` 作為直接子元素
+- 絕不嘗試重新定位或重組這些核心元件
+
+## 第二款：遵循元件慣例 {#follow-component-conventions}
+
+- 完全按照 API 文檔使用 bs4Dash 元件
+- 遵守元件的正確嵌套層級
+- 為每個 bs4Dash 元素使用預期的參數和子元件
+
+## 第三款：樣式方法 {#styling-approach}
+
+- 使用 bs4Dash 的內建參數進行樣式設置（status、color 等）
+- 向現有元件添加類別而不是更改其結構
+- 盡可能使用 bs4Dash 主題和外觀而不是自訂 CSS 覆蓋
+
+## 第四款：避免結構修改 {#avoid-structural-modification}
+
+- 絕不使用 CSS 隱藏、重新定位或根本改變 bs4Dash 結構元件
+- 避免更改 bs4Dash 元件 DOM 結構的 JavaScript
+- 不要嘗試將一種 bs4Dash 元件類型轉換或變換為另一種
+
+## 第五款：正確的導航欄和側邊欄 {#proper-navbars-sidebars}
+
+- 使用 `tabItems` 和 `tabItem` 進行內容組織
+- 使用 `sidebarMenu` 和 `menuItem` 進行側邊欄導航
+- 使用 `dropdownMenu` 及其子元件進行標題通知
+
+# 第三項：範例 {#examples}
+
+## 第一款：良好實施（遵循規則）{#good-implementation}
+
+```r
+# 正確的 bs4Dash 結構
+ui <- bs4Dash::dashboardPage(
+  header = bs4Dash::dashboardHeader(
+    title = "我的儀表板",
+    # 使用正確的標題內容
+    rightUi = bs4Dash::dropdownMenu(
+      type = "notifications",
+      bs4Dash::notificationItem(
+        text = "系統更新完成",
+        icon = icon("info")
+      )
+    )
+  ),
+  sidebar = bs4Dash::dashboardSidebar(
+    # 使用正確的側邊欄內容
+    bs4Dash::sidebarMenu(
+      bs4Dash::menuItem("儀表板", tabName = "dashboard", icon = icon("dashboard")),
+      bs4Dash::menuItem("報告", tabName = "reports", icon = icon("file"))
+    )
+  ),
+  body = bs4Dash::dashboardBody(
+    # 使用正確的主體內容
+    bs4Dash::tabItems(
+      bs4Dash::tabItem(tabName = "dashboard", 
+        bs4Dash::box(
+          title = "摘要", 
+          plotOutput("summaryPlot")
+        )
+      ),
+      bs4Dash::tabItem(tabName = "reports", 
+        bs4Dash::box(
+          title = "報告",
+          tableOutput("reportsTable")
+        )
+      )
+    )
+  )
+)
+```
+
+## 第二款：錯誤實施（違反規則）{#poor-implementation}
+
+```r
+# 違反 bs4Dash 結構
+ui <- bs4Dash::dashboardPage(
+  # 不當結構 - 核心元件使用自訂元素
+  header = div(class = "custom-header", 
+    h2("儀表板標題"), 
+    div(class = "nav-buttons", actionButton("tab1", "標籤 1"), actionButton("tab2", "標籤 2"))
+  ),
+  
+  # 使用 CSS 修改核心結構
+  sidebar = tags$head(tags$style(
+    ".main-sidebar { width: 300px !important; }"
+  )),
+  
+  # 不當的內容組織
+  body = fluidPage(
+    div(id = "my-custom-tabs",
+      div(id = "tab1-content", "標籤 1 內容"),
+      div(id = "tab2-content", style = "display: none;", "標籤 2 內容")
+    ),
+    
+    # JavaScript 處理自訂導航
+    tags$script("
+      $('#tab1').click(function() {
+        $('#tab1-content').show();
+        $('#tab2-content').hide();
+      });
+      $('#tab2').click(function() {
+        $('#tab2-content').show();
+        $('#tab1-content').hide();
+      });
+    ")
+  )
+)
+```
+
+# 第四項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **確保應用程式穩定性**：核心結構保持完整
+2. **簡化維護**：程式碼遵循已知模式
+3. **保證相容性**：與 bs4Dash 更新保持相容
+4. **提升使用者體驗**：一致的介面行為
+5. **減少錯誤**：避免結構衝突和渲染問題
+
+---
+
+*基於：UI組件法第十一條*  
+*相關連結：[R009 UI-Server-Defaults 三元組](./UI_R001_ui_server_defaults_ntuple.qmd), [P072 UI 套件一致性原則](../principles/UI_P003_package_consistency.qmd)*

@@ -1,0 +1,312 @@
+---
+title: "SO_R009: Two-Tier Directory Structure Rule"
+subtitle: "Establishes a standardized two-tier directory structure for path organization, enabling consistent path references regardless of execution environment or platform"
+chapter: "CH01"
+category: "rule"
+number: "SO_R009"
+date-created: "2025-04-05"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article: 
+  number: 9
+  title: "Two-Tier Directory Structure Rule"
+related_to:
+  - "MP002: Structural Blueprint"
+  - "SO_P001: Project Principles"
+  - "DEV_R003: Platform-Neutral Code"
+  - "DEV_R009: Initialization Sourcing"
+  - "SO_R005: App YAML Configuration"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 9: Two-Tier Directory Structure Rule {#overview}
+
+**Structure & Organization Law Article 9 (Two-Tier Directory Structure Rule)**
+
+This rule establishes a standardized two-tier directory structure for path organization, enabling consistent path references regardless of execution environment or platform.
+
+All projects must follow a consistent two-tier directory structure where:
+
+1. **APP_DIR**: Current working directory (`getwd()`) - Contains application-specific files and directories
+2. **ROOT_DIR**: Parent directory of APP_DIR (`dirname(getwd())`) - Contains shared resources and sibling projects
+
+This structure ensures consistent path references and simplifies project organization.
+
+:::{.callout-important}
+## Core Concept
+A standardized two-tier directory structure provides consistent organization across all projects in an organization, predictable relationships between application and shared resources, simplified deployment across different environments, cross-project resource sharing without complex path resolution, platform neutrality that works identically on Windows, macOS, and Linux, and clear separation between application-specific and shared resources.
+:::
+
+# Section 1: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Path Declaration {#path-declaration}
+
+Declare and initialize path variables at the beginning of initialization:
+
+```r
+# Path initialization - establishes two-tier structure
+detect_paths <- function() {
+  # Get the current working directory (APP_DIR)
+  app_dir <- getwd()
+  
+  # Get the parent directory (ROOT_DIR)
+  root_dir <- dirname(app_dir)
+  
+  return(list(
+    APP_DIR = app_dir,
+    ROOT_DIR = root_dir
+  ))
+}
+
+# Set path variables globally
+paths <- detect_paths()
+APP_DIR <- paths$APP_DIR
+ROOT_DIR <- paths$ROOT_DIR
+
+# For backward compatibility
+ROOT_PATH <- APP_DIR
+```
+
+## Subsection 2: Directory Organization {#directory-organization}
+
+Follow a consistent organization pattern within APP_DIR:
+
+```
+APP_DIR/
+├── app_data/           # Application-specific data
+├── app_configs/        # Configuration files
+├── logs/               # Application logs
+└── update_scripts/     # Update scripts
+    └── global_scripts/ # Shared scripts
+```
+
+And within ROOT_DIR:
+
+```
+ROOT_DIR/
+├── precision_marketing_WISER/     # Current application
+├── precision_marketing_ACME/      # Sibling application 
+├── precision_marketing_FOO/       # Another sibling application
+└── shared_resources/             # Resources shared across applications
+```
+
+## Subsection 3: Path References {#path-references}
+
+Always use the appropriate path variable for constructing paths:
+
+```r
+# CORRECT: App-specific path references
+app_config_path <- file.path(APP_DIR, "app_configs", "config.yaml")
+app_data_path <- file.path(APP_DIR, "app_data", "processed_data")
+
+# CORRECT: References to shared or sibling resources
+sibling_app_path <- file.path(ROOT_DIR, "precision_marketing_ACME")
+shared_resource_path <- file.path(ROOT_DIR, "shared_resources")
+
+# CORRECT: Path to another application using two-tier structure
+other_app_path <- get_company_path("ACME")
+```
+
+## Subsection 4: Database Paths {#database-paths}
+
+Configure database paths based on the two-tier structure:
+
+```r
+# CORRECT: Application database paths
+db_path_list <- list(
+  app_data = file.path(APP_DIR, "app_data", "app_data.duckdb"),
+  processed_data = file.path(APP_DIR, "app_data", "processed_data.duckdb")
+)
+
+# CORRECT: Global database path
+global_db_path <- file.path(APP_DIR, "update_scripts", "global_scripts", "30_global_data", "global_scd_type1.duckdb")
+```
+
+# Section 2: Common Pitfalls {#common-pitfalls}
+
+## Subsection 1: Hard-coded Absolute Paths {#hard-coded-absolute-paths}
+
+```r
+# INCORRECT: Hard-coded absolute path
+data_path <- "C:/Users/username/precision_marketing/data"
+
+# CORRECT: Using APP_DIR
+data_path <- file.path(APP_DIR, "data")
+```
+
+## Subsection 2: Inconsistent Directory Structure {#inconsistent-directory-structure}
+
+```r
+# INCORRECT: Inconsistent organization
+logs_dir <- file.path(APP_DIR, "logs")
+data_dir <- file.path(ROOT_DIR, "precision_marketing_WISER", "data")  # Redundant nesting
+
+# CORRECT: Consistent organization
+logs_dir <- file.path(APP_DIR, "logs")
+data_dir <- file.path(APP_DIR, "data")
+```
+
+## Subsection 3: Direct Directory Creation {#direct-directory-creation}
+
+```r
+# INCORRECT: Creating directories without checking existence
+dir.create(file.path(APP_DIR, "data"))
+
+# CORRECT: Check existence first
+data_dir <- file.path(APP_DIR, "data")
+if (!dir.exists(data_dir)) {
+  dir.create(data_dir, recursive = TRUE)
+}
+```
+
+# Section 3: Special Considerations {#special-considerations}
+
+## Subsection 1: Migration from Legacy Structure {#migration-from-legacy}
+
+When migrating from a legacy structure:
+
+```r
+# Maintain compatibility with legacy code
+legacy_mapping <- function() {
+  # Map old variable names to new structure
+  ROOT_PATH <- APP_DIR
+  DATA_PATH <- file.path(APP_DIR, "app_data")
+  assign("ROOT_PATH", ROOT_PATH, envir = .GlobalEnv)
+  assign("DATA_PATH", DATA_PATH, envir = .GlobalEnv)
+}
+```
+
+## Subsection 2: Working with External Libraries {#working-with-external-libraries}
+
+When using external libraries that expect different path structures:
+
+```r
+# Adapt to external library expectations
+shiny_www_dir <- file.path(APP_DIR, "www")
+if (!dir.exists(shiny_www_dir)) {
+  dir.create(shiny_www_dir)
+}
+```
+
+## Subsection 3: Multi-level Organization {#multi-level-organization}
+
+For large projects requiring more than two tiers:
+
+```r
+# Three-tier organization within APP_DIR
+project_dir <- file.path(APP_DIR, "projects", "project_name")
+```
+
+# Section 4: Example Implementation {#example-implementation}
+
+A complete example of implementing the two-tier directory structure:
+
+```r
+# Two-tier directory structure implementation
+detect_paths <- function() {
+  app_dir <- getwd()
+  root_dir <- dirname(app_dir)
+  
+  message("App directory: ", app_dir)
+  message("Root directory: ", root_dir)
+  
+  return(list(
+    APP_DIR = app_dir,
+    ROOT_DIR = root_dir
+  ))
+}
+
+# Set path variables
+paths <- detect_paths()
+APP_DIR <- paths$APP_DIR
+ROOT_DIR <- paths$ROOT_DIR
+
+# For backward compatibility
+ROOT_PATH <- APP_DIR
+
+# Create required directories
+required_dirs <- c(
+  file.path(APP_DIR, "app_data"),
+  file.path(APP_DIR, "app_configs"),
+  file.path(APP_DIR, "logs"),
+  file.path(APP_DIR, "update_scripts")
+)
+
+for (dir in required_dirs) {
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE)
+    message("Created directory: ", dir)
+  }
+}
+
+# Function to get paths to sibling applications
+get_sibling_app_path <- function(app_name) {
+  if (app_name == "WISER") {
+    return(APP_DIR)  # Current application
+  } else {
+    return(file.path(ROOT_DIR, paste0("precision_marketing_", app_name)))
+  }
+}
+
+# Function to access shared resources
+get_shared_resource_path <- function(resource_name) {
+  return(file.path(ROOT_DIR, "shared_resources", resource_name))
+}
+
+# Export to an R file for persistence
+write_path_config <- function() {
+  config_file <- file.path(APP_DIR, "path_config.R")
+  writeLines(c(
+    "# Auto-generated path configuration",
+    paste0("APP_DIR <- \"", APP_DIR, "\""),
+    paste0("ROOT_DIR <- \"", ROOT_DIR, "\""),
+    paste0("ROOT_PATH <- APP_DIR  # For backward compatibility")
+  ), config_file)
+}
+
+# Write configuration to file
+write_path_config()
+```
+
+# Section 5: Integration with Other Rules {#integration-with-other-rules}
+
+## Subsection 1: Platform-Neutral Code (DEV_R003) {#platform-neutral-code}
+
+This rule complements DEV_R003 by providing a standardized structure for path organization while maintaining platform neutrality through the use of `file.path()` and dynamic path detection.
+
+## Subsection 2: Initialization Sourcing (DEV_R009) {#initialization-sourcing}
+
+The two-tier structure should be established during initialization before loading any other resources, as specified in DEV_R009.
+
+## Subsection 3: App YAML Configuration (SO_R005) {#app-yaml-configuration}
+
+Configuration files should be organized following the two-tier structure, with app-specific configs in APP_DIR/app_configs and shared configs in appropriate ROOT_DIR locations.
+
+# Section 6: Benefits {#benefits}
+
+## Subsection 1: Technical Benefits {#technical-benefits}
+
+1. **Portability**: Projects become more portable and can be easily moved between environments
+2. **Simplified Maintenance**: Standardized structure reduces path-related maintenance burden
+3. **Resource Sharing**: Effectively share resources while avoiding environment-specific path issues
+4. **Platform Independence**: Works consistently across all major operating systems
+
+## Subsection 2: Organizational Benefits {#organizational-benefits}
+
+1. **Consistency**: Consistent organization across all projects in an organization
+2. **Clarity**: Clear separation between application-specific and shared resources
+3. **Predictability**: Predictable relationships between application and shared resources
+4. **Simplified Deployment**: Simplified deployment process across different environments
+
+---
+
+*Based on: Structure & Organization Law Article 9*  
+*Related to: [MP002 Structural Blueprint](../../CH00_fundamental_principles/meta_principles/MP002_structural_blueprint.qmd), [DEV_R003 Platform-Neutral Code](../../CH03_development_methodology/rules/DEV_R003_platform_neutral_code.qmd)*

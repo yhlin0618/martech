@@ -1,0 +1,196 @@
+---
+title: "MP100: UTF-8 Encoding Standard"
+subtitle: "Universal Character Encoding Requirement"
+categories: [meta-principles, file-encoding, standards]
+version: "1.0.0"
+date: "2025-08-28"
+author: "MAMBA Framework"
+---
+
+## Core Requirement
+
+**All text files in the MAMBA framework MUST use UTF-8 encoding without Byte Order Mark (BOM).**
+
+This applies universally to all file types that contain textual content, ensuring cross-platform compatibility, proper international character support, and elimination of encoding-related issues that can corrupt data processing pipelines.
+
+## Scope of Application
+
+### Mandatory UTF-8 Files
+- **R Scripts**: All `.R` files, including functions, applications, and utility scripts
+- **Configuration Files**: YAML (`.yaml`, `.yml`), JSON (`.json`), XML (`.xml`)
+- **Documentation**: Markdown (`.md`), Quarto (`.qmd`), text files (`.txt`)
+- **Data Files**: CSV files and other text-based data formats when applicable
+- **Web Assets**: HTML, CSS, JavaScript files in web applications
+- **Template Files**: All template and configuration files
+
+### Character Set Requirements
+- **Primary Encoding**: UTF-8 without BOM
+- **Line Endings**: Unix-style LF (`\n`) preferred over Windows CRLF (`\r\n`)
+- **Null Characters**: Strictly prohibited - files containing null bytes (`\0`) are invalid
+
+## Technical Implementation
+
+### Validation Methods
+
+```bash
+# Check file encoding
+file -b --mime-encoding filename.R
+
+# Expected output: utf-8
+
+# Detect problematic characters
+hexdump -C filename.R | grep -E "00|ff fe|fe ff"
+
+# Check for null characters specifically  
+grep -P '\x00' filename.R
+```
+
+### Conversion Procedures
+
+```bash
+# Convert file to UTF-8 (preserving original as backup)
+iconv -f [source-encoding] -t UTF-8 filename.R > filename_utf8.R
+
+# Remove null characters and fix line endings
+sed -i '' 's/\x00//g; s/\r$//' filename.R
+
+# Alternative using tr for null character removal
+tr -d '\000' < filename.R > filename_clean.R
+```
+
+### Automated Detection Script
+
+```bash
+#!/bin/bash
+# check_encoding.sh - Validate UTF-8 compliance
+
+find . -name "*.R" -o -name "*.qmd" -o -name "*.yaml" | while read file; do
+    if ! file -b --mime-encoding "$file" | grep -q "utf-8"; then
+        echo "ENCODING ISSUE: $file"
+    fi
+    
+    if grep -Pq '\x00' "$file" 2>/dev/null; then
+        echo "NULL CHARACTER: $file"
+    fi
+done
+```
+
+## Common Issues and Solutions
+
+### Windows Line Endings (CRLF)
+**Problem**: Files created on Windows contain `\r\n` line endings that can cause issues in Unix-based systems.
+
+**Solution**:
+```bash
+# Convert CRLF to LF
+sed -i '' 's/\r$//' filename.R
+
+# Or use dos2unix if available
+dos2unix filename.R
+```
+
+### Null Characters from Copy-Paste
+**Problem**: Copy-pasting code from certain sources introduces null characters that break R parsing.
+
+**Solution**:
+```bash
+# Remove null characters
+sed -i '' 's/\x00//g' filename.R
+
+# Alternative method
+tr -d '\000' < filename.R > filename_clean.R
+```
+
+### BOM (Byte Order Mark) Issues
+**Problem**: UTF-8 files with BOM can cause parsing issues in some systems.
+
+**Solution**:
+```bash
+# Remove BOM from file
+sed -i '' '1s/^\xEF\xBB\xBF//' filename.R
+```
+
+### Mixed Encoding Detection
+**Problem**: Files with mixed or unknown encodings causing processing failures.
+
+**Solution**:
+```bash
+# Identify encoding
+uchardet filename.R
+
+# Convert to UTF-8
+iconv -f ISO-8859-1 -t UTF-8 filename.R > filename_utf8.R
+```
+
+## Cross-Platform Compatibility
+
+### Benefits of UTF-8 Standard
+1. **Universal Support**: All modern systems support UTF-8 natively
+2. **International Characters**: Proper handling of accented characters, symbols, and non-Latin scripts
+3. **Data Integrity**: Eliminates encoding-related data corruption
+4. **Tool Compatibility**: Consistent behavior across IDEs, editors, and command-line tools
+5. **Version Control**: Clean diffs and merges without encoding artifacts
+
+### Platform-Specific Considerations
+
+#### Windows
+- Set R console and RStudio to UTF-8 mode
+- Configure Git to handle UTF-8 properly
+- Use modern editors that default to UTF-8
+
+#### macOS/Linux  
+- Generally UTF-8 by default
+- Ensure LANG environment variable includes UTF-8
+- Verify locale settings support UTF-8
+
+## Validation and Quality Assurance
+
+### Pre-Commit Validation
+```bash
+# Add to git pre-commit hook
+for file in $(git diff --cached --name-only --diff-filter=AM | grep -E '\.(R|qmd|yaml)$'); do
+    if ! file -b --mime-encoding "$file" | grep -q "utf-8"; then
+        echo "Error: $file is not UTF-8 encoded"
+        exit 1
+    fi
+done
+```
+
+### Continuous Integration
+Include encoding validation in CI/CD pipelines to prevent encoding issues from reaching production systems.
+
+### Manual Verification Steps
+1. Open file in hex editor and verify no BOM (EF BB BF) at beginning
+2. Check file command output shows `utf-8`
+3. Verify no null characters using grep or hex dump
+4. Test file parsing in target applications
+
+## Integration with Other Principles
+
+- **MP099 Real-time Progress Reporting**: UTF-8 ensures progress messages display correctly
+- **MP095 Claude Code Driven Changes**: All generated files must comply with UTF-8 standard
+- **SO_R002 File Naming Convention**: File names should also be UTF-8 compatible
+- **DEV_R003 Platform Neutral Code**: UTF-8 encoding supports cross-platform neutrality
+
+## Exception Handling
+
+### Binary Files
+- Image files, compiled binaries, and data files in binary formats are exempt
+- When in doubt, use `file` command to determine if UTF-8 applies
+
+### Legacy Systems
+- Document any legacy encoding requirements with specific justification
+- Create conversion plans for migrating legacy files to UTF-8
+- Maintain encoding documentation for external data sources
+
+## Implementation Priority
+
+**IMMEDIATE ACTION REQUIRED**: All existing text files showing encoding issues must be converted to UTF-8 before further development.
+
+This principle is foundational and affects all other file processing activities within the MAMBA framework.
+
+---
+
+**Related Principles**: MP095, MP099, SO_R002, DEV_R003  
+**Implementation Status**: Mandatory  
+**Review Date**: 2025-11-28

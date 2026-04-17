@@ -1,0 +1,484 @@
+---
+title: "DuckDB List Column Migration Guide"
+subtitle: "Step-by-step guide for migrating existing code to handle list columns correctly in DuckDB"
+category: "migration"
+date-created: "2025-08-27"
+date-modified: "2025-08-27"
+author: "Claude (Principle Revisor)"
+type: "guide"
+related_to:
+  - "DM_R024: List Column Handling Rule"
+  - "DM_R025: Type Conversion Between R and DuckDB"
+  - "DM_R026: JSON Serialization Strategy"
+  - "CH17: DuckDB Database Specifications"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Migration Guide: DuckDB List Column Handling {#overview}
+
+This guide helps you migrate existing code that may fail when writing R data frames with list columns to DuckDB.
+
+:::{.callout-warning}
+## Breaking Change
+As of DuckDB 1.0+, R list columns cannot be directly written to DuckDB tables. This requires code changes in all ETL pipelines handling nested data.
+:::
+
+# Part 1: Identifying Affected Code {#identification}
+
+## Section 1: Symptoms of the Problem {#symptoms}
+
+Your code is affected if you see any of these errors:
+
+```
+Error: Can't convert <list> to <character>
+Error: rapi_prepare: Failed to prepare query SELECT * FROM data_frame
+Error: Unable to transform to native DuckDB type
+```
+
+## Section 2: Finding Affected Code {#finding-code}
+
+Search your codebase for patterns that may be affected:
+
+```r
+# Search for potential issues in your R scripts
+search_patterns <- c(
+  "dbWriteTable.*conn",           # Direct writes to DuckDB
+  "fromJSON.*flatten",            # JSON parsing that creates lists
+  "unnest",                       # May indicate nested data
+  "I\\(list\\(",                  # Explicit list columns
+  "line_items",                   # Common nested field name
+  "metadata",                     # Often contains nested data
+  "_raw"                          # Raw data tables often have lists
+)
+
+# Function to scan files
+scan_for_issues <- function(directory = "scripts/") {
+  files <- list.files(directory, pattern = "\\.R$", 
+                      recursive = TRUE, full.names = TRUE)
+  
+  issues <- list()
+  for (file in files) {
+    content <- readLines(file)
+    for (pattern in search_patterns) {
+      matches <- grep(pattern, content, value = TRUE)
+      if (length(matches) > 0) {
+        issues[[length(issues) + 1]] <- list(
+          file = file,
+          pattern = pattern,
+          lines = matches
+        )
+      }
+    }
+  }
+  return(issues)
+}
+```
+
+# Part 2: Migration Strategies {#strategies}
+
+## Section 1: Quick Fix - Wrapper Function {#quick-fix}
+
+The fastest migration path is to create a wrapper function:
+
+### Step 1: Create the Wrapper
+
+```r
+# Save this in scripts/global_scripts/01_db/dbWriteTableSafe.R
+
+#' Safe wrapper for dbWriteTable that handles list columns
+#' @export
+dbWriteTableSafe <- function(conn, name, value, ...) {
+  # Check for list columns
+  list_cols <- sapply(value, function(x) is.list(x) && !is.data.frame(x))
+  
+  if (any(list_cols)) {
+    message("Converting list columns for DuckDB compatibility...")
+    value_safe <- value
+    
+    for (col in names(value_safe)[list_cols]) {
+      # Convert to JSON
+      value_safe[[paste0(col, "_json")]] <- sapply(
+        value_safe[[col]], 
+        jsonlite::toJSON, 
+        auto_unbox = TRUE,
+        null = "null"
+      )
+      # Remove original column
+      value_safe[[col]] <- NULL
+      message(sprintf("  - Converted '%s' to '%s_json'", col, col))
+    }
+    
+    dbWriteTable(conn, name, value_safe, ...)
+  } else {
+    dbWriteTable(conn, name, value, ...)
+  }
+}
+```
+
+### Step 2: Replace All Calls
+
+```r
+# Before
+dbWriteTable(conn, "my_table", df_with_lists)
+
+# After
+dbWriteTableSafe(conn, "my_table", df_with_lists)
+```
+
+## Section 2: Comprehensive Migration {#comprehensive}
+
+For a more thorough solution, implement proper handling at each stage:
+
+### Step 1: Update Import Functions
+
+```r
+# Before: Direct import may create list columns
+import_api_data <- function(endpoint) {
+  response <- httr::GET(endpoint)
+  df <- jsonlite::fromJSON(httr::content(response, "text"), 
+                           flatten = TRUE)
+  return(df)
+}
+
+# After: Handle list columns immediately
+import_api_data <- function(endpoint) {
+  response <- httr::GET(endpoint)
+  df <- jsonlite::fromJSON(httr::content(response, "text"), 
+                           flatten = TRUE)
+  
+  # Handle list columns
+  df <- prepare_for_duckdb(df)
+  
+  return(df)
+}
+
+prepare_for_duckdb <- function(df) {
+  list_cols <- sapply(df, function(x) is.list(x) && !is.data.frame(x))
+  
+  for (col in names(df)[list_cols]) {
+    # Decide based on content
+    if (is_regular_nested_structure(df[[col]])) {
+      # Can flatten
+      df <- tidyr::unnest(df, all_of(col), keep_empty = TRUE)
+    } else {
+      # Must serialize
+      df[[paste0(col, "_json")]] <- sapply(df[[col]], 
+                                           jsonlite::toJSON, 
+                                           auto_unbox = TRUE)
+      df[[col]] <- NULL
+    }
+  }
+  
+  return(df)
+}
+
+is_regular_nested_structure <- function(list_col) {
+  # Check if all elements have same structure
+  if (length(list_col) == 0) return(FALSE)
+  
+  # Get structure of first non-null element
+  first_struct <- NULL
+  for (elem in list_col) {
+    if (!is.null(elem)) {
+      first_struct <- names(elem)
+      break
+    }
+  }
+  
+  if (is.null(first_struct)) return(FALSE)
+  
+  # Check if all elements match
+  for (elem in list_col) {
+    if (!is.null(elem) && !identical(names(elem), first_struct)) {
+      return(FALSE)
+    }
+  }
+  
+  return(TRUE)
+}
+```
+
+### Step 2: Update ETL Scripts
+
+Example migration for Cyberbiz ETL:
+
+```r
+# BEFORE: cbz_ETL01_0IM.R (causes errors)
+df_orders_raw <- fetch_all_pages("/orders")
+if (nrow(df_orders_raw) > 0) {
+  # This fails if line_items is a list column!
+  dbWriteTable(raw_data, "df_cbz_orders_raw", 
+               df_orders_raw, overwrite = TRUE)
+}
+
+# AFTER: cbz_ETL01_0IM.R (handles list columns)
+df_orders_raw <- fetch_all_pages("/orders")
+if (nrow(df_orders_raw) > 0) {
+  # Check for line_items list column
+  if ("line_items" %in% names(df_orders_raw) && 
+      is.list(df_orders_raw$line_items)) {
+    
+    # Option 1: Flatten if you need the details
+    df_sales_raw <- df_orders_raw %>%
+      tidyr::unnest(line_items, keep_empty = TRUE)
+    dbWriteTable(raw_data, "df_cbz_sales_raw", 
+                 df_sales_raw, overwrite = TRUE)
+    
+    # Option 2: Keep orders with JSON line items
+    df_orders_raw$line_items_json <- sapply(
+      df_orders_raw$line_items,
+      jsonlite::toJSON,
+      auto_unbox = TRUE
+    )
+    df_orders_raw$line_items <- NULL
+    dbWriteTable(raw_data, "df_cbz_orders_raw", 
+                 df_orders_raw, overwrite = TRUE)
+  } else {
+    # No list columns, safe to write
+    dbWriteTable(raw_data, "df_cbz_orders_raw", 
+                 df_orders_raw, overwrite = TRUE)
+  }
+}
+```
+
+# Part 3: Testing Your Migration {#testing}
+
+## Section 1: Unit Tests {#unit-tests}
+
+Create tests to verify your migration:
+
+```r
+# tests/test_duckdb_compatibility.R
+
+test_that("List columns are handled correctly", {
+  # Create test data with list column
+  test_df <- data.frame(
+    id = 1:3,
+    name = c("A", "B", "C"),
+    data = I(list(
+      c(1, 2, 3),
+      c(4, 5),
+      c(6, 7, 8, 9)
+    ))
+  )
+  
+  # Setup temp database
+  conn <- dbConnect(duckdb(), ":memory:")
+  on.exit(dbDisconnect(conn))
+  
+  # Should not error
+  expect_no_error({
+    dbWriteTableSafe(conn, "test_table", test_df)
+  })
+  
+  # Verify data was written
+  result <- dbGetQuery(conn, "SELECT * FROM test_table")
+  expect_equal(nrow(result), 3)
+  expect_true("data_json" %in% names(result))
+  
+  # Verify JSON can be parsed back
+  parsed_data <- lapply(result$data_json, jsonlite::fromJSON)
+  expect_equal(parsed_data[[1]], c(1, 2, 3))
+})
+```
+
+## Section 2: Integration Tests {#integration-tests}
+
+Test with real API data:
+
+```r
+test_that("API import handles nested data", {
+  # Mock API response with nested structure
+  mock_response <- '[
+    {
+      "id": 1,
+      "customer": "John",
+      "line_items": [
+        {"product": "A", "qty": 2},
+        {"product": "B", "qty": 1}
+      ]
+    }
+  ]'
+  
+  # Parse as if from API
+  df <- jsonlite::fromJSON(mock_response, flatten = FALSE)
+  
+  # Apply migration
+  df_safe <- prepare_for_duckdb(df)
+  
+  # Should be writable to DuckDB
+  conn <- dbConnect(duckdb(), ":memory:")
+  on.exit(dbDisconnect(conn))
+  
+  expect_no_error({
+    dbWriteTable(conn, "orders", df_safe)
+  })
+})
+```
+
+# Part 4: Rollback Plan {#rollback}
+
+## Section 1: Keeping Backward Compatibility {#backward-compat}
+
+If you need to maintain compatibility with existing code:
+
+```r
+# Create a compatibility layer
+dbWriteTableCompat <- function(conn, name, value, 
+                                use_safe = getOption("duckdb.safe_write", TRUE), 
+                                ...) {
+  if (use_safe) {
+    dbWriteTableSafe(conn, name, value, ...)
+  } else {
+    # Try unsafe first, fall back to safe on error
+    tryCatch({
+      dbWriteTable(conn, name, value, ...)
+    }, error = function(e) {
+      if (grepl("Can't convert.*list", e$message)) {
+        warning("List column detected, using safe write")
+        dbWriteTableSafe(conn, name, value, ...)
+      } else {
+        stop(e)
+      }
+    })
+  }
+}
+```
+
+## Section 2: Reverting Changes {#reverting}
+
+If you need to revert:
+
+1. **Keep original data**: Store both JSON and original format during transition
+2. **Use different table names**: Append `_v2` to migrated tables
+3. **Dual-write period**: Write to both old and new format temporarily
+
+```r
+# Transition period dual-write
+write_with_transition <- function(conn, name, value) {
+  # Try old way (may fail)
+  tryCatch({
+    dbWriteTable(conn, paste0(name, "_old"), value, overwrite = TRUE)
+  }, error = function(e) {
+    warning("Old format failed: ", e$message)
+  })
+  
+  # Always write new way
+  dbWriteTableSafe(conn, paste0(name, "_v2"), value, overwrite = TRUE)
+}
+```
+
+# Part 5: Checklist {#checklist}
+
+## Migration Checklist
+
+Use this checklist for each affected script:
+
+### Pre-Migration
+- [ ] Identify all `dbWriteTable` calls
+- [ ] Check for API imports using `fromJSON`
+- [ ] Review data structures for list columns
+- [ ] Create backups of existing data
+
+### Implementation
+- [ ] Add `dbWriteTableSafe` wrapper function
+- [ ] Update ETL import scripts
+- [ ] Handle nested structures appropriately
+- [ ] Add type checking before writes
+
+### Testing
+- [ ] Test with sample data containing lists
+- [ ] Test with empty/NULL values
+- [ ] Test with production-like data volumes
+- [ ] Verify JSON columns can be queried
+
+### Deployment
+- [ ] Update documentation
+- [ ] Communicate JSON column names to team
+- [ ] Monitor for errors in production
+- [ ] Plan for data recovery if needed
+
+### Post-Migration
+- [ ] Remove old compatibility code
+- [ ] Update schema documentation
+- [ ] Document JSON column structures
+- [ ] Create helper functions for JSON access
+
+# Part 6: Common Patterns {#patterns}
+
+## Pattern 1: API Response with Line Items
+
+```r
+# Common e-commerce pattern
+handle_order_with_items <- function(order_data) {
+  if ("line_items" %in% names(order_data)) {
+    # Flatten to sales records
+    sales_data <- order_data %>%
+      tidyr::unnest(line_items, keep_empty = TRUE)
+    
+    # Remove the nested column from orders
+    order_data$line_items <- NULL
+    
+    return(list(
+      orders = order_data,
+      sales = sales_data
+    ))
+  }
+  return(list(orders = order_data))
+}
+```
+
+## Pattern 2: Metadata Fields
+
+```r
+# Common pattern for flexible metadata
+handle_metadata <- function(df) {
+  if ("metadata" %in% names(df) && is.list(df$metadata)) {
+    # Keep as JSON for flexibility
+    df$metadata_json <- sapply(df$metadata, 
+                               jsonlite::toJSON, 
+                               auto_unbox = TRUE)
+    df$metadata <- NULL
+  }
+  return(df)
+}
+```
+
+## Pattern 3: Array Fields
+
+```r
+# Common pattern for arrays (tags, categories, etc.)
+handle_arrays <- function(df) {
+  array_cols <- c("tags", "categories", "images")
+  
+  for (col in array_cols) {
+    if (col %in% names(df) && is.list(df[[col]])) {
+      # For simple arrays, could join to string
+      if (all(sapply(df[[col]], function(x) 
+                     is.null(x) || is.atomic(x)))) {
+        df[[col]] <- sapply(df[[col]], function(x) 
+                           paste(x, collapse = ","))
+      } else {
+        # Complex arrays need JSON
+        df[[paste0(col, "_json")]] <- sapply(df[[col]], 
+                                             jsonlite::toJSON, 
+                                             auto_unbox = TRUE)
+        df[[col]] <- NULL
+      }
+    }
+  }
+  return(df)
+}
+```
+
+---
+
+*Migration Guide Version: 1.0*
+*For: DuckDB 1.0+ with R DBI interface*
+*Critical for: All ETL pipelines handling nested data structures*

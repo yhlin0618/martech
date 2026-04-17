@@ -1,0 +1,638 @@
+---
+title: "DU10: DuckDB Complete Technical Reference"
+subtitle: "Complete technical specifications for DuckDB usage in MAMBA framework"
+author: "MAMBA Framework"
+date: "2025-08-27"
+categories: [database, duckdb, reference, specifications]
+related_to:
+  - "DM_R023: Universal DBI Approach"
+  - "DM_R024: List Column Handling Rule"
+  - "DM_R025: Type Conversion Between R and DuckDB"
+  - "DM_R026: JSON Serialization Strategy"
+---
+
+# Chapter 17: DuckDB Database Specifications {#overview}
+
+This chapter provides comprehensive technical specifications for DuckDB usage within the MAMBA framework, including type mappings, limitations, best practices, and integration patterns.
+
+:::{.callout-important}
+## Critical Information
+DuckDB is the primary analytical database for MAMBA. Understanding its type system and limitations is essential for successful data operations.
+:::
+
+# Part 1: Type System {#type-system}
+
+## Section 1: Complete Type Mapping Reference {#type-mapping}
+
+### Subsection 1.1: R to DuckDB Type Mapping {#r-to-duckdb}
+
+| R Type | DuckDB Type | Storage Size | Range/Limits | Notes |
+|--------|-------------|--------------|--------------|--------|
+| **Logical Types** |
+| `logical` | `BOOLEAN` | 1 byte | TRUE/FALSE/NULL | Direct mapping |
+| **Integer Types** |
+| `integer` | `INTEGER` | 4 bytes | -2^31 to 2^31-1 | R's default integer |
+| `bit64::integer64` | `BIGINT` | 8 bytes | -2^63 to 2^63-1 | For large integers |
+| **Numeric Types** |
+| `numeric`/`double` | `DOUBLE` | 8 bytes | IEEE 754 | Default numeric in R |
+| `single` | `FLOAT` | 4 bytes | IEEE 754 | Rarely used in R |
+| **Character Types** |
+| `character` | `VARCHAR` | Variable | No limit | Default string type |
+| **Temporal Types** |
+| `Date` | `DATE` | 4 bytes | 4713 BC - 5874897 AD | Date only |
+| `POSIXct` | `TIMESTAMP` | 8 bytes | Microsecond precision | Datetime |
+| `POSIXlt` | Not supported | - | - | Convert to POSIXct |
+| `hms::hms` | `TIME` | 4 bytes | 00:00:00 - 23:59:59.999999 | Time only |
+| **Binary Types** |
+| `raw` | `BLOB` | Variable | No limit | Binary data |
+| **Complex Types** |
+| `factor` | `VARCHAR` | Variable | - | Loses levels |
+| `list` | Not supported | - | - | Requires JSON conversion |
+| `data.frame` | Not supported | - | - | Flatten or serialize |
+| `matrix` | Not supported | - | - | Flatten to columns |
+| `array` | Not supported | - | - | Flatten or serialize |
+
+### Subsection 1.2: DuckDB Native Types {#duckdb-native}
+
+| DuckDB Type | Description | R Equivalent | SQL Standard |
+|-------------|-------------|--------------|--------------|
+| **Integer Types** |
+| `TINYINT` | 1-byte signed | - | Yes |
+| `SMALLINT` | 2-byte signed | - | Yes |
+| `INTEGER` | 4-byte signed | `integer` | Yes |
+| `BIGINT` | 8-byte signed | `bit64::integer64` | Yes |
+| `HUGEINT` | 16-byte signed | - | No |
+| `UTINYINT` | 1-byte unsigned | - | No |
+| `USMALLINT` | 2-byte unsigned | - | No |
+| `UINTEGER` | 4-byte unsigned | - | No |
+| `UBIGINT` | 8-byte unsigned | - | No |
+| `UHUGEINT` | 16-byte unsigned | - | No |
+| **Decimal Types** |
+| `DECIMAL(p,s)` | Fixed precision | - | Yes |
+| `NUMERIC(p,s)` | Alias for DECIMAL | - | Yes |
+| **Floating Point** |
+| `FLOAT` | 4-byte float | `single` | Yes |
+| `DOUBLE` | 8-byte float | `numeric` | Yes |
+| **Special Types** |
+| `UUID` | 128-bit UUID | - | No |
+| `JSON` | JSON data | `character` | No |
+| `INTERVAL` | Time interval | `difftime` | Yes |
+| `BIT` | Bit string | - | Yes |
+
+## Section 2: Nested Types {#nested-types}
+
+### Subsection 2.1: DuckDB Nested Types {#duckdb-nested-types}
+
+DuckDB supports these nested types that have NO direct R equivalent:
+
+| DuckDB Type | Description | R Handling Strategy |
+|-------------|-------------|---------------------|
+| `ARRAY[T]` | Fixed-size array | Not directly supported - flatten |
+| `LIST[T]` | Variable-size list | Not R's list - use JSON |
+| `MAP(K,V)` | Key-value pairs | Convert to JSON or normalize |
+| `STRUCT(...)` | Named fields | Similar to data.frame row - flatten |
+| `UNION(...)` | Tagged union | No equivalent - use JSON |
+
+### Subsection 2.2: Critical Distinction {#critical-distinction}
+
+:::{.callout-warning}
+## Important: R list ≠ DuckDB LIST
+- **R list**: Can contain heterogeneous types, complex nesting
+- **DuckDB LIST**: Homogeneous type, like a variable-length array
+- **Consequence**: R lists CANNOT be directly stored in DuckDB
+:::
+
+# Part 2: Known Limitations and Workarounds {#limitations}
+
+## Section 1: Type System Limitations {#type-limitations}
+
+### Issue 1: R List Columns {#r-list-limitation}
+
+**Problem**: R list columns cannot be stored in DuckDB  
+**Error**: `Error: Can't convert <list> to <character>`  
+**Solution**: Convert to JSON before storage
+
+```r
+# Problem code
+df <- data.frame(id = 1:3, 
+                  data = I(list(c(1,2), c(3,4,5), c(6))))
+dbWriteTable(conn, "test", df)  # ERROR!
+
+# Solution
+df$data_json <- sapply(df$data, jsonlite::toJSON)
+df$data <- NULL
+dbWriteTable(conn, "test", df)  # Works!
+```
+
+### Issue 2: Factor Levels {#factor-limitation}
+
+**Problem**: Factor levels are lost in DuckDB  
+**Impact**: Cannot restore original factor levels  
+**Solution**: Store levels separately if needed
+
+```r
+# Save factor information
+save_factor_info <- function(df, conn, table_name) {
+  factor_cols <- names(df)[sapply(df, is.factor)]
+  
+  if (length(factor_cols) > 0) {
+    factor_info <- list()
+    for (col in factor_cols) {
+      factor_info[[col]] <- levels(df[[col]])
+      df[[col]] <- as.character(df[[col]])
+    }
+    
+    # Store factor information
+    dbWriteTable(conn, paste0(table_name, "_factors"), 
+                 data.frame(column = names(factor_info),
+                           levels = I(factor_info)), 
+                 overwrite = TRUE)
+  }
+  
+  dbWriteTable(conn, table_name, df, overwrite = TRUE)
+}
+```
+
+### Issue 3: Large Integers {#integer-limitation}
+
+**Problem**: R's integer type limited to 2^31-1  
+**Impact**: Large IDs from databases overflow  
+**Solution**: Use numeric or bit64 package
+
+```r
+# Problem: Integer overflow
+df$large_id <- 3000000000L  # Becomes NA with warning
+
+# Solution 1: Use numeric
+df$large_id <- as.numeric("3000000000")
+
+# Solution 2: Use bit64
+library(bit64)
+df$large_id <- as.integer64("3000000000")
+```
+
+## Section 2: Performance Limitations {#performance-limitations}
+
+### Issue 1: Row-by-Row Operations {#row-operations}
+
+**Problem**: Loop inserts are extremely slow  
+**Impact**: 1000x slower than bulk operations  
+**Solution**: Always use bulk operations
+
+```r
+# NEVER DO THIS
+for (i in 1:nrow(df)) {
+  dbExecute(conn, sprintf("INSERT INTO table VALUES (%d, '%s')", 
+            df$id[i], df$name[i]))
+}
+
+# DO THIS INSTEAD
+dbWriteTable(conn, "table", df, append = TRUE)
+
+# Or use prepared statements for batches
+stmt <- dbSendStatement(conn, "INSERT INTO table VALUES (?, ?)")
+dbBind(stmt, df)
+dbClearResult(stmt)
+```
+
+### Issue 2: Memory Limits {#memory-limits}
+
+**Problem**: DuckDB may consume significant memory  
+**Solution**: Set explicit memory limits
+
+```r
+# Set memory limit
+dbExecute(conn, "SET memory_limit = '4GB'")
+
+# Or in connection
+conn <- dbConnect(duckdb(), config = list("memory_limit" = "4GB"))
+```
+
+# Part 3: Best Practices {#best-practices}
+
+## Section 1: Connection Management {#connection-management}
+
+### Subsection 1.1: Connection Patterns {#connection-patterns}
+
+```r
+# Pattern 1: Persistent connection (development)
+get_connection <- function() {
+  if (!exists(".duckdb_conn") || !dbIsValid(.duckdb_conn)) {
+    .duckdb_conn <<- dbConnect(duckdb(), "data/analytics.duckdb")
+  }
+  return(.duckdb_conn)
+}
+
+# Pattern 2: Scoped connection (production)
+with_duckdb <- function(path, expr) {
+  conn <- dbConnect(duckdb(), path)
+  on.exit(dbDisconnect(conn, shutdown = TRUE))
+  eval(expr)
+}
+
+# Usage
+with_duckdb("data/analytics.duckdb", {
+  result <- dbGetQuery(conn, "SELECT * FROM sales")
+})
+```
+
+### Subsection 1.2: Connection Pooling {#connection-pooling}
+
+```r
+# For Shiny apps with multiple users
+library(pool)
+
+pool <- dbPool(
+  duckdb(),
+  dbdir = "data/analytics.duckdb",
+  minSize = 1,
+  maxSize = 5,
+  idleTimeout = 3600000  # 1 hour
+)
+
+onStop(function() {
+  poolClose(pool)
+})
+```
+
+## Section 2: Data Loading Strategies {#loading-strategies}
+
+### Subsection 2.1: Optimal Loading Order {#loading-order}
+
+1. **Parquet files**: Fastest, most efficient
+2. **CSV with type hints**: Good for structured data
+3. **dbWriteTable**: For R data frames
+4. **INSERT statements**: Only for small updates
+
+```r
+# 1. Best: Parquet
+dbExecute(conn, "CREATE TABLE sales AS SELECT * FROM 'data/sales.parquet'")
+
+# 2. Good: CSV with types
+dbExecute(conn, "
+  CREATE TABLE sales AS 
+  SELECT * FROM read_csv('data/sales.csv', 
+    columns = {'id': 'INTEGER', 'amount': 'DOUBLE', 'date': 'DATE'})
+")
+
+# 3. OK: R data frame
+dbWriteTable(conn, "sales", df_sales)
+
+# 4. Avoid: Individual inserts
+# DON'T USE unless necessary
+```
+
+### Subsection 2.2: Handling Large Datasets {#large-datasets}
+
+```r
+# For datasets larger than memory
+process_large_csv <- function(file_path, conn, table_name, chunk_size = 100000) {
+  # Let DuckDB handle it directly
+  query <- sprintf("
+    CREATE TABLE %s AS 
+    SELECT * FROM read_csv('%s', AUTO_DETECT = TRUE)
+  ", table_name, file_path)
+  
+  dbExecute(conn, query)
+}
+
+# For R data frames, process in chunks
+write_large_df <- function(df, conn, table_name, chunk_size = 100000) {
+  n_chunks <- ceiling(nrow(df) / chunk_size)
+  
+  for (i in seq_len(n_chunks)) {
+    start_row <- (i - 1) * chunk_size + 1
+    end_row <- min(i * chunk_size, nrow(df))
+    
+    chunk <- df[start_row:end_row, ]
+    
+    dbWriteTable(conn, table_name, chunk, 
+                 append = i > 1, 
+                 overwrite = i == 1)
+    
+    message(sprintf("Written chunk %d/%d", i, n_chunks))
+  }
+}
+```
+
+## Section 3: Query Optimization {#query-optimization}
+
+### Subsection 3.1: Index Usage {#index-usage}
+
+```r
+# Create indexes for frequently queried columns
+dbExecute(conn, "CREATE INDEX idx_customer_id ON sales(customer_id)")
+dbExecute(conn, "CREATE INDEX idx_sale_date ON sales(sale_date)")
+
+# Composite index for multi-column queries
+dbExecute(conn, "CREATE INDEX idx_customer_date ON sales(customer_id, sale_date)")
+
+# Check if indexes are being used
+explain_query <- function(conn, query) {
+  explanation <- dbGetQuery(conn, paste("EXPLAIN", query))
+  print(explanation)
+}
+```
+
+### Subsection 3.2: Query Patterns {#query-patterns}
+
+```r
+# Use CTEs for complex queries
+complex_query <- "
+WITH customer_totals AS (
+  SELECT customer_id, 
+         SUM(amount) as total_amount,
+         COUNT(*) as order_count
+  FROM sales
+  GROUP BY customer_id
+),
+customer_segments AS (
+  SELECT customer_id,
+         CASE 
+           WHEN total_amount > 1000 THEN 'High'
+           WHEN total_amount > 100 THEN 'Medium'
+           ELSE 'Low'
+         END as segment
+  FROM customer_totals
+)
+SELECT * FROM customer_segments
+"
+
+# Use parameterized queries for security and performance
+get_customer_sales <- function(conn, customer_id, start_date, end_date) {
+  query <- "
+    SELECT * FROM sales 
+    WHERE customer_id = ? 
+      AND sale_date BETWEEN ? AND ?
+  "
+  dbGetQuery(conn, query, params = list(customer_id, start_date, end_date))
+}
+```
+
+# Part 4: Integration Patterns {#integration}
+
+## Section 1: ETL Pipeline Integration {#etl-integration}
+
+### Subsection 1.1: Standard ETL Pattern {#etl-pattern}
+
+```r
+# Standard ETL function with DuckDB compatibility
+etl_import_to_duckdb <- function(source_data, conn, table_name) {
+  # 1. Check compatibility
+  compatibility <- check_duckdb_compatibility(source_data)
+  
+  if (!compatibility$compatible) {
+    message("Fixing compatibility issues...")
+    source_data <- fix_for_duckdb(source_data)
+  }
+  
+  # 2. Write to staging
+  staging_table <- paste0(table_name, "_staging")
+  dbWriteTable(conn, staging_table, source_data, overwrite = TRUE)
+  
+  # 3. Validate
+  row_count <- dbGetQuery(conn, sprintf("SELECT COUNT(*) FROM %s", staging_table))[[1]]
+  
+  if (row_count != nrow(source_data)) {
+    stop("Row count mismatch in staging")
+  }
+  
+  # 4. Move to production
+  dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", table_name))
+  dbExecute(conn, sprintf("ALTER TABLE %s RENAME TO %s", staging_table, table_name))
+  
+  message(sprintf("Successfully imported %d rows to %s", row_count, table_name))
+}
+```
+
+### Subsection 1.2: Incremental Loading {#incremental-loading}
+
+```r
+# Incremental updates with deduplication
+incremental_update <- function(conn, new_data, table_name, key_columns) {
+  # Ensure compatibility
+  new_data <- fix_for_duckdb(new_data)
+  
+  # Load to temp table
+  temp_table <- paste0(table_name, "_temp")
+  dbWriteTable(conn, temp_table, new_data, overwrite = TRUE)
+  
+  # Merge with deduplication
+  merge_query <- sprintf("
+    INSERT INTO %s
+    SELECT t.* FROM %s t
+    WHERE NOT EXISTS (
+      SELECT 1 FROM %s m 
+      WHERE %s
+    )
+  ", table_name, temp_table, table_name,
+  paste(sprintf("m.%s = t.%s", key_columns, key_columns), collapse = " AND "))
+  
+  rows_added <- dbExecute(conn, merge_query)
+  
+  # Cleanup
+  dbExecute(conn, sprintf("DROP TABLE %s", temp_table))
+  
+  return(rows_added)
+}
+```
+
+## Section 2: Shiny App Integration {#shiny-integration}
+
+### Subsection 2.1: Reactive Data Pattern {#reactive-pattern}
+
+```r
+# Shiny server function with DuckDB
+server <- function(input, output, session) {
+  # Connection pool
+  pool <- dbPool(duckdb(), dbdir = "data/app.duckdb")
+  
+  onStop(function() {
+    poolClose(pool)
+  })
+  
+  # Reactive data with caching
+  sales_data <- reactive({
+    req(input$date_range, input$customer_segment)
+    
+    query <- "
+      SELECT * FROM sales 
+      WHERE sale_date BETWEEN ? AND ?
+        AND customer_segment = ?
+    "
+    
+    poolWithTransaction(pool, function(conn) {
+      dbGetQuery(conn, query, params = list(
+        input$date_range[1],
+        input$date_range[2],
+        input$customer_segment
+      ))
+    })
+  }) %>% bindCache(input$date_range, input$customer_segment)
+  
+  # Handle complex data types
+  api_data <- reactive({
+    data <- poolWithTransaction(pool, function(conn) {
+      df <- dbGetQuery(conn, "SELECT * FROM api_responses")
+      
+      # Deserialize JSON columns
+      if ("metadata_json" %in% names(df)) {
+        df$metadata <- lapply(df$metadata_json, jsonlite::fromJSON)
+        df$metadata_json <- NULL
+      }
+      
+      return(df)
+    })
+  })
+}
+```
+
+### Subsection 2.2: Performance Monitoring {#performance-monitoring}
+
+```r
+# Monitor query performance in Shiny
+measure_query_time <- function(pool, query, params = NULL) {
+  start_time <- Sys.time()
+  
+  result <- poolWithTransaction(pool, function(conn) {
+    if (!is.null(params)) {
+      dbGetQuery(conn, query, params = params)
+    } else {
+      dbGetQuery(conn, query)
+    }
+  })
+  
+  elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+  
+  # Log slow queries
+  if (elapsed > 1) {
+    warning(sprintf("Slow query (%.2fs): %s", elapsed, substr(query, 1, 100)))
+  }
+  
+  attr(result, "query_time") <- elapsed
+  return(result)
+}
+```
+
+# Part 5: Troubleshooting Guide {#troubleshooting}
+
+## Section 1: Common Errors and Solutions {#common-errors}
+
+| Error Message | Cause | Solution |
+|---------------|-------|----------|
+| `Can't convert <list> to <character>` | R list column | Convert to JSON with `jsonlite::toJSON()` |
+| `rapi_prepare: Failed to prepare` | Type incompatibility | Check with `check_duckdb_compatibility()` |
+| `Parser Error: syntax error` | SQL syntax issue | Check DuckDB SQL dialect differences |
+| `Invalid Input Error: Could not convert` | Type conversion failure | Explicit casting in SQL or R |
+| `Out of Memory Error` | Memory limit exceeded | Increase limit or process in chunks |
+| `IO Error: Could not open file` | File permissions | Check file path and permissions |
+| `Constraint Error: Duplicate key` | Unique constraint violation | Check for duplicates before insert |
+
+## Section 2: Debugging Functions {#debugging}
+
+```r
+# Comprehensive debugging toolkit
+duckdb_debug_toolkit <- list(
+  # Check table structure
+  inspect_table = function(conn, table_name) {
+    list(
+      structure = dbGetQuery(conn, sprintf("DESCRIBE %s", table_name)),
+      row_count = dbGetQuery(conn, sprintf("SELECT COUNT(*) FROM %s", table_name))[[1]],
+      sample = dbGetQuery(conn, sprintf("SELECT * FROM %s LIMIT 5", table_name))
+    )
+  },
+  
+  # Check data frame compatibility
+  check_compatibility = function(df) {
+    issues <- list()
+    for (col in names(df)) {
+      if (is.list(df[[col]])) {
+        issues[[length(issues) + 1]] <- sprintf("%s: list column", col)
+      }
+      if (is.factor(df[[col]])) {
+        issues[[length(issues) + 1]] <- sprintf("%s: factor (will lose levels)", col)
+      }
+      if (inherits(df[[col]], "POSIXlt")) {
+        issues[[length(issues) + 1]] <- sprintf("%s: POSIXlt (convert to POSIXct)", col)
+      }
+    }
+    return(issues)
+  },
+  
+  # Profile query
+  profile_query = function(conn, query) {
+    dbGetQuery(conn, paste("EXPLAIN ANALYZE", query))
+  },
+  
+  # Check memory usage
+  check_memory = function(conn) {
+    dbGetQuery(conn, "SELECT * FROM duckdb_memory()")
+  }
+)
+```
+
+# Part 6: Migration Guide {#migration}
+
+## Section 1: From Other Databases {#from-other-databases}
+
+### Subsection 1.1: From SQLite {#from-sqlite}
+
+```r
+migrate_from_sqlite <- function(sqlite_path, duckdb_path) {
+  sqlite_conn <- dbConnect(RSQLite::SQLite(), sqlite_path)
+  duckdb_conn <- dbConnect(duckdb(), duckdb_path)
+  
+  tables <- dbListTables(sqlite_conn)
+  
+  for (table in tables) {
+    message(sprintf("Migrating table: %s", table))
+    
+    # Read from SQLite
+    data <- dbReadTable(sqlite_conn, table)
+    
+    # Fix compatibility
+    data <- fix_for_duckdb(data)
+    
+    # Write to DuckDB
+    dbWriteTable(duckdb_conn, table, data, overwrite = TRUE)
+  }
+  
+  dbDisconnect(sqlite_conn)
+  dbDisconnect(duckdb_conn)
+}
+```
+
+### Subsection 1.2: From PostgreSQL {#from-postgresql}
+
+```r
+# Direct connection via DuckDB extension
+migrate_from_postgres <- function(duckdb_conn, pg_connection_string) {
+  # Install and load postgres extension
+  dbExecute(duckdb_conn, "INSTALL postgres")
+  dbExecute(duckdb_conn, "LOAD postgres")
+  
+  # Attach PostgreSQL database
+  dbExecute(duckdb_conn, sprintf("
+    ATTACH '%s' AS pg (TYPE POSTGRES)
+  ", pg_connection_string))
+  
+  # List and copy tables
+  tables <- dbGetQuery(duckdb_conn, "
+    SELECT table_name 
+    FROM pg.information_schema.tables 
+    WHERE table_schema = 'public'
+  ")
+  
+  for (table in tables$table_name) {
+    dbExecute(duckdb_conn, sprintf("
+      CREATE TABLE %s AS SELECT * FROM pg.%s
+    ", table, table))
+  }
+}
+```
+
+---
+
+*Version: 1.0*  
+*Last Updated: 2025-08-27*  
+*Based on: DuckDB v1.0+ documentation and extensive testing*

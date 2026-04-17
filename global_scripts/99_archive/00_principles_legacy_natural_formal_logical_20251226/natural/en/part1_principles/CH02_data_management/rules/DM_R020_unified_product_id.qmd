@@ -1,0 +1,152 @@
+---
+title: "DM_R020: Unified Product ID Rule"
+subtitle: "All platform-specific product identifiers must be standardized to product_id in the final data structures used by the application layer"
+chapter: "CH02"
+category: "rule"
+number: "DM_R020"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 20
+  title: "Unified Product ID Rule"
+related_to:
+  - "MP47: Functional Programming"
+  - "R76: Module Data Connection"
+  - "R91: Universal Data Access Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 20: Unified Product ID Rule {#overview}
+
+**Data Management Law Article 20 (Unified Product ID Rule)**
+
+All platform-specific product identifiers must be standardized to `product_id` in the final data structures used by the application layer.
+
+:::{.callout-important}
+## Statement
+All platform-specific product identifiers must be standardized to `product_id` in the final data structures used by the application layer.
+:::
+
+# Section 1: Rationale {#rationale}
+
+Different e-commerce platforms use different naming conventions for product identifiers:
+
+- Amazon uses `asin` (Amazon Standard Identification Number)
+- eBay uses `ebay_product_number`
+- Other platforms may use `sku`, `product_id`, etc.
+
+To ensure consistency across the application layer and simplify dashboard development, all platform-specific identifiers should be renamed to a unified `product_id` column.
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Data Processing Layer {#data-processing-layer}
+
+During data processing (e.g., in D03 derivation flow), maintain platform-specific column names for clarity and traceability:
+
+```r
+# Processing layer - use platform-specific names
+df_amz_competitor_products$asin
+df_eby_competitor_products$ebay_product_number
+```
+
+## Subsection 2: Application Data Layer {#application-data-layer}
+
+When creating final tables for application use (e.g., position tables, app_data tables), rename to `product_id`:
+
+```r
+# Application layer - standardize to product_id
+combined_data %>%
+  dplyr::rename(product_id = !!sym(product_col))
+```
+
+## Subsection 3: Platform-Aware Functions {#platform-aware-functions}
+
+Functions that work across platforms should:
+- Accept a `platform` parameter
+- Internally map platform to the appropriate column name
+- Output standardized `product_id` in final results
+
+Example:
+```r
+product_col <- switch(platform,
+  "amz" = "asin",
+  "eby" = "ebay_product_number",
+  stop(paste("Unknown platform:", platform))
+)
+
+# Process with platform-specific column
+result <- data %>%
+  group_by(!!sym(product_col)) %>%
+  summarise(...) %>%
+  # Standardize before returning
+  rename(product_id = !!sym(product_col))
+```
+
+## Subsection 4: Database Schema {#database-schema}
+
+- Raw data tables: Keep original platform-specific column names
+- Processed data tables: Keep platform-specific names for traceability
+- App data tables: Use standardized `product_id`
+
+## Subsection 5: Join Operations {#join-operations}
+
+When joining tables in the application layer, always use `product_id`:
+
+```r
+# Application layer joins
+df_position %>%
+  left_join(df_supplementary, by = c("product_id", "product_line_id"))
+```
+
+# Section 3: Benefits {#benefits}
+
+1. **Consistency**: Single column name across all dashboards and visualizations
+2. **Maintainability**: No need for platform-specific logic in UI components
+3. **Extensibility**: Easy to add new platforms without changing application code
+4. **Simplicity**: Developers only need to remember one column name
+
+# Section 4: Examples {#examples}
+
+## Subsection 1: Good Practice {#good-practice}
+
+```r
+# In process_position_table function
+combined_position___with_ideal <- combined_position %>%
+  # ... processing ...
+  dplyr::rename(product_id = !!sym(product_col))  # Standardize at the end
+```
+
+## Subsection 2: Bad Practice {#bad-practice}
+
+```r
+# Don't use platform-specific names in app layer
+if (platform == "amz") {
+  df_position$asin
+} else if (platform == "eby") {
+  df_position$ebay_product_number
+}
+```
+
+# Section 5: Related Principles {#related-principles}
+
+- **MP47: Functional Programming** - Functional approaches facilitate standardization
+- **R76: Module Data Connection** - Consistent data interfaces between modules
+- **R91: Universal Data Access Pattern** - Unified data access methods
+
+# Section 6: Notes {#notes}
+
+This rule applies to the final data structures used by the application. During intermediate processing steps, maintaining platform-specific names can improve code clarity and debugging.
+
+---
+
+*Based on: Data Management Law Article 20*  
+*Related to: [MP47 Functional Programming](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd), [R91 Universal Data Access Pattern](DM_R001_universal_data_access_pattern.qmd)*

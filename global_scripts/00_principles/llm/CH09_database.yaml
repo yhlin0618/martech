@@ -1,0 +1,572 @@
+# ========================================
+# CH07: Database Specifications
+# Version: 1.1
+# Last Updated: 2025-12-14
+# (Renumbered from CH17 to CH07 per dependency-based reorganization)
+#
+# Contains: DU01-DU10 (DuckDB specifications and patterns)
+# Total: ~10 specifications
+# ========================================
+
+chapter: "CH09_database"
+description: "Database Specifications and Integration Patterns"
+specification_count: 10
+
+# Note: DuckDB is the primary analytical database for MAMBA framework.
+# These specifications implement MP064, DM_R023, DM_R024, DM_R025.
+
+specifications:
+
+  # ====================
+  # DU01: OVERVIEW
+  # ====================
+
+  - id: DU01
+    type: database_spec
+    name: duckdb_overview
+    display_name: "DuckDB Overview and Introduction"
+    one_liner: "In-process OLAP database with zero external dependencies"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU01_overview.qmd"
+    implements: ["DM_R023"]
+
+    rule_natural: |
+      DuckDB is the primary analytical database for MAMBA because:
+      - In-process architecture (no server required)
+      - Columnar storage optimized for analytics
+      - Excellent R/Python integration
+      - Can process datasets larger than RAM
+      - Fast CSV/Parquet import
+
+      Use DuckDB when:
+      - Performing analytical queries (OLAP)
+      - Working with read-heavy workloads
+      - Running batch ETL operations
+      - Developing or testing locally
+
+      Do NOT use DuckDB when:
+      - High-concurrency transactional workloads (use PostgreSQL)
+      - Multiple concurrent writers required
+      - Distributed processing needed
+
+    rule_formal: |
+      RULE DU01_SELECTION:
+      FOR workload W:
+      IF is_olap(W) AND is_analytical(W)
+      THEN use_duckdb(W)
+
+      IF needs_transactions(W) OR needs_concurrent_writes(W)
+      THEN use_postgresql(W)
+
+    violations:
+      - "Using DuckDB for high-concurrency transactional workloads"
+      - "Using PostgreSQL for local analytical development"
+    compliant:
+      - "DuckDB for analytics, PostgreSQL for transactions"
+      - "In-memory DuckDB for development/testing"
+
+  # ====================
+  # DU02: CONNECTION MANAGEMENT
+  # ====================
+
+  - id: DU02
+    type: database_spec
+    name: duckdb_connection_management
+    display_name: "DuckDB Connection Management"
+    one_liner: "Best practices for connection handling and resource management"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU02_connection_management.qmd"
+    implements: ["DM_R023", "DM_R039"]
+
+    rule_natural: |
+      Connection types:
+      1. In-memory: dbConnect(duckdb::duckdb()) - data lost on close
+      2. Persistent: dbConnect(duckdb::duckdb(), "path/to/db.duckdb")
+      3. Read-only: allows multiple readers
+
+      Use dbConnect_universal() from MAMBA framework:
+      - Configuration-driven connections
+      - Automatic settings from app_config.yaml
+      - Consistent across all applications
+
+      Always disconnect properly:
+      - Use dbDisconnect(con, shutdown = TRUE)
+      - Clean up resources explicitly
+
+    rule_formal: |
+      RULE DU02_CONNECTION:
+      connection_pattern:
+        use dbConnect_universal(config_path)
+        settings FROM app_config.yaml
+
+      cleanup_pattern:
+        ALWAYS dbDisconnect(con, shutdown = TRUE)
+        BEFORE session_end
+
+    violations:
+      - "Hardcoding connection parameters"
+      - "Not disconnecting after use"
+      - "Using dbConnect without configuration"
+    compliant:
+      - "Use dbConnect_universal() with config"
+      - "Always call dbDisconnect(con, shutdown = TRUE)"
+
+  # ====================
+  # DU03: DATA TYPES
+  # ====================
+
+  - id: DU03
+    type: database_spec
+    name: duckdb_data_types
+    display_name: "DuckDB Data Types Reference"
+    one_liner: "Complete guide to data types and type mappings"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU03_data_types.qmd"
+    implements: ["DM_R025"]
+
+    rule_natural: |
+      Numeric types:
+      - TINYINT, SMALLINT, INTEGER, BIGINT for integers
+      - FLOAT, DOUBLE for decimals
+      - DECIMAL(p,s) for financial data
+
+      String types:
+      - VARCHAR (variable-length, preferred)
+      - TEXT, STRING are aliases for VARCHAR
+
+      Temporal types:
+      - DATE: YYYY-MM-DD
+      - TIMESTAMP: YYYY-MM-DD HH:MM:SS
+      - TIMESTAMPTZ: with timezone
+
+      Boolean:
+      - TRUE/FALSE/NULL (three-valued logic)
+
+      Use helper functions:
+      - choose_numeric_type(): auto-select optimal type
+      - prepare_strings_for_duckdb(): clean strings
+      - handle_temporal_types(): standardize dates
+
+    rule_formal: |
+      RULE DU03_TYPES:
+      FOR column C in dataframe:
+      IF is_integer(C) THEN map_to_integer_type(C)
+      IF is_decimal(C) THEN map_to_double(C)
+      IF is_financial(C) THEN map_to_decimal(C)
+      IF is_string(C) THEN map_to_varchar(C)
+      IF is_date(C) THEN map_to_date(C)
+      IF is_datetime(C) THEN map_to_timestamp(C)
+
+    type_mappings:
+      r_to_duckdb:
+        integer: "INTEGER"
+        numeric: "DOUBLE"
+        character: "VARCHAR"
+        Date: "DATE"
+        POSIXct: "TIMESTAMP"
+        logical: "BOOLEAN"
+        list: "JSON (via serialization)"
+
+    violations:
+      - "Using wrong type for financial data"
+      - "Storing dates as strings"
+    compliant:
+      - "Use DECIMAL for financial calculations"
+      - "Use DATE/TIMESTAMP for temporal data"
+
+  # ====================
+  # DU04: IMPORT/EXPORT
+  # ====================
+
+  - id: DU04
+    type: database_spec
+    name: duckdb_import_export
+    display_name: "DuckDB Import and Export Operations"
+    one_liner: "Efficient data loading and extraction patterns"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU04_import_export.qmd"
+    implements: ["MP064", "DM_R028"]
+
+    rule_natural: |
+      Import patterns:
+      - Direct CSV: read_csv_auto('file.csv')
+      - Parquet: read_parquet('file.parquet')
+      - From R: dbWriteTable(con, name, df)
+      - From API: Use dbWriteTableSafe for list columns
+
+      Export patterns:
+      - To CSV: COPY table TO 'file.csv'
+      - To Parquet: COPY table TO 'file.parquet'
+      - To R: collect() or as.data.frame()
+
+      Performance tips:
+      - Use Parquet for large datasets
+      - Batch inserts for many rows
+      - Use transactions for consistency
+
+    rule_formal: |
+      RULE DU04_IMPORT:
+      FOR data_source S:
+      IF is_csv(S) THEN read_csv_auto(S)
+      IF is_parquet(S) THEN read_parquet(S)
+      IF is_r_dataframe(S) THEN dbWriteTable(S)
+      IF has_list_columns(S) THEN dbWriteTableSafe(S)
+
+    violations:
+      - "Loading CSV row-by-row"
+      - "dbWriteTable with list columns directly"
+    compliant:
+      - "Batch loading with read_csv_auto"
+      - "Use dbWriteTableSafe for API data"
+
+  # ====================
+  # DU05: QUERY OPTIMIZATION
+  # ====================
+
+  - id: DU05
+    type: database_spec
+    name: duckdb_query_optimization
+    display_name: "DuckDB Query Optimization"
+    one_liner: "Performance tuning and query optimization techniques"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU05_query_optimization.qmd"
+    implements: ["DEV_P014", "DEV_P021"]
+
+    rule_natural: |
+      Query optimization principles:
+      1. Push filters down to database
+      2. Select only needed columns
+      3. Use proper indexing (automatic in DuckDB)
+      4. Leverage columnar storage
+
+      Memory management:
+      - SET memory_limit='8GB'
+      - Use streaming for large results
+      - Consider disk spilling for huge datasets
+
+      Parallel execution:
+      - DuckDB auto-parallelizes
+      - SET threads=4 to control
+      - Consider query structure for parallelism
+
+    rule_formal: |
+      RULE DU05_OPTIMIZE:
+      query_pattern:
+        filter EARLY (push down to database)
+        select ONLY needed_columns
+        avoid SELECT * in production
+
+      memory_pattern:
+        set memory_limit based_on available_ram
+        use streaming FOR large_results
+
+    violations:
+      - "SELECT * on large tables"
+      - "Filtering after collect()"
+      - "No memory limit on production"
+    compliant:
+      - "Select specific columns"
+      - "Filter before collect()"
+      - "Set appropriate memory limits"
+
+  # ====================
+  # DU06: MAMBA INTEGRATION
+  # ====================
+
+  - id: DU06
+    type: database_spec
+    name: duckdb_mamba_integration
+    display_name: "DuckDB MAMBA Integration Patterns"
+    one_liner: "Integration patterns with MAMBA framework architecture"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU06_mamba_integration.qmd"
+    implements: ["DM_R023", "MP064", "MP065"]
+
+    rule_natural: |
+      Use tbl2() universal function:
+      - source("scripts/global_scripts/02_db_utils/fn_tbl2.R")
+      - Works seamlessly with DuckDB
+      - Follows DM_R023 universal data access
+
+      Configuration-driven setup (MP065):
+      - Database settings in app_config.yaml
+      - Memory limits, threads, extensions
+      - Timezone and initialization queries
+
+      ETL integration (MP064):
+      - 0IM: Import raw data
+      - 1ST: Staging transformations
+      - 2TR: Schema mapping
+      - Derivations separate from ETL
+
+    rule_formal: |
+      RULE DU06_INTEGRATION:
+      data_access:
+        use tbl2(con, table_name)
+        NOT dplyr::tbl(con, table_name)
+
+      configuration:
+        settings IN app_config.yaml
+        load_via load_config_connection()
+
+      etl_pattern:
+        0IM: preserve raw data
+        1ST: format standardization
+        2TR: schema mapping
+        drv_*: business logic (separate)
+
+    violations:
+      - "Using dplyr::tbl() directly"
+      - "Hardcoding database settings"
+      - "Business logic in ETL scripts"
+    compliant:
+      - "Use tbl2() for all data access"
+      - "Configuration in app_config.yaml"
+      - "Business logic in drv_* scripts"
+
+  # ====================
+  # DU07: TECHNICAL SPECIFICATIONS
+  # ====================
+
+  - id: DU07
+    type: database_spec
+    name: duckdb_technical_specs
+    display_name: "DuckDB Technical Specifications"
+    one_liner: "Version compatibility and technical requirements"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU07_technical_specifications.qmd"
+
+    rule_natural: |
+      Version requirements:
+      - DuckDB 1.0+ recommended
+      - R package: duckdb (latest)
+      - Python: duckdb (latest)
+
+      Storage format:
+      - File extension: .duckdb
+      - Single file per database
+      - Cross-platform compatible
+
+      Extensions:
+      - json: JSON handling
+      - httpfs: Remote file access
+      - postgres: PostgreSQL scanning
+
+    rule_formal: |
+      RULE DU07_TECH:
+      version_requirements:
+        duckdb >= 1.0
+        r_package = "duckdb"
+        python_package = "duckdb"
+
+      file_format:
+        extension = ".duckdb"
+        single_file_per_database
+
+  # ====================
+  # DU08: DATA TYPE HANDLING
+  # ====================
+
+  - id: DU08
+    type: database_spec
+    name: duckdb_data_type_handling
+    display_name: "DuckDB Data Type Handling"
+    one_liner: "Advanced type conversion and handling patterns"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU08_data_type_handling.qmd"
+    implements: ["DM_R025"]
+
+    rule_natural: |
+      Type conversion functions:
+      - fn_duckdb_type_conversion.R in global_scripts
+      - Automatic type detection
+      - Safe conversion with warnings
+
+      Common conversions:
+      - R integer64 → BIGINT
+      - R factor → VARCHAR
+      - R Date → DATE
+      - R POSIXct → TIMESTAMP
+
+      NULL handling:
+      - NULL is distinct from empty string
+      - Use COALESCE for defaults
+      - Three-valued logic for booleans
+
+    rule_formal: |
+      RULE DU08_TYPE_HANDLING:
+      conversion_pattern:
+        detect source_type
+        map_to duckdb_type
+        validate conversion_result
+
+      null_handling:
+        NULL != ""
+        use COALESCE FOR defaults
+        boolean follows three_valued_logic
+
+    violations:
+      - "Ignoring type conversion errors"
+      - "Treating NULL as empty string"
+    compliant:
+      - "Use type conversion functions"
+      - "Handle NULL explicitly"
+
+  # ====================
+  # DU09: LIST COLUMN STRATEGIES
+  # ====================
+
+  - id: DU09
+    type: database_spec
+    name: duckdb_list_column_strategies
+    display_name: "DuckDB List Column Strategies"
+    one_liner: "Handling list columns and nested data structures"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU09_list_column_strategies.qmd"
+    implements: ["DM_R024", "DM_R026"]
+
+    rule_natural: |
+      Problem: API responses often contain nested/list columns that
+      DuckDB cannot directly store.
+
+      Decision tree:
+      1. Is data uniform?
+         - No → Strategy 4: JSON Storage
+         - Yes → Continue
+      2. Single value per row?
+         - Yes → Strategy 1: Direct Extraction
+         - No → Continue
+      3. Need all elements?
+         - Yes → Strategy 2: Normalization (separate table)
+         - No → Strategy 3: Summary Extraction
+
+      Strategies:
+      1. Direct Extraction: Extract first/specific element
+      2. Normalization: Unnest to separate table with FK
+      3. Summary: Count, first, last, concatenate
+      4. JSON: Serialize entire structure
+
+    rule_formal: |
+      RULE DU09_LIST_STRATEGY:
+      FOR list_column L:
+      IF NOT is_uniform(L) THEN json_serialize(L)
+      ELSE IF is_single_value(L) THEN extract_first(L)
+      ELSE IF needs_all_elements(L) THEN normalize_to_table(L)
+      ELSE extract_summary(L)
+
+    strategies:
+      direct_extraction:
+        description: "Extract first element from list"
+        code: "sapply(df[[col]], function(x) if(length(x) > 0) x[[1]] else NA)"
+      normalization:
+        description: "Unnest to separate table"
+        code: "tidyr::unnest(df, cols = list_col)"
+      summary:
+        description: "Extract count or concatenation"
+        code: "sapply(df[[col]], length)"
+      json_storage:
+        description: "Serialize to JSON string"
+        code: "jsonlite::toJSON(df[[col]], auto_unbox = TRUE)"
+
+    violations:
+      - "Ignoring list columns until dbWriteTable fails"
+      - "Always using JSON without considering alternatives"
+    compliant:
+      - "Evaluate strategy based on data characteristics"
+      - "Handle list columns at import time"
+
+  # ====================
+  # DU10: COMPLETE REFERENCE
+  # ====================
+
+  - id: DU10
+    type: database_spec
+    name: duckdb_complete_reference
+    display_name: "DuckDB Complete Reference"
+    one_liner: "Comprehensive quick reference for all DuckDB patterns"
+    file_path: "part2_implementations/CH10_database_specifications/duckdb/DU10_complete_reference.qmd"
+
+    rule_natural: |
+      Quick Reference:
+
+      Connection:
+        con <- dbConnect(duckdb::duckdb(), "path.duckdb")
+        dbDisconnect(con, shutdown = TRUE)
+
+      Query:
+        tbl2(con, "table") %>% filter() %>% collect()
+
+      Write:
+        dbWriteTableSafe(con, "table", df)
+
+      Settings:
+        SET memory_limit='8GB'
+        SET threads=4
+
+      Extensions:
+        INSTALL json; LOAD json;
+
+    rule_formal: |
+      RULE DU10_REFERENCE:
+      quick_patterns:
+        connect: dbConnect(duckdb::duckdb(), path)
+        query: tbl2(con, table) %>% collect()
+        write: dbWriteTableSafe(con, name, df)
+        disconnect: dbDisconnect(con, shutdown = TRUE)
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: DU01
+    to: DM_R023
+    reason: "Overview implements universal data access principle"
+
+  - from: DU02
+    to: DM_R039
+    reason: "Connection management follows database connection pattern"
+
+  - from: DU03
+    to: DM_R025
+    reason: "Data types implement R-DuckDB type conversion rule"
+
+  - from: DU06
+    to: MP064
+    reason: "MAMBA integration follows ETL-Derivation separation"
+
+  - from: DU09
+    to: DM_R024
+    reason: "List column strategies implement list column handling"
+
+  - from: DU09
+    to: MIG001
+    reason: "List strategies relate to migration guide"
+
+# ====================
+# SCENARIOS
+# ====================
+
+scenarios:
+  setting_up_duckdb:
+    description: "Setting up DuckDB for a new MAMBA application"
+    must_read:
+      - DU01  # Overview
+      - DU02  # Connection management
+      - DU06  # MAMBA integration
+    checklist:
+      - "Is DuckDB appropriate for this workload?"
+      - "Configuration in app_config.yaml?"
+      - "Using dbConnect_universal()?"
+
+  handling_api_data:
+    description: "Processing API responses with nested structures"
+    must_read:
+      - DU09  # List column strategies
+      - DU04  # Import/export
+      - "MIG001"  # Migration guide
+    checklist:
+      - "Identified all list columns?"
+      - "Chosen appropriate strategy for each?"
+      - "Using dbWriteTableSafe?"
+
+  optimizing_queries:
+    description: "Improving DuckDB query performance"
+    must_read:
+      - DU05  # Query optimization
+      - DU03  # Data types
+    checklist:
+      - "Filtering at database level?"
+      - "Selecting only needed columns?"
+      - "Memory limits configured?"

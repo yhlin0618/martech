@@ -1,0 +1,374 @@
+---
+title: "MP017: 關注點分離原則 (Separation of Concerns Principle)"
+subtitle: "系統的不同方面應由專注於不同關注點的獨立組件處理"
+author: "Claude"
+date: "2025-04-02"
+date-modified: "2025-08-16"
+categories: [meta-principle, architecture, design-pattern]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心概念
+
+問題的不同方面應該由不同的組件處理，每個組件專門處理單一關注點。這種責任劃分通過防止不相關關注點的不當混合，創建了一個更可維護、靈活和易理解的系統。
+
+## 基本關注點
+
+精準行銷系統分離這些基本關注點：
+
+### 1. 功能關注點 {#functional-concerns}
+
+#### 1.1 數據處理
+- 數據獲取
+- 數據清理
+- 數據轉換
+- 數據存儲
+
+#### 1.2 業務邏輯
+- 分析算法
+- 決策模型
+- 規則處理
+- 結果計算
+
+#### 1.3 呈現
+- 用戶介面元素
+- 視覺化組件
+- 報告結構
+- 互動控制
+
+#### 1.4 配置
+- 系統設定
+- 用戶偏好
+- 環境變數
+- 功能標誌
+
+### 2. 架構關注點 {#architectural-concerns}
+
+#### 2.1 原則與實施
+- 原則（MP、P、R）定義指導方針
+- 實施程式碼遵循指導方針
+- 文檔解釋原理
+- 測試驗證合規性
+
+#### 2.2 全域與公司特定
+- 全域功能是通用和可重用的
+- 公司特定實施自定義需求
+- 配置橋接全域和特定
+- 整合點連接各層
+
+#### 2.3 存儲與處理與顯示
+- 存儲處理數據持久性
+- 處理轉換和分析數據
+- 顯示向用戶呈現結果
+- 通訊管理層之間的數據流
+
+## 實施指南
+
+### 1. 組件責任分離 {#component-responsibility}
+
+每個組件應該有單一、明確定義的責任：
+
+#### 1.1 函數分離
+
+- 每個函數應執行單一邏輯操作
+- 函數不應混合關注點（例如，數據處理和呈現）
+- 參數應明確分離不同的關注點
+
+```r
+# 良好分離 - 單一責任
+process_data <- function(data) {
+  # 僅處理數據處理
+  return(processed_data)
+}
+
+format_for_display <- function(processed_data) {
+  # 僅處理呈現格式化
+  return(formatted_data)
+}
+
+# 不良分離 - 混合關注點
+process_and_display <- function(data) {
+  # 混合處理和呈現
+  processed_data <- process_data(data)
+  return(html_output(processed_data))
+}
+```
+
+#### 1.2 模組分離
+
+- 模組應專注於特定功能區域
+- 模組介面應反映其主要關注點
+- 模組應最小化跨關注點邊界的依賴
+
+```r
+# 良好的模組分離
+# 檔案：05_data_processing/process_customer_data.R
+process_customer_data <- function(raw_data) {
+  # 僅處理數據處理
+}
+
+# 檔案：10_rshinyapp_components/customer_display.R
+customer_displayUI <- function(id) {
+  # 僅處理 UI 呈現
+}
+
+# 不良的模組分離
+# 檔案：mixed_customer_module.R
+customer_module <- function(raw_data) {
+  # 混合數據處理、業務邏輯和 UI 創建
+}
+```
+
+### 2. 目錄結構分離 {#directory-separation}
+
+目錄結構在多個層級分離關注點：
+
+#### 2.1 頂層分離
+- `global_scripts/` 與公司特定實施
+- 原則定義與程式碼實施
+- 可重用組件與特定應用程式
+
+#### 2.2 功能目錄分離
+- `01_db/` - 資料庫結構定義
+- `05_data_processing/` - 數據轉換邏輯
+- `07_models/` - 統計和業務模型
+- `10_rshinyapp_components/` - UI 組件
+- 每個目錄專注於不同的關注點
+
+#### 2.3 檔案層級分離
+- 函數檔案與腳本檔案
+- UI 定義與伺服器邏輯
+- 資料來源定義與處理邏輯
+
+### 3. Shiny 組件分離 {#shiny-separation}
+
+Shiny 組件必須保持清晰的關注點分離：
+
+#### 3.1 UI/伺服器分離
+
+- UI 函數僅定義顯示元素
+- 伺服器函數定義邏輯和反應性
+- 每個維護在單獨的檔案中
+
+```r
+# UI 組件檔案：data_source_ui.R
+dataSourceUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    selectInput(ns("source"), "資料來源：", choices = c("A", "B", "C")),
+    dateRangeInput(ns("dates"), "日期範圍：")
+  )
+}
+
+# 伺服器組件檔案：data_source_server.R
+dataSourceServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # 僅邏輯，無 UI 元素
+    data <- reactive({ ... })
+    return(data)
+  })
+}
+```
+
+#### 3.2 分層組件設計
+
+- 資料來源組件處理數據檢索
+- 處理組件處理轉換
+- 顯示組件處理視覺化
+- 編排組件處理整合
+
+```r
+# 資料來源組件
+data <- dataSourceServer("source")
+
+# 處理組件
+processed_data <- dataProcessingServer("processing", data)
+
+# 顯示組件
+dataDisplayServer("display", processed_data)
+```
+
+### 4. 數據流分離 {#data-flow-separation}
+
+數據應通過清晰分離的階段流動：
+
+#### 4.1 管道階段
+- 輸入驗證
+- 數據清理
+- 特徵提取
+- 分析處理
+- 結果格式化
+- 輸出生成
+
+#### 4.2 明確的數據轉換
+
+- 每個轉換步驟是一個單獨的函數
+- 數據在轉換步驟之間明確流動
+- 中間結果被適當地類型化和記錄
+
+```r
+# 清晰分離的轉換階段
+raw_data <- load_data(source)
+validated_data <- validate_data(raw_data)
+cleaned_data <- clean_data(validated_data)
+features <- extract_features(cleaned_data)
+analysis <- analyze_features(features)
+report <- format_results(analysis)
+```
+
+## 分離關注點之間的互動
+
+雖然關注點應該分離，但它們必須乾淨地互動：
+
+### 1. 基於介面的通訊 {#interface-communication}
+
+具有不同關注點的組件應通過明確定義的介面互動：
+
+```r
+# 具有清晰介面的數據處理組件
+process_data <- function(data, config) {
+  # 實施細節隱藏
+  return(list(
+    result = processed_result,
+    metadata = processing_metadata,
+    status = "success"
+  ))
+}
+
+# 使用介面但不知道實施的 UI 組件
+output$result <- renderUI({
+  process_result <- process_data(input$data, config())
+  if (process_result$status == "success") {
+    visualize_data(process_result$result)
+  } else {
+    show_error(process_result$metadata$error)
+  }
+})
+```
+
+### 2. 依賴注入 {#dependency-injection}
+
+明確傳遞依賴而不是讓組件相互了解：
+
+```r
+# 組件接收其依賴
+analyze_customer <- function(data, model, formatter) {
+  results <- model(data)
+  return(formatter(results))
+}
+
+# 使用特定實施
+result <- analyze_customer(
+  customer_data,
+  regression_model,
+  html_formatter
+)
+```
+
+### 3. 中介者模式 {#mediator-pattern}
+
+使用中介者組件協調分離的關注點：
+
+```r
+# 連接 UI、數據和處理的中介者
+app_controller <- function(input, output, session) {
+  # 將資料來源連接到處理
+  data <- dataSourceServer("data")
+  
+  # 將處理連接到視覺化
+  processed <- processDataServer("process", data)
+  
+  # 將視覺化連接到輸出
+  visualizeDataServer("viz", processed)
+}
+```
+
+## 關注點分離的好處
+
+應用此原則提供這些好處：
+
+1. **改進的可維護性**：對一個關注點的變更不影響其他關注點
+2. **增強的模組化**：組件可以獨立開發和測試
+3. **更好的可重用性**：專注於單一關注點的組件更可重用
+4. **簡化的理解**：每個組件更簡單、更專注
+5. **更容易演化**：組件可以獨立演化
+6. **減少認知負荷**：開發者可以一次專注於一個關注點
+7. **更清晰的架構**：系統結構更清楚地反映其設計
+8. **更可測試的程式碼**：專注的組件更容易測試
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **衍生自 MP000（公理化系統）**：將關注點分離建立為基礎公理
+2. **建立在 MP002（結構藍圖）之上**：為分離系統的不同方面提供基礎
+3. **擴展 MP016（模組化原則）**：特別專注於分離不同類型的責任
+4. **影響 P001（腳本分離）**：指導腳本如何組織和專門化
+5. **指導 P004（應用程式構建原則）**：告知應用程式組件如何按關注點分離
+6. **塑造 P007（應用程式自下而上構建）**：確保自下而上的構建尊重關注點分離
+
+## 實際範例
+
+### 目錄層級分離
+
+global_scripts 目錄結構按功能區域分離關注點：
+
+```
+global_scripts/
+├── 00_principles/        # 原則文檔關注點
+├── 01_db/                # 資料庫結構關注點
+├── 02_db_utils/          # 資料庫互動關注點
+├── 05_data_processing/   # 數據轉換關注點
+├── 07_models/            # 統計建模關注點
+├── 10_rshinyapp_components/ # UI 組件關注點
+```
+
+### 檔案層級分離
+
+檔案命名和組織在組件內分離關注點：
+
+```
+10_rshinyapp_components/customer/
+├── ui_customer_profile.R      # UI 關注點
+├── server_customer_profile.R  # 邏輯關注點
+├── fn_customer_data.R         # 數據存取關注點
+```
+
+### 函數層級分離
+
+函數在單一流程內分離關注點：
+
+```r
+# 數據驗證關注點
+validate_customer_data <- function(data) {
+  # 僅驗證邏輯
+}
+
+# 業務邏輯關注點
+calculate_customer_metrics <- function(valid_data) {
+  # 僅計算邏輯
+}
+
+# 呈現關注點
+format_customer_report <- function(customer_metrics) {
+  # 僅格式化邏輯
+}
+
+# 使用所有三個同時保持關注點分離的流程
+process_customer <- function(raw_data) {
+  valid_data <- validate_customer_data(raw_data)
+  metrics <- calculate_customer_metrics(valid_data)
+  return(format_customer_report(metrics))
+}
+```
+
+## 結論
+
+關注點分離原則確立系統的不同方面應由獨立、專門的組件處理。通過在不同類型的功能之間維持清晰的邊界，我們創建了一個更可維護、靈活和易理解的系統。此原則指導我們如何組織程式碼庫，從高層目錄結構到低層函數設計，確保每個組件專注於其特定責任而不會不當糾纏。

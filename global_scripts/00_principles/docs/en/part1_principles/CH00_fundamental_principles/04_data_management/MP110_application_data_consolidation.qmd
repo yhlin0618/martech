@@ -1,0 +1,491 @@
+---
+title: "MP110: Application Data Consolidation"
+subtitle: "Five-Tier Architecture: Final Application Layer"
+tier: "Meta-Principle"
+domain: "Data Management"
+status: "Active"
+version: "1.1.0"
+date: "2025-11-13"
+author: "MAMBA Framework"
+related:
+  - MP108_base_etl_pipeline
+  - MP109_drv_derivation_layer
+  - R092_universal_dbi_approach
+  - DM_R055_app_data_aggregation_preference
+---
+
+# MP110: Application Data Consolidation
+
+## Principle Statement
+
+**All analytical outputs destined for application consumption MUST be written into `app_data.duckdb` by their producing DRV/ETL scripts before applications access them.**
+
+App-facing tables should follow **DM_R055**: prefer `_all + filter` in app_data and keep
+per-slice tables in processed_data unless an explicit exception applies.
+
+This principle establishes the fifth and final tier in the MAMBA data architecture, ensuring a clear separation between analytical work (DRV layer) and production application consumption (APP layer).
+
+---
+
+## Constitutional Basis
+
+This principle completes the MAMBA data pipeline architecture:
+
+- **MP108: BASE ETL Pipeline** defines 0IM → 1ST → 2TR stages (raw to transformed)
+- **MP109: DRV Derivation Layer** defines DRV stage (analytical derivations)
+- **MP110: Application Data Consolidation** (THIS) defines APP stage (application consumption)
+
+Together, these three meta-principles establish the complete five-tier architecture.
+
+---
+
+## Five-Tier Architecture
+
+```
+Tier 0: 0IM (Import)        → raw_data.duckdb
+Tier 1: 1ST (Staging)       → staged_data.duckdb
+Tier 2: 2TR (Transform)     → transformed_data.duckdb
+Tier 3: DRV (Derivation)    → processed_data.duckdb    [ANALYTICAL LAYER]
+Tier 4: APP (Application)   → app_data.duckdb          [APPLICATION LAYER]
+```
+
+### Tier Definitions
+
+| Tier | Code | Purpose | Database | Access Pattern |
+|------|------|---------|----------|----------------|
+| 0 | 0IM | Import raw data | `raw_data.duckdb` | Write-once, read during ETL |
+| 1 | 1ST | Stage for validation | `staged_data.duckdb` | ETL read/write |
+| 2 | 2TR | Transform to schema | `transformed_data.duckdb` | ETL read/write |
+| 3 | DRV | Analytical derivations | `processed_data.duckdb` | Analytical work |
+| 4 | APP | Application consumption | **`app_data.duckdb`** | **Production read-only** |
+
+---
+
+## Rationale
+
+### Problem Without Consolidation
+
+**Data Location Ambiguity:**
+- Multiple `processed_data.duckdb` files in different directories
+- Applications don't know which database to read from
+- No clear "production ready" marker
+- Difficult to manage different environments (dev/staging/prod)
+
+**Example of Confusion:**
+```
+data/processed_data.duckdb              # Precision data (Week 1-4)
+data/local_data/processed_data.duckdb   # CBZ data (Week 7)
+```
+
+Which one should the app read? Both? How to combine?
+
+### Solution: App-Ready Outputs in app_data
+
+**Single Source of Truth:**
+- Applications read ONLY from `app_data/app_data.duckdb`
+- Clear separation: analytical work (Tier 3) vs application consumption (Tier 4)
+- Easy environment management: swap `app_data.duckdb` between environments
+- Atomic deployments: replace `app_data.duckdb` in one operation
+
+**Clear Data Flow:**
+```
+[Analytical Layer]                [Application Layer]
+processed_data.duckdb  ──────→    app_data.duckdb
+(multiple sources)                (app-ready outputs written by DRV)
+```
+
+---
+
+## Implementation Rules
+
+### R110.1: DRV Outputs Go to processed_data.duckdb
+
+**All DRV scripts output to `processed_data.duckdb`:**
+
+```r
+# DRV script pattern (Tier 3: Analytical work)
+library(DBI)
+library(duckdb)
+
+# Connect to processed database (analytical layer)
+con_processed <- dbConnect(
+  duckdb::duckdb(),
+  "data/processed_data.duckdb"
+)
+
+# Perform analytical derivations
+customer_segments <- derive_rfm_segments(sales_data)
+product_features <- extract_product_features(product_data)
+
+# Write to processed_data (DRV outputs)
+dbWriteTable(con_processed, "df_segments_by_customer", customer_segments)
+dbWriteTable(con_processed, "df_product_features", product_features)
+
+dbDisconnect(con_processed, shutdown = TRUE)
+```
+
+**Naming Convention:**
+- DRV tables MUST start with `df_` prefix
+- Examples: `df_cbz_product_features`, `df_precision_time_series`
+
+**App-facing outputs:** If a DRV result is consumed by the app, the DRV script
+must also write the **app-facing table** directly to `app_data.duckdb`, following
+DM_R055 (`_all + filter`).
+
+```r
+# Example: DRV writes app-facing table (Tier 4)
+dbWriteTable(con_app, "df_cbz_poisson_analysis_all", merged_table, overwrite = TRUE)
+```
+
+---
+
+### R110.2: App-Facing Tables Are Written Directly to app_data.duckdb
+
+**App-facing tables must be written directly by the producing DRV/ETL script:**
+
+```r
+# DRV script writes app-facing table (Tier 4)
+con_app <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+
+# Merge per-slice results, then publish a single _all table
+dbWriteTable(con_app, "df_cbz_poisson_analysis_all", merged_table, overwrite = TRUE)
+```
+
+**Legacy note:** `consolidate_to_app_data.R` was a transitional bulk-copy tool.
+It is archived at `scripts/global_scripts/99_archive/consolidate_to_app_data.R`
+and should not be used for current pipelines.
+
+---
+
+### R110.3: Applications ONLY Read from app_data.duckdb
+
+**No application should read from processed_data.duckdb directly:**
+
+```r
+# ✓ CORRECT: Application reads from app_data
+library(DBI)
+library(duckdb)
+
+con_app <- dbConnect(
+  duckdb::duckdb(),
+  "data/app_data/app_data.duckdb",
+  read_only = TRUE  # Applications should be read-only
+)
+
+# Access DRV tables from app_data
+product_features <- tbl2(con_app, "df_cbz_product_features")
+customer_segments <- tbl2(con_app, "df_segments_by_customer")
+```
+
+```r
+# ✗ INCORRECT: Application reads from processed_data
+con_processed <- dbConnect(
+  duckdb::duckdb(),
+  "data/processed_data.duckdb"
+)
+# DON'T DO THIS IN APPLICATIONS!
+```
+
+**Compliance Check:**
+Search all application code for database connections:
+```bash
+grep -r "processed_data.duckdb" scripts/global_scripts/10_rshinyapp_components/
+# Should return NO results from application code
+```
+
+---
+
+### R110.4: App Data Publishing is Part of Deployment
+
+**Deployment Checklist:**
+
+```bash
+# Complete data pipeline workflow
+
+# TIER 0-2: ETL (Import → Staging → Transform)
+Rscript scripts/update_scripts/ETL/cbz/cbz_ETL_sales_1ST.R
+Rscript scripts/update_scripts/ETL/cbz/cbz_ETL_sales_2TR.R
+
+# TIER 3: DRV (Derivation - Analytical work)
+Rscript scripts/update_scripts/DRV/cbz_DRV_product_features.R
+Rscript scripts/update_scripts/DRV/cbz_DRV_time_series.R
+
+# TIER 4: APP (Publish app-facing outputs)
+# DRV scripts write app_data tables directly (no bulk consolidation step)
+
+# Deploy application (reads from app_data.duckdb)
+Rscript scripts/deploy_app.R
+```
+
+**Critical Rule:**
+Ensure all app-facing tables are written to app_data.duckdb before deploying applications.
+
+---
+
+## Directory Structure
+
+### Standard Structure (Single Domain)
+
+```
+data/
+├── raw_data.duckdb              # Tier 0: 0IM outputs
+├── staged_data.duckdb           # Tier 1: 1ST outputs
+├── transformed_data.duckdb      # Tier 2: 2TR outputs
+├── processed_data.duckdb        # Tier 3: DRV outputs (analytical work)
+└── app_data/
+    └── app_data.duckdb          # Tier 4: APP ready (application consumption) ✓
+```
+
+### Multi-Domain Structure
+
+```
+data/
+├── processed_data.duckdb        # Precision domain (Week 1-4)
+├── local_data/
+│   └── processed_data.duckdb    # CBZ/eBay/Amazon domain (Week 7)
+└── app_data/
+    └── app_data.duckdb          # Consolidated from ALL domains ✓
+```
+
+---
+
+## Example: CBZ Pipeline with App Data Publishing
+
+### Week 7: Complete Workflow
+
+**Day 1-3: ETL (Tier 0-2)**
+```bash
+Rscript cbz_ETL_sales_1ST.R      → data/local_data/staged_data.duckdb
+Rscript cbz_ETL_sales_2TR.R      → data/local_data/transformed_data.duckdb
+```
+
+**Day 4: DRV (Tier 3) + App Data Publishing (Tier 4)**
+```bash
+Rscript cbz_DRV_product_features.R → data/local_data/processed_data.duckdb
+Rscript cbz_DRV_time_series.R      → data/local_data/processed_data.duckdb
+Rscript cbz_DRV_poisson_analysis.R → data/local_data/processed_data.duckdb
+```
+
+Results:
+- `df_cbz_product_features` (670 rows)
+- `df_cbz_time_series` (107 rows)
+- `df_cbz_poisson_analysis` (2 rows)
+- `df_cbz_poisson_analysis_all` (app_data)
+
+**Day 5: Application Deployment**
+```r
+# app.R now reads from app_data.duckdb ONLY
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb", read_only = TRUE)
+```
+
+---
+
+## Compliance Verification
+
+### Pre-Deployment Checklist
+
+Before deploying any application, verify:
+
+- [ ] **All DRV tables exist in processed_data.duckdb**
+  ```r
+  con <- dbConnect(duckdb::duckdb(), "data/processed_data.duckdb", read_only = TRUE)
+  df_tables <- grep("^df_", dbListTables(con), value = TRUE)
+  print(df_tables)  # Should list all expected DRV tables
+  ```
+
+- [ ] **All required app-facing tables exist in app_data.duckdb** (per DM_R055)
+  ```r
+  con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb", read_only = TRUE)
+  required_tables <- c("df_cbz_poisson_analysis_all", "df_eby_poisson_analysis_all")
+  stopifnot(all(required_tables %in% dbListTables(con)))
+  ```
+
+- [ ] **App-facing tables include filter columns** (e.g., `product_line_id`)
+  ```r
+  cols <- dbListFields(con, "df_cbz_poisson_analysis_all")
+  stopifnot("product_line_id" %in% cols)
+  ```
+
+- [ ] **Applications configured to read from app_data.duckdb**
+  ```bash
+  grep -r "app_data.duckdb" scripts/global_scripts/10_rshinyapp_components/
+  # Should find connections to app_data
+  ```
+
+- [ ] **No application reads from processed_data.duckdb directly**
+  ```bash
+  grep -r "processed_data.duckdb" scripts/global_scripts/10_rshinyapp_components/
+  # Should return ZERO results from app code
+  ```
+
+---
+
+## Benefits
+
+### 1. Clear Architectural Separation
+
+**Analytical Layer (Tier 3: DRV)**
+- Purpose: Experimental analysis, ad-hoc queries, exploratory work
+- Database: `processed_data.duckdb`
+- Access: Data scientists, analysts
+- Update frequency: Varies, on-demand
+
+**Application Layer (Tier 4: APP)**
+- Purpose: Production application consumption
+- Database: `app_data.duckdb`
+- Access: End-user applications (read-only)
+- Update frequency: Controlled, scheduled
+
+### 2. Environment Management
+
+**Easy environment switching:**
+```bash
+# Development
+cp data/app_data/app_data.duckdb data/app_data/app_data_dev.duckdb
+
+# Staging
+cp data/app_data/app_data.duckdb data/app_data/app_data_staging.duckdb
+
+# Production
+cp data/app_data/app_data_staging.duckdb data/app_data/app_data_prod.duckdb
+```
+
+### 3. Atomic Deployments
+
+Replace entire application database in one atomic operation:
+```bash
+# Zero-downtime deployment
+mv data/app_data/app_data.duckdb data/app_data/app_data_old.duckdb
+mv data/app_data/app_data_new.duckdb data/app_data/app_data.duckdb
+# Applications immediately see new data on next query
+```
+
+### 4. Data Governance
+
+**Clear audit trail:**
+- Tier 3: `processed_data.duckdb` (what was analyzed)
+- Tier 4: `app_data.duckdb` (what was deployed)
+- DRV execution logs + metadata columns: (when and what was deployed)
+
+---
+
+## Anti-Patterns (What NOT to Do)
+
+### ✗ Anti-Pattern 1: Applications Read from processed_data.duckdb
+
+```r
+# ✗ BAD: Application reads from analytical layer
+con <- dbConnect(duckdb::duckdb(), "data/processed_data.duckdb")
+df <- tbl2(con, "df_segments_by_customer")
+```
+
+**Problem:** Mixing analytical work with production consumption.
+
+### ✗ Anti-Pattern 2: Skipping App Data Publishing
+
+```bash
+# ✗ BAD: Deploy app without app_data outputs
+Rscript cbz_DRV_product_features.R  # Writes to processed_data.duckdb
+# ... deploy app immediately (app reads from app_data - NO NEW DATA!)
+```
+
+**Problem:** App sees stale data, app-facing outputs not available.
+
+### ✗ Anti-Pattern 3: Bulk Copying processed_data into app_data
+
+```r
+# ✗ BAD: Bulk copying tables after DRV completes
+con_src <- dbConnect(duckdb::duckdb(), "data/processed_data.duckdb")
+con_dst <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+# ... manual copy logic
+```
+
+**Problem:** Moves tables that the app does not need; breaks DM_R055.
+
+**Correct Approach:** Write app-facing tables directly in the producing DRV/ETL script.
+
+---
+
+## Related Principles
+
+### Upstream Dependencies
+
+- **MP108: BASE ETL Pipeline** - Defines 0IM → 1ST → 2TR (this feeds into DRV)
+- **MP109: DRV Derivation Layer** - Defines DRV stage (this feeds into APP)
+
+### Downstream Applications
+
+- **R092: Universal DBI Approach** - How to connect to app_data.duckdb
+- **UI Components** - All Shiny modules should read from app_data
+
+### Architectural Context
+
+This principle completes the **five-tier data architecture**:
+
+```
+TIER 0: 0IM (Import)      ─┐
+TIER 1: 1ST (Staging)      ├─ MP108: BASE ETL Pipeline
+TIER 2: 2TR (Transform)   ─┘
+TIER 3: DRV (Derivation)  ─── MP109: DRV Derivation Layer
+TIER 4: APP (Application) ─── MP110: Application Data Consolidation (THIS)
+```
+
+---
+
+## Implementation History
+
+| Date | Event | Description |
+|------|-------|-------------|
+| 2025-11-13 | **MP110 Created** | Principle established based on CBZ Week 7 implementation |
+| 2025-11-13 | **consolidate_to_app_data.R** | Legacy bulk-copy script implemented and tested |
+| 2025-11-13 | **First Consolidation** | Successfully consolidated 6 DRV tables (786 rows) |
+| 2026-01-03 | **Direct App Publishing** | DRV writes app_data outputs directly; consolidation script archived |
+
+---
+
+## Case Study: Week 7 CBZ Implementation
+
+See: `PRECISION_MARKETING_ETL_DRV_CASE_STUDY.md`
+
+**Before MP110:**
+- DRV outputs in `data/local_data/processed_data.duckdb`
+- Precision outputs in `data/processed_data.duckdb`
+- Applications confused about data location
+
+**After MP110:**
+- App-facing outputs written directly to `data/app_data/app_data.duckdb`
+- Applications have single, clear data source
+- Clear separation: analytical work vs production consumption
+
+**Results:**
+- 6 DRV tables consolidated
+- 786 total rows ready for application consumption
+- Zero data loss (verified row counts)
+
+---
+
+## Summary
+
+**MP110: Application Data Consolidation** establishes the final tier in the MAMBA data architecture:
+
+1. **Clear Separation**: Analytical work (Tier 3) vs Application consumption (Tier 4)
+2. **Single Source of Truth**: Applications read ONLY from `app_data.duckdb`
+3. **Standardized Process**: DRV writes app_data outputs directly (DM_R055)
+4. **Deployment Readiness**: app_data outputs must exist before deployment
+
+**Compliance Requirement:**
+All MAMBA applications MUST read from `app_data/app_data.duckdb` and NEVER from `processed_data.duckdb`.
+
+---
+
+## Version History
+
+- **1.0.0** (2025-11-13): Initial principle creation
+  - Establishes five-tier architecture completion
+  - Defines APP layer (Tier 4)
+-  - Creates consolidation workflow (legacy)
+-  - Implements `consolidate_to_app_data.R` (legacy)
+- **1.1.0** (2026-01-03): Direct app_data publishing
+  - DRV writes app-facing outputs directly to app_data
+  - Aligns with DM_R055 (`_all + filter`)
+  - Archives `consolidate_to_app_data.R`

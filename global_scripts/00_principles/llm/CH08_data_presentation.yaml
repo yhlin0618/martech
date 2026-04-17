@@ -1,0 +1,122 @@
+# ========================================
+# CH08: Data Presentation & Visualization
+# Version: 1.0
+# Last Updated: 2026-03-06
+#
+# Contains: DP_R001+ (Data Presentation Rules)
+# Total: 1 rule (initial)
+#
+# Scope:
+#   How data should be prepared and presented in charts, tables, and KPI cards.
+#   This chapter sits between data management (CH02) and UI components (CH04):
+#   - CH02 = how data is stored and transformed
+#   - CH08 = how data is prepared for and rendered in visualizations
+#   - CH04 = how UI components are structured and laid out
+#
+# Covers:
+#   - Distribution visualization (histograms, density plots, box plots)
+#   - Extreme value handling (Winsorization, capping, binning strategies)
+#   - Scale selection (linear, log, percentile-based)
+#   - Table formatting (number formatting, conditional styling)
+#   - KPI card presentation (value formatting, trend indicators)
+#   - Color and annotation standards (color-blind safe, hover text)
+#   - Chart type selection guidelines
+# ========================================
+
+chapter: "CH08_data_presentation"
+description: "Data Presentation & Visualization Principles and Rules"
+principle_count: 1
+
+principles:
+
+  # ====================
+  # DP_R RULES
+  # ====================
+
+  - id: DP_R001
+    type: rule
+    name: distribution_winsorization
+    display_name: "Distribution Visualization Winsorization"
+    one_liner: "Cap extreme values before rendering distribution charts to ensure readability"
+    file_path: "CH10_data_presentation/rules/DP_R001_distribution_winsorization.qmd"
+
+    rule_natural: |
+      Distribution charts (histogram, bar chart, density plot) MUST handle extreme values
+      before rendering. Raw data with heavy-tailed distributions becomes unreadable when
+      plotted directly — a single bin absorbs most counts while others appear empty.
+
+      Capping strategy by data type:
+      - Discrete (count data, e.g. purchase frequency F):
+        Cap at a fixed upper bound (default: 50).
+        Values above cap are aggregated into an "N+" bin.
+        Example: F values 1-50 shown individually, 51+ merged into "50+" bin.
+
+      - Continuous (monetary, duration, e.g. purchase amount M, recency R):
+        Cap at the 99th percentile by default.
+        Values above cap are aggregated into the last bin.
+        The cap threshold must be noted in the chart.
+
+      Implementation requirements:
+      - Original data is NEVER modified; capping happens only in the visualization layer.
+      - The cap rule MUST be visible to the user (hover text, axis label "50+", or footnote).
+      - The capped bin's hover text should show: "N+ (X customers)" with the actual count.
+      - When a component already uses SQL-level aggregation (e.g. bar_plot_counts),
+        apply the cap in the SQL query or aggregation step.
+
+    rule_formal: |
+      RULE DP_R001_WINSORIZATION:
+      FOR chart IN [histogram, bar_chart, density_plot]:
+        IF data_type(chart.field) == discrete:
+          cap = config.get("cap_" + chart.field, default=50)
+          chart.data = winsorize_discrete(chart.data, cap)
+          chart.last_bin_label = str(cap) + "+"
+        ELIF data_type(chart.field) == continuous:
+          pct = config.get("cap_percentile_" + chart.field, default=0.99)
+          cap_value = quantile(chart.data, pct)
+          chart.data = winsorize_continuous(chart.data, cap_value)
+          chart.annotation = "Capped at " + str(pct*100) + "th percentile"
+        chart.original_data = UNCHANGED
+
+    violations:
+      - "Plotting raw f_value directly into plotly histogram without capping"
+      - "Plotting raw m_value with extreme outliers compressing all other bins to zero"
+      - "No indication to user that values were capped"
+    compliant:
+      - "F histogram caps at 50, last bin labeled '50+' with correct count"
+      - "M histogram caps at 99th percentile, hover shows cap threshold"
+      - "microDNADistribution bar_plot_counts uses min(max_f, 50) for frequency levels"
+
+    examples:
+      bad: |
+        # Bad: raw values straight to histogram — F=1 dominates, rest invisible
+        plotly::plot_ly(x = df$f_value, type = "histogram")
+
+      good: |
+        # Good: discrete cap for F
+        cap <- 50
+        vals <- pmin(df$f_value, cap)
+        # Label the capped values
+        labels <- ifelse(df$f_value > cap, paste0(cap, "+"), as.character(df$f_value))
+        plotly::plot_ly(x = vals, type = "histogram", ...)
+
+        # Good: percentile cap for M
+        cap_val <- quantile(df$m_value, 0.99, na.rm = TRUE)
+        vals <- pmin(df$m_value, cap_val)
+        plotly::plot_ly(x = vals, type = "histogram", ...) %>%
+          plotly::layout(annotations = list(
+            text = paste0("Capped at 99th pctl: ", scales::dollar(cap_val)),
+            showarrow = FALSE, xref = "paper", yref = "paper", x = 1, y = 1
+          ))
+
+    dependencies:
+      - "MP029"  # No fake data — cap does not fabricate, only groups
+      - "UI_R001"  # Component pattern — applies within ui_display rendering
+
+    related:
+      - "DM_R025"  # Type conversion — cap values must maintain correct type
+      - "UI_R018"  # Download button — exported CSV should contain original values, not capped
+
+    metadata:
+      created: "2026-03-06"
+      triggered_by: "Issue #248 — F/M histograms unreadable in customerValue when viewing all customers"
+      existing_pattern: "microDNADistribution line 709: min(max_f, 50)"

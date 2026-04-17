@@ -1,0 +1,167 @@
+---
+title: "MP082: Replicability Principle"
+subtitle: "All procedures must be replicable, producing identical outputs when provided with identical inputs across multiple executions"
+author: "Claude"
+date: "2025-04-30"
+date-modified: "2025-08-16"
+categories: [meta-principle, replicability, determinism, scientific-method]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Statement
+
+All procedures must be replicable, producing identical outputs when provided with identical inputs across multiple executions, regardless of when, where, or by whom they are executed.
+
+## Rationale
+
+Replicability is foundational to scientific reasoning, robust engineering, and trustworthy systems. When processes produce inconsistent results under identical conditions, it introduces:
+
+1. **Uncertainty**: Inability to predict system behavior
+2. **Debugging challenges**: Difficult-to-trace errors
+3. **Trust erosion**: Diminished confidence in system reliability
+4. **Documentation gaps**: Inadequate capture of critical dependencies
+
+## Implementation Guidelines
+
+### 1. Eliminate Hidden Variables {#hidden-variables}
+
+All factors that influence procedure outcomes must be:
+- Explicitly documented
+- Passed as formal parameters
+- Controlled through configuration
+- Versioned appropriately
+
+### 2. Avoid Time-Dependent Behaviors {#time-dependent}
+
+Processes should:
+- Use deterministic random number generation with fixed seeds
+- Avoid reliance on system time except when explicitly modeling temporal phenomena
+- Document and account for how time affects outputs
+
+### 3. Environmental Independence {#environmental-independence}
+
+Procedures should:
+- Function independently of specific user environments
+- Document all environmental dependencies
+- Include environment setup instructions when dependencies exist
+- Use containerization where possible
+
+### 4. Avoid Non-Deterministic Operations {#non-deterministic}
+
+When designing systems:
+- Prefer deterministic algorithms
+- Document any non-deterministic behaviors
+- Use parallel processing carefully to avoid race conditions
+- Implement proper synchronization for concurrent operations
+
+### 5. Comprehensive Testing {#testing}
+
+Verify replicability through:
+- Repeated execution testing
+- Cross-environment validation
+- Continuous integration testing
+- Documented test cases with expected outputs
+
+## Relationship to Ambiguity
+
+The Replicability Principle directly addresses ambiguity by:
+
+1. **Enforcing clarity**: When processes must be replicable, their specifications must be unambiguous
+2. **Exposing assumptions**: Hidden assumptions become evident when replication fails
+3. **Standardizing interpretation**: Consistent outputs require consistent interpretation of inputs
+4. **Formalizing procedures**: Converting tacit knowledge into explicit instructions
+
+## Exceptions
+
+The only acceptable exceptions to this principle are:
+
+1. Deliberately non-deterministic simulations that use documented random processes
+2. User interface elements designed for variety (when documented as such)
+3. Security mechanisms specifically designed to be non-replicable
+
+All exceptions must be explicitly documented, with alternative validation methods specified.
+
+## Related Principles
+
+- **MP008: Terminology Axiomatization** - Provides semantic precision required for replicability
+- **MP009: Discrepancy Principle** - Offers framework for addressing replication failures
+- **MP040: Deterministic Codebase Transformations** - Applies replicability to code generation
+
+## Examples
+
+### Positive Example {#positive-example}
+
+```r
+# Replicable data transformation
+process_data <- function(data_frame, cutoff_value = 0.05, method = "standard") {
+  set.seed(42)  # Fixed seed for any random operations
+  
+  # Processing logic with explicit parameters
+  if (method == "standard") {
+    result <- data_frame %>% 
+      filter(p_value < cutoff_value) %>%
+      mutate(significance = TRUE)
+  } else if (method == "alternative") {
+    result <- data_frame %>%
+      mutate(adjusted_p = p.adjust(p_value, method = "BH")) %>%
+      filter(adjusted_p < cutoff_value) %>%
+      mutate(significance = TRUE)
+  }
+  
+  return(result)
+}
+```
+
+### Negative Example {#negative-example}
+
+```r
+# Non-replicable data transformation
+process_data <- function(data_frame) {
+  # Uses system time as part of calculation (non-replicable)
+  current_hour <- as.numeric(format(Sys.time(), "%H"))
+  adjustment_factor <- current_hour / 24
+  
+  # Uses random numbers without fixed seed
+  noise <- rnorm(nrow(data_frame), mean = 0, sd = 0.1)
+  
+  # Processing with implicit, time-varying behavior
+  result <- data_frame %>%
+    mutate(value = value * (1 + adjustment_factor) + noise) %>%
+    filter(value > mean(value))
+    
+  return(result)
+}
+```
+
+## Implementation Checklist
+
+To ensure replicability:
+
+1. [ ] Set fixed random seeds where randomness is needed
+2. [ ] Document all environmental dependencies
+3. [ ] Pass all configuration as explicit parameters
+4. [ ] Avoid system time in calculations (unless intentional)
+5. [ ] Test procedures multiple times to verify consistent outputs
+6. [ ] Document any intentional non-deterministic behavior
+7. [ ] Use version control for all dependencies
+8. [ ] Implement logging to track execution paths
+
+## Benefits
+
+1. **Reliable Testing**: Tests produce consistent results
+2. **Easier Debugging**: Problems can be reliably reproduced
+3. **Scientific Validity**: Results can be independently verified
+4. **Documentation Quality**: Forces clear specification of requirements
+5. **Collaboration**: Team members can reproduce each other's work
+6. **Quality Assurance**: Automated testing becomes meaningful
+
+## Conclusion
+
+The Replicability Principle ensures that systems behave predictably and consistently, forming the foundation for reliable software development, scientific computing, and trustworthy data analysis. By eliminating hidden variables and non-deterministic behaviors, we create systems that can be understood, tested, and maintained with confidence.

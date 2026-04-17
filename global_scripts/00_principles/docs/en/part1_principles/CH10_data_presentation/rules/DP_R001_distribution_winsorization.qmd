@@ -1,0 +1,106 @@
+---
+title: "DP_R001: Distribution Visualization Winsorization"
+subtitle: "Cap extreme values before rendering distribution charts to ensure readability"
+category: "Data Presentation"
+type: "Rule"
+id: "DP_R001"
+created: "2026-03-06"
+triggered_by: "Issue #248 — F/M histograms unreadable when viewing all customers"
+---
+
+## Summary
+
+Distribution charts (histogram, bar chart, density plot) **must** handle extreme values before rendering. Raw data with heavy-tailed distributions becomes unreadable when plotted directly — a single bin absorbs most counts while others appear empty.
+
+## Motivation
+
+In e-commerce customer data, frequency (F) and monetary (M) values typically follow a power-law distribution: most customers purchase once or twice, while a handful purchase hundreds of times. Plotting raw values produces a histogram where the first bar is enormous and all others are invisible.
+
+**Before DP_R001:** The F histogram for "all customers" showed one bar (0--4) at ~15,000 and nothing else visible. The M histogram had a y-axis compressed by extreme outliers so all bars appeared near zero.
+
+**After DP_R001:** F values are capped at 50 with a "50+" final bin, making the entire distribution readable. M values are capped at the 99th percentile with a footnote.
+
+## Capping Strategy
+
+### Discrete Data (count data: purchase frequency F)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Cap value | 50 | Maximum value shown individually |
+| Final bin label | "50+" | Aggregates all values > cap |
+| Hover text | "50+ (X customers)" | Shows actual count in the overflow bin |
+
+Values 1--50 are shown individually. Values 51+ are merged into a single "50+" bin.
+
+### Continuous Data (monetary M, recency R, duration)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Cap percentile | 99th | Threshold for capping |
+| Annotation | "Capped at 99th pctl: $X" | Visible on chart |
+| Hover text | Shows actual value range | Users can see the cap boundary |
+
+Values above the 99th percentile are grouped into the last bin. The cap threshold is noted via chart annotation.
+
+## Implementation Requirements
+
+1. **Original data is NEVER modified** — capping happens only in the visualization layer
+2. **The cap rule MUST be visible** to the user (hover text, axis label "50+", or footnote)
+3. **Exported data (CSV download)** contains original values, not capped values (see UI_R018)
+4. When a component uses **SQL-level aggregation** (e.g., `bar_plot_counts`), apply the cap in the SQL query or aggregation step
+
+## Examples
+
+### Bad: Raw Values Straight to Histogram
+
+```r
+# F=1 dominates entire chart, all other bins invisible
+plotly::plot_ly(x = df$f_value, type = "histogram")
+```
+
+### Good: Discrete Cap for F
+
+```r
+cap <- 50
+vals <- pmin(df$f_value, cap)
+labels <- ifelse(df$f_value > cap, paste0(cap, "+"), as.character(df$f_value))
+plotly::plot_ly(x = vals, type = "histogram", ...)
+```
+
+### Good: Percentile Cap for M
+
+```r
+cap_val <- quantile(df$m_value, 0.99, na.rm = TRUE)
+vals <- pmin(df$m_value, cap_val)
+plotly::plot_ly(x = vals, type = "histogram", ...) %>%
+  plotly::layout(annotations = list(
+    text = paste0("Capped at 99th pctl: ", scales::dollar(cap_val)),
+    showarrow = FALSE, xref = "paper", yref = "paper", x = 1, y = 1
+  ))
+```
+
+## Existing Pattern
+
+`microDNADistribution` (line 709) already implements this for F:
+
+```r
+max_f_capped <- min(max_f, 50)
+```
+
+DP_R001 formalizes this ad-hoc pattern into a project-wide standard.
+
+## Dependencies
+
+- **MP029**: No Fake Data — capping does not fabricate values, only groups them for display
+- **UI_R001**: Component Pattern — applies within `ui_display` rendering logic
+
+## Related Principles
+
+- **DM_R025**: Type Conversion — capped values must maintain correct R/DuckDB type
+- **UI_R018**: Download Button Placement — exported CSV should contain original values, not capped
+
+## Violations
+
+- Plotting raw `f_value` directly into a plotly histogram without capping
+- Plotting raw `m_value` with extreme outliers compressing all other bins to near-zero height
+- No indication to the user that values were capped or grouped

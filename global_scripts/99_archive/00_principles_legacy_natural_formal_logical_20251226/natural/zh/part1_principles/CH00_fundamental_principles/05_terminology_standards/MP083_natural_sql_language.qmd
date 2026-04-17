@@ -1,0 +1,224 @@
+---
+title: "MP024: 自然 SQL 語言元原則 (Natural SQL Language)"
+subtitle: "用於數據轉換操作的人類可讀精確元語言"
+author: "Claude"
+date: "2025-04-03"
+date-modified: "2025-08-16"
+categories: [meta-principle, data-transformation, query-language, NSQL]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+自然 SQL 語言（NSQL）作為表達數據轉換操作的人類可讀、精確的元語言。通過專注於應該執行什麼數據操作而不是如何實施，NSQL 在精準行銷系統中實現更清晰的溝通、更好的文檔和更靈活的數據操作實施。
+
+## 實施參考
+
+NSQL 的完整規範、實施和使用指南維護在 16_NSQL_Language 目錄中：
+
+```
+/global_scripts/16_NSQL_Language/
+```
+
+NSQL 實施包括：
+
+1. **形式定義**：
+   - 以 EBNF 格式的完整語法
+   - 術語、函數和翻譯字典
+   - 語法模式及其解釋
+
+2. **規則和原則**：
+   - R21：NSQL 字典規則
+   - R22：NSQL 互動更新規則
+   - 參考解析和消歧規則
+   - 自然語言和語言使用指南
+
+3. **實施組件**：
+   - 不同 NSQL 模式的解析器
+   - 到實施語言的翻譯器
+   - 驗證器和消歧系統
+   - 擴展框架
+
+## 關鍵概念
+
+NSQL 由這些關鍵概念定義：
+
+1. **人類可讀性**：優先考慮清晰、可理解的語法
+2. **精確性**：確保語句具有明確的含義
+3. **實施中立性**：專注於意圖而非實施
+4. **語法靈活性**：支援多種表達模式
+5. **消歧過程**：通過使用者互動解決歧義
+6. **自然語言整合**：在自然語言和形式語言之間架起橋樑
+
+## 表達模式
+
+NSQL 支援多種表達模式：
+
+### 1. Transform-To 模式 {#transform-to-pattern}
+
+```
+transform [SOURCE] to [TARGET] as
+  [OPERATIONS]
+  [GROUP CLAUSE]
+  [FILTER CLAUSE]
+  [ORDER CLAUSE]
+```
+
+範例：
+```
+transform Sales to MonthlySummary as
+  sum(revenue) as monthly_revenue,
+  count(distinct customer_id) as customer_count
+  grouped by year, month
+  where region = "North America"
+  ordered by year desc, month desc
+```
+
+### 2. 箭頭運算符模式 {#arrow-operator-pattern}
+
+```
+[SOURCE] -> [OPERATION] -> [OPERATION] -> ...
+```
+
+範例：
+```
+Sales -> filter(region = "North America") 
+      -> group_by(year, month) 
+      -> summarize(revenue = sum(revenue), customers = count_distinct(customer_id))
+      -> order_by(year desc, month desc)
+```
+
+### 3. 自然語言模式 {#natural-language-pattern}
+
+```
+show [dimension] by [metric]
+calculate [metric] for [filter]
+```
+
+範例：
+```
+show monthly revenue and customer count by year and month for North America
+calculate total revenue for premium customers in Q4 2024
+```
+
+## 治理結構
+
+此元原則管理以下規則，這些規則定義 NSQL 實施的特定方面：
+
+1. **R21（NSQL 字典規則）**：定義字典結構和更新過程
+2. **R22（NSQL 互動更新規則）**：定義分析和添加新模式的過程
+
+雖然這些規則在物理上位於 16_NSQL_Language/rules/ 目錄中以便實施組織，但根據 MP/P/R 層級結構，它們在概念上仍由此元原則管理。
+
+## 與其他元原則的關係
+
+此元原則：
+
+1. **實施 MP0020（原則語言版本）**：為數據操作提供形式語言
+2. **實施 MP0023（語言偏好）**：建立 NSQL 作為數據轉換的偏好語言
+3. **關聯到 P13（語言標準遵守）**：定義實施必須遵守的標準
+
+## 使用案例
+
+### 1. 數據分析查詢 {#data-analysis-queries}
+
+NSQL 簡化複雜的數據分析查詢：
+
+```
+# 傳統 SQL
+SELECT 
+  DATE_TRUNC('month', sale_date) as month,
+  SUM(revenue) as monthly_revenue,
+  COUNT(DISTINCT customer_id) as unique_customers
+FROM sales
+WHERE region = 'North America'
+GROUP BY DATE_TRUNC('month', sale_date)
+ORDER BY month DESC;
+
+# NSQL
+show monthly revenue and unique customers by month for North America
+```
+
+### 2. 數據轉換管道 {#data-transformation-pipelines}
+
+NSQL 使數據轉換管道更易讀：
+
+```
+# NSQL 管道
+raw_data -> clean(missing_values = "interpolate")
+         -> normalize(method = "z-score")
+         -> aggregate(by = "customer_segment")
+         -> export(format = "parquet")
+```
+
+### 3. 業務規則表達 {#business-rule-expression}
+
+NSQL 清楚地表達業務規則：
+
+```
+# 業務規則在 NSQL 中
+identify customers where 
+  last_purchase < 30 days ago
+  and total_purchases > 1000
+  and segment = "premium"
+as "high_value_active"
+```
+
+## 實施指南
+
+### 1. 解析過程 {#parsing-process}
+
+NSQL 語句通過以下步驟解析：
+
+1. **詞彙分析**：將輸入分解為標記
+2. **語法分析**：根據 EBNF 語法識別結構
+3. **語義分析**：解析引用和驗證操作
+4. **消歧**：如需要，通過互動解決歧義
+5. **翻譯**：轉換為目標實施語言
+
+### 2. 擴展機制 {#extension-mechanism}
+
+NSQL 可以通過以下方式擴展：
+
+1. **新函數**：添加到函數字典
+2. **新模式**：擴展 EBNF 語法
+3. **新翻譯**：添加目標語言映射
+4. **領域特定術語**：擴展術語字典
+
+### 3. 整合點 {#integration-points}
+
+NSQL 整合到系統中：
+
+1. **文檔**：在所有數據操作文檔中使用 NSQL
+2. **API**：接受 NSQL 查詢作為 API 參數
+3. **UI**：提供 NSQL 查詢構建器
+4. **驗證**：在執行前驗證 NSQL 語句
+5. **日誌**：以 NSQL 格式記錄數據操作
+
+## 好處
+
+1. **改善溝通**：技術和非技術利益相關者之間更清晰的溝通
+2. **更好的文檔**：數據操作的自我記錄查詢
+3. **降低複雜性**：簡化複雜查詢的表達
+4. **提高靈活性**：獨立於特定實施的意圖表達
+5. **更快的開發**：通過清晰的意圖規範減少開發時間
+6. **減少錯誤**：通過精確的語義減少誤解
+7. **更容易維護**：更易讀和可維護的數據操作
+
+## 完整詳情
+
+有關完整的語言規範、範例和實施詳情，請參考 16_NSQL_Language 目錄中的綜合文檔。
+
+## 變更日誌
+
+- 2025-04-03：初始創建
+- 2025-04-04：更新以參考 16_NSQL_Language 中的實施
+- 2025-04-04：澄清在 16_NSQL_Language/rules/ 中對 R21 和 R22 的治理
+- 2025-08-16：轉換為 QMD 格式並添加中文翻譯

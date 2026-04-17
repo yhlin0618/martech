@@ -1,0 +1,33 @@
+# string_to_numeric
+
+Source: `update_scripts/global_scripts/04_utils/string_to_numeric.R`
+
+## Functions
+
+**Function List:**
+- [string_to_numeric](#string-to-numeric)
+
+### string_to_numeric
+
+String to Numeric Function
+
+Brief description of what this function does
+
+
+## Parameters
+
+- **params Description of parameters**
+
+## Return Value
+
+Description of return value
+
+
+## Examples
+
+```r
+string_to_numeric()
+```
+
+---
+

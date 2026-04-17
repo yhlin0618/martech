@@ -1,0 +1,311 @@
+---
+title: "SO_R011: 衍生、序列、模組和節點的資料夾結構"
+subtitle: "建立組織衍生、序列、模組和節點的資料夾結構，增強系統的組織性和可維護性"
+chapter: "CH01"
+category: "rule"
+number: "SO_R011"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article: 
+  number: 11
+  title: "資料夾結構規則"
+related_to:
+  - "MP001: 原始術語和定義"
+  - "MP002: 結構藍圖"
+  - "MP016: 模組化"
+  - "MP017: 關注點分離"
+  - "DEV_R011: 衍生平台獨立性"
+  - "SO_R010: 實施命名約定"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十一條：資料夾結構規則 {#overview}
+
+**結構組織法第十一條（資料夾結構規則）**
+
+此規則建立組織衍生、序列、模組和節點的資料夾結構，增強系統的組織性和可維護性。
+
+:::{.callout-important}
+## 核心要求
+1. **位置要求**：所有元原則（MP）、原則（P）、規則（R）、衍生（D）、序列（S）、模組（M）和節點（N）必須位於「global_scripts/00_principles」目錄中。不允許任何例外。
+
+2. **結構要求**：衍生（D）、序列（S）、模組（M）和節點（N）必須組織在階層資料夾結構中，清楚分離抽象定義和平台特定實施。組織必須遵循此規則中定義的特定目錄命名和結構模式。
+:::
+
+# 第一項：資料夾結構組織 {#folder-structure-organization}
+
+## 第一款：根結構 {#root-structure}
+
+所有組件必須在 global_scripts/00_principles 目錄內使用以下嚴格的命名約定組織：
+
+```
+00_principles/                     # 根原則目錄
+  |-- MP{nn}_{description}.md      # 元原則（MP0001_primitive_terms.md）
+  |-- P{nn}_{description}.md       # 原則（P0001_script_separation.md）
+  |-- R{nn}_{description}.md       # 規則（R0001_file_naming_convention.md）
+  |-- D{nn}/                       # 衍生目錄（D01、D02 等）
+  |-- S{nn}/                       # 序列目錄（S00、S01 等）
+  |-- M{nn}/                       # 模組目錄（M00、M01 等）
+  |-- nodes/                       # 所有節點工具的單一目錄
+```
+
+其中：
+- {nn} 代表兩位數編號（01、02 等）
+- 目錄名稱必須使用顯示的確切格式（D01，而非 D01_dna_analysis）
+- MP/P/R 的檔案名稱必須包含底線和描述後綴
+- 所有系統定義檔案必須位於此目錄結構中
+
+此標準化結構允許使用 sync_global_scripts.sh 腳本更容易地跨公司儲存庫同步，並確保所有系統定義都在已知的集中位置。
+
+## 第二款：衍生目錄結構 {#derivation-directory-structure}
+
+衍生必須完全遵循此結構：
+
+```
+00_principles/
+  |-- D01/             # 目錄必須命名為「D01」
+  |   |-- D01.md       # 檔案必須命名為「D01.md」
+  |   |-- platforms/   # 必須有名為「platforms」的子目錄
+  |       |-- 01/      # 平台目錄必須使用 2 位數編號
+  |       |   |-- D01_P0001_00.R
+  |       |   |-- D01_P0001_01.R
+  |       |   `-- ...
+  |       |-- 06/      # eBay 平台（06）
+  |       |   |-- D01_P0006_00.R
+  |       |   `-- ...
+  |       `-- 07/      # Cyberbiz 平台（07）
+  |           |-- D01_P0007_00.R
+  |           `-- ...
+  |-- D02/             # D02 衍生的目錄
+  |   `-- ...
+```
+
+必須遵循確切的命名約定：
+- 目錄必須命名為「D{nn}」（例如「D01」，而非「D01_dna_analysis」）
+- 抽象定義必須命名為「D{nn}.md」（例如「D01.md」，而非「D01_dna_analysis.md」）
+- 所有實施檔案必須使用 SO_R010 中定義的命名模式
+
+## 第三款：序列目錄結構 {#sequence-directory-structure}
+
+序列必須完全遵循此結構：
+
+```
+00_principles/
+  |-- S00/             # 目錄必須命名為「S00」
+  |   |-- S00.md       # 檔案必須命名為「S00.md」
+  |   |-- platforms/   # 必須有名為「platforms」的子目錄
+  |       |-- 01/      # 平台目錄必須使用 2 位數編號
+  |       |   |-- S00_P0001_00.R
+  |       |   `-- ...
+  |       `-- 07/      # Cyberbiz 平台（07）
+  |           |-- S00_P0007_00.R
+  |           `-- ...
+  |-- S01/             # S01 序列的目錄
+  |   `-- ...
+```
+
+## 第四款：模組目錄結構 {#module-directory-structure}
+
+模組必須完全遵循此結構：
+
+```
+00_principles/
+  |-- M01/             # 目錄必須命名為「M01」
+  |   |-- M01.md       # 檔案必須命名為「M01.md」
+  |   |-- functions/   # 必須有名為「functions」的子目錄
+  |   |   |-- fn_xxx.R
+  |   |   `-- ...
+  |   |-- platforms/   # 如果存在實施，必須有名為「platforms」的子目錄
+  |       |-- 01/      # 平台目錄必須使用 2 位數編號
+  |       |   |-- M01_P0001_fn.R
+  |       |   `-- ...
+  |-- M02/             # M02 模組的目錄
+  |   `-- ...
+```
+
+## 第五款：節點目錄結構 {#node-directory-structure}
+
+節點必須完全遵循此平面目錄結構：
+
+```
+00_principles/
+  |-- nodes/           # 必須是名為「nodes」的單一目錄
+      |-- N0001.R      # 節點工具 #0001（資料匯出工具）
+      |-- N0002.R      # 節點工具 #0002（配置驗證器）
+      |-- N0003.R      # 節點工具 #0003（日誌框架）
+      |-- ...          # 其他節點工具
+```
+
+必須遵循確切的命名約定：
+- 所有節點必須在名為「nodes」的單一目錄中
+- 節點檔案必須遵循 SO_R010 中定義的 N{four-digit-number}.R 模式
+- 節點不得組織在單獨的類型目錄或平台目錄中
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：目錄創建 {#directory-creation}
+
+創建新的衍生、序列、模組或節點時：
+
+1. 首先創建適當的目錄結構
+2. 創建抽象定義檔案（D01.md、S01.md、M01.md、N01.md）
+3. 根據需要創建平台特定子目錄
+4. 在各自的目錄中實施特定檔案
+
+## 第二款：來源語句中的檔案路徑 {#file-paths-in-source}
+
+從衍生或序列實施中來源檔案時，使用 get_root_path 函數：
+
+```r
+# 從衍生實施 D01_P0001_00.R
+source(file.path(get_root_path(), "update_scripts", "global_scripts", "00_principles", "M01", "functions", "fn_xxx.R"))
+
+# 或使用當前檔案的相對路徑
+source(file.path(dirname(dirname(dirname(__FILE__))), "M01", "functions", "fn_xxx.R"))
+```
+
+## 第三款：資料庫連接結構 {#database-connection-structure}
+
+資料庫連接應遵循代表資料處理管道的階層結構：
+
+```
+preraw_data.duckdb    # 用於來自 API 的原始資料、預處理（S00 序列）
+raw_data.duckdb       # 用於標準化原始資料（D01 衍生）
+processed_data.duckdb # 用於處理過的分析資料（D02-D09 衍生）
+app_data.duckdb       # 用於應用程式就緒資料（儀表板使用）
+```
+
+每個資料庫代表資料處理管道中的一個階段，轉換從預原始流向應用程式就緒資料。
+
+# 第三項：轉換指導原則 {#conversion-guidelines}
+
+## 第一款：轉換現有檔案 {#converting-existing-files}
+
+將現有檔案轉換為新資料夾結構時：
+
+1. 在 00_principles 中創建適當的目錄結構（D01、S00、M01、N01 等）
+2. 將抽象定義轉換為 .md 檔案（D01.md、S00.md、M01.md、N01.md）
+3. 將平台特定實施移至 platforms/{nn} 子目錄
+4. 更新來源路徑以使用 get_root_path() 或相對路徑
+5. 更新資料庫連接邏輯以匹配新結構
+
+## 第二款：新結構中的檔案命名 {#file-naming-in-new-structure}
+
+資料夾結構中的檔案應遵循這些命名模式：
+
+- 抽象定義：`D01.md`、`S00.md`、`M01.md`、`N01.md`
+- 平台實施：`D01_P0001_00.R`、`S00_P0007_00.R`、`M01_P0001_fn.R`、`N01_P0002_00.R`
+- 模組函數：`fn_xxx.R`
+
+所有實施檔案應遵循 SO_R010（實施命名約定）中定義的命名約定，模式為 `{Type}{Number}_P{Platform}_{Step}.R`。
+
+# 第四項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **清晰組織**：分離抽象定義和實施
+2. **平台隔離**：保持平台特定程式碼分離
+3. **易於導航**：使定位特定檔案更容易
+4. **改善可維護性**：減少處理多個平台時的認知負擔
+5. **明確關係**：使不同組件類型之間的關係清晰
+
+## 第二款：組織優點 {#organizational-benefits}
+
+1. **一致性**：為所有組件類型（D/S/M/N）提供統一方法
+2. **可擴展性**：允許輕鬆添加新平台和組件類型
+3. **集中化**：確保所有系統定義都在單一、已知位置
+4. **同步**：簡化跨儲存庫同步，所有檔案都在標準位置
+
+# 第五項：實施範例 {#implementation-examples}
+
+## 第一款：Cyberbiz 預處理（S00_P0007_00）{#cyberbiz-preprocessing}
+
+用於預處理 Cyberbiz API 資料的 S00 序列：
+
+```
+00_principles/
+  |-- S00/
+  |   |-- S00.md                # 通用預處理定義
+  |   |-- platforms/
+  |       |-- 07/               # Cyberbiz 平台（07）
+  |           |-- S00_P0007_00.R  # Cyberbiz 的預處理實施
+```
+
+S00_P0007_00.R 從 RDS 檔案處理 Cyberbiz API 資料，轉換嵌套 JSON 結構並在 preraw_data.duckdb 中創建表：
+
+```r
+# S00_P0007_00.R 摘錄
+import_cyberbiz_api_data <- function(conn, cyberbiz_api_path, verbose = TRUE) {
+  if(verbose) message("匯入 Cyberbiz API 資料...")
+  
+  # 處理訂單
+  orders_file <- file.path(cyberbiz_api_path, "orders.RDS")
+  if(file.exists(orders_file)) {
+    orders <- readRDS(orders_file)
+    orders <- process_json_columns(orders, verbose)
+    DBI::dbWriteTable(conn, "cyberbiz_orders", orders, overwrite = TRUE)
+  }
+  
+  # 連接資料以創建組合資料集
+  join_query <- "
+  CREATE OR REPLACE TABLE df_cyberbiz_combined AS
+  SELECT
+    o.id AS order_id,
+    o.customer_id,
+    c.email AS customer_email,
+    /* 更多欄位... */
+  FROM
+    cyberbiz_orders o
+  LEFT JOIN
+    cyberbiz_customers c ON o.customer_id = c.id
+  "
+  DBI::dbExecute(conn, join_query)
+}
+```
+
+## 第二款：資料匯出工具節點（N0001.R）{#data-export-node}
+
+與平台無關的資料匯出工具節點：
+
+```
+00_principles/
+  |-- nodes/
+      |-- N0001.R      # 資料匯出工具
+```
+
+N0001.R 為不同格式提供各種匯出函數：
+
+```r
+# N0001.R 摘錄
+export_data_to_csv <- function(data, export_path, include_headers = TRUE, 
+                              date_format = "%Y-%m-%d", verbose = TRUE) {
+  if(verbose) message("將資料匯出到 CSV...")
+  
+  # 處理日期欄位
+  date_cols <- sapply(data, function(x) inherits(x, "Date") || inherits(x, "POSIXt"))
+  if(any(date_cols)) {
+    for(col in names(data)[date_cols]) {
+      data[[col]] <- format(data[[col]], format = date_format)
+    }
+  }
+  
+  # 寫入檔案
+  write.csv(data, export_path, row.names = FALSE, quote = TRUE)
+  
+  return(export_path)
+}
+```
+
+---
+
+*基於：結構組織法第十一條*  
+*相關連結：[MP016 模組化](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [SO_R010 實施命名約定](SO_R010_implementation_naming_convention.qmd)*

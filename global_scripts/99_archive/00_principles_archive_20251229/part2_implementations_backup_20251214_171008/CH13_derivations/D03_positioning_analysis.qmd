@@ -1,0 +1,590 @@
+---
+id: "D03"
+title: "Positioning Analysis Derivation Flow"
+type: "derivation"
+date_created: "2025-05-16"
+date_modified: "2025-07-15"
+author: "Claude"
+related_to:
+  - "R038": "Platform Numbering Convention"
+  - "MP058": "Database Table Creation Strategy"
+  - "MP043": "Database Documentation"
+  - "MP073": "Interactive Visualization Preference"
+  - "MP047": "Functional Programming"
+  - "R021": "One Function One File"
+  - "R069": "Function File Naming"
+  - "MP081": "Explicit Parameter Specification"
+  - "R049": "Apply Over Loops"
+  - "ETL00": "ETL Framework"
+  - "DF000": "Data Pipeline Architecture"
+---
+
+# D03: Positioning Analysis Derivation Flow
+
+## Overview
+
+This document outlines the modernized positioning analysis derivation process, transitioning from the legacy D03_XX series to the new ETL03 architecture. The positioning analysis extracts, transforms, and loads competitive positioning data from external sources to enable visual comparison of brand attributes, ratings, and market performance.
+
+## Architecture Evolution
+
+### Legacy D03_00 to ETL03 Migration
+
+**Only D03_00 has been successfully migrated to the new ETL03 architecture.**
+
+#### D03_00: Import product Properties → ETL03_0IM_00
+
+**Legacy Implementation**: `amz_D03_00.R` (archived)
+**New Implementation**: `amz_ETL03_0IM_00.R`
+
+```nsql
+# Legacy D03_00 approach
+IMPORT external_data.{product_property} TO raw_data.df_product_profile_{product_line_id}
+
+# New ETL03_0IM_00 approach  
+IMPORT external_data.{product_property} TO raw_data.df_product_profile_{product_line_id}
+STAGE raw_data.df_product_profile_{product_line_id} TO staged_data.df_product_profile_{product_line_id}___staged
+TRANSFORM staged_data.df_product_profile_{product_line_id}___staged TO transformed_data.df_product_profile_{product_line_id}___transformed
+```
+
+**Migration Benefits**:
+- **Enhanced Data Quality**: Three-phase validation and processing
+- **Better Performance**: DuckDB-optimized operations
+- **Improved Maintainability**: Modular function design
+- **Configuration-Driven**: Flexible column mapping and validation rules
+
+### ETL03_0IM_00 Implementation Details
+
+**Primary Script**: `amz_ETL03_0IM_00.R`
+**Supporting Functions**: 
+- `fn_import_product_profiles.R` - Core import logic
+- `fn_stage_product_profiles.R` - Staging operations  
+- `fn_transform_product_profiles.R` - Transformation logic
+
+**Import Phase (0IM)**:
+```nsql
+# Import product profiles from Google Sheets
+IMPORT external_data.{product_property} TO raw_data.df_product_profile_{product_line_id}
+```
+
+**Key Features**:
+- Imports from Google Sheets external data sources
+- Creates separate tables for each product line
+- Includes ASIN, brand, name, URL, and other basic properties
+- Supports UTF-8 encoding for international characters
+- Comprehensive error handling and validation
+
+**Staging Phase (1ST)**:
+```nsql
+# Stage with validation
+STAGE raw_data.df_product_profile_{product_line_id} TO staged_data.df_product_profile_{product_line_id}___staged
+```
+
+**Transform Phase (2TR)**:
+```nsql
+# Transform with business logic
+TRANSFORM staged_data.df_product_profile_{product_line_id}___staged TO transformed_data.df_product_profile_{product_line_id}___transformed
+```
+
+**Configuration-Driven Transformation**:
+```nsql
+# Column alias mapping from app_configs
+ALIAS brand = [brand, 品牌, 廠牌]
+ALIAS name = [name, 名稱, 產品名稱]
+ALIAS asin = [asin, ASIN, 商品編號]
+```
+
+## Data Pipeline Architecture
+
+### Database Layer Structure
+
+Following the DF000 Data Pipeline Architecture:
+
+```mermaid
+graph TB
+    subgraph "Raw Data Layer"
+        A[df_product_profile_{product_line_id}]
+    end
+    
+    subgraph "Staged Data Layer"
+        B[df_product_profile_{product_line_id}___staged]
+    end
+    
+    subgraph "Transformed Data Layer"
+        C[df_product_profile_{product_line_id}___transformed]
+    end
+    
+    subgraph "Processed Data Layer"
+        D[df_competitor_analysis]
+        E[df_positioning_metrics]
+    end
+    
+    subgraph "Application Data Layer"
+        F[df_position]
+        G[df_competitive_landscape]
+    end
+    
+    A --> B
+    B --> C
+    C --> D
+    C --> E
+    D --> F
+    E --> G
+```
+
+### Table Naming Convention
+
+- **Raw Data**: `df_product_profile_{product_line_id}`
+- **Staged Data**: `df_product_profile_{product_line_id}___staged`
+- **Transformed Data**: `df_product_profile_{product_line_id}___transformed`
+- **Processed Data**: `df_competitor_analysis`, `df_positioning_metrics`
+- **Application Data**: `df_position`, `df_competitive_landscape`
+
+## Legacy D03 Steps Status
+
+**Migration status of D03 steps:**
+
+#### ✅ Migrated Steps
+
+### D03_01: Import Competitor product IDs
+```nsql
+IMPORT external_data.{competitor_products} TO raw_data.df_competitor_product_id
+```
+- **Status**: ✅ **Migrated to ETL04** (2025-07-15)
+- **Legacy Script**: `amz_D03_01.R` (deprecated)
+- **New Implementation**: **ETL04 Competitor Analysis Pipeline**
+  - **ETL04_0IM**: `amz_ETL04_0IM.R` - Import phase
+  - **ETL04_1ST**: `amz_ETL04_1ST.R` - Staging phase
+  - **ETL04_2TR**: `amz_ETL04_2TR.R` - Transform phase
+- **Core Function**: `fn_import_competitor_products()` (enhanced with `skip_validation` parameter)
+- **Documentation**: See `ETL04_competitor_analysis.qmd`
+
+### D03_02: Import Comment Properties
+```nsql
+IMPORT external_data.{comment_property} TO raw_data.df_comment_property
+```
+- **Status**: ✅ **Migrated to ETL05** (2025-07-15)
+- **Legacy Script**: `amz_D03_02.R` (deprecated)
+- **New Implementation**: **ETL05 Comment Properties Pipeline**
+  - **ETL05_0IM**: `amz_ETL05_0IM.R` - Import phase
+  - **ETL05_1ST**: `amz_ETL05_1ST.R` - Staging phase
+  - **ETL05_2TR**: `amz_ETL05_2TR.R` - Transform phase
+- **Core Function**: `fn_import_comment_properties()` (enhanced with `skip_validation` parameter)
+- **Documentation**: See `ETL05_comment_properties.qmd`
+
+#### ⏳ Remaining Legacy Steps
+
+**The following D03 steps are still using the legacy architecture and await migration:**
+
+### D03_03: Import Reviews
+```nsql
+IMPORT external_raw_data.{review_data} TO raw_data.df_{source}_review_data
+```
+- **Status**: ✅ **Migrated to ETL06** (2025-07-15)
+- **Legacy Script**: `amz_D03_03.R` (deprecated)
+- **New Implementation**: **ETL06 Reviews Data Preparation Pipeline**
+  - **ETL06_0IM**: `amz_ETL06_0IM.R` - Import phase
+  - **ETL06_1ST**: `amz_ETL06_1ST.R` - Staging phase
+  - **ETL06_2TR**: `amz_ETL06_2TR.R` - Transform phase
+- **Core Function**: `fn_cleanse_amazon_reviews_etl()`, `fn_process_amz_reviews_etl()`
+- **Documentation**: See `ETL06_reviews_data_preparation.qmd`
+
+### D03_04: Cleanse Reviews
+```nsql
+CLEANSING raw_data.df_{source}_review_data TO cleansed_data.df_{source}_review_data
+```
+- **Status**: ✅ **Migrated to ETL06** (2025-07-15)
+- **Legacy Script**: `amz_D03_04.R` (deprecated)
+- **New Implementation**: **ETL06 Reviews Data Preparation Pipeline** (1ST phase)
+- **Core Function**: `fn_cleanse_amazon_reviews_etl()`
+- **Documentation**: See `ETL06_reviews_data_preparation.qmd`
+
+### D03_05: Process Reviews with Product Line Information
+```nsql
+PROCESS cleansed_data.df_{source}_review_data TO processed_data.df_{source}_review_data
+```
+- **Status**: ✅ **Migrated to ETL06** (2025-07-15)
+- **Legacy Script**: `amz_D03_05.R` (deprecated)
+- **New Implementation**: **ETL06 Reviews Data Preparation Pipeline** (2TR phase)
+- **Core Function**: `fn_process_amz_reviews_etl()`
+- **Documentation**: See `ETL06_reviews_data_preparation.qmd`
+
+### D03_06: Import Comment Property Ratings
+```nsql
+IMPORT comment_property_rating
+```
+- **Status**: ✅ **Repositioned as D03_01** (2025-07-16)
+- **Legacy Script**: `amz_D03_06.R` (deprecated)
+- **New Implementation**: `amz_D03_01.R` - Comment Property Rating Analysis
+- **Core Function**: Wide-to-long transformation with database mounting
+- **Purpose**: Converts wide-format review data to long-format for property analysis
+- **Key Features**:
+  - Uses `dbAttachDuckdb()` to mount transformed_data database
+  - Samples latest `comment_sample_size` reviews per product_id
+  - Performs wide-to-long transformation using `tidyr::pivot_longer()`
+  - Stores results in comment_property_rating database
+  - Generates 6 output tables: raw, sampled, and sampled_long for each product line
+
+### D03_02: Rate Reviews (已實作)
+```nsql
+RATE reviews BY property IN comment_property_rating
+```
+- **Status**: ✅ **Implemented** (2025-07-17)
+- **Current Script**: `amz_D03_02.R`
+- **Function**: `fn_rate_comments()`, `fn_process_property_ratings()`
+- **Purpose**: Uses OpenAI API to rate reviews against properties
+- **Output**: Stored in `comment_property_rating_results` database
+
+### D03_03: Process Reviews (已實作)
+```nsql
+PROCESS comment_property_rating_results TO processed_data.df_comment_property_ratingonly_{product_line_id}
+```
+- **Status**: ✅ **Implemented** (2025-07-18)
+- **Current Script**: `amz_D03_03.R` (renamed from D03_08)
+- **Function**: `fn_process_review_ratings()`
+- **Purpose**: Transform long-format ratings to wide-format property columns
+- **Output**: Creates tables in `processed_data` database
+
+### D03_04: Query Comment Property Ratings (已實作)
+```nsql
+QUERY processed_data.df_comment_property_ratingonly_{product_line_id} BY product_id TO processed_data.df_comment_property_ratingonly_by_asin_{product_line_id}
+```
+- **Status**: ✅ **Implemented** (2025-07-18)
+- **Current Script**: `amz_D03_04.R` (renamed from D03_09)
+- **Function**: `fn_process_comment_property_ratings_by_asin()`
+- **Purpose**: Aggregate property ratings by ASIN (product ID)
+- **Features**: 
+  - Aggregates ratings from multiple reviews per product
+  - Optional missing value imputation using mice package
+  - Outputs average ratings per property per product
+
+### D03_10: Import Competitor Sales Data
+```nsql
+IMPORT external_data.{competitor_sales} TO raw_data.df_competitor_sales
+```
+- **Status**: ✅ **Migrated to ETL07** (2025-07-15)
+- **Legacy Script**: `amz_D03_10.R` (deprecated)
+- **New Implementation**: **ETL07 Competitor Sales Data Preparation Pipeline**
+  - **ETL07_0IM**: `amz_ETL07_0IM.R` - Import phase only (single-phase pipeline)
+- **Core Function**: `fn_import_df_amz_competitor_sales()`
+- **Documentation**: See `ETL07_competitor_sales_preparation.qmd`
+
+### D03_11: Create Position Table
+```nsql
+JOIN processed_data.df_comment_property_ratingonly_by_asin_{product_line_id} TO app_data.df_position
+```
+- **Status**: Legacy implementation only
+- **Current Script**: `amz_D03_11.R`
+- **Functions**: `fn_process_position_table()`, `fn_merge_position_tables()`, `fn_finalize_position_table()`
+
+## Migration Status Summary
+
+**✅ Successfully Migrated/Implemented**:
+- D03_00 → ETL03 (Import product Properties)
+- Old D03_01 → ETL04 (Import Competitor product IDs)
+- Old D03_02 → ETL05 (Import Comment Properties)
+- Old D03_03 → ETL06 (Import Reviews - phase 0IM)
+- Old D03_04 → ETL06 (Cleanse Reviews - phase 1ST)
+- Old D03_05 → ETL06 (Process Reviews - phase 2TR)
+- Old D03_06 → D03_01 (Comment Property Rating Analysis - repositioned)
+- Old D03_10 → ETL07 (Import Competitor Sales Data)
+
+**✅ Current D03 Implementation**:
+- D03_01 (Comment Property Rating Analysis) - Wide-to-long transformation
+- D03_02 (Rate Reviews) - AI rating using OpenAI API
+- D03_03 (Process Reviews) - Transform ratings to wide format
+- D03_04 (Query Comment Property Ratings) - Aggregate by ASIN
+
+**⏳ Awaiting Renaming/Migration**:
+- D03_11 → D03_05 (Create Position Table)
+
+
+**📋 ETL Series Allocation**:
+```nsql
+ETL01: Customer Analysis (existing)
+ETL02: Product Analysis (existing)  
+ETL03: product Profiles (✅ D03_00 migrated)
+ETL04: Competitor Analysis (✅ D03_01 migrated)
+ETL05: Comment Properties (✅ D03_02 migrated)
+ETL06: Review Data Preparation (✅ D03_03-D03_05 migrated)
+ETL07: Competitor Sales Data Preparation (✅ D03_10 migrated)
+```
+
+## Configuration Management
+
+### Product Line Configuration
+
+```yaml
+# app_config.yaml
+product_lines:
+  enabled: true
+  sources:
+    - google_sheets
+    - manual_upload
+  validation:
+    required_fields: ["asin", "brand", "name"]
+    optional_fields: ["url", "category", "price"]
+```
+
+### Database Configuration
+
+```yaml
+# Database paths following R114 Standard Path Constants
+databases:
+  raw_data: "data/local_data/raw_data.duckdb"
+  staged_data: "data/local_data/staged_data.duckdb"
+  transformed_data: "data/local_data/transformed_data.duckdb"
+  processed_data: "data/local_data/processed_data.duckdb"
+  app_data: "data/app_data/app_data.duckdb"
+  meta_data: "data/local_data/meta_data.duckdb"
+```
+
+## Performance Optimization
+
+### DuckDB-Specific Optimizations
+
+```nsql
+# Optimized column types for DuckDB
+optimize_columns:
+  CONVERT asin TO character
+  CONVERT brand TO factor
+  CONVERT product_line_id TO factor
+  CONVERT created_timestamp TO timestamp
+```
+
+### Batch Processing Strategy
+
+```nsql
+# Process multiple product lines efficiently
+process_all_product_lines:
+  FOR EACH product_line_id IN vec_product_line_id:
+    TRY:
+      IMPORT product_profiles FOR product_line_id
+      STAGE product_profiles FOR product_line_id
+      TRANSFORM product_profiles FOR product_line_id
+    CATCH error:
+      WARNING "Failed to process product line" product_line_id
+      RETURN null
+```
+
+## Error Handling and Validation
+
+### Comprehensive Validation Framework
+
+```nsql
+# Validation rules for product profiles
+validate_product_profiles:
+  # Required field validation
+  missing_asin = COUNT null IN asin
+  missing_brand = COUNT null IN brand
+  missing_name = COUNT null IN name
+  
+  # Format validation
+  invalid_asin = COUNT asin NOT MATCH "^[A-Z0-9]{10}$"
+  invalid_url = COUNT url NOT MATCH "^https?://"
+  
+  # Business rule validation
+  duplicate_asin = COUNT duplicated IN asin
+  
+  RETURN validation_results
+```
+
+### Error Recovery Mechanisms
+
+```nsql
+# Graceful error handling with fallbacks
+safe_import_with_fallback:
+  TRY:
+    # Primary import method
+    IMPORT product_profiles FOR product_line_id
+  CATCH error:
+    WARNING "Primary import failed"
+    TRY:
+      # Fallback to cached data
+      LOAD cached_product_profiles FOR product_line_id
+    CATCH error:
+      # Final fallback to empty structure
+      CREATE empty_product_profile_table FOR product_line_id
+```
+
+## Integration with Visualization Components
+
+### Position Table Component
+
+The processed data feeds into the `positionTable` component:
+
+```nsql
+# Data preparation for visualization
+prepare_position_data:
+  CONNECT TO app_data
+  
+  SELECT * FROM df_position
+  WHERE product_line_id IN vec_product_line_id_noall
+  
+  DISCONNECT FROM app_data
+  RETURN position_data
+```
+
+### Interactive Filtering
+
+```nsql
+# Support for dynamic filtering in UI
+filter_position_data:
+  filtered_data = data
+  
+  IF selected_product_line IS NOT NULL:
+    FILTER filtered_data WHERE product_line_id = selected_product_line
+  
+  IF selected_brand IS NOT NULL:
+    FILTER filtered_data WHERE brand = selected_brand
+  
+  RETURN filtered_data
+```
+
+## Metadata Integration
+
+### Automatic Metadata Collection
+
+Following DF06 Metadata Management principles:
+
+```nsql
+# Record lineage for ETL operations
+record_etl_lineage:
+  CONNECT TO meta_data
+  
+  lineage_info:
+    source_database = "raw_data"
+    source_table = source_table
+    target_database = "staged_data"
+    target_table = target_table
+    transformation_type = phase
+    etl_process_name = "positioning_analysis_etl03"
+  
+  RECORD lineage_info TO data_lineage
+  DISCONNECT FROM meta_data
+```
+
+### Quality Metrics Tracking
+
+```nsql
+# Track data quality through ETL phases
+track_quality_metrics:
+  CONNECT TO database_name AS db_conn
+  CONNECT TO meta_data AS meta_conn
+  
+  COLLECT quality_metrics FROM table_name IN database_name
+  
+  DISCONNECT FROM db_conn
+  DISCONNECT FROM meta_conn
+  
+  RETURN quality_metrics
+```
+
+## Testing and Validation
+
+### Unit Testing Framework
+
+```nsql
+# Test product profile import functionality
+test_product_profile_import:
+  test_product_line = "test_line"
+  
+  # Test import
+  IMPORT product_profiles FOR test_product_line AS result
+  
+  # Validate results
+  ASSERT COUNT result > 0
+  ASSERT columns asin, brand, name EXIST IN result
+  ASSERT NO null VALUES IN result.asin
+  
+  # Cleanup
+  CLEANUP test_data FOR test_product_line
+```
+
+### Integration Testing
+
+```nsql
+# Test complete ETL03 pipeline
+test_complete_etl03_pipeline:
+  test_product_line = "integration_test"
+  
+  # Test each phase
+  IMPORT product_profiles FOR test_product_line AS import_result
+  STAGE product_profiles FOR test_product_line AS stage_result
+  TRANSFORM product_profiles FOR test_product_line AS transform_result
+  
+  # Validate pipeline integrity
+  ASSERT COUNT import_result = COUNT stage_result
+  ASSERT COUNT stage_result = COUNT transform_result
+  
+  # Cleanup
+  CLEANUP test_data FOR test_product_line
+```
+
+## Future Enhancements
+
+### Planned Features
+
+1. **Real-time Data Synchronization**
+   - Streaming updates from external sources
+   - Change detection and incremental processing
+   - Event-driven architecture integration
+
+2. **Advanced Analytics**
+   - Machine learning-based positioning insights
+   - Predictive competitive analysis
+   - Sentiment analysis integration
+
+3. **Multi-platform Support**
+   - eBay positioning analysis (eby_ETL03_XX series)
+   - Cross-platform competitive comparisons
+   - Unified competitive landscape views
+
+4. **Enhanced Visualization**
+   - Interactive positioning maps
+   - Time-series competitive analysis
+   - Drill-down capabilities
+
+## Implementation Files
+
+### Current ETL03 Implementation
+- **Import Phase**: `/scripts/update_scripts/amz_ETL03_0IM_00.R`
+- **Staging Phase**: `/scripts/update_scripts/amz_ETL03_1ST_00.R`
+- **Transform Phase**: `/scripts/update_scripts/amz_ETL03_2TR_00.R`
+
+### Current D03_01 Implementation
+- **Comment Property Rating Analysis**: `/scripts/update_scripts/amz_D03_01.R`
+- **Database Mounting**: Uses `dbAttachDuckdb()` from `fn_dbAttachDuckdb.R`
+- **Wide-to-Long Transformation**: Uses `tidyr::pivot_longer()` for property analysis
+- **Output Tables**: Generates raw, sampled, and sampled_long tables for each product line
+
+### Supporting Functions
+- **Import**: `/scripts/global_scripts/05_etl_utils/all/import/fn_import_product_profiles.R`
+- **Staging**: `/scripts/global_scripts/05_etl_utils/all/stage/fn_stage_product_profiles.R`
+- **Transform**: `/scripts/global_scripts/05_etl_utils/all/transform/fn_transform_product_profiles.R`
+
+### Legacy Files (Archived)
+- **Legacy Scripts**: `/scripts/update_scripts/archive/amz_D03_*.R`
+- **Migration Reference**: Available for historical context and migration validation
+
+## Related Principles
+
+- **ETL00 (ETL Framework)**: Provides the architectural foundation
+- **DF000 (Data Pipeline Architecture)**: Defines the layer structure
+- **DF006 (Metadata Management)**: Enables comprehensive data governance
+- **MP047 (Functional Programming)**: Ensures clean, maintainable code
+- **MP058 (Database Table Creation Strategy)**: Standardizes table design
+- **R021 (One Function One File)**: Promotes modular function organization
+- **R038 (Platform Numbering Convention)**: Maintains consistent naming
+- **R069 (Function File Naming)**: Ensures discoverable function files
+
+## Conclusion
+
+The ETL03 architecture represents a significant modernization of the positioning analysis system, providing:
+
+- **Simplified Architecture**: Three-phase approach vs. eleven-step legacy system
+- **Enhanced Performance**: DuckDB-optimized processing
+- **Better Maintainability**: Modular, testable components
+- **Comprehensive Governance**: Integrated metadata and quality tracking
+- **Future-Ready Design**: Extensible for multi-platform and advanced analytics
+
+This foundation enables sophisticated competitive positioning analysis while maintaining the flexibility to adapt to evolving business requirements.

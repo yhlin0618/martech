@@ -1,0 +1,257 @@
+---
+title: "MK02: IPT Calculation Methodology"
+subtitle: "Practical methodology for calculating Inter-Purchase Time with multiple daily orders"
+chapter: "CH13"
+category: "marketing_knowledge"
+number: "MK02"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "domain_knowledge"
+law: "Marketing Analytics"
+article: "Knowledge Article 2"
+related_to:
+  - "MK01_ipt_theoretical_framework"
+  - "D01_dna_analysis"
+  - "MP047_functional_programming"
+  - "R049_apply_over_loops"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Knowledge Article 2: IPT Calculation Methodology {#overview}
+
+This document explains how to calculate Inter-Purchase Time (IPT) when multiple orders occur in one day by aggregating to the earliest order time of that day.
+
+## Section 1: Aggregation Strategy {#aggregation}
+
+### Subsection 1: Daily Aggregation Step {#daily-aggregation}
+
+For each customer and each day, the function groups all orders and calculates the **earliest time** on that day using the `min()` function on the specified time field. This aggregated time is stored as `first_time_by_date`. By doing so, multiple orders within the same day are reduced to a single representative timestamp — the earliest order time.
+
+```r
+# Aggregation to earliest daily time
+aggregated_data <- raw_data %>%
+  group_by(customer_id, date = as.Date(order_time)) %>%
+  summarise(
+    first_time_by_date = min(order_time),
+    n_orders = n(),
+    total_value = sum(order_value),
+    .groups = "drop"
+  )
+```
+
+### Subsection 2: Rationale for Earliest Time {#rationale}
+
+Using the earliest time of the day provides:
+1. **Consistency**: A uniform approach across all customers
+2. **Customer Intent**: Captures the moment the customer first engaged that day
+3. **Conservative Estimate**: Provides the longest possible IPT for that day
+4. **Simplicity**: Easy to understand and implement
+
+## Section 2: IPT Calculation Process {#calculation}
+
+### Subsection 1: Sequential Calculation {#sequential}
+
+For each customer, after daily aggregation, IPT is calculated as the difference (in days) between the `first_time_by_date` of the current day and the `first_time_by_date` of the previous day. This is achieved using the `shift()` or `lag()` function.
+
+```r
+# IPT calculation using lag
+ipt_data <- aggregated_data %>%
+  arrange(customer_id, date) %>%
+  group_by(customer_id) %>%
+  mutate(
+    previous_time = lag(first_time_by_date),
+    ipt = as.numeric(difftime(first_time_by_date, previous_time, units = "days"))
+  )
+```
+
+### Subsection 2: Time Unit Considerations {#time-units}
+
+The calculation can use different time units based on business needs:
+
+```r
+# Different time unit calculations
+ipt_hours <- difftime(first_time_by_date, previous_time, units = "hours")
+ipt_days <- difftime(first_time_by_date, previous_time, units = "days")
+ipt_weeks <- difftime(first_time_by_date, previous_time, units = "weeks")
+```
+
+## Section 3: Detailed Example {#example}
+
+### Subsection 1: Sample Data {#sample-data}
+
+Consider the following orders for a single customer:
+
+**January 1, 2021**
+- Order at 08:00
+- Order at 12:00
+
+**January 2, 2021**
+- Order at 09:30
+- Order at 14:00
+
+**January 3, 2021**
+- Order at 10:15
+
+### Subsection 2: Aggregation Results {#aggregation-results}
+
+After aggregation, we have:
+
+| Date | First Time by Date | Number of Orders |
+|------|-------------------|------------------|
+| 2021-01-01 | 2021-01-01 08:00 | 2 |
+| 2021-01-02 | 2021-01-02 09:30 | 2 |
+| 2021-01-03 | 2021-01-03 10:15 | 1 |
+
+### Subsection 3: IPT Calculations {#ipt-calculations}
+
+**For January 2:**
+```
+IPT = (First order time on January 2) − (First order time on January 1)
+    = 2021-01-02 09:30 − 2021-01-01 08:00
+    = 25.5 hours ≈ 1.06 days
+```
+
+**For January 3:**
+```
+IPT = (First order time on January 3) − (First order time on January 2)
+    = 2021-01-03 10:15 − 2021-01-02 09:30
+    = 24.75 hours ≈ 1.03 days
+```
+
+## Section 4: Implementation Code {#implementation}
+
+### Subsection 1: Complete Function {#complete-function}
+
+```r
+calculate_ipt <- function(order_data, time_field = "order_time", 
+                         customer_field = "customer_id",
+                         value_field = "order_value") {
+  
+  # Step 1: Daily aggregation to earliest time
+  daily_aggregated <- order_data %>%
+    mutate(date = as.Date(get(time_field))) %>%
+    group_by(across(all_of(customer_field)), date) %>%
+    summarise(
+      first_time_by_date = min(get(time_field)),
+      n_orders_in_day = n(),
+      daily_total_value = sum(get(value_field), na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Step 2: Calculate IPT
+  ipt_result <- daily_aggregated %>%
+    arrange(across(all_of(customer_field)), date) %>%
+    group_by(across(all_of(customer_field))) %>%
+    mutate(
+      previous_time = lag(first_time_by_date),
+      ipt_days = as.numeric(difftime(first_time_by_date, 
+                                     previous_time, 
+                                     units = "days")),
+      ipt_hours = as.numeric(difftime(first_time_by_date, 
+                                      previous_time, 
+                                      units = "hours"))
+    ) %>%
+    ungroup()
+  
+  return(ipt_result)
+}
+```
+
+### Subsection 2: Usage Example {#usage}
+
+```r
+# Sample usage
+library(dplyr)
+library(lubridate)
+
+# Create sample data
+sample_orders <- data.frame(
+  customer_id = c(1, 1, 1, 1, 1),
+  order_time = as.POSIXct(c(
+    "2021-01-01 08:00:00",
+    "2021-01-01 12:00:00",
+    "2021-01-02 09:30:00",
+    "2021-01-02 14:00:00",
+    "2021-01-03 10:15:00"
+  )),
+  order_value = c(100, 50, 75, 125, 200)
+)
+
+# Calculate IPT
+ipt_results <- calculate_ipt(sample_orders)
+print(ipt_results)
+```
+
+## Section 5: Advanced Considerations {#advanced}
+
+### Subsection 1: Handling Edge Cases {#edge-cases}
+
+#### Single Order Days {#single-order}
+Days with single orders are handled naturally as the min() function returns the single timestamp.
+
+#### Missing Days {#missing-days}
+Days without orders are not represented in the aggregated data, maintaining the true IPT between purchase events.
+
+#### First Purchase {#first-purchase}
+The first purchase for a customer will have NA for IPT as there's no previous purchase to compare.
+
+### Subsection 2: Alternative Aggregation Methods {#alternatives}
+
+While using the earliest time is recommended, alternatives include:
+
+1. **Latest Time**: Using `max()` instead of `min()`
+2. **Average Time**: Using `mean()` for a central tendency
+3. **Weighted Average**: Weighting by order value or quantity
+4. **Median Time**: Using `median()` for robustness to outliers
+
+```r
+# Alternative aggregations
+alternatives <- order_data %>%
+  group_by(customer_id, date = as.Date(order_time)) %>%
+  summarise(
+    first_time = min(order_time),
+    last_time = max(order_time),
+    avg_time = mean(order_time),
+    median_time = median(order_time),
+    weighted_time = weighted.mean(order_time, w = order_value),
+    .groups = "drop"
+  )
+```
+
+## Section 6: Business Impact {#business-impact}
+
+### Subsection 1: Marketing Applications {#marketing-apps}
+
+Using this IPT calculation methodology enables:
+1. **Accurate timing predictions** for next purchase
+2. **Identification of purchasing patterns** including bulk buying behavior
+3. **Customer segmentation** based on consistent IPT patterns
+4. **Churn detection** when IPT exceeds normal ranges
+
+### Subsection 2: Operational Benefits {#operational}
+
+1. **Inventory planning** based on aggregated IPT patterns
+2. **Resource allocation** for expected order volumes
+3. **Campaign scheduling** aligned with customer rhythms
+4. **Customer service optimization** during high-activity periods
+
+## Section 7: Summary {#summary}
+
+By taking the **earliest** order time in each day (using `min(get(time))`), the function ensures that only one record per day is used to represent the customer's order behavior. The IPT is then computed as the day difference between these earliest times on consecutive days, which effectively resolves the issue of having multiple orders in a single day.
+
+This approach provides:
+- **Consistency** across all customers
+- **Simplicity** in implementation
+- **Interpretability** for business users
+- **Accuracy** in representing customer behavior patterns
+
+---
+
+*This methodology provides a practical, implementable approach to IPT calculation that handles the complexity of real-world purchasing behavior while maintaining analytical rigor.*

@@ -1,0 +1,195 @@
+---
+title: "DM_R052: Cross-Platform Product Identification Rule"
+subtitle: "Unified product mapping table for cross-platform product ID resolution"
+chapter: "CH02"
+category: "rule"
+number: "DM_R052"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 52"
+parent_principle: "MP064"
+related_to:
+  - "DM_R028": "ETL Data Type Separation"
+  - "DM_R037": "Company-Specific ETL Naming"
+  - "DM_R020": "Unified Product ID"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R052: Cross-Platform Product Identification Rule {#overview}
+
+Cross-platform product ID mapping must be implemented through a unified mapping table (`df_product_mapping`), not by hardcoding mapping logic in individual platform scripts.
+
+## Rule Statement
+
+**Product ID mapping across platforms MUST use a dedicated mapping table with surrogate key to support M:N (many-to-many) relationships.**
+
+## Rationale {#rationale}
+
+### Why a Unified Mapping Table?
+
+| Benefit | Description |
+|---------|-------------|
+| **Single Source of Truth** | One table maintains all cross-platform mappings |
+| **M:N Relationship Support** | Same SKU can map to multiple eBay listings (e.g., color variants) |
+| **Platform Independence** | DRV scripts don't hardcode platform-specific logic |
+| **Easy Maintenance** | Update mappings without modifying code |
+| **Future Extensibility** | Add new platforms (Amazon ASIN) without schema redesign |
+
+### Why Surrogate Key?
+
+A surrogate key (`mapping_id`) is required because:
+
+1. **NULL Handling**: SKU or eBay ID may be unknown (NULL) for partial data
+2. **M:N Support**: Same `(sku, eby_item_id)` pair may have color variants
+3. **Stability**: Business IDs may change; surrogate key never changes
+4. **Simplicity**: No complex composite key constraints
+
+## Schema Definition {#schema}
+
+### df_product_mapping Table
+
+| Column | Type | Constraint | Description |
+|--------|------|------------|-------------|
+| `mapping_id` | INTEGER | **PK, AUTO** | Surrogate primary key |
+| `sku` | VARCHAR | Nullable, allows duplicates | CBZ/Official product SKU |
+| `eby_item_id` | VARCHAR | Nullable, allows duplicates | eBay item number |
+| `amz_asin` | VARCHAR | Nullable, allows duplicates | Amazon ASIN (reserved) |
+| `product_name` | VARCHAR | | Product name |
+| `product_line_name` | VARCHAR | | Product line |
+| `color_variant` | VARCHAR | Nullable | Color variant for M:N tracking |
+
+### M:N Relationship Examples
+
+| Scenario | SKU | eby_item_id | Explanation |
+|----------|-----|-------------|-------------|
+| 1:1 | A001 | 12345 | Standard mapping |
+| 1:N | A001 | 12345 | Same product, |
+| 1:N | A001 | 12346 | different colors |
+| N:1 | A001 | 99999 | Bundle product |
+| N:1 | A002 | 99999 | (combo pack) |
+
+## ETL Implementation {#implementation}
+
+### File Naming
+
+```
+all_ETL_product_mapping_0IM___{company}.R
+```
+
+Example: `all_ETL_product_mapping_0IM___MAMBA.R`
+
+The `___MAMBA` suffix indicates company-specific mapping (following DM_R037).
+
+### ETL Script Structure
+
+```r
+#' @file all_ETL_product_mapping_0IM___MAMBA.R
+#' @title Product Mapping ETL - Cross-Platform ID Resolution
+#' @description
+#'   Following: DM_R052 (Cross-Platform Product Identification)
+#'   Following: DM_R037 (Company-Specific ETL Naming)
+
+# 1. INITIALIZE
+autoinit()
+
+# 2. MAIN
+excel_path <- file.path(g_project_root,
+  "data/local_data/rawdata_MAMBA/SKUtoeBay numbers/SKUtoeBay number.xlsx")
+
+df_product_mapping <- read_excel(excel_path, sheet = "sku details", skip = 5) %>%
+  transmute(
+    sku = as.character(SKU),
+    eby_item_id = as.character(`eBay number`),
+    amz_asin = NA_character_,
+    product_name = as.character(Name),
+    product_line_name = as.character(`Product Line`),
+    color_variant = NA_character_
+  ) %>%
+  filter(!is.na(sku) | !is.na(eby_item_id)) %>%
+  mutate(mapping_id = row_number())
+
+# Write to app_data (metadata table)
+dbWriteTable(app_con, "df_product_mapping", df_product_mapping, overwrite = TRUE)
+
+# 5. DEINITIALIZE
+autodeinit()
+```
+
+## DRV Usage Pattern {#drv-usage}
+
+### CBZ Data with eBay Mapping
+
+```r
+# Following: DM_R052 (Cross-Platform Product Identification)
+cbz_sales %>%
+  left_join(
+    tbl2(app_con, "df_product_mapping"),
+    by = "sku"
+  ) %>%
+  # Now has eby_item_id for cross-platform analysis
+```
+
+### eBay Data with CBZ Mapping
+
+```r
+# Following: DM_R052 (Cross-Platform Product Identification)
+eby_sales %>%
+  left_join(
+    tbl2(app_con, "df_product_mapping"),
+    by = c("ebay_item_number" = "eby_item_id")
+  ) %>%
+  # Now has sku for cross-platform analysis
+```
+
+### Handling M:N in Aggregations
+
+When one SKU maps to multiple eBay listings:
+
+```r
+# Aggregate by SKU (dedup across eBay listings)
+cbz_sales %>%
+  left_join(mapping, by = "sku") %>%
+  group_by(sku) %>%
+  summarize(
+    total_cbz_sales = sum(cbz_amount),
+    total_eby_sales = sum(eby_amount, na.rm = TRUE),
+    eby_listing_count = n_distinct(eby_item_id)
+  )
+```
+
+## Validation Checklist {#checklist}
+
+For product mapping ETL:
+
+- [ ] Uses surrogate key (`mapping_id`) as primary key
+- [ ] SKU and `eby_item_id` allow duplicates (M:N support)
+- [ ] SKU and `eby_item_id` allow NULL (partial data support)
+- [ ] Writes to `app_data.duckdb` (metadata table)
+- [ ] Follows `___MAMBA` naming for company-specific mapping
+- [ ] Includes principle references in code comments
+
+For DRV scripts using mapping:
+
+- [ ] Uses `LEFT JOIN` (not INNER JOIN) to preserve unmatched records
+- [ ] Handles M:N with appropriate aggregation logic
+- [ ] References DM_R052 in code comments
+
+## Relationship to Other Principles {#relationships}
+
+| Principle | Relationship |
+|-----------|--------------|
+| **DM_R028** | Defines ETL naming pattern; DM_R052 applies to product mapping ETL |
+| **DM_R037** | Defines `___MAMBA` suffix; DM_R052 uses for company-specific mapping |
+| **DM_R020** | Defines unified product ID concept; DM_R052 implements cross-platform mapping |
+| **MP064** | ETL-DRV separation; mapping table maintained by ETL, used by DRV |
+
+## Conclusion
+
+The Cross-Platform Product Identification Rule (DM_R052) establishes a standardized approach for mapping product IDs across platforms (CBZ, eBay, Amazon) using a dedicated mapping table with surrogate key. This enables cross-platform analytics while supporting complex M:N relationships and partial data scenarios.

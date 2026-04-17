@@ -1,0 +1,101 @@
+---
+title: "MP035: NULL 值特殊處理元原則 (NULL Case Special Treatment)"
+subtitle: "NULL、NA 和空值在數據處理和 UI 交互中需要特殊處理"
+author: "System"
+date: "2025-04-06"
+date-modified: "2025-08-16"
+categories: [meta-principle, data-management, null-handling, UI-design]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 定義
+
+NULL、NA 和空值在數據處理和 UI 交互中都需要特殊處理。這些值應該與普通值區別對待，並有明確的代碼路徑來檢測和管理它們。
+
+## 說明
+
+NULL 值代表數據的缺失，這在語義上不同於零值或空字串。這種區別需要在整個應用程式中進行專門的邏輯處理：
+
+1. 在 UI 組件中，NULL 或 NA 值應該用清晰的語言呈現（例如，「不可用」、「無數據」）
+2. 在過濾操作中，應明確處理 NULL 值以避免意外結果
+3. 在數據聚合中，NULL 值需要特別考慮以防止結果失真
+4. 在比較和條件邏輯中，NULL/NA 處理應該是明確的而不是隱含的
+
+## 實施指南
+
+### 數據處理 {#data-processing}
+
+- 總是使用 `is.null()`、`is.na()` 或類似函數包含明確的 NULL 情況檢測
+- 在數據轉換中，明確決定如何處理 NULL/NA 值（移除、替換或保留）
+- 過濾時，考慮 NULL 值應該包含在結果中還是排除
+- 聚合時，確定 NULL 值是否應該計為零或完全排除
+
+### UI 設計 {#ui-design}
+
+- 使用清晰的語言在介面中表示 NULL/NA 值
+- 當操作導致 NULL/空數據集時提供使用者反饋
+- 考慮過濾器中的 NULL 選擇是意味著「包含所有」還是「不包含任何」
+- 為選擇、清除或表示 NULL 值設計直觀的 UX 模式
+
+### 函數設計 {#function-design}
+
+- 函數應該明確處理 NULL 輸入並記錄行為
+- 返回值應該指定如何表示 NULL 情況
+- 在執行操作之前包含 NULL 情況的驗證
+- 考慮提供控制 NULL/NA 行為的參數
+
+## 範例
+
+### UI 顯示 NULL 值
+
+```r
+# 不好：沒有明確的 NULL 處理
+value_display <- data$value
+
+# 好：明確的 NULL/NA 處理
+value_display <- if(is.null(data$value) || is.na(data$value)) {
+  "不可用"
+} else {
+  data$value
+}
+```
+
+### 具有 NULL 處理的過濾
+
+```r
+# 不好：過濾器中的隱含 NULL 處理
+filtered_data <- data[data$category == selected_category, ]
+
+# 好：過濾器中的明確 NULL 處理
+filtered_data <- if(is.null(selected_category) || selected_category == "") {
+  data  # 當沒有選擇類別時返回所有數據
+} else {
+  data[data$category == selected_category, ]
+}
+```
+
+### 具有 NULL 處理的聚合
+
+```r
+# 不好：在聚合中忽略 NULL 值
+total <- sum(data$values)
+
+# 好：聚合中的明確 NULL 處理
+total <- sum(data$values, na.rm = TRUE)  # 將 NA 視為零
+# 或
+valid_values <- data$values[!is.na(data$values)]
+total <- sum(valid_values)  # 完全排除 NA
+```
+
+## 相關原則
+
+- MP0034：ALL 類別特殊處理
+- R51：小寫變數命名
+- P19：自然語言 UI

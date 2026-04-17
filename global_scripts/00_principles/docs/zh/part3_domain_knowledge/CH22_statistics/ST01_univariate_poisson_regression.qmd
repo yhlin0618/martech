@@ -1,0 +1,239 @@
+---
+title: "ST01: 單變量 Poisson 迴歸用於銷售驅動因素分析"
+subtitle: "估計各預測變數對計數結果個別效果的方法論"
+chapter: "CH14"
+category: "statistics"
+number: "ST01"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "domain_knowledge"
+law: "統計學"
+article-number: "知識文章 1"
+migration_note: "依據 SO_P019 從 MK04 (CH13) 遷移"
+related_to:
+  - "D04_poisson_marketing"
+  - "MK01_ipt_theoretical_framework"
+  - "R118_statistical_significance_documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 知識文章 1：單變量 Poisson 迴歸 {#overview}
+
+## 第 1 節：方法論概述 {#methodology}
+
+### 1.1 核心原則 {#core-principle}
+
+**單變量 Poisson 迴歸**對每個預測變數**獨立**估計其對計數結果的效果。不是建立一個包含所有預測變數的模型，而是為每個預測變數建立獨立模型：
+
+$$Y_i \sim \text{Poisson}(\lambda_i), \quad \log(\lambda_i) = \beta_0 + \beta_1 X_{ij}$$
+
+其中：
+- $Y_i$ = 觀察值 $i$ 的計數結果（如銷售數量）
+- $X_{ij}$ = 觀察值 $i$ 的預測變數 $j$ 的值
+- $\beta_1$ = 預測變數 $j$ 對對數期望計數的效果
+
+### 1.2 為什麼使用單變量而非多變量？ {#why-univariate}
+
+| 面向 | 單變量 | 多變量 |
+|------|--------|--------|
+| **模型** | 對每個 j：`sales ~ x_j` | `sales ~ x_1 + x_2 + ... + x_p` |
+| **詮釋** | 每個預測變數的邊際效果 | 控制其他變數後的條件效果 |
+| **共線性** | 不受影響 | 導致不穩定估計、NA 係數 |
+| **稀疏資料** | 穩健 - 只需一個 X 有變異 | 需要滿秩設計矩陣 |
+| **計算速度** | 快（p 個小模型） | 慢（一個大模型） |
+
+### 1.3 稀疏計數資料的關鍵優勢 {#sparse-advantage}
+
+在有許多零值的銷售資料中：
+
+1. **每個時間單元都是觀察值**：零銷售的產品-日期仍是有效資料點
+2. **零值對 likelihood 有貢獻**：它們告訴我們期望計數較低
+3. **單變量模型總是可估計**：只要 X 有變異且至少有一個非零 Y
+
+## 第 2 節：理論基礎 {#theory}
+
+### 2.1 Poisson 迴歸基礎 {#poisson-basics}
+
+Poisson 分配用於建模計數資料：
+
+$$P(Y = k) = \frac{\lambda^k e^{-\lambda}}{k!}, \quad k = 0, 1, 2, ...$$
+
+關鍵特性：
+- 平均數 = 變異數 = $\lambda$
+- 支撐：非負整數
+- 適用於罕見事件（每日銷售）
+
+### 2.2 對數線性模型 {#log-linear}
+
+連結函數是自然對數：
+
+$$\log(\mathbb{E}[Y|X]) = \beta_0 + \beta_1 X$$
+
+這確保 $\lambda = e^{\beta_0 + \beta_1 X} > 0$ 永遠為正。
+
+### 2.3 發生率比 (IRR) {#irr}
+
+係數的指數轉換給出**發生率比**：
+
+$$\text{IRR} = e^{\beta_1}$$
+
+詮釋：
+- IRR = 1.5：X 增加一單位，期望計數乘以 1.5（增加 50%）
+- IRR = 0.8：X 增加一單位，期望計數乘以 0.8（減少 20%）
+- IRR = 1.0：無效果
+
+對於二元預測變數 (0/1)：
+- IRR = X=1 與 X=0 時期望計數的比值
+
+## 第 3 節：實作 {#implementation}
+
+### 3.1 演算法 {#algorithm}
+
+```r
+# 單變量 Poisson 迴歸虛擬碼
+results <- list()
+
+for (predictor in predictor_columns) {
+  # 擬合單變量模型
+  formula <- paste("sales ~", predictor)
+  model <- glm(formula, data = data, family = poisson())
+
+  # 提取係數和統計量
+  coef_info <- tidy(model) %>% filter(term == predictor)
+
+  # 計算 IRR
+  irr <- exp(coef_info$estimate)
+
+  results[[predictor]] <- list(
+    coefficient = coef_info$estimate,
+    std_error = coef_info$std.error,
+    p_value = coef_info$p.value,
+    irr = irr
+  )
+}
+```
+
+### 3.2 資料需求 {#data-requirements}
+
+每個單變量模型要可估計需要：
+
+| 需求 | 說明 |
+|------|------|
+| **非零結果** | 至少 1 個觀察值 Y > 0 |
+| **X 有變異** | X 不能是常數 |
+| **無完美分離** | X 不能完美預測 Y = 0 vs Y > 0 |
+
+### 3.3 處理時間序列資料 {#time-series}
+
+分析每日銷售時：
+
+1. **每天都是觀察值**：即使是零銷售的日子
+2. **完整時間序列**：用零值填補遺漏日期（依 R117 標記為 FILLED）
+3. **固定時間框架**：所有預測變數共享相同觀察期間
+
+資料結構範例：
+```
+| date       | sales | is_holiday | is_weekend | price | brand_A |
+|------------|-------|------------|------------|-------|---------|
+| 2024-01-01 | 0     | 1          | 0          | 100   | 1       |
+| 2024-01-02 | 2     | 0          | 0          | 100   | 1       |
+| 2024-01-03 | 0     | 0          | 0          | 95    | 1       |
+| ...        | ...   | ...        | ...        | ...   | ...     |
+```
+
+## 第 4 節：詮釋指南 {#interpretation}
+
+### 4.1 統計顯著性 {#significance}
+
+| p 值 | 詮釋 |
+|------|------|
+| < 0.001 | 高度顯著 (***) |
+| < 0.01  | 非常顯著 (**) |
+| < 0.05  | 顯著 (*) |
+| ≥ 0.05  | 不顯著 |
+
+### 4.2 透過 IRR 判斷效果大小 {#effect-size}
+
+| IRR 範圍 | 效果強度 |
+|----------|----------|
+| > 2.0 | 非常強正向 |
+| 1.5 - 2.0 | 強正向 |
+| 1.2 - 1.5 | 中等正向 |
+| 1.0 - 1.2 | 弱正向 |
+| 0.8 - 1.0 | 弱負向 |
+| 0.5 - 0.8 | 中等負向 |
+| < 0.5 | 強負向 |
+
+### 4.3 注意事項 {#caveats}
+
+1. **邊際 vs 條件效果**：單變量估計是邊際效果，未控制其他變數
+2. **混淆因子**：顯著的單變量效果可能被未測量變數混淆
+3. **多重比較**：預測變數多時，應用 Bonferroni 或 FDR 校正
+4. **過度離散**：若 Var(Y) > E(Y)，考慮使用負二項迴歸
+
+## 第 5 節：與替代方法的比較 {#alternatives}
+
+### 5.1 何時使用單變量方法 {#when-univariate}
+
+✅ 使用單變量當：
+- 目標是篩選許多潛在預測變數
+- 資料有共線性問題
+- 稀疏結果（許多零值）
+- 可詮釋性最重要
+- 速度重要
+
+### 5.2 何時使用多變量方法 {#when-multivariate}
+
+✅ 使用多變量當：
+- 需要控制混淆因子
+- 預測變數互相獨立
+- 有足夠的非零結果
+- 對偏效果有興趣
+
+### 5.3 混合方法 {#hybrid}
+
+1. 用單變量模型篩選
+2. 選擇顯著的預測變數
+3. 用選定的預測變數擬合多變量模型
+
+## 第 6 節：MAMBA 實作 {#mamba-implementation}
+
+### 6.1 腳本參考 {#script-ref}
+
+- **CBZ**: `scripts/update_scripts/DRV/cbz/cbz_D04_02.R`
+- **EBY**: `scripts/update_scripts/DRV/eby/eby_D04_02.R`
+
+### 6.2 輸出 Schema {#output-schema}
+
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| `predictor` | VARCHAR | 預測變數名稱 |
+| `coefficient` | DOUBLE | 對數線性係數 (β₁) |
+| `std_error` | DOUBLE | 係數標準誤 |
+| `p_value` | DOUBLE | 統計顯著性 |
+| `incidence_rate_ratio` | DOUBLE | exp(coefficient) |
+| `predictor_type` | VARCHAR | 商業分類 |
+| `estimation_status` | VARCHAR | 'estimated' 或 'not_estimable' |
+
+### 6.3 UI 模組 {#ui-modules}
+
+結果依 `predictor_type` 顯示在三個模組：
+
+| 模組 | predictor_type | 範例 |
+|------|----------------|------|
+| poissonTimeAnalysis | `time_feature` | month_1, is_weekend, year |
+| poissonFeatureAnalysis | `product_attribute` | brand, material, price |
+| poissonCommentAnalysis | `comment_attribute` | rating, sentiment |
+
+## 參考文獻 {#references}
+
+1. McCullagh, P., & Nelder, J. A. (1989). *Generalized Linear Models* (2nd ed.). Chapman & Hall.
+2. Cameron, A. C., & Trivedi, P. K. (2013). *Regression Analysis of Count Data* (2nd ed.). Cambridge University Press.
+3. Agresti, A. (2015). *Foundations of Linear and Generalized Linear Models*. Wiley.

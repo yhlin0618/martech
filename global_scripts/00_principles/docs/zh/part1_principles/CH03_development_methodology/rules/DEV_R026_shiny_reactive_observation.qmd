@@ -1,0 +1,170 @@
+---
+title: "DEV_R026: Shiny 反應式觀察規則"
+subtitle: "在 Shiny 應用程式中，只有明確觀察的反應式表達式會觸發相依代碼的執行，只有渲染的輸出會更新 UI。所有關鍵的反應式邏輯必須有明確的觀察者以確保正確執行"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R026"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 26
+  title: "Shiny 反應式觀察規則"
+related_to:
+  - "MP52: 單向資料流"
+  - "MP53: 回饋迴圈"
+  - "MP54: UI-Server 對應"
+  - "R88: Shiny 模組 ID 處理"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十六條：Shiny 反應式觀察規則 {#overview}
+
+**開發方法法第二十六條（Shiny 反應式觀察規則）**
+
+此規則確保 Shiny 應用程式中的反應式邏輯正確執行，特別是在模組化應用程式中。
+
+:::{.callout-important}
+## 核心規則
+在 Shiny 應用程式中，只有明確觀察的反應式表達式會觸發相依代碼的執行，只有渲染的輸出會更新 UI。所有關鍵的反應式邏輯必須有明確的觀察者以確保正確執行，特別是在模組化應用程式中。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+Shiny 的反應式程式設計模型依賴於建立清晰的依賴鏈。當這些鏈斷裂或不完整時，組件可能看似工作但無法回應使用者輸入或資料變化。
+
+# 第二項：實施指南 {#implementation-guidelines}
+
+## 第一款：需要明確觀察 {#explicit-observation-required}
+
+所有不直接連接到輸出的關鍵反應式表達式必須使用 `observe()` 或 `observeEvent()` 明確觀察。
+
+## 第二款：模組伺服器執行 {#module-server-execution}
+
+使用 Shiny 模組時，確保模組伺服器函數被明確觸發而非僅僅定義。
+
+## 第三款：UI 獨立邏輯 {#ui-independent-logic}
+
+任何應該無論 UI 可見性如何都執行的伺服器端邏輯必須被明確觀察。
+
+## 第四款：調試模式 {#debugging-pattern}
+
+如果組件在顯示調試輸出時工作但在隱藏時失敗，這表示反應鏈斷裂。
+
+## 第五款：完整的反應鏈 {#complete-reactive-chains}
+
+驗證所有反應式表達式都是完整鏈的一部分，最終連接到 UI 輸出或明確的觀察者。
+
+# 第三項：範例 {#examples}
+
+## 第一款：問題模式（斷裂的鏈） {#problematic-pattern}
+
+```r
+# 反應式表達式的定義
+filtered_data <- reactive({
+  # 根據輸入過濾資料的代碼
+  # ...
+})
+
+# 顯示調試資訊的 UI 輸出
+output$debug_output <- renderPrint({
+  # 此輸出恰好依賴於 filtered_data()
+  # 並且是唯一觸發其執行的東西
+  str(filtered_data())
+})
+
+# 當調試輸出隱藏時，過濾器 UI 顯示但不工作
+```
+
+## 第二款：修正模式（完整的鏈） {#corrected-pattern}
+
+```r
+# 反應式表達式的定義
+filtered_data <- reactive({
+  # 根據輸入過濾資料的代碼
+  # ...
+})
+
+# 明確的觀察者確保 filtered_data 無論 UI 可見性如何都運行
+observe({
+  # 強制 filtered_data 執行
+  filtered_data()
+})
+
+# 調試輸出不影響 filtered_data 是否運行
+output$debug_output <- renderPrint({
+  str(filtered_data())
+})
+
+# 過濾器現在無論調試輸出可見性如何都會工作
+```
+
+# 第四項：模組模式最佳實踐 {#module-pattern-best-practice}
+
+創建 Shiny 模組時，確保伺服器邏輯始終執行：
+
+```r
+# 模組創建
+myModule <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # 模組邏輯
+  })
+}
+
+# 在主應用程式中 - 錯誤：這創建了伺服器函數但沒有執行它！
+server <- function(input, output, session) {
+  my_module_server <- myModule("module1")  # 沒有東西觀察這個
+}
+
+# 在主應用程式中 - 正確：這確保模組伺服器運行
+server <- function(input, output, session) {
+  # 直接呼叫模組
+  myModule("module1")
+  
+  # 或者如果你需要捕獲其返回值
+  my_module_data <- myModule("module1")
+  
+  # 確保任何反應式表達式被觀察
+  observe({
+    my_module_data()
+  })
+}
+```
+
+# 第五項：邊緣案例：條件式 UI {#edge-case-conditional-ui}
+
+使用條件式 UI 時，特別小心確保伺服器邏輯無論 UI 可見性如何都執行：
+
+```r
+# 具有必須始終運行的伺服器邏輯的條件式 UI
+conditionalPanel(
+  condition = "input.show_panel == true",
+  div(id = "conditional_content", ...)
+)
+
+# 伺服器邏輯必須無論面板可見性如何都被觀察
+observe({
+  # 對條件面板輸入進行操作的邏輯
+  # 即使面板隱藏時也會運行
+})
+```
+
+# 第六項：相關原則 {#related-principles}
+
+- MP52 單向資料流
+- MP53 回饋迴圈
+- MP54 UI-Server 對應
+- R88 Shiny 模組 ID 處理
+
+---
+
+*基於：開發方法法第二十六條*  
+*相關連結：[MP52 單向資料流](../../CH00_fundamental_principles/meta_principles/MP052_unidirectional_data_flow.qmd), [R88 Shiny 模組 ID 處理](../../CH04_ui_components/rules/UI_R002_shiny_module_id_handling.qmd)*

@@ -1,0 +1,300 @@
+---
+title: "DEV_R010: AI 參數修改規則"
+subtitle: "當 AI 系統（包括像 Claude 的 LLM）修改參數或配置檔案時，必須遵循緩慢變化維度第二類型（SCD Type 2）方法，確保僅追加不覆蓋"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R010"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 10
+  title: "AI 參數修改規則"
+related_to:
+  - "MP014: 變更追蹤"
+  - "MP012: 公司中心設計"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十條：AI 參數修改規則 {#overview}
+
+**開發方法法第十條（AI 參數修改規則）**
+
+當 AI 系統（包括像 Claude 的 LLM）修改參數或配置檔案時，必須遵循緩慢變化維度第二類型（SCD Type 2）方法：
+
+1. **僅追加原則**：AI 永不覆蓋或刪除現有參數條目
+2. **累加變更**：新參數值必須作為新行或條目添加，並包含適當的元資料
+3. **變更追蹤**：所有 AI 生成的修改必須包含版本資訊和理由
+4. **原始保留**：原始參數值必須保留在系統中以供參考和可能的回滾
+
+:::{.callout-important}
+## 核心要求
+SCD Type 2 方法維護所有參數變更的完整歷史，提供強大的可審計性、可追溯性和回滾能力。
+:::
+
+# 第一項：概念框架 {#conceptual-framework}
+
+## 第一款：歷史完整性 {#historical-integrity}
+
+SCD Type 2 方法維護參數變更的完整歷史：
+
+1. **歷史完整性**：保留參數演變的完整歷史
+2. **可審計性**：能夠追蹤誰進行了變更以及原因
+3. **回滾支援**：便於在需要時恢復到先前的參數狀態
+4. **可解釋性**：記錄每個參數修改背後的推理
+
+## 第二款：參數檔案結構 {#parameter-file-structure}
+
+參數檔案應透過包含以下內容來支援 SCD Type 2 方法：
+
+```
+參數名稱 | 參數值 | 版本 | 生效日期 | 結束日期 | 修改者 | 理由 | 活動標記
+```
+
+其中：
+- **活動標記**：指示這是否為當前活動的參數值（1=活動，0=歷史）
+- **結束日期**：當前版本設為 NULL，否則指示此版本何時變為非活動
+
+# 第二項：實施要求 {#implementation-requirements}
+
+## 第一款：Excel 參數檔案 {#excel-parameter-files}
+
+對於基於 Excel 的參數檔案：
+
+1. **工作表結構**：除參數資料外還包含版本欄位
+2. **篩選欄位**：始終包含「Active」或「Include」欄位（1=活動，0=非活動）
+3. **資料處理**：載入時篩選 `active == 1` 或 `include != 0` 的記錄
+
+```r
+# 範例：使用 SCD Type 2 篩選載入資料
+platform_data <- param_data %>%
+  # 篩選掉非活動行
+  dplyr::filter(is.na(include) | include != 0) %>%
+  # 處理活動資料
+  dplyr::mutate(
+    platform_key = tolower(gsub(" ", "", platform_name_english)),
+    platform_display = platform_name_english
+  )
+```
+
+## 第二款：AI 修改程序 {#ai-modification-procedure}
+
+當 AI 修改參數時，必須遵循此程序：
+
+```
+1. 讀取當前參數檔案到資料框
+2. 識別要變更的記錄
+3. 更新識別的記錄：
+   - 為原始條目設定 active=0 或 include=0
+   - 如果存在 end_date 欄位，設為當前日期
+4. 創建新記錄：
+   - 從原始條目複製所有欄位
+   - 設定新參數值
+   - 設定 active=1 或 include=1
+   - 設定 version = previous_version + 1
+   - 設定 modified_by 為 AI 識別符
+   - 設定 effective_date 為當前日期
+   - 設定 end_date 為 NULL
+   - 包含修改理由
+5. 將新記錄追加到資料框
+6. 將更新的資料框寫入參數檔案
+```
+
+## 第三款：處理不同參數類型 {#handling-different-parameter-types}
+
+### 字典型參數
+
+```r
+# 錯誤 - 直接替換
+ui_terminology_dictionary$Chinese[5] <- "新的翻譯"
+
+# 正確 - SCD Type 2 方法
+new_entry <- data.frame(
+  English = ui_terminology_dictionary$English[5],
+  Chinese = "新的翻譯",
+  Version = max(ui_terminology_dictionary$Version, na.rm=TRUE) + 1,
+  EffectiveDate = Sys.Date(),
+  EndDate = NA,
+  ModifiedBy = "Claude AI",
+  Rationale = "改善翻譯準確性",
+  Active = 1
+)
+
+# 將舊條目設為非活動
+ui_terminology_dictionary$Active[5] <- 0
+ui_terminology_dictionary$EndDate[5] <- Sys.Date()
+
+# 追加新條目
+ui_terminology_dictionary <- rbind(ui_terminology_dictionary, new_entry)
+```
+
+### YAML 配置
+
+```yaml
+# 支援版本控制的 YAML 範例
+parameters:
+  - name: refresh_interval
+    values:
+      - value: 300
+        version: 1
+        effective_date: 2025-04-01
+        end_date: 2025-04-04
+        modified_by: Initial Config
+        rationale: 預設設定
+        active: false
+      - value: 600
+        version: 2
+        effective_date: 2025-04-04
+        end_date: null
+        modified_by: Claude AI
+        rationale: 減少伺服器負載
+        active: true
+```
+
+# 第三項：實施範例 {#implementation-examples}
+
+## 第一款：UI 術語字典更新 {#ui-terminology-dictionary-updates}
+
+當 AI 更新 UI 術語時：
+
+```r
+update_terminology <- function(term, new_translation, language, rationale) {
+  # 載入字典
+  dict_path <- file.path("app_data", "parameters", "ui_terminology_dictionary.xlsx")
+  ui_data <- readxl::read_excel(dict_path)
+  
+  # 檢查術語是否存在
+  term_idx <- which(ui_data$English == term)
+  
+  if (length(term_idx) > 0) {
+    # 現有術語 - SCD Type 2 方法
+    if (!"Active" %in% names(ui_data)) {
+      # 如果不存在則添加 Active 欄位
+      ui_data$Active <- 1
+    }
+    if (!"Version" %in% names(ui_data)) {
+      # 如果不存在則添加 Version 欄位
+      ui_data$Version <- 1
+    }
+    
+    # 將現有條目標記為非活動
+    ui_data$Active[term_idx] <- 0
+    
+    # 創建新條目
+    new_entry <- ui_data[term_idx, ]
+    new_entry[[language]] <- new_translation
+    new_entry$Version <- max(ui_data$Version, na.rm=TRUE) + 1
+    new_entry$Active <- 1
+    new_entry$ModifiedBy <- "Claude AI"
+    new_entry$Rationale <- rationale
+    
+    # 追加新條目
+    ui_data <- rbind(ui_data, new_entry)
+  }
+  
+  # 將更新的字典寫回檔案
+  openxlsx::write.xlsx(ui_data, dict_path)
+  
+  return(ui_data)
+}
+```
+
+## 第二款：平台資料更新 {#platform-data-updates}
+
+當 AI 更新平台配置時：
+
+```r
+update_platform_parameter <- function(platform_name, parameter_name, new_value, rationale) {
+  # 載入平台資料
+  platform_path <- file.path("app_data", "parameters", "platform.xlsx")
+  platform_data <- readxl::read_excel(platform_path)
+  
+  # 找到平台記錄
+  platform_idx <- which(platform_data$platform_name_english == platform_name)
+  
+  if (length(platform_idx) > 0) {
+    # 現有平台 - SCD Type 2 方法
+    if (!"include" %in% names(platform_data)) {
+      # 如果不存在則添加 include 欄位
+      platform_data$include <- 1
+    }
+    
+    # 複製原始行
+    new_row <- platform_data[platform_idx, ]
+    
+    # 將原始標記為非活動
+    platform_data$include[platform_idx] <- 0
+    
+    # 在新行中更新參數
+    new_row[[parameter_name]] <- new_value
+    new_row$include <- 1
+    
+    # 如果存在這些欄位則添加元資料
+    if ("modified_by" %in% names(platform_data)) {
+      new_row$modified_by <- "Claude AI"
+    }
+    if ("modification_date" %in% names(platform_data)) {
+      new_row$modification_date <- Sys.Date()
+    }
+    if ("rationale" %in% names(platform_data)) {
+      new_row$rationale <- rationale
+    }
+    
+    # 追加新行
+    platform_data <- rbind(platform_data, new_row)
+    
+    # 寫回檔案
+    openxlsx::write.xlsx(platform_data, platform_path)
+    
+    return(platform_data)
+  }
+}
+```
+
+# 第四項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **責任歸屬**：清晰追蹤所有 AI 生成的變更
+2. **可逆性**：易於恢復到先前的參數狀態
+3. **透明度**：變更包含理由和元資料
+4. **安全性**：原始值永不丟失或覆蓋
+5. **持續改進**：允許參數演進同時維護歷史
+
+## 第二款：管理優點 {#management-benefits}
+
+1. **合規性**：滿足審計和合規要求
+2. **治理**：支援有效的參數管理和治理
+3. **協作**：促進人類和 AI 系統之間的協作
+4. **學習**：從參數演變歷史中學習
+
+# 第五項：監控和合規 {#monitoring-and-compliance}
+
+## 第一款：確保合規 {#ensure-compliance}
+
+為確保遵守此規則：
+
+1. **定期審計**：定期檢查參數檔案以確保正確的 SCD Type 2 實施
+2. **自動檢查**：實施驗證以確保 AI 工具遵循僅追加原則
+3. **變更報告**：生成 AI 系統參數變更的報告
+4. **版本控制**：在可能的情況下在版本控制系統中維護參數檔案
+
+## 第二款：監控指標 {#monitoring-metrics}
+
+1. **變更頻率**：追蹤 AI 修改參數的頻率
+2. **回滾率**：監控需要回滾的變更百分比
+3. **理由品質**：評估 AI 提供的理由的品質
+4. **合規率**：測量遵守 SCD Type 2 方法的百分比
+
+---
+
+*基於：開發方法法第十條*  
+*相關連結：[MP014 變更追蹤](../../CH00_fundamental_principles/meta_principles/MP014_change_tracking.qmd), [MP012 公司中心設計](../../CH00_fundamental_principles/meta_principles/MP012_company_centered_design.qmd)*

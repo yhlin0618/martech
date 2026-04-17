@@ -1,0 +1,243 @@
+---
+title: "DEV_R014: data.table 向量化操作"
+subtitle: "在 R 中使用 data.table 套件時，利用其專門的向量化語法進行資料轉換、聚合和操作，而非使用顯式迴圈或一般 R 結構"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R014"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 14
+  title: "向量化操作規則"
+related_to:
+  - "MP030: 向量化原則"
+  - "DEV_R001: 應用函數優於迴圈"
+  - "MP080: 聚合變數命名約定"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十四條：向量化操作規則 {#overview}
+
+**開發方法法第十四條（向量化操作規則）**
+
+此規則建立在 R 中使用 data.table 套件時利用向量化操作的原則。
+
+:::{.callout-important}
+## 核心規則
+在 R 中使用 data.table 套件時，利用其專門的向量化語法進行資料轉換、聚合和操作，而非使用顯式迴圈或一般 R 結構。
+:::
+
+# 第一項：規則理由 {#rationale}
+
+## 第一款：data.table 優勢 {#advantages}
+
+data.table 提供高度優化、簡潔的資料操作語法：
+
+1. **顯著改善效能**：透過 C 優化的實施
+2. **減少記憶體開銷**：透過引用語義和專門演算法
+3. **增強程式碼可讀性**：使用一致、表達性的語法
+4. **啟用複雜操作**：在單一表達式中
+5. **最小化臨時物件創建**：透過引用操作
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：基本 data.table 操作 {#basic-operations}
+
+使用全面的語法結構 data.table 操作：
+
+```r
+DT[i, j, by]
+```
+
+其中：
+- `i`：過濾/子集行（WHERE）
+- `j`：選擇/計算/更新欄位（SELECT/UPDATE）
+- `by`：按指定欄位分組（GROUP BY）
+
+## 第二款：向量化聚合 {#vectorized-aggregations}
+
+使用 data.table 的內建函數和列表語法進行聚合：
+
+```r
+# 單一操作中的多個聚合（向量化）
+result <- dt[, .(
+  sum_spent_by_customer = sum(amount, na.rm = TRUE),
+  count_transactions = .N,
+  mean_amount = mean(amount, na.rm = TRUE),
+  min_time = min(transaction_time)
+), by = customer_id]
+```
+
+## 第三款：高效欄位創建/修改 {#column-operations}
+
+使用 `:=` 進行引用欄位添加或修改：
+
+```r
+# 向量化欄位創建
+dt[, `:=`(
+  new_col1 = value1 * 2,
+  new_col2 = log(value2),
+  new_col3 = ifelse(condition, valueA, valueB)
+)]
+```
+
+## 第四款：分組操作 {#grouped-operations}
+
+使用 `by` 參數進行分組操作：
+
+```r
+# 向量化分組操作
+dt[, .(
+  group_sum = sum(value, na.rm = TRUE),
+  group_count = .N,
+  group_mean = mean(value, na.rm = TRUE)
+), by = .(group1, group2)]
+```
+
+# 第三項：特殊符號 {#special-symbols}
+
+## 第一款：data.table 特殊符號 {#symbols}
+
+利用 data.table 的特殊符號增強操作：
+
+- `.N`：當前群組中的行數
+- `.I`：原始資料中的行號
+- `.GRP`：群組計數器
+- `.SD`：當前群組的資料子集
+- `.SDcols`：要包含在 .SD 中的欄位
+
+## 第二款：.SD 與 lapply {#sd-lapply}
+
+使用 `.SD` 與 `lapply()` 對多個欄位應用操作：
+
+```r
+# 在群組內對多個欄位應用相同函數
+dt[, lapply(.SD, sum), by = group, .SDcols = patterns("^value")]
+
+# 對 .SD 的多個操作
+dt[, c(
+  .(group_total = sum(value)),
+  lapply(.SD, function(x) mean(x, na.rm = TRUE))
+), by = group, .SDcols = patterns("^metric_")]
+```
+
+# 第四項：正確與錯誤範例 {#examples}
+
+## 第一款：錯誤（非向量化）{#incorrect}
+
+```r
+# 使用迴圈的非向量化方法（避免）
+result <- data.table(customer_id = unique(dt$customer_id))
+for (id in result$customer_id) {
+  subset <- dt[customer_id == id]
+  result[customer_id == id, sum_spent := sum(subset$amount)]
+  result[customer_id == id, count_transactions := nrow(subset)]
+}
+```
+
+## 第二款：正確（向量化 data.table）{#correct}
+
+```r
+# 向量化 data.table 方法（首選）
+result <- dt[, .(
+  sum_spent = sum(amount, na.rm = TRUE),
+  count_transactions = .N
+), by = customer_id]
+```
+
+# 第五項：進階模式 {#advanced-patterns}
+
+## 第一款：鏈式操作 {#chained-operations}
+
+```r
+# 使用鏈式處理步驟
+result <- dt[
+  amount > 0,                              # 過濾步驟
+][
+  , .(total = sum(amount)), by = customer  # 聚合步驟
+][
+  order(-total)                            # 排序步驟
+][
+  1:10                                     # 限制步驟
+]
+```
+
+## 第二款：條件聚合 {#conditional-aggregations}
+
+```r
+# 使用條件邏輯聚合
+dt[, .(
+  sum_amount = sum(amount, na.rm = TRUE),
+  sum_positive = sum(amount[amount > 0], na.rm = TRUE),
+  sum_negative = sum(amount[amount < 0], na.rm = TRUE),
+  count_positive = sum(amount > 0),
+  count_negative = sum(amount < 0)
+), by = category]
+```
+
+## 第三款：動態欄位創建 {#dynamic-columns}
+
+```r
+# 使用模式創建多個欄位
+metrics <- c("sum", "mean", "min", "max")
+cols <- c("value1", "value2")
+
+# 動態創建所有組合
+dt[, c(
+  .(group_id = group_id),
+  unlist(lapply(metrics, function(m) {
+    lapply(cols, function(c) {
+      if (m == "sum") return(sum(get(c), na.rm = TRUE))
+      if (m == "mean") return(mean(get(c), na.rm = TRUE))
+      if (m == "min") return(min(get(c), na.rm = TRUE))
+      if (m == "max") return(max(get(c), na.rm = TRUE))
+    })
+  }), recursive = FALSE)
+), by = group_id]
+```
+
+# 第六項：與聚合變數命名整合 {#naming-integration}
+
+當使用 data.table 進行聚合時，遵循 MP080（聚合變數命名）：
+
+```r
+# 同時遵循 MP080 和 DEV_R014
+result <- dt[, .(
+  sum_spent_by_customer = sum(amount, na.rm = TRUE),
+  count_transactions_by_customer = .N,
+  min_time_by_customer = min(transaction_time)
+), by = customer_id]
+```
+
+# 第七項：效能考量 {#performance}
+
+1. **對大型資料集使用鍵/索引**：`setkey(dt, column)` 或 `dt[column == value, on = "column"]`
+2. **最小化 j 表達式**：盡可能在單一 j 表達式中組合操作
+3. **對多個單欄位更新使用 set()**：`set(dt, i, j, value)` 比 `:=` 更快
+4. **以欄位而非行的角度思考**：操作應轉換整個欄位
+
+# 第八項：例外情況 {#exceptions}
+
+有一些情況可能需要替代方法：
+
+1. **非常複雜的累積計算**：依賴先前結果
+2. **遞歸操作**：無法向量化
+3. **非常大型資料的操作**：因記憶體原因需要分塊
+
+# 第九項：結論 {#conclusion}
+
+利用 data.table 的向量化操作顯著改善效能、程式碼清晰度和一致性。透過遵循此規則，您同時符合 R 的函數式程式設計範式和 data.table 為大型資料操作優化的設計。
+
+---
+
+*基於：開發方法法第十四條*  
+*相關連結：[MP030 向量化原則](../../CH00_fundamental_principles/meta_principles/MP030_vectorization.qmd), [DEV_R001 應用函數優於迴圈](DEV_R001_apply_over_loops.qmd)*

@@ -1,0 +1,509 @@
+---
+title: "DM_P004: Dual Parameter Sources Principle"
+subtitle: "Use YAML for hierarchical config and Excel for tabular parameters"
+chapter: "CH02"
+category: "principle"
+number: "DM_P004"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Data Management Law"
+article: "Article 4"
+derives_from:
+  - "CH00.MP017: Separation of Concerns"
+  - "CH00.MP011: Sensible Defaults"
+  - "CH00.MP006: Data Source Hierarchy"
+related_to:
+  - "SO_P010: Config-Driven Customization"
+  - "SO_R005: App YAML Configuration"
+  - "DM_P001: Data Integrity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Data Management Law Article 4 (Dual Parameter Sources Principle)**
+
+This article establishes that application parameters must be sourced from the most appropriate format based on their structure and purpose: YAML Configuration for hierarchical, simple, or unstructured parameters, and Excel (.xlsx) Files for tabular, relationship-driven, or structured parameters. All parameters, regardless of source, must be integrated into a unified configuration object during initialization.
+
+:::{.callout-important}
+## Core Principle
+Different parameter types have optimal storage formats. Use YAML for hierarchical configuration and developer-managed settings. Use Excel for tabular data and business-user-editable parameters. Integrate both into a unified configuration object at initialization.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Format Appropriateness {#format-appropriate}
+
+This principle acknowledges that different parameter types have different natural representations:
+
+1. **Format Appropriateness**: Each parameter type has an optimal storage format
+2. **User Accessibility**: Excel files are more accessible to non-developers for certain parameters
+3. **Data Structure Alignment**: Tabular data belongs in tabular files; hierarchical data in hierarchical files
+4. **Integration Efficiency**: Loading all parameters at initialization creates a single source of truth
+5. **Flexible Extensibility**: New parameters can be added in either format without code restructuring
+
+## Subsection 2: Benefits {#benefits}
+
+第一項：維護效率 (Maintenance efficiency)
+
+- Business users can update Excel files without developer intervention
+- Developers can modify YAML without affecting business data
+- Clear separation of technical and business configuration
+- Reduced errors from format mismatches
+
+第二項：資料完整性 (Data integrity)
+
+- Each format enforces appropriate structure
+- Excel provides built-in validation for tabular data
+- YAML supports complex hierarchical relationships
+- Unified loading ensures consistency
+
+# Section 2: Parameter Type Guidelines {#guidelines}
+
+## Subsection 1: YAML-Appropriate Parameters {#yaml-params}
+
+Store these parameters in app_config.yaml:
+
+第一項：應用程式設定 (Application settings)
+
+```yaml
+# Application configuration
+app:
+  port: 3838
+  mode: "production"
+  debug: false
+  timeout: 300
+  max_upload_size: 100MB
+```
+
+第二項：功能旗標與階層設定 (Feature flags and hierarchical settings)
+
+```yaml
+# Feature toggles
+features:
+  advanced_analytics: true
+  ai_recommendations: false
+  export_functionality: true
+  
+# Nested configuration
+ui:
+  theme:
+    primary_color: "#007bff"
+    secondary_color: "#6c757d"
+  layout:
+    sidebar_width: 250
+    header_height: 60
+```
+
+第三項：環境特定設定 (Environment-specific settings)
+
+```yaml
+# Environment configuration
+environments:
+  development:
+    database: "dev_db"
+    api_endpoint: "https://dev.api.example.com"
+  production:
+    database: "prod_db"
+    api_endpoint: "https://api.example.com"
+```
+
+## Subsection 2: Excel-Appropriate Parameters {#excel-params}
+
+Store these parameters in .xlsx files:
+
+第一項：行銷通路與平台 (Marketing channels and platforms)
+
+```
+# platform.xlsx
+| marketing_channel | marketing_channel_id | platform_code | is_active |
+|------------------|---------------------|---------------|-----------|
+| Amazon           | amazon              | AMZ           | TRUE      |
+| Official Website | website             | WEB           | TRUE      |
+| Retail Store     | retail              | RTL           | TRUE      |
+| eBay            | ebay                | EBY           | FALSE     |
+```
+
+第二項：產品目錄 (Product catalogs)
+
+```
+# product_line.xlsx
+| product_id | product_name | category | price | min_order | max_order |
+|------------|-------------|----------|-------|-----------|-----------|
+| PRD001     | Widget A    | Hardware | 19.99 | 1         | 100       |
+| PRD002     | Widget B    | Hardware | 29.99 | 1         | 50        |
+| PRD003     | Service X   | Service  | 99.99 | 1         | 10        |
+```
+
+第三項：UI 術語字典 (UI terminology dictionary)
+
+```
+# ui_terminology_dictionary.xlsx
+| term_id | english | chinese | japanese | description |
+|---------|---------|---------|----------|-------------|
+| btn_submit | Submit | 提交 | 送信 | Submit button label |
+| lbl_customer | Customer | 客戶 | 顧客 | Customer label |
+| msg_success | Success | 成功 | 成功 | Success message |
+```
+
+# Section 3: Decision Framework {#decision-framework}
+
+## Subsection 1: Structure Determinism {#structure}
+
+第一項：結構決定因素 (Structure determination factors)
+
+```r
+# When structure is determined by code → YAML
+sidebar_config:
+  sections:
+    - id: filters
+      type: collapsible
+      components: [date_range, channel_select]
+    
+# When structure is fixed but values change → Excel
+# marketing_channels.xlsx with columns: name, id, active
+```
+
+第二項：編輯頻率與對象 (Edit frequency and audience)
+
+Use Excel for configurations that:
+- Require frequent updates by non-developers
+- Benefit from spreadsheet-like editing
+- Need to be handed off to business users
+
+Use YAML for configurations that:
+- Change rarely or only by developers
+- Are closely tied to application architecture
+- Require developer review for each change
+
+## Subsection 2: Content Complexity {#complexity}
+
+第一項：適合 Excel 的內容 (Content suitable for Excel)
+
+```r
+# Multi-row similar structure
+products <- read_excel("products.xlsx")
+# 100+ rows of product data
+
+# Multi-language parallel content
+translations <- read_excel("translations.xlsx")
+# Columns: term_id, en, zh, ja, ko, etc.
+
+# Complex relationships
+mappings <- read_excel("category_mappings.xlsx")
+# Old_category → New_category mappings
+```
+
+第二項：適合 YAML 的內容 (Content suitable for YAML)
+
+```yaml
+# Deeply nested structures
+navigation:
+  main:
+    dashboard:
+      overview:
+        metrics: [sales, orders, customers]
+      analytics:
+        charts: [trend, distribution, comparison]
+        
+# Mixed property types
+component:
+  enabled: true
+  refresh_rate: 30
+  data_source: "primary"
+  options:
+    - value: 1
+      label: "Option 1"
+```
+
+# Section 4: Implementation Pattern {#implementation}
+
+## Subsection 1: Standard Loading Pattern {#loading}
+
+第一項：統一載入函數 (Unified loading function)
+
+```r
+# Standard pattern for parameter loading
+load_all_parameters <- function(yaml_path = "app_config.yaml") {
+  # 1. Load YAML configuration
+  config <- yaml::read_yaml(yaml_path)
+  
+  # 2. Determine parameters folder
+  params_folder <- if (!is.null(config$brand$parameters_folder)) {
+    config$brand$parameters_folder
+  } else {
+    file.path("app_data", "parameters")
+  }
+  
+  # 3. Load Excel parameter files
+  excel_files <- list.files(
+    params_folder, 
+    pattern = "\\.xlsx$", 
+    full.names = TRUE
+  )
+  
+  # 4. Initialize parameters section
+  config$parameters <- list()
+  
+  # 5. Process each Excel file
+  for (file_path in excel_files) {
+    file_name <- tools::file_path_sans_ext(basename(file_path))
+    
+    tryCatch({
+      # Load Excel file
+      data <- readxl::read_excel(file_path)
+      
+      # Store in config
+      config$parameters[[file_name]] <- data
+      
+      # Special processing for specific parameter types
+      config <- process_special_parameters(config, file_name, data)
+      
+      message(sprintf("Loaded %d rows from %s", 
+                      nrow(data), file_name))
+      
+    }, error = function(e) {
+      warning(sprintf("Error loading parameter file %s: %s", 
+                      file_name, e$message))
+    })
+  }
+  
+  return(config)
+}
+```
+
+## Subsection 2: Special Parameter Processing {#processing}
+
+第一項：特殊參數處理 (Special parameter processing)
+
+```r
+# Process special parameter types that need integration
+process_special_parameters <- function(config, file_name, data) {
+  
+  # Platform-specific processing
+  if (file_name == "platform") {
+    if (all(c("marketing_channel", "marketing_channel_id") %in% 
+            colnames(data))) {
+      
+      # Filter active channels
+      active_data <- data[data$is_active == TRUE, ]
+      
+      # Create marketing channels list
+      channels <- setNames(
+        as.list(active_data$marketing_channel_id), 
+        active_data$marketing_channel
+      )
+      
+      config$company$marketing_channels <- channels
+      
+      if (length(channels) > 0) {
+        config$company$default_channel <- names(channels)[1]
+      }
+    }
+  }
+  
+  # UI terminology processing
+  if (file_name == "ui_terminology_dictionary") {
+    # Create fast lookup structure
+    config$ui$terms <- list()
+    
+    for (i in seq_len(nrow(data))) {
+      term_id <- data$term_id[i]
+      config$ui$terms[[term_id]] <- as.list(data[i, ])
+    }
+  }
+  
+  # Product catalog processing
+  if (file_name == "product_line") {
+    # Create product lookup by ID
+    config$products <- list()
+    
+    for (i in seq_len(nrow(data))) {
+      product_id <- data$product_id[i]
+      config$products[[product_id]] <- as.list(data[i, ])
+    }
+  }
+  
+  return(config)
+}
+```
+
+# Section 5: Parameter Access Pattern {#access}
+
+## Subsection 1: Consistent Access {#consistent-access}
+
+第一項：存取模式 (Access patterns)
+
+```r
+# Access YAML-based configuration
+debug_mode <- config$app$debug
+app_language <- config$brand$language
+feature_enabled <- config$features$advanced_analytics
+
+# Access Excel-based parameters (pre-processed)
+marketing_channels <- config$company$marketing_channels
+default_channel <- config$company$default_channel
+
+# Access Excel-based parameters (raw data frames)
+product_df <- config$parameters$product_line
+platform_df <- config$parameters$platform
+
+# Access processed lookups
+product_info <- config$products[["PRD001"]]
+term_translation <- config$ui$terms[["btn_submit"]]$chinese
+```
+
+第二項：安全存取 (Safe access)
+
+```r
+# Safe parameter access with defaults
+get_param <- function(config, path, default = NULL) {
+  parts <- strsplit(path, "\\.")[[1]]
+  value <- config
+  
+  for (part in parts) {
+    if (is.null(value) || !part %in% names(value)) {
+      return(default)
+    }
+    value <- value[[part]]
+  }
+  
+  return(value)
+}
+
+# Usage
+channels <- get_param(config, "company.marketing_channels", 
+                      list("Default" = "default"))
+debug <- get_param(config, "app.debug", FALSE)
+```
+
+# Section 6: Override Hierarchy {#override}
+
+## Subsection 1: Precedence Order {#precedence}
+
+Parameters can be overridden in the following order of precedence:
+
+第一項：覆蓋優先順序 (Override priority order)
+
+```r
+# Load parameters with override support
+load_config_with_overrides <- function() {
+  # 1. Base YAML configuration (lowest priority)
+  config <- yaml::read_yaml("app_config.yaml")
+  
+  # 2. Excel files override YAML
+  config <- load_excel_parameters(config)
+  
+  # 3. Environment variables override Excel
+  if (Sys.getenv("APP_DEBUG") != "") {
+    config$app$debug <- as.logical(Sys.getenv("APP_DEBUG"))
+  }
+  
+  if (Sys.getenv("APP_PORT") != "") {
+    config$app$port <- as.integer(Sys.getenv("APP_PORT"))
+  }
+  
+  # 4. Command-line arguments override everything (highest priority)
+  args <- commandArgs(trailingOnly = TRUE)
+  if ("--debug" %in% args) {
+    config$app$debug <- TRUE
+  }
+  
+  if ("--port" %in% args) {
+    port_idx <- which(args == "--port") + 1
+    if (port_idx <= length(args)) {
+      config$app$port <- as.integer(args[port_idx])
+    }
+  }
+  
+  return(config)
+}
+```
+
+# Section 7: Best Practices {#best-practices}
+
+## Subsection 1: File Organization {#organization}
+
+```
+app_data/
+└── parameters/
+    ├── platform.xlsx           # Marketing channels
+    ├── product_line.xlsx       # Product catalog
+    ├── ui_terminology.xlsx     # UI translations
+    ├── calculation_rules.xlsx  # Business rules
+    └── mappings.xlsx          # System mappings
+
+app_config.yaml                # Main configuration
+```
+
+## Subsection 2: Documentation {#documentation}
+
+第一項：參數文檔 (Parameter documentation)
+
+```yaml
+# Document YAML parameters
+app:
+  port: 3838  # Shiny app port (default: 3838)
+  debug: false  # Enable debug mode (shows detailed errors)
+  
+# Document Excel structure in README
+# platform.xlsx columns:
+# - marketing_channel: Display name
+# - marketing_channel_id: Internal ID
+# - platform_code: 3-letter code
+# - is_active: TRUE/FALSE for availability
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Dual Parameter Sources Checklist
+
+**Parameter Classification:**
+- [ ] YAML for hierarchical configuration
+- [ ] YAML for developer-managed settings
+- [ ] Excel for tabular business data
+- [ ] Excel for user-editable parameters
+
+**Implementation:**
+- [ ] Unified loading function implemented
+- [ ] Special parameter processing added
+- [ ] Safe access patterns used
+- [ ] Override hierarchy respected
+
+**File Organization:**
+- [ ] Parameters folder structure created
+- [ ] Excel files properly named
+- [ ] YAML configuration documented
+- [ ] Excel column structure documented
+
+**Integration:**
+- [ ] All parameters loaded at initialization
+- [ ] Unified configuration object created
+- [ ] Consistent access patterns
+- [ ] Error handling for missing files
+
+**Best Practices:**
+- [ ] Clear separation of concerns
+- [ ] Appropriate format for each parameter type
+- [ ] Documentation for all parameters
+- [ ] Version control considerations
+:::
+
+# Conclusion {#conclusion}
+
+The Dual Parameter Sources Principle optimizes parameter management by using the most appropriate format for each type of configuration. YAML handles hierarchical, developer-managed settings while Excel manages tabular, business-user-editable data. This separation improves maintainability, accessibility, and data integrity while providing a unified configuration interface for the application.
+
+---
+
+*Based on: Data Management Law Article 4*  
+*Derives from: [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd), [MP011 Sensible Defaults](../../CH00_fundamental_principles/MP011_sensible_defaults.qmd)*  
+*Related to: [SO_P010 Config-Driven Customization](../../CH01_structure_organization/principles/SO_P010_config_driven_customization.qmd), [SO_R005 App YAML Configuration](../../CH01_structure_organization/rules/SO_R005_app_yaml_configuration.qmd)*

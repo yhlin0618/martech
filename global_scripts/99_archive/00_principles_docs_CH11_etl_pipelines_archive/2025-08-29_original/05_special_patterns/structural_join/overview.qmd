@@ -1,0 +1,343 @@
+---
+title: "ETL Structural JOIN Implementation Example"
+subtitle: "Canonical example showing proper placement of structural JOINs in 2TR phase"
+type: "implementation"
+category: "etl_pipelines"
+date_created: "2025-08-29"
+date_modified: "2025-08-29"
+author: "Claude"
+status: "active"
+implements:
+  - "MP064": "ETL-Derivation Separation Principle v1.2"
+  - "DM_R040": "Structural JOIN Pattern Rule"
+  - "MP104": "ETL Data Flow Separation"
+format:
+  html:
+    toc: true
+    code-fold: false
+    code-tools: true
+---
+
+# ETL Structural JOIN Implementation Example
+
+This implementation demonstrates the correct placement of structural JOINs in the ETL pipeline, following the clarified principles from MP064 v1.2 and DM_R040.
+
+## Executive Summary
+
+Structural JOINs that combine normalized tables into denormalized business records **MUST** occur in the 2TR (Transform) phase. This example shows the canonical eBay implementation where BAYORD (orders) and BAYORE (order details) are combined.
+
+## Complete Three-Phase Implementation
+
+### Phase 0IM: Import (NO JOINs)
+
+```r
+# eby_ETL_sales_0IM.R
+# ==============================================================================
+# CORRECT: Phase 0IM preserves raw structure - NO JOINs
+# ==============================================================================
+
+# PART 2: MAIN
+tryCatch({
+  # Import orders table (BAYORD)
+  message("Importing BAYORD (orders) table...")
+  orders_raw <- DBI::dbReadTable(source_con, "BAYORD")
+  
+  # Import order details table (BAYORE) 
+  message("Importing BAYORE (order details) table...")
+  details_raw <- DBI::dbReadTable(source_con, "BAYORE")
+  
+  # ✅ CORRECT: Keep tables separate in raw layer
+  DBI::dbWriteTable(raw_data, "df_eby_orders___raw", orders_raw, overwrite = TRUE)
+  DBI::dbWriteTable(raw_data, "df_eby_order_details___raw", details_raw, overwrite = TRUE)
+  
+  # ❌ WRONG: Do NOT JOIN in 0IM phase
+  # sales_raw <- orders_raw %>% inner_join(details_raw, by = "order_id")
+  
+  message(sprintf("Imported %d orders, %d details", nrow(orders_raw), nrow(details_raw)))
+  
+}, error = function(e) {
+  stop("Error in 0IM: ", e$message)
+})
+```
+
+### Phase 1ST: Staging (NO JOINs)
+
+```r
+# eby_ETL_sales_1ST.R
+# ==============================================================================
+# CORRECT: Phase 1ST standardizes each table independently - NO JOINs
+# ==============================================================================
+
+# PART 2: MAIN
+tryCatch({
+  # Standardize orders table
+  message("Standardizing orders data...")
+  orders_raw <- DBI::dbReadTable(raw_data, "df_eby_orders___raw")
+  
+  orders_staged <- orders_raw %>%
+    mutate(
+      # Standardize dates
+      order_date_parsed = lubridate::parse_date_time(order_date, orders = c("ymd", "mdy")),
+      shipped_date_parsed = lubridate::parse_date_time(shipped_date, orders = c("ymd", "mdy")),
+      
+      # Fix encoding
+      customer_name = iconv(customer_name, from = "latin1", to = "UTF-8"),
+      
+      # Add staging metadata
+      staged_timestamp = Sys.time()
+    )
+  
+  # Standardize order details table
+  message("Standardizing order details data...")
+  details_raw <- DBI::dbReadTable(raw_data, "df_eby_order_details___raw")
+  
+  details_staged <- details_raw %>%
+    mutate(
+      # Parse transaction date
+      transaction_date_parsed = lubridate::parse_date_time(transaction_date, orders = c("ymd HMS", "mdy HMS")),
+      
+      # Clean numeric fields
+      quantity = as.integer(quantity),
+      unit_price = as.numeric(gsub("[^0-9.-]", "", unit_price)),
+      line_total = as.numeric(gsub("[^0-9.-]", "", line_total)),
+      
+      # Fix product titles
+      product_title = iconv(product_title, from = "latin1", to = "UTF-8"),
+      
+      # Add staging metadata
+      staged_timestamp = Sys.time()
+    )
+  
+  # ✅ CORRECT: Write tables separately to staged layer
+  DBI::dbWriteTable(staged_data, "df_eby_orders___staged", orders_staged, overwrite = TRUE)
+  DBI::dbWriteTable(staged_data, "df_eby_order_details___staged", details_staged, overwrite = TRUE)
+  
+  # ❌ WRONG: Do NOT JOIN in 1ST phase
+  # sales_staged <- orders_staged %>% inner_join(details_staged, by = "order_id")
+  
+  message(sprintf("Staged %d orders, %d details", nrow(orders_staged), nrow(details_staged)))
+  
+}, error = function(e) {
+  stop("Error in 1ST: ", e$message)
+})
+```
+
+### Phase 2TR: Transform (STRUCTURAL JOINs HERE!)
+
+```r
+# eby_ETL_sales_2TR.R
+# ==============================================================================
+# CORRECT: Phase 2TR performs structural JOINs to create denormalized records
+# Following MP064 v1.2 and DM_R040
+# ==============================================================================
+
+# PART 2: MAIN
+tryCatch({
+  # Read staged normalized tables
+  message("Loading staged orders and order details...")
+  orders_staged <- DBI::dbReadTable(staged_data, "df_eby_orders___staged")
+  details_staged <- DBI::dbReadTable(staged_data, "df_eby_order_details___staged")
+  
+  message(sprintf("Loaded %d orders, %d order details", nrow(orders_staged), nrow(details_staged)))
+  
+  # ===========================================================================
+  # ✅ CORRECT: STRUCTURAL JOIN happens in 2TR phase
+  # This combines normalized tables into complete business records
+  # ===========================================================================
+  message("Performing structural JOIN to create denormalized sales records...")
+  
+  sales_transformed <- orders_staged %>%
+    inner_join(
+      details_staged,
+      by = c(
+        "order_id" = "order_id",        # Primary key relationship
+        "batch_key" = "batch_key"        # Additional join condition
+      ),
+      suffix = c("_order", "_detail")
+    ) %>%
+    mutate(
+      # Consolidate fields from both tables
+      order_date = order_date_parsed,
+      transaction_date = transaction_date_parsed,
+      customer_id = as.character(customer_id),
+      product_id = as.character(product_sku),
+      
+      # Calculate derived fields during denormalization
+      total_amount = quantity * unit_price,
+      discount_amount = if_else(
+        !is.na(discount_percent),
+        quantity * unit_price * discount_percent / 100,
+        0
+      ),
+      net_amount = total_amount - discount_amount,
+      
+      # Standardize per MP102
+      platform_code = "eby",
+      record_type = "sales_transaction",
+      
+      # Add transformation metadata
+      transformed_timestamp = Sys.time(),
+      transform_source = "2TR_structural_join"
+    ) %>%
+    select(
+      # Core fields from denormalized record
+      order_id, order_date, customer_id, customer_name,
+      line_item_number, product_id, product_title,
+      quantity, unit_price, total_amount, discount_amount, net_amount,
+      
+      # Additional order-level fields
+      ship_to_country, ship_to_state, ship_to_city,
+      shipping_method, tracking_number,
+      
+      # Platform fields
+      platform_code, record_type,
+      ebay_order_id = order_id,
+      ebay_transaction_id = transaction_id,
+      
+      # Metadata
+      transformed_timestamp, transform_source
+    )
+  
+  # Verify JOIN results
+  n_sales <- nrow(sales_transformed)
+  orders_matched <- length(unique(sales_transformed$order_id))
+  orders_unmatched <- nrow(orders_staged) - orders_matched
+  
+  message(sprintf("Created %d denormalized sales records", n_sales))
+  message(sprintf("Orders matched: %d, unmatched: %d", orders_matched, orders_unmatched))
+  
+  if (orders_unmatched > 0) {
+    warning(sprintf("⚠️ %d orders have no matching details", orders_unmatched))
+  }
+  
+  # Write denormalized records to transformed layer
+  DBI::dbWriteTable(
+    transformed_data, 
+    "df_eby_sales___transformed", 
+    sales_transformed, 
+    overwrite = TRUE
+  )
+  
+  message("✅ Structural JOIN complete - denormalized sales records ready for analysis")
+  
+}, error = function(e) {
+  stop("Error in 2TR: ", e$message)
+})
+```
+
+## Derivation Layer: Analytical JOINs Only
+
+```r
+# d03_sales_customer_analysis.R
+# ==============================================================================
+# Derivation uses ETL-prepared denormalized data
+# Performs ANALYTICAL JOINs for business insights
+# ==============================================================================
+
+d03_sales_customer_analysis <- function() {
+  # ✅ CORRECT: Read denormalized sales from ETL
+  sales <- DBI::dbReadTable(transformed_data, "df_eby_sales___transformed")
+  
+  # ❌ WRONG: Do NOT redo structural JOINs in Derivation
+  # orders <- dbReadTable(con, "BAYORD")
+  # details <- dbReadTable(con, "BAYORE")
+  # sales <- orders %>% inner_join(details)  # This is ETL's job!
+  
+  # ✅ CORRECT: Analytical JOIN with customer segments
+  customer_segments <- DBI::dbReadTable(reference_data, "customer_segments")
+  
+  sales_analysis <- sales %>%
+    left_join(customer_segments, by = "customer_id") %>%
+    group_by(segment, product_category) %>%
+    summarize(
+      total_revenue = sum(net_amount),
+      avg_order_value = mean(net_amount),
+      order_count = n_distinct(order_id),
+      .groups = "drop"
+    )
+  
+  return(sales_analysis)
+}
+```
+
+## Key Principles Demonstrated
+
+### 1. Phase Isolation
+
+Each phase has a specific responsibility:
+- **0IM**: Import and preserve structure
+- **1ST**: Standardize formats
+- **2TR**: Structural JOINs and schema transformation
+- **Derivation**: Business logic and analytical JOINs
+
+### 2. Data Flow
+
+```
+BAYORD (raw) ────────┐
+                     ├──> Still separate in 0IM
+BAYORE (raw) ────────┘
+        ↓
+BAYORD (staged) ─────┐
+                     ├──> Still separate in 1ST
+BAYORE (staged) ─────┘
+        ↓
+    [JOIN in 2TR]
+        ↓
+Sales (transformed) ──> Denormalized, ready for analysis
+        ↓
+   [Derivations]
+        ↓
+Business Insights ────> Customer segments, product analysis, etc.
+```
+
+### 3. Benefits
+
+1. **Reusability**: The denormalized sales data from 2TR can feed multiple derivations
+2. **Performance**: JOIN happens once in ETL, not repeatedly in every analysis
+3. **Clarity**: Each component has a single, clear responsibility
+4. **Maintainability**: Changes to JOIN logic are isolated to 2TR phase
+
+## Common Mistakes to Avoid
+
+### ❌ Mistake 1: JOIN in Import Phase
+
+```r
+# WRONG: Alters raw data structure
+raw_sales <- api_client$get_orders() %>%
+  left_join(api_client$get_order_details())
+```
+
+### ❌ Mistake 2: JOIN in Staging Phase
+
+```r
+# WRONG: Staging should only standardize
+staged_sales <- staged_orders %>%
+  inner_join(staged_details)
+```
+
+### ❌ Mistake 3: Structural JOIN in Derivation
+
+```r
+# WRONG: Repeating ETL's work
+sales <- tbl(con, "BAYORD") %>%
+  inner_join(tbl(con, "BAYORE"))  # Should use ETL output!
+```
+
+## Validation Checklist
+
+- [ ] No JOINs in 0IM phase scripts
+- [ ] No JOINs in 1ST phase scripts  
+- [ ] Structural JOINs only in 2TR phase
+- [ ] Derivations use ETL-prepared denormalized data
+- [ ] Analytical JOINs only in Derivation layer
+- [ ] Each phase writes to its designated database layer
+
+## Conclusion
+
+This implementation example demonstrates the proper separation of concerns in ETL pipelines. By placing structural JOINs exclusively in the 2TR phase, we achieve a clean, maintainable architecture where each component has a single, well-defined responsibility.
+
+---
+
+*Implementation follows: MP064 v1.2, DM_R040, MP104*
+*Pattern discovered: eBay ETL refactoring project*
+*Status: Canonical example for structural JOIN placement*

@@ -1,0 +1,864 @@
+---
+title: "API02: Rate Limiting"
+subtitle: "Handling Rate Limits and Throttling Strategies"
+author: "MAMBA Architecture Team"
+date: "2025-08-27"
+version: "1.0.0"
+---
+
+# Rate Limiting Strategies
+
+## Overview
+
+Rate limiting is crucial for maintaining stable API integrations. This document provides comprehensive strategies for handling rate limits across different platforms.
+
+## Rate Limit Types
+
+### 1. Request-Based Limits
+
+Limits based on number of requests per time period.
+
+```r
+# Example: 100 requests per minute
+# Example: 1000 requests per hour
+# Example: 10000 requests per day
+```
+
+### 2. Concurrent Request Limits
+
+Limits on simultaneous requests.
+
+```r
+# Example: Maximum 5 concurrent connections
+# Example: Maximum 10 parallel requests
+```
+
+### 3. Payload-Based Limits
+
+Limits based on data volume.
+
+```r
+# Example: 1MB per request
+# Example: 100MB per hour
+# Example: 1GB per day
+```
+
+## Rate Limiter Implementation
+
+### Token Bucket Algorithm
+
+Most flexible and commonly used algorithm.
+
+```r
+TokenBucket <- R6Class("TokenBucket",
+  public = list(
+    initialize = function(capacity, refill_rate) {
+      private$capacity <- capacity
+      private$tokens <- capacity
+      private$refill_rate <- refill_rate  # tokens per second
+      private$last_refill <- Sys.time()
+      private$lock <- filelock::lock("~/.mamba/rate_limit.lock", timeout = 0)
+    },
+    
+    acquire = function(tokens = 1, wait = TRUE) {
+      private$refill()
+      
+      if (private$tokens >= tokens) {
+        private$tokens <- private$tokens - tokens
+        return(TRUE)
+      }
+      
+      if (!wait) {
+        return(FALSE)
+      }
+      
+      # Calculate wait time
+      tokens_needed <- tokens - private$tokens
+      wait_time <- tokens_needed / private$refill_rate
+      
+      message(sprintf("Rate limit reached. Waiting %.2f seconds...", wait_time))
+      Sys.sleep(wait_time)
+      
+      private$refill()
+      private$tokens <- private$tokens - tokens
+      return(TRUE)
+    },
+    
+    get_available_tokens = function() {
+      private$refill()
+      return(private$tokens)
+    },
+    
+    reset = function() {
+      private$tokens <- private$capacity
+      private$last_refill <- Sys.time()
+    }
+  ),
+  
+  private = list(
+    capacity = NULL,
+    tokens = NULL,
+    refill_rate = NULL,
+    last_refill = NULL,
+    lock = NULL,
+    
+    refill = function() {
+      current_time <- Sys.time()
+      time_passed <- as.numeric(current_time - private$last_refill, units = "secs")
+      
+      tokens_to_add <- time_passed * private$refill_rate
+      private$tokens <- min(private$capacity, private$tokens + tokens_to_add)
+      private$last_refill <- current_time
+    }
+  )
+)
+```
+
+### Sliding Window Rate Limiter
+
+Precise rate limiting with sliding time windows.
+
+```r
+SlidingWindowRateLimiter <- R6Class("SlidingWindowRateLimiter",
+  public = list(
+    initialize = function(max_requests, window_seconds) {
+      private$max_requests <- max_requests
+      private$window_seconds <- window_seconds
+      private$request_times <- numeric()
+    },
+    
+    acquire = function(wait = TRUE) {
+      current_time <- as.numeric(Sys.time())
+      
+      # Remove old requests outside window
+      private$request_times <- private$request_times[
+        private$request_times > (current_time - private$window_seconds)
+      ]
+      
+      if (length(private$request_times) < private$max_requests) {
+        private$request_times <- c(private$request_times, current_time)
+        return(TRUE)
+      }
+      
+      if (!wait) {
+        return(FALSE)
+      }
+      
+      # Calculate wait time
+      oldest_request <- min(private$request_times)
+      wait_time <- oldest_request + private$window_seconds - current_time
+      
+      message(sprintf("Rate limit reached. Waiting %.2f seconds...", wait_time))
+      Sys.sleep(wait_time)
+      
+      # Try again after waiting
+      return(self$acquire(wait = FALSE))
+    },
+    
+    get_remaining_requests = function() {
+      current_time <- as.numeric(Sys.time())
+      private$request_times <- private$request_times[
+        private$request_times > (current_time - private$window_seconds)
+      ]
+      return(private$max_requests - length(private$request_times))
+    }
+  ),
+  
+  private = list(
+    max_requests = NULL,
+    window_seconds = NULL,
+    request_times = NULL
+  )
+)
+```
+
+### Adaptive Rate Limiter
+
+Adjusts rate based on API responses.
+
+```r
+AdaptiveRateLimiter <- R6Class("AdaptiveRateLimiter",
+  public = list(
+    initialize = function(initial_rate = 2, min_rate = 0.5, max_rate = 10) {
+      private$current_rate <- initial_rate
+      private$min_rate <- min_rate
+      private$max_rate <- max_rate
+      private$last_request <- Sys.time()
+      private$consecutive_successes <- 0
+      private$consecutive_failures <- 0
+    },
+    
+    acquire = function() {
+      time_since_last <- as.numeric(Sys.time() - private$last_request, units = "secs")
+      min_interval <- 1 / private$current_rate
+      
+      if (time_since_last < min_interval) {
+        wait_time <- min_interval - time_since_last
+        message(sprintf("Adaptive rate limit: waiting %.2f seconds", wait_time))
+        Sys.sleep(wait_time)
+      }
+      
+      private$last_request <- Sys.time()
+      return(TRUE)
+    },
+    
+    record_success = function() {
+      private$consecutive_successes <- private$consecutive_successes + 1
+      private$consecutive_failures <- 0
+      
+      # Increase rate after multiple successes
+      if (private$consecutive_successes >= 10) {
+        private$current_rate <- min(
+          private$max_rate,
+          private$current_rate * 1.1
+        )
+        private$consecutive_successes <- 0
+        message(sprintf("Rate increased to %.2f requests/second", 
+                       private$current_rate))
+      }
+    },
+    
+    record_rate_limit_error = function() {
+      private$consecutive_failures <- private$consecutive_failures + 1
+      private$consecutive_successes <- 0
+      
+      # Decrease rate immediately on rate limit error
+      private$current_rate <- max(
+        private$min_rate,
+        private$current_rate * 0.5
+      )
+      
+      message(sprintf("Rate limit hit! Reduced rate to %.2f requests/second", 
+                     private$current_rate))
+      
+      # Back off exponentially
+      backoff_time <- min(60, 2^private$consecutive_failures)
+      message(sprintf("Backing off for %d seconds", backoff_time))
+      Sys.sleep(backoff_time)
+    },
+    
+    get_current_rate = function() {
+      return(private$current_rate)
+    }
+  ),
+  
+  private = list(
+    current_rate = NULL,
+    min_rate = NULL,
+    max_rate = NULL,
+    last_request = NULL,
+    consecutive_successes = NULL,
+    consecutive_failures = NULL
+  )
+)
+```
+
+## Platform-Specific Rate Limits
+
+### Platform Rate Limit Configuration
+
+```r
+PLATFORM_RATE_LIMITS <- list(
+  CBZ = list(
+    requests_per_second = 2,
+    requests_per_minute = 100,
+    requests_per_hour = 5000,
+    concurrent_requests = 5,
+    max_payload_mb = 10
+  ),
+  
+  EBY = list(
+    requests_per_second = 5,
+    requests_per_day = 5000,
+    concurrent_requests = 10,
+    max_items_per_request = 200
+  ),
+  
+  AMZ = list(
+    requests_per_second = 10,
+    burst_rate = 20,
+    quota_per_hour = 3600,
+    max_payload_mb = 5
+  ),
+  
+  SHP = list(
+    requests_per_second = 2,
+    bucket_size = 40,  # Shopify uses leaky bucket
+    cost_per_request = 1,  # Some endpoints cost more
+    max_cost_per_second = 4
+  )
+)
+
+get_platform_rate_limiter <- function(platform_id) {
+  limits <- PLATFORM_RATE_LIMITS[[platform_id]]
+  
+  if (is.null(limits)) {
+    warning("No rate limit configuration for platform: ", platform_id)
+    # Default conservative limits
+    limits <- list(
+      requests_per_second = 1,
+      requests_per_minute = 30
+    )
+  }
+  
+  # Create appropriate rate limiter
+  if (!is.null(limits$bucket_size)) {
+    # Leaky bucket for Shopify
+    return(LeakyBucket$new(
+      capacity = limits$bucket_size,
+      leak_rate = limits$requests_per_second
+    ))
+  } else if (!is.null(limits$burst_rate)) {
+    # Token bucket with burst for Amazon
+    return(TokenBucket$new(
+      capacity = limits$burst_rate,
+      refill_rate = limits$requests_per_second
+    ))
+  } else {
+    # Standard rate limiter
+    return(SlidingWindowRateLimiter$new(
+      max_requests = limits$requests_per_minute,
+      window_seconds = 60
+    ))
+  }
+}
+```
+
+## Request Queue Management
+
+### Priority Queue for API Requests
+
+```r
+PriorityRequestQueue <- R6Class("PriorityRequestQueue",
+  public = list(
+    initialize = function(rate_limiter) {
+      private$rate_limiter <- rate_limiter
+      private$queue <- list()
+      private$processing <- FALSE
+    },
+    
+    enqueue = function(request, priority = 5, callback = NULL) {
+      request_item <- list(
+        request = request,
+        priority = priority,
+        callback = callback,
+        timestamp = Sys.time(),
+        id = uuid::UUIDgenerate()
+      )
+      
+      # Insert based on priority
+      if (length(private$queue) == 0) {
+        private$queue[[1]] <- request_item
+      } else {
+        inserted <- FALSE
+        for (i in seq_along(private$queue)) {
+          if (request_item$priority > private$queue[[i]]$priority) {
+            private$queue <- append(private$queue, list(request_item), i - 1)
+            inserted <- TRUE
+            break
+          }
+        }
+        if (!inserted) {
+          private$queue[[length(private$queue) + 1]] <- request_item
+        }
+      }
+      
+      # Start processing if not already running
+      if (!private$processing) {
+        self$process_queue()
+      }
+      
+      return(request_item$id)
+    },
+    
+    process_queue = function() {
+      private$processing <- TRUE
+      
+      while (length(private$queue) > 0) {
+        # Get next request
+        request_item <- private$queue[[1]]
+        private$queue[[1]] <- NULL
+        
+        # Wait for rate limit
+        private$rate_limiter$acquire()
+        
+        # Execute request
+        tryCatch({
+          response <- private$execute_request(request_item$request)
+          
+          # Call callback if provided
+          if (!is.null(request_item$callback)) {
+            request_item$callback(response)
+          }
+        }, error = function(e) {
+          warning("Request failed: ", e$message)
+          
+          # Retry logic
+          if (private$should_retry(e)) {
+            # Re-queue with lower priority
+            self$enqueue(
+              request_item$request,
+              priority = request_item$priority - 1,
+              callback = request_item$callback
+            )
+          }
+        })
+      }
+      
+      private$processing <- FALSE
+    },
+    
+    get_queue_length = function() {
+      return(length(private$queue))
+    },
+    
+    get_queue_status = function() {
+      if (length(private$queue) == 0) {
+        return(data.frame())
+      }
+      
+      do.call(rbind, lapply(private$queue, function(item) {
+        data.frame(
+          id = item$id,
+          priority = item$priority,
+          age_seconds = as.numeric(Sys.time() - item$timestamp, units = "secs"),
+          stringsAsFactors = FALSE
+        )
+      }))
+    }
+  ),
+  
+  private = list(
+    rate_limiter = NULL,
+    queue = NULL,
+    processing = NULL,
+    
+    execute_request = function(request) {
+      # Actual HTTP request execution
+      response <- httr::VERB(
+        verb = request$method,
+        url = request$url,
+        config = request$config,
+        body = request$body,
+        encode = request$encode
+      )
+      
+      # Check for rate limit headers
+      private$update_rate_limits(response)
+      
+      return(response)
+    },
+    
+    update_rate_limits = function(response) {
+      headers <- httr::headers(response)
+      
+      # Standard rate limit headers
+      if (!is.null(headers$`x-ratelimit-remaining`)) {
+        remaining <- as.numeric(headers$`x-ratelimit-remaining`)
+        reset_time <- as.numeric(headers$`x-ratelimit-reset`)
+        
+        if (remaining == 0) {
+          wait_time <- reset_time - as.numeric(Sys.time())
+          if (wait_time > 0) {
+            message(sprintf("Rate limit exhausted. Waiting %d seconds until reset.",
+                          ceiling(wait_time)))
+            Sys.sleep(wait_time)
+          }
+        }
+      }
+      
+      # Retry-After header
+      if (!is.null(headers$`retry-after`)) {
+        wait_time <- as.numeric(headers$`retry-after`)
+        message(sprintf("Server requested retry after %d seconds", wait_time))
+        Sys.sleep(wait_time)
+      }
+    },
+    
+    should_retry = function(error) {
+      # Retry on rate limit or temporary errors
+      error_message <- tolower(error$message)
+      return(grepl("rate limit|429|503|timeout", error_message))
+    }
+  )
+)
+```
+
+## Rate Limit Monitoring
+
+### Rate Limit Metrics Collection
+
+```r
+RateLimitMonitor <- R6Class("RateLimitMonitor",
+  public = list(
+    initialize = function() {
+      private$metrics <- list()
+      private$start_time <- Sys.time()
+    },
+    
+    record_request = function(platform, endpoint, status, response_headers = NULL) {
+      metric <- list(
+        timestamp = Sys.time(),
+        platform = platform,
+        endpoint = endpoint,
+        status = status,
+        rate_limit_remaining = NULL,
+        rate_limit_reset = NULL
+      )
+      
+      # Extract rate limit headers if available
+      if (!is.null(response_headers)) {
+        metric$rate_limit_remaining <- response_headers$`x-ratelimit-remaining`
+        metric$rate_limit_reset <- response_headers$`x-ratelimit-reset`
+        metric$rate_limit_limit <- response_headers$`x-ratelimit-limit`
+      }
+      
+      private$metrics[[length(private$metrics) + 1]] <- metric
+      
+      # Check if approaching limits
+      if (!is.null(metric$rate_limit_remaining)) {
+        remaining <- as.numeric(metric$rate_limit_remaining)
+        limit <- as.numeric(metric$rate_limit_limit)
+        
+        if (remaining < limit * 0.1) {
+          warning(sprintf("Low rate limit for %s: %d/%d remaining",
+                        platform, remaining, limit))
+        }
+      }
+    },
+    
+    get_statistics = function(platform = NULL, time_window = 3600) {
+      recent_metrics <- private$get_recent_metrics(time_window)
+      
+      if (!is.null(platform)) {
+        recent_metrics <- Filter(function(m) m$platform == platform, recent_metrics)
+      }
+      
+      if (length(recent_metrics) == 0) {
+        return(list())
+      }
+      
+      # Calculate statistics
+      total_requests <- length(recent_metrics)
+      success_rate <- sum(sapply(recent_metrics, function(m) m$status == 200)) / total_requests
+      
+      # Rate limit utilization
+      rate_limit_hits <- sum(sapply(recent_metrics, function(m) m$status == 429))
+      
+      # Requests per second
+      time_span <- as.numeric(Sys.time() - min(sapply(recent_metrics, function(m) m$timestamp)), units = "secs")
+      rps <- total_requests / max(1, time_span)
+      
+      return(list(
+        total_requests = total_requests,
+        success_rate = success_rate,
+        rate_limit_hits = rate_limit_hits,
+        requests_per_second = rps,
+        time_window_seconds = time_window
+      ))
+    },
+    
+    generate_report = function() {
+      platforms <- unique(sapply(private$metrics, function(m) m$platform))
+      
+      report <- lapply(platforms, function(platform) {
+        stats <- self$get_statistics(platform)
+        
+        data.frame(
+          platform = platform,
+          total_requests = stats$total_requests,
+          success_rate = sprintf("%.1f%%", stats$success_rate * 100),
+          rate_limit_hits = stats$rate_limit_hits,
+          avg_rps = round(stats$requests_per_second, 2),
+          stringsAsFactors = FALSE
+        )
+      })
+      
+      return(do.call(rbind, report))
+    }
+  ),
+  
+  private = list(
+    metrics = NULL,
+    start_time = NULL,
+    
+    get_recent_metrics = function(seconds) {
+      cutoff_time <- Sys.time() - seconds
+      Filter(function(m) m$timestamp > cutoff_time, private$metrics)
+    }
+  )
+)
+```
+
+## Batch Processing Strategies
+
+### Batch Request Processor
+
+```r
+BatchProcessor <- R6Class("BatchProcessor",
+  public = list(
+    initialize = function(rate_limiter, batch_size = 100, max_concurrent = 5) {
+      private$rate_limiter <- rate_limiter
+      private$batch_size <- batch_size
+      private$max_concurrent <- max_concurrent
+    },
+    
+    process_items = function(items, process_fn, progress = TRUE) {
+      batches <- private$create_batches(items)
+      results <- list()
+      
+      if (progress) {
+        pb <- progress::progress_bar$new(
+          total = length(batches),
+          format = "Processing [:bar] :percent ETA: :eta"
+        )
+      }
+      
+      for (batch in batches) {
+        # Rate limit before each batch
+        private$rate_limiter$acquire()
+        
+        # Process batch
+        batch_results <- private$process_batch(batch, process_fn)
+        results <- c(results, batch_results)
+        
+        if (progress) pb$tick()
+      }
+      
+      return(results)
+    },
+    
+    process_parallel = function(items, process_fn) {
+      # Use future for parallel processing with rate limiting
+      future::plan(future::multisession, workers = private$max_concurrent)
+      
+      # Create rate-limited wrapper
+      rate_limited_fn <- function(item) {
+        private$rate_limiter$acquire()
+        return(process_fn(item))
+      }
+      
+      results <- future.apply::future_lapply(
+        items,
+        rate_limited_fn,
+        future.seed = TRUE
+      )
+      
+      return(results)
+    }
+  ),
+  
+  private = list(
+    rate_limiter = NULL,
+    batch_size = NULL,
+    max_concurrent = NULL,
+    
+    create_batches = function(items) {
+      n <- length(items)
+      batch_count <- ceiling(n / private$batch_size)
+      
+      batches <- vector("list", batch_count)
+      for (i in seq_len(batch_count)) {
+        start_idx <- (i - 1) * private$batch_size + 1
+        end_idx <- min(i * private$batch_size, n)
+        batches[[i]] <- items[start_idx:end_idx]
+      }
+      
+      return(batches)
+    },
+    
+    process_batch = function(batch, process_fn) {
+      lapply(batch, process_fn)
+    }
+  )
+)
+```
+
+## Best Practices
+
+### 1. Respect Rate Limits
+
+Always check and respect platform rate limits:
+
+```r
+check_rate_limit_headers <- function(response) {
+  headers <- httr::headers(response)
+  
+  rate_limit_info <- list(
+    limit = headers$`x-ratelimit-limit`,
+    remaining = headers$`x-ratelimit-remaining`,
+    reset = headers$`x-ratelimit-reset`
+  )
+  
+  # Log rate limit status
+  if (!is.null(rate_limit_info$remaining)) {
+    percentage_used <- 1 - (as.numeric(rate_limit_info$remaining) / 
+                           as.numeric(rate_limit_info$limit))
+    
+    if (percentage_used > 0.8) {
+      warning("High rate limit usage: ", round(percentage_used * 100), "%")
+    }
+  }
+  
+  return(rate_limit_info)
+}
+```
+
+### 2. Implement Exponential Backoff
+
+```r
+exponential_backoff <- function(attempt, base_delay = 1, max_delay = 60) {
+  delay <- min(base_delay * (2^(attempt - 1)), max_delay)
+  jitter <- runif(1, 0, delay * 0.1)  # Add jitter to prevent thundering herd
+  total_delay <- delay + jitter
+  
+  message(sprintf("Backing off for %.2f seconds (attempt %d)", total_delay, attempt))
+  Sys.sleep(total_delay)
+}
+```
+
+### 3. Cache Responses
+
+Reduce API calls by caching:
+
+```r
+CachedAPIClient <- R6Class("CachedAPIClient",
+  public = list(
+    initialize = function(rate_limiter, cache_ttl = 300) {
+      private$rate_limiter <- rate_limiter
+      private$cache <- new.env(hash = TRUE)
+      private$cache_ttl <- cache_ttl
+    },
+    
+    get = function(endpoint, force_refresh = FALSE) {
+      cache_key <- digest::digest(endpoint)
+      
+      if (!force_refresh) {
+        cached <- private$get_cached(cache_key)
+        if (!is.null(cached)) {
+          return(cached)
+        }
+      }
+      
+      # Rate limit and fetch
+      private$rate_limiter$acquire()
+      response <- httr::GET(endpoint)
+      
+      # Cache successful responses
+      if (httr::status_code(response) == 200) {
+        private$set_cached(cache_key, response)
+      }
+      
+      return(response)
+    }
+  ),
+  
+  private = list(
+    rate_limiter = NULL,
+    cache = NULL,
+    cache_ttl = NULL,
+    
+    get_cached = function(key) {
+      entry <- private$cache[[key]]
+      
+      if (!is.null(entry)) {
+        age <- as.numeric(Sys.time() - entry$timestamp, units = "secs")
+        if (age < private$cache_ttl) {
+          message("Cache hit for ", key)
+          return(entry$data)
+        }
+      }
+      
+      return(NULL)
+    },
+    
+    set_cached = function(key, data) {
+      private$cache[[key]] <- list(
+        data = data,
+        timestamp = Sys.time()
+      )
+    }
+  )
+)
+```
+
+### 4. Monitor and Alert
+
+Set up monitoring for rate limit issues:
+
+```r
+setup_rate_limit_monitoring <- function() {
+  monitor <- RateLimitMonitor$new()
+  
+  # Set up periodic reporting
+  later::later(function() {
+    report <- monitor$generate_report()
+    
+    # Check for issues
+    problem_platforms <- report[report$rate_limit_hits > 0, ]
+    
+    if (nrow(problem_platforms) > 0) {
+      warning("Rate limit issues detected:")
+      print(problem_platforms)
+    }
+    
+    # Schedule next check
+    setup_rate_limit_monitoring()
+  }, delay = 3600)  # Check every hour
+  
+  return(monitor)
+}
+```
+
+## Testing Rate Limiters
+
+```r
+test_rate_limiter <- function(rate_limiter, requests = 10) {
+  start_time <- Sys.time()
+  times <- numeric(requests)
+  
+  for (i in seq_len(requests)) {
+    rate_limiter$acquire()
+    times[i] <- as.numeric(Sys.time() - start_time, units = "secs")
+    message(sprintf("Request %d at %.2f seconds", i, times[i]))
+  }
+  
+  # Calculate actual rate
+  total_time <- times[requests]
+  actual_rate <- requests / total_time
+  
+  message(sprintf("\nCompleted %d requests in %.2f seconds", requests, total_time))
+  message(sprintf("Actual rate: %.2f requests/second", actual_rate))
+  
+  return(list(
+    times = times,
+    actual_rate = actual_rate,
+    total_time = total_time
+  ))
+}
+
+# Test different rate limiters
+test_all_rate_limiters <- function() {
+  # Token bucket
+  tb <- TokenBucket$new(capacity = 5, refill_rate = 2)
+  message("\nTesting Token Bucket (2 req/sec, burst=5):")
+  test_rate_limiter(tb, 10)
+  
+  # Sliding window
+  sw <- SlidingWindowRateLimiter$new(max_requests = 5, window_seconds = 3)
+  message("\nTesting Sliding Window (5 req/3sec):")
+  test_rate_limiter(sw, 10)
+  
+  # Adaptive
+  ar <- AdaptiveRateLimiter$new(initial_rate = 2)
+  message("\nTesting Adaptive Rate Limiter (initial=2 req/sec):")
+  test_rate_limiter(ar, 10)
+}
+```
+
+## Related Documentation
+
+- [API Architecture Overview](API00_architecture_overview.qmd)
+- [Authentication Patterns](API01_authentication_patterns.qmd)
+- [Error Handling](API03_error_handling.qmd)
+- [Platform APIs](platforms/)

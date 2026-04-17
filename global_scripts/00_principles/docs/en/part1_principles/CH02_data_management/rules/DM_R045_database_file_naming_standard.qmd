@@ -1,0 +1,368 @@
+---
+title: "DM_R045: Database File Naming Standard"
+subtitle: "Consistent Database File and Directory Naming Convention"
+tier: "Rule"
+domain: "Data Management"
+status: "Active"
+version: "1.1.0"
+date: "2025-11-13"
+author: "MAMBA Framework"
+related:
+  - MP110_application_data_consolidation
+  - MP108_base_etl_pipeline
+  - DM_R039_database_connection_pattern
+---
+
+# DM_R045: Database File Naming Standard
+
+:::callout-important
+## Clarification Note (2025-11-13)
+
+This principle was corrected based on user clarification. The correct pattern uses **consistent underscores** in both directory and file names:
+
+- **CORRECT**: `data/app_data/app_data.duckdb` (directory name = file name)
+- **WRONG**: `data/app_data/appdata.duckdb` (inconsistent - removes underscore)
+
+**Pattern**: `{layer_name}/{layer_name}.duckdb` where both directory and file use the same name with underscores.
+:::
+
+## Rule Statement
+
+**Database files MUST follow a consistent naming pattern where both directory names and filenames use the same layer name with underscores.**
+
+Pattern:
+```
+data/{layer_name}/{layer_name}.duckdb
+```
+
+---
+
+## Constitutional Basis
+
+This rule ensures:
+- **Consistency**: Directory names and file names match exactly (raw_data/raw_data.duckdb)
+- **Clarity**: No mental translation needed between directory and file names
+- **Predictability**: Same pattern across all five layers of the architecture
+
+---
+
+## Five-Layer Database Architecture
+
+### Complete Structure
+
+```
+data/
+├── raw_data/
+│   └── raw_data.duckdb           # Layer 0: 0IM (Import)
+├── staged_data/
+│   └── staged_data.duckdb        # Layer 1: 1ST (Staging)
+├── transformed_data/
+│   └── transformed_data.duckdb   # Layer 2: 2TR (Transform)
+├── processed_data/
+│   └── processed_data.duckdb     # Layer 3: 3DRV (Derivation)
+└── app_data/
+    └── app_data.duckdb           # Layer 4: 4APP (Application)
+```
+
+### Naming Pattern Components
+
+| Layer | Directory Name | File Name | Full Path |
+|-------|----------------|-----------|-----------|
+| 0IM | `raw_data/` | `raw_data.duckdb` | `data/raw_data/raw_data.duckdb` |
+| 1ST | `staged_data/` | `staged_data.duckdb` | `data/staged_data/staged_data.duckdb` |
+| 2TR | `transformed_data/` | `transformed_data.duckdb` | `data/transformed_data/transformed_data.duckdb` |
+| 3DRV | `processed_data/` | `processed_data.duckdb` | `data/processed_data/processed_data.duckdb` |
+| 4APP | `app_data/` | `app_data.duckdb` | `data/app_data/app_data.duckdb` |
+
+---
+
+## Rationale
+
+### Why Consistent Naming for Directory and File?
+
+**Directory Names = File Names:**
+- **Zero mental translation**: What you see in the directory is what you get in the file
+- **Predictable paths**: `{layer_name}/{layer_name}.duckdb` pattern always
+- **Consistent underscores**: Both use underscores throughout
+- **Examples**: `raw_data/raw_data.duckdb`, `staged_data/staged_data.duckdb`, `app_data/app_data.duckdb`
+
+### Anti-Pattern: Inconsistent Naming
+
+```
+❌ WRONG: data/app_data/appdata.duckdb  (removes underscore - inconsistent)
+✓ CORRECT: data/app_data/app_data.duckdb  (consistent underscore pattern)
+```
+
+---
+
+## Implementation Rules
+
+### R045.1: Directory Names Use Underscores
+
+**All layer directories MUST use underscores:**
+
+```bash
+mkdir -p data/raw_data
+mkdir -p data/staged_data
+mkdir -p data/transformed_data
+mkdir -p data/processed_data
+mkdir -p data/app_data
+```
+
+**Rationale:** Improves readability and follows Unix directory naming conventions.
+
+---
+
+### R045.2: File Names Match Directory Names
+
+**Database files within layer directories MUST match the directory name exactly:**
+
+```r
+# ✓ CORRECT: Filename matches directory name
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+
+# ❌ WRONG: Filename differs from directory name
+con <- dbConnect(duckdb::duckdb(), "data/app_data/appdata.duckdb")
+```
+
+---
+
+### R045.3: Configuration Files Must Use Correct Paths
+
+**All database path configurations MUST follow this standard:**
+
+```r
+# fn_get_default_db_paths.R
+get_default_db_paths <- function() {
+  return(list(
+    raw_data = file.path(COMPANY_DIR, "raw_data", "raw_data.duckdb"),
+    staged_data = file.path(COMPANY_DIR, "staged_data", "staged_data.duckdb"),
+    transformed_data = file.path(COMPANY_DIR, "transformed_data", "transformed_data.duckdb"),
+    processed_data = file.path(COMPANY_DIR, "processed_data", "processed_data.duckdb"),
+    app_data = file.path(APP_DATA_DIR, "app_data.duckdb")  # ✓ Correct!
+  ))
+}
+```
+
+---
+
+### R045.4: Legacy Consolidation Scripts Use Standard Paths
+
+**If legacy consolidation scripts are referenced, they MUST use correct database names:**
+
+```r
+# consolidate_to_app_data.R (legacy, archived)
+app_data_path <- file.path(
+  BASE_DIR,
+  "data",
+  "app_data",
+  "app_data.duckdb"  # ✓ Correct: Matches directory name
+)
+```
+
+---
+
+## Compliance Verification
+
+### Pre-Deployment Checklist
+
+- [ ] All layer directories exist with underscores: `raw_data/`, `staged_data/`, etc.
+- [ ] All database files match directory names: `raw_data.duckdb`, `staged_data.duckdb`, etc.
+- [ ] Configuration functions (`fn_get_default_db_paths.R`) use correct paths
+- [ ] Legacy consolidation scripts (if referenced) use correct paths
+- [ ] No hardcoded paths use the old inconsistent `appdata.duckdb` pattern
+
+### Automated Verification
+
+```bash
+# Find any incorrect appdata.duckdb references in scripts
+grep -r "app_data/appdata\.duckdb" scripts/ --include="*.R"
+# Should return ZERO results
+
+# Find correct app_data.duckdb references
+grep -r "app_data/app_data\.duckdb" scripts/ --include="*.R"
+# Should return MULTIPLE results in active scripts
+```
+
+---
+
+## Examples
+
+### Example 1: Database Connection
+
+```r
+# ✓ CORRECT: Application database connection
+library(DBI)
+library(duckdb)
+
+con_app <- dbConnect(
+  duckdb::duckdb(),
+  "data/app_data/app_data.duckdb",
+  read_only = TRUE
+)
+
+# Verify connection
+tables <- dbListTables(con_app)
+cat("Connected to app_data.duckdb with", length(tables), "tables\n")
+
+dbDisconnect(con_app, shutdown = TRUE)
+```
+
+### Example 2: ETL Pipeline
+
+```r
+# Complete ETL flow using correct naming
+library(DBI)
+library(duckdb)
+
+# Stage 0: Import to raw
+con_raw <- dbConnect(duckdb::duckdb(), "data/raw_data/raw_data.duckdb")
+dbWriteTable(con_raw, "df_cbz_sales___raw", raw_sales_data)
+dbDisconnect(con_raw, shutdown = TRUE)
+
+# Stage 1: Process to staged
+con_staged <- dbConnect(duckdb::duckdb(), "data/staged_data/staged_data.duckdb")
+# ... staging logic
+dbDisconnect(con_staged, shutdown = TRUE)
+
+# Stage 2: Transform
+con_transformed <- dbConnect(duckdb::duckdb(), "data/transformed_data/transformed_data.duckdb")
+# ... transformation logic
+dbDisconnect(con_transformed, shutdown = TRUE)
+
+# Stage 3: Derive
+con_processed <- dbConnect(duckdb::duckdb(), "data/processed_data/processed_data.duckdb")
+# ... derivation logic
+dbDisconnect(con_processed, shutdown = TRUE)
+
+# Stage 4: Consolidate to app
+con_app <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+# ... consolidation logic
+dbDisconnect(con_app, shutdown = TRUE)
+```
+
+### Example 3: Utility Function
+
+```r
+#' Connect to application database
+#' @param db_path Path to database (default: app_data/app_data.duckdb)
+connect_to_app_database <- function(db_path = "app_data/app_data.duckdb") {
+  if (!file.exists(db_path)) {
+    stop("Database file does not exist: ", db_path)
+  }
+
+  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path)
+  message("Connected to ", basename(db_path))
+  return(conn)
+}
+```
+
+---
+
+## Migration Guide
+
+### If You Have Old `appdata.duckdb` File (Incorrect Pattern)
+
+**Step 1: Rename the file**
+```bash
+cd data/app_data
+mv appdata.duckdb app_data.duckdb
+```
+
+**Step 2: Update all script references**
+```bash
+# Find all references
+grep -r "app_data/appdata\.duckdb" scripts/ --include="*.R"
+
+# Update using sed
+find scripts/ -name "*.R" -type f -exec sed -i '' 's|app_data/appdata\.duckdb|app_data/app_data.duckdb|g' {} \;
+```
+
+**Step 3: Verify database integrity**
+```r
+library(DBI)
+library(duckdb)
+
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb", read_only = TRUE)
+
+# Check tables and row counts
+tables <- dbListTables(con)
+cat("Total tables:", length(tables), "\n")
+
+for (tbl in tables) {
+  count <- dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM %s", tbl))$n
+  cat(tbl, ":", count, "rows\n")
+}
+
+dbDisconnect(con, shutdown = TRUE)
+```
+
+**Step 4: Update principle documentation**
+- Update MP110 with correct paths
+- Update any related principles (R119, R120, etc.)
+
+---
+
+## Benefits
+
+### 1. Clarity and Consistency
+- Predictable naming across all layers
+- Easy to understand and remember
+- Follows established patterns
+
+### 2. Reduced Confusion
+- Clear distinction between directory and file naming
+- No ambiguity about which database to use
+- Easier code reviews and maintenance
+
+### 3. Better Tooling Support
+- IDEs can autocomplete consistently
+- Scripts can use predictable patterns
+- Automated tools can validate compliance
+
+---
+
+## Related Principles
+
+### Upstream Dependencies
+- **MP108: BASE ETL Pipeline** - Defines the five-layer architecture
+- **MP110: Application Data Consolidation** - Specifies app_data layer usage
+
+### Downstream Applications
+- **DM_R039: Database Connection Pattern** - How to connect to databases
+- **R119: Universal df_ Prefix** - Table naming within databases
+- **R120: Variable Range Metadata Requirement** - Metadata storage in databases
+
+---
+
+## Implementation History
+
+| Date | Event | Description |
+|------|-------|-------------|
+| 2025-11-13 | **DM_R045 Created** | Standardized database file naming pattern |
+| 2025-11-13 | **Migration Executed** | Renamed app_data.duckdb → appdata.duckdb |
+| 2025-11-13 | **Scripts Updated** | Updated 20+ script files with correct paths |
+
+---
+
+## Summary
+
+**DM_R045: Database File Naming Standard** establishes:
+
+1. **Directory Pattern**: `{layer_name}/` (e.g., `app_data/`)
+2. **File Pattern**: `{layer_name}.duckdb` (e.g., `app_data.duckdb`)
+3. **Full Path**: `data/{layer_name}/{layer_name}.duckdb`
+4. **Consistency Rule**: Directory name MUST match file name exactly (both use underscores)
+
+**Compliance Requirement:**
+All MAMBA database paths MUST follow this standard naming convention for consistency and maintainability.
+
+---
+
+## Version History
+
+- **1.0.0** (2025-11-13): Initial rule creation
+  - Establishes database file naming standard
+  - Defines directory vs file naming pattern
+  - Provides migration guide
+  - Documents benefits and compliance verification

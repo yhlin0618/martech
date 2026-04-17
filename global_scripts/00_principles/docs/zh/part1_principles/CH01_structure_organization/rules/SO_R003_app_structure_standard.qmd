@@ -1,0 +1,132 @@
+---
+title: "SO_R003: 應用程式結構標準規則（L1 Basic）"
+subtitle: "L1 Basic 層級的應用程式必須遵循標準化的目錄結構，特別是必須包含 scripts/global_scripts/ 作為共享程式碼庫的連接點"
+chapter: "CH01"
+category: "rule"
+number: "SO_R003"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 3
+  title: "應用程式結構標準規則"
+related_to:
+  - "SO_P001: 分層架構原則"
+  - "SO_R001: 目錄結構規則"
+  - "SO_R002: Git 管理策略"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三條：應用程式結構標準規則（L1 Basic） {#overview}
+
+**結構組織法第三條（應用程式結構標準規則）**
+
+L1 Basic 層級的應用程式必須遵循標準化的目錄結構，特別是必須包含 `scripts/global_scripts/` 作為共享程式碼庫的連接點。
+
+:::{.callout-important}
+## 規則概述
+L1 Basic 層級的應用程式必須遵循標準化的目錄結構，特別是必須包含 `scripts/global_scripts/` 作為共享程式碼庫的連接點。
+:::
+
+# 第一項：適用範圍 {#scope}
+
+- **適用於**：l1_basic 目錄下的所有應用程式
+- **不適用於**：l2_pro 和 l4_enterprise（這些層級可能有不同的架構需求）
+
+# 第二項：強制性結構要求 {#mandatory-structure}
+
+L1 Basic 層級的每個應用程式都必須包含：
+
+```
+app_name/
+├── scripts/
+│   └── global_scripts/     # [強制] global_scripts repository
+├── app.R                   # [強制] 主應用程式
+├── README.md               # [強制] 說明文件
+└── .gitignore              # [強制] Git 忽略規則
+```
+
+# 第三項：Global Scripts 整合方式 {#global-scripts-integration}
+
+## 第一款：Git Submodule（推薦） {#git-submodule}
+
+```bash
+cd app_name
+mkdir -p scripts
+cd scripts
+git submodule add git@github.com:kiki830621/precision_marketing_global_scripts.git global_scripts
+```
+
+## 第二款：Git Subrepo {#git-subrepo}
+
+```bash
+cd app_name
+git subrepo clone git@github.com:kiki830621/precision_marketing_global_scripts.git scripts/global_scripts
+```
+
+## 第三款：直接複製（僅開發階段） {#direct-copy}
+
+```bash
+cd app_name
+mkdir -p scripts
+cp -r ../global_scripts scripts/
+```
+
+# 第四項：程式碼引用規範 {#code-reference-standard}
+
+## 第一款：正確做法 {#correct-practice}
+
+```r
+# 正確：使用相對於 app.R 的路徑
+source("scripts/global_scripts/22_initializations/sc_initialization_app_mode.R")
+```
+
+## 第二款：錯誤做法 {#incorrect-practice}
+
+```r
+# 錯誤：使用絕對路徑
+source("/Users/xxx/global_scripts/...")
+
+# 錯誤：假設 global_scripts 在上層目錄
+source("../global_scripts/...")
+```
+
+# 第五項：違規後果 {#violation-consequences}
+
+1. 應用程式無法獨立部署
+2. 程式碼共享機制失效
+3. 版本控制混亂
+4. 團隊協作困難
+
+# 第六項：豁免條件 {#exemption-conditions}
+
+無。這是強制性規則，所有應用程式都必須遵守。
+
+# 第七項：驗證方法 {#validation-method}
+
+```bash
+# 自動檢查腳本
+if [ ! -d "scripts/global_scripts" ]; then
+  echo "ERROR: Missing required scripts/global_scripts directory"
+  exit 1
+fi
+```
+
+# 第八項：相關原則 {#related-principles}
+
+- **SO_P001：分層架構原則** - L1 Basic 是分層架構的一部分
+- **SO_R001：目錄結構規則** - 定義整體目錄結構標準
+- **SO_R002：Git 管理策略** - 定義 Git 管理方式
+
+---
+
+*基於：結構組織法第三條*  
+*相關連結：[SO_P001 分層架構原則](../principles/SO_P001_layered_architecture.qmd), [SO_R001 目錄結構規則](SO_R001_directory_structure.qmd)*

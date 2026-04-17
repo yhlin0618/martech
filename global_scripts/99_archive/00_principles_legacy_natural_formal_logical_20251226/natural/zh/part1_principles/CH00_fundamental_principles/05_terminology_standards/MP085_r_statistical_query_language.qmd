@@ -1,0 +1,461 @@
+---
+title: "MP026: R 統計查詢語言元原則 (R Statistical Query Language)"
+subtitle: "結合 SQL 數據操作與 R 統計分析能力的混合語言"
+author: "Claude"
+date: "2025-04-04"
+date-modified: "2025-08-16"
+categories: [meta-principle, statistical-analysis, query-language, RSQL]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+R 統計查詢語言（RSQL）是一種混合語言，結合了 SQL 的數據操作能力與 R 的統計分析能力，使用類似 dplyr 的語法以可讀、一致的方式表達複雜的統計操作。RSQL 作為精準行銷系統中統計分析操作的標準語言。
+
+## 概念框架
+
+RSQL 解決了通用數據查詢語言和統計分析之間的差距，提供統一的語法：
+
+1. **保持可讀性**：在表達複雜統計操作時保持人類可讀性
+2. **結合範式**：將 SQL 的數據焦點與 R 的統計能力合併
+3. **支援管道模式**：使用管道運算符（`%>%`）進行清晰的操作排序
+4. **統計焦點**：強調統計術語和操作
+5. **實施靈活性**：可以翻譯到各種後端（R、SQL+R、Python 等）
+6. **R 代碼對齊**：認識到更好的 RSQL 最終是更好的 R 代碼
+
+RSQL 的基本原則是盡可能接近良好編寫的 R 代碼，同時保持其跨平台特性。該語言不旨在創建任意抽象，而是標準化和形式化高質量 R 統計代碼的模式。隨著語言的發展，它應該持續反映 R 統計編程的最佳實踐。
+
+## 語言規範
+
+### 1. 核心語法結構 {#core-syntax}
+
+RSQL 操作遵循這個一般模式：
+
+```r
+data_source %>%
+  [optional preparation operations] %>%
+  [statistical operation] %>%
+  [optional post-processing]
+```
+
+其中：
+- **data_source**：輸入數據（表、數據集等）
+- **preparation operations**：過濾、分組、轉換操作
+- **statistical operation**：主要統計分析
+- **post-processing**：對統計結果的操作
+
+### 2. 數據準備操作 {#data-preparation}
+
+#### 過濾
+```r
+data %>%
+  filter(condition1, condition2, ...)
+```
+
+#### 選擇
+```r
+data %>%
+  select(column1, column2, ...)
+```
+
+#### 轉換
+```r
+data %>%
+  mutate(
+    new_column1 = expression1,
+    new_column2 = expression2,
+    ...
+  )
+```
+
+#### 分組
+```r
+data %>%
+  group_by(factor1, factor2, ...)
+```
+
+#### 排列
+```r
+data %>%
+  arrange(order_column1, desc(order_column2), ...)
+```
+
+### 3. 統計操作 {#statistical-operations}
+
+#### 描述性統計
+```r
+data %>%
+  summarize(
+    n = n(),
+    mean_x = mean(x, na.rm = TRUE),
+    sd_x = sd(x, na.rm = TRUE),
+    median_x = median(x, na.rm = TRUE),
+    iqr_x = IQR(x, na.rm = TRUE),
+    ...
+  )
+```
+
+#### 線性模型
+```r
+data %>%
+  linear_model(
+    formula = y ~ x1 + x2 + x1:x2,
+    weights = w,
+    conf_level = 0.95
+  ) %>%
+  model_summary()
+```
+
+#### 相關分析
+```r
+data %>%
+  correlate(
+    vars = c(x, y, z),
+    method = "pearson",
+    sig_test = TRUE
+  )
+```
+
+#### 時間序列分析
+```r
+data %>%
+  ts_decompose(
+    time_var = date,
+    value_var = sales,
+    frequency = "monthly",
+    components = c("trend", "seasonal", "remainder")
+  )
+```
+
+#### 聚類
+```r
+data %>%
+  cluster_kmeans(
+    vars = c(x, y, z),
+    k = 3,
+    iterations = 100,
+    seed = 42
+  )
+```
+
+### 4. 統計輸出處理 {#statistical-output}
+
+#### 模型評估
+```r
+model_result %>%
+  assess(
+    metrics = c("r_squared", "rmse", "aic", "bic"),
+    validation = "cross_validation",
+    folds = 5
+  )
+```
+
+#### 預測
+```r
+model_result %>%
+  predict(
+    new_data = test_data,
+    interval = "prediction",
+    level = 0.95
+  )
+```
+
+#### 視覺化準備
+```r
+model_result %>%
+  prepare_plot(
+    type = "diagnostic",
+    plots = c("residuals", "qq", "leverage")
+  )
+```
+
+### 5. 高級統計擴展 {#advanced-statistics}
+
+#### 貝葉斯分析
+```r
+data %>%
+  bayes_model(
+    formula = y ~ x1 + x2,
+    prior = normal(0, 10),
+    iterations = 2000,
+    chains = 4
+  )
+```
+
+#### 機器學習
+```r
+data %>%
+  ml_model(
+    type = "random_forest",
+    target = y,
+    features = c(x1, x2, x3),
+    hyperparameters = list(
+      trees = 500,
+      mtry = 2,
+      min_node_size = 5
+    )
+  )
+```
+
+## 實施範例
+
+### 範例 1：基本描述性統計
+```r
+sales_data %>%
+  group_by(region, product_category) %>%
+  summarize(
+    total_sales = sum(sales_amount, na.rm = TRUE),
+    avg_sales = mean(sales_amount, na.rm = TRUE),
+    median_sales = median(sales_amount, na.rm = TRUE),
+    sales_sd = sd(sales_amount, na.rm = TRUE),
+    n_transactions = n(),
+    n_customers = n_distinct(customer_id)
+  ) %>%
+  arrange(desc(total_sales))
+```
+
+### 範例 2：線性迴歸分析
+```r
+customer_data %>%
+  filter(active_status == "active") %>%
+  linear_model(
+    formula = lifetime_value ~ recency + frequency + monetary + first_purchase_date,
+    conf_level = 0.95
+  ) %>%
+  model_summary() %>%
+  select(
+    term, estimate, std_error, t_value, p_value,
+    conf_low, conf_high, significance
+  )
+```
+
+### 範例 3：高級時間序列分析
+```r
+sales_data %>%
+  group_by(date = floor_date(purchase_date, "month")) %>%
+  summarize(monthly_sales = sum(sales_amount, na.rm = TRUE)) %>%
+  ts_model(
+    time_var = date,
+    value_var = monthly_sales,
+    method = "arima_seasonal",
+    horizon = 12
+  ) %>%
+  forecast() %>%
+  mutate(
+    prediction_interval_lower = prediction - 1.96 * prediction_se,
+    prediction_interval_upper = prediction + 1.96 * prediction_se
+  )
+```
+
+### 範例 4：客戶細分
+```r
+customer_data %>%
+  select(recency, frequency, monetary) %>%
+  scale_variables() %>%
+  cluster_kmeans(
+    k = 4,
+    seed = 123,
+    iterations = 100
+  ) %>%
+  bind_to_original(customer_data) %>%
+  group_by(cluster) %>%
+  summarize(
+    n = n(),
+    avg_recency = mean(recency),
+    avg_frequency = mean(frequency),
+    avg_monetary = mean(monetary),
+    avg_ltv = mean(lifetime_value)
+  )
+```
+
+## 翻譯到實施語言
+
+RSQL 可以翻譯到不同的後端實施：
+
+### 翻譯到 R/dplyr
+```r
+# RSQL
+data %>%
+  group_by(category) %>%
+  summarize(
+    mean_value = mean(value),
+    sd_value = sd(value)
+  )
+
+# 直接 R/dplyr 實施
+data %>%
+  dplyr::group_by(category) %>%
+  dplyr::summarize(
+    mean_value = mean(value, na.rm = TRUE),
+    sd_value = sd(value, na.rm = TRUE)
+  )
+```
+
+### 翻譯到 SQL+R
+```sql
+-- SQL 部分：
+SELECT 
+  category,
+  AVG(value) AS mean_value_raw,
+  COUNT(value) AS count_value,
+  SUM(POWER(value - AVG(value), 2)) AS sum_squared_deviations
+FROM data
+GROUP BY category;
+```
+
+```r
+# R 部分：
+result_df$sd_value <- sqrt(result_df$sum_squared_deviations / result_df$count_value)
+```
+
+### 翻譯到 Python/pandas
+```python
+# Python/pandas 實施
+data.groupby('category').agg({
+    'value': ['mean', 'std']
+}).reset_index()
+```
+
+## 與其他語言的整合
+
+### 與 NSQL（MP0024）的關係
+
+RSQL 通過專注於統計操作來補充 NSQL，而 NSQL 專注於數據轉換：
+
+#### NSQL 表達式：
+```
+transform Orders to RegionalSales as
+  sum(sales) as total_sales,
+  count(order_id) as order_count
+  grouped by region
+```
+
+#### 等價的 RSQL：
+```r
+Orders %>%
+  group_by(region) %>%
+  summarize(
+    total_sales = sum(sales),
+    order_count = n()
+  )
+```
+
+### 與偽代碼（MP0022）的關係
+
+RSQL 提供統計實施，而偽代碼描述算法：
+
+#### 偽代碼：
+```
+ALGORITHM CalculateRegressionCoefficients(data, dependent_var, independent_vars)
+    LET X = matrix of independent_vars from data
+    LET y = vector of dependent_var from data
+    LET coefficients = (X'X)^(-1)X'y
+    RETURN coefficients
+END ALGORITHM
+```
+
+#### 等價的 RSQL：
+```r
+data %>%
+  linear_model(
+    formula = dependent_var ~ independent_vars
+  ) %>%
+  model_coefficients()
+```
+
+## 最佳實踐
+
+### 1. 清晰度和可讀性 {#clarity-readability}
+
+1. **一致命名**：使用一致的變數和函數命名
+2. **管道結構**：保持從數據到結果的清晰管道流
+3. **邏輯分組**：將相關操作分組在一起
+4. **註釋**：為複雜的統計操作添加註釋
+
+### 1a. R 代碼質量對齊 {#r-code-alignment}
+
+1. **R 最佳實踐**：遵循既定的 R 編程最佳實踐
+2. **Tidyverse 對齊**：保持與 tidyverse 原則的概念對齊
+3. **統計包**：利用標準 R 統計包的概念
+4. **最小抽象**：避免超出良好 R 代碼的不必要抽象
+5. **R 兼容性**：確保直接翻譯到原生 R
+
+### 2. 統計完整性 {#statistical-integrity}
+
+1. **假設檢查**：包含驗證統計假設的操作
+2. **缺失數據**：以明確策略顯式處理缺失數據
+3. **顯著性**：報告統計顯著性和置信區間
+4. **驗證**：為預測模型包含模型驗證步驟
+
+### 3. 性能考慮 {#performance}
+
+1. **數據準備**：在管道早期執行數據過濾和選擇
+2. **計算效率**：考慮大型數據集的計算要求
+3. **增量處理**：對時間序列和流數據使用增量處理
+4. **並行化**：指示何時可以並行化操作
+
+### 4. 文檔和可重現性 {#documentation}
+
+1. **參數文檔**：記錄統計參數和選擇
+2. **種子設置**：為隨機方法的可重現性設置種子
+3. **版本規範**：註明包和算法版本
+4. **可重現管道**：確保整個分析管道可重現
+
+## 受控歧義
+
+RSQL 承認並接受一定程度的受控歧義，認識到統計分析本質上涉及判斷和解釋。這種受控歧義是特性，而不是缺陷：
+
+1. **統計判斷**：對於同一問題，不同的統計方法可能都是有效的
+2. **實施變化**：不同的統計包可能以不同方式實施算法
+3. **計算權衡**：性能考慮可能需要近似
+4. **領域適應**：領域特定的統計方法可能需要靈活性
+
+RSQL 專注於清楚地表達統計意圖，同時允許實施細節根據上下文、可用包和計算要求而變化。這種平衡使其對現實世界的統計系統實用，同時保持概念完整性。
+
+## 與其他原則的關係
+
+### 與語言偏好（MP0023）的關係
+
+RSQL 透過以下方式實施 MP0023：
+1. **統計內容**：為統計操作提供專用語言
+2. **整合**：與系統中的其他語言整合
+3. **一致性**：確保統計概念的一致表達
+
+### 與自然 SQL 語言（MP0024）的關係
+
+RSQL 透過以下方式補充 MP0024：
+1. **統計焦點**：添加超越數據轉換的統計能力
+2. **共享模式**：保持類似的可讀性和管道結構
+3. **翻譯**：支援 NSQL 和 RSQL 之間的翻譯
+
+### 與原則語言版本（MP0020）的關係
+
+RSQL 透過以下方式支援 MP0020：
+1. **多重實施**：支援多種實施語言
+2. **一致語義**：在各種實施中保持一致的含義
+3. **版本控制**：支援語言規範的版本控制
+
+## 好處
+
+1. **統計清晰度**：清楚而明確地表達統計操作
+2. **一致性**：在系統中創建統計分析的一致性
+3. **可讀性**：在表達複雜統計時保持可讀性
+4. **實施靈活性**：支援多個實施後端
+5. **整合**：與其他系統語言整合
+6. **文檔**：作為統計操作的自我記錄規範
+7. **可重現性**：增強統計分析的可重現性
+
+## 結論
+
+R 統計查詢語言（RSQL）為精準行銷系統中的統計操作建立了標準化語言。通過在可讀語法中結合 SQL 的數據操作與 R 的統計能力，RSQL 能夠清晰、一致地表達複雜的統計分析。
+
+RSQL 橋接了數據查詢語言和統計編程之間的差距，提供了統一的方法，在支援高級統計操作的同時保持可讀性。這種語言增強了系統執行複雜分析的能力，同時保持關於統計方法和結果的清晰溝通。
+
+在其核心，RSQL 認識到理想的統計查詢語言從根本上與良好編寫的 R 代碼對齊——該語言的目標不是重新發明統計編程，而是形式化、標準化和擴展使 R 對統計分析有效的模式，同時實現跨平台實施。

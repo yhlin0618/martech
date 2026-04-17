@@ -1,0 +1,193 @@
+---
+id: "DM_R049"
+title: "Derivation Consumer Documentation Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-12-24"
+date_modified: "2025-12-24"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 49
+implements:
+  - "DM_R044": "Derivation Implementation Standard Rule"
+  - "MP110": "Application Data Consolidation Principle"
+related_to:
+  - "DM_R042": "DRV Sequential Numbering Rule"
+  - "MP064": "ETL-Derivation Separation Principle"
+supersedes:
+  - "Undocumented derivation-to-application data flows"
+---
+
+# DM_R049: Derivation Consumer Documentation Rule
+
+## Rule Statement
+
+**Every Derivation documentation set MUST include a Consumer Documentation Task (D0X_07)** that explicitly records which application UI modules consume the derivation's output tables. This ensures complete traceability from ETL through Derivation to Application.
+
+## Requirements
+
+### 1. Standard Task Numbering
+
+Consumer documentation MUST use the `_07` task number suffix within each derivation:
+
+| Task Number Pattern | Purpose |
+|---------------------|---------|
+| D0X_00 - D0X_06 | Core derivation logic |
+| **D0X_07** | Consumer documentation (required) |
+
+### 2. Output-Consumer Mapping
+
+Each output table MUST be mapped to its consuming UI modules:
+
+```markdown
+| Output Table | Consuming Module | Component Location |
+|--------------|------------------|-------------------|
+| df_dna_by_customer | microCustomer2 | 10_rshinyapp_components/micro/microCustomer/ |
+| df_segments_by_customer | microCustomer2 | 10_rshinyapp_components/micro/microCustomer/ |
+```
+
+### 3. Module Location References
+
+Full paths MUST be provided for each consuming module within `10_rshinyapp_components/`:
+
+```
+10_rshinyapp_components/
+├── micro/
+│   └── microCustomer/
+│       └── microCustomer2.R    # Primary consumer
+├── report/
+│   └── reportIntegration/
+│       └── reportIntegration.R  # Report consumer
+```
+
+### 4. Data Flow Visualization
+
+A visual diagram MUST be included showing the complete flow:
+
+```
+DRV Outputs → app_data (DuckDB) → UI Modules
+```
+
+### 5. Impact Analysis
+
+Document which modules will be affected by changes to each output table:
+
+| Change Type | Affected Modules | Required Actions |
+|-------------|-----------------|------------------|
+| Column rename | [list modules] | Update column references |
+| Schema change | [list modules] | Update data processing |
+| Table removal | ALL consumers | Critical refactoring |
+
+## Rationale
+
+### Complete Data Flow Traceability
+
+The MAMBA framework establishes a clear data pipeline:
+
+```
+RAW DATA → ETL → TRANSFORMED → DRV → APP_DATA → UI MODULES
+```
+
+Without consumer documentation, the final link (APP_DATA → UI MODULES) remains undocumented, creating:
+- Difficulty in impact analysis when changing derivation outputs
+- Confusion for developers about data sources
+- Risk of breaking changes going unnoticed
+
+### Benefits
+
+1. **Change Impact Analysis**: Before modifying derivation outputs, developers can identify all affected modules
+2. **Developer Onboarding**: New developers can trace data from UI back to its source
+3. **Architecture Clarity**: Explicit documentation of the DRV → APP boundary
+4. **Maintenance Efficiency**: Reduced time debugging data flow issues
+
+## Implementation
+
+### Creating D0X_07 Documentation
+
+Each derivation directory should contain a `D0X_07_module_consumers.qmd` file:
+
+```yaml
+---
+title: "D01_07: Application Module Consumers"
+parent: "D01_dna_analysis"
+category: "derivation-task"
+number: "D01_07"
+type: "derivation-task"
+implements:
+  - "DM_R049": "Derivation Consumer Documentation"
+---
+```
+
+### Content Template
+
+```markdown
+# D0X_07: Application Module Consumers
+
+## Output-to-Module Mapping
+
+| Output Table | Consuming Module | Location |
+|--------------|------------------|----------|
+| df_xxx | moduleY | path/to/module/ |
+
+## Primary Consuming Modules
+
+### moduleY (Active)
+- **Location**: full/path/to/moduleY.R
+- **Tables Consumed**: df_xxx, df_yyy
+- **Data Access Pattern**: [code example]
+
+## Archived Versions
+
+| Archived File | Archive Date | Reason |
+|--------------|--------------|--------|
+| moduleZ.R.archive | YYYY-MM | Superseded by moduleY |
+
+## Data Flow Diagram
+
+[ASCII diagram showing DRV outputs → app_data → modules]
+
+## Impact Analysis
+
+[Table showing change types and affected modules]
+```
+
+## Relationship to Other Rules
+
+### Extends
+
+- **DM_R044**: Adds consumer documentation as a required component beyond the five-part execution structure
+- **DM_R042**: Uses the sequential numbering convention (_07 suffix)
+
+### Complements
+
+- **MP064**: Documents the final step of ETL-Derivation-App separation
+- **MP110**: Traces data through to the Application Data Consolidation point
+
+## Implementation Checklist
+
+- [ ] D0X_07 file created in derivation documentation directory
+- [ ] All output tables mapped to consuming modules
+- [ ] Full module paths provided
+- [ ] Data flow diagram included
+- [ ] Impact analysis table completed
+- [ ] Archived module versions documented
+- [ ] Code examples for data access patterns
+
+## Benefits
+
+### For Developers
+- Clear understanding of data consumers
+- Easy impact analysis for changes
+
+### For Maintainers
+- Documented module dependencies
+- Traceable data lineage
+
+### For Architects
+- Complete system visibility
+- Informed design decisions
+
+## Conclusion
+
+The Derivation Consumer Documentation Rule (DM_R049) completes the data flow traceability by explicitly documenting how derivation outputs flow into application UI modules. By standardizing the D0X_07 task for each derivation, we ensure that the DRV → APP boundary is clearly documented, enabling effective maintenance, change management, and system understanding.

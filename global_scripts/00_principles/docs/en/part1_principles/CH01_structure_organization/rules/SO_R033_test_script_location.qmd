@@ -1,0 +1,225 @@
+---
+rule_id: "SO_R033"
+title: "Test Script Location Standard"
+category: "Script Organization"
+status: "active"
+created: "2025-11-30"
+version: "1.0"
+related_principles:
+  - "SO_R025"
+  - "MP046"
+applies_to:
+  - "Test scripts"
+  - "Validation scripts"
+  - "Verification scripts"
+---
+
+# SO_R033: Test Script Location Standard
+
+## Principle Statement
+
+All test and validation scripts MUST be stored in designated test directories, NEVER in project root.
+
+## Rationale
+
+**Problem**: Scattered test scripts in project root cause:
+- Git status pollution with untracked files
+- Unclear project organization
+- Difficulty finding relevant tests for specific components
+- Confusion about which tests are active vs. obsolete
+
+**Solution**: Centralized test organization with clear hierarchy.
+
+## Implementation Rules
+
+### Test Script Locations
+
+#### System-Wide Tests
+**Location**: `scripts/global_scripts/98_test/`
+
+**Purpose**: Tests that validate cross-system functionality
+- Database connection tests
+- API integration tests
+- Configuration validation
+- System initialization tests
+
+**Example**:
+```r
+scripts/global_scripts/98_test/
+├── test_database_connection.R
+├── test_openai_api.R
+├── test_initialization.R
+└── verify_system_prerequisites.R
+```
+
+#### Component-Specific Tests
+**Location**: `scripts/global_scripts/[component]/tests/`
+
+**Purpose**: Tests specific to a single component or module
+
+**Examples**:
+```r
+scripts/global_scripts/01_db/tests/
+├── test_connection_pooling.R
+└── test_transaction_handling.R
+
+scripts/global_scripts/26_platform_apis/eby/tests/
+├── test_eby_authentication.R
+└── test_eby_data_extraction.R
+```
+
+#### Module Testing Framework
+**Location**: `scripts/global_scripts/13_modules/M70_testing/`
+
+**Purpose**: Testing utilities and frameworks
+
+#### Application-Level Tests
+**Location**: `[app_directory]/tests/`
+
+**Purpose**: Tests specific to a particular application
+
+### Naming Conventions
+
+#### Test Prefixes
+- `test_` - Active test scripts for ongoing validation
+- `validate_` - Validation scripts for data/configuration verification
+- `verify_` - Verification scripts for system state checks
+- `check_` - Dependency and status checking scripts
+
+#### Naming Pattern
+```
+[prefix]_[component]_[aspect]_[optional_issue].R
+
+Examples:
+test_database_connection.R
+validate_etl_completeness.R
+verify_cbz_data_access.R
+check_packages.R
+test_issue_113_fix_verification.R
+```
+
+### Root Directory Policy
+
+#### PROHIBITED in Root
+- Test scripts (`test_*.R`)
+- Validation scripts (`validate_*.R`)
+- Verification scripts (`verify_*.R`)
+- Check scripts (`check_*.R`)
+
+#### EXCEPTION
+**None.** All test-related scripts must be in designated test directories.
+
+#### Root Directory Allowed Files
+Only these types permitted in project root:
+- `app.R` - Application entry point
+- `*.Rproj` - RStudio project file
+- `README.md` - Project documentation
+- Configuration files (`.Rprofile`, `renv.lock`)
+
+## Examples
+
+### Correct Organization ✓
+
+```r
+# System database tests
+scripts/global_scripts/98_test/test_database_connection.R
+
+# Component-specific tests
+scripts/global_scripts/01_db/tests/test_connection_pooling.R
+
+# Platform API tests
+scripts/global_scripts/26_platform_apis/eby/tests/test_eby_etl.R
+
+# Package dependency check
+scripts/global_scripts/98_test/check_packages.R
+```
+
+### Incorrect Organization ✗
+
+```r
+# WRONG: Test in root directory
+./test_database.R
+./validate_feature.R
+./check_dependencies.R
+
+# WRONG: Test in wrong component
+scripts/update_scripts/ETL/test_database.R
+```
+
+## Migration Procedure
+
+When finding test scripts in incorrect locations:
+
+1. **Identify Scope**: Determine if test is system-wide or component-specific
+2. **Move to Appropriate Directory**: Follow location rules above
+3. **Update References**: Fix any hardcoded paths in documentation
+4. **Verify Functionality**: Run test from new location to ensure it works
+
+### Migration Script Template
+
+```r
+#!/usr/bin/env Rscript
+# Move test scripts from root to proper location
+
+root_tests <- list.files(pattern = "^(test_|validate_|verify_|check_).*\\.R$")
+
+for (script in root_tests) {
+  # Determine destination based on script name/content
+  dest <- "scripts/global_scripts/98_test/"
+
+  # Move file
+  file.rename(script, file.path(dest, script))
+  message("Moved: ", script, " -> ", dest)
+}
+```
+
+## Enforcement
+
+### Pre-Commit Hook
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# Check for test scripts in root
+TEST_FILES=$(git diff --cached --name-only --diff-filter=A | grep -E '^(test_|validate_|verify_|check_).*\.R$')
+
+if [ -n "$TEST_FILES" ]; then
+  echo "ERROR: Test scripts detected in root directory:"
+  echo "$TEST_FILES"
+  echo ""
+  echo "Test scripts must be in:"
+  echo "  - scripts/global_scripts/98_test/ (system tests)"
+  echo "  - scripts/global_scripts/[component]/tests/ (component tests)"
+  exit 1
+fi
+```
+
+### Code Review Checklist
+
+When reviewing PRs, verify:
+- [ ] No test_*.R files in root directory
+- [ ] Test scripts in appropriate location for their scope
+- [ ] Test naming follows prefix conventions
+- [ ] New component directories include tests/ subdirectory if tests exist
+
+## Relationship to Other Principles
+
+### SO_R025: Script Organization Hierarchy
+SO_R033 extends SO_R025 by providing specific rules for test script placement.
+
+### MP046: Debug Code Tracing
+Test scripts may use debug tracing utilities defined in MP046, but debug scripts themselves are covered by SO_R034.
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-11-30 | Initial creation after root directory cleanup |
+
+## See Also
+
+- SO_R025: Script Organization Hierarchy
+- SO_R034: Debug Script Management
+- SO_R035: Temporary File and Log Management
+- MP046: Debug Code Tracing

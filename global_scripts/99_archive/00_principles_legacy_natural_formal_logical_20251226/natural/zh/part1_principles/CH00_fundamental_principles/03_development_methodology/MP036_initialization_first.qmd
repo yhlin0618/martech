@@ -1,0 +1,224 @@
+---
+title: "MP031: 初始化優先原則 (Initialization First Principle)"
+subtitle: "所有操作必須在適當模式下進行明確初始化後才能執行"
+author: "Claude"
+date: "2025-04-06"
+date-modified: "2025-08-16"
+categories: [meta-principle, initialization, security, architecture]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心概念
+
+沒有腳本可以在沒有在適當模式下進行明確初始化的情況下執行有意義的操作。初始化是一個強制性的先決條件，為所有後續操作建立操作上下文、安全邊界和可用資源。
+
+## 基礎要求
+
+### 1. 明確模式聲明 {#explicit-mode-declaration}
+
+每個執行路徑必須以明確的模式聲明開始，以確定其操作上下文：
+
+```r
+# 任何有意義腳本的第一行執行
+OPERATION_MODE <- "APP_MODE"  # 或 "UPDATE_MODE" 或 "GLOBAL_MODE"
+```
+
+### 2. 強制初始化 {#mandatory-initialization}
+
+在模式聲明之後，必須在任何操作代碼執行之前進行適當的初始化：
+
+```r
+# 模式聲明後立即進行強制初始化
+source(file.path("update_scripts", "global_scripts", "00_principles", 
+                paste0("sc_initialization_", tolower(OPERATION_MODE), ".R")))
+
+# 驗證初始化已完成
+if (!exists("INITIALIZATION_COMPLETED") || !INITIALIZATION_COMPLETED) {
+  stop("系統未正確初始化。操作開始前必須完成初始化。")
+}
+
+# 現在可以開始執行操作代碼
+# ...
+```
+
+### 3. 初始化完成驗證 {#initialization-verification}
+
+所有代碼必須在繼續之前驗證初始化已成功完成：
+
+```r
+check_initialization <- function() {
+  if (!exists("INITIALIZATION_COMPLETED") || !INITIALIZATION_COMPLETED) {
+    stop("初始化未完成。無法繼續操作。")
+  }
+  
+  if (!exists("OPERATION_MODE")) {
+    stop("未定義操作模式。沒有操作上下文無法繼續。")
+  }
+  
+  return(TRUE)
+}
+```
+
+## 實施
+
+### 初始化信號流 {#initialization-signal-flow}
+
+初始化過程遵循嚴格的信號流：
+
+1. **模式聲明**：設置 `OPERATION_MODE` 以建立操作上下文
+2. **初始化觸發**：載入適當的初始化腳本
+3. **資源設置**：初始化腳本載入庫和資源
+4. **完成信號**：初始化設置 `INITIALIZATION_COMPLETED <- TRUE`
+5. **驗證檢查**：操作代碼驗證完成信號
+6. **操作階段**：主腳本繼續其預期操作
+
+### 自我保護初始化 {#self-protecting-initialization}
+
+初始化腳本必須防止不當或重複執行：
+
+```r
+# 每個初始化腳本都以此檢查開始
+if (exists("INITIALIZATION_COMPLETED") && INITIALIZATION_COMPLETED) {
+  message("初始化已完成。跳過。")
+  return(invisible(NULL))
+}
+
+# 開始初始化過程
+INITIALIZATION_IN_PROGRESS <- TRUE
+
+# 執行初始化步驟
+# ...
+
+# 標記初始化為完成
+INITIALIZATION_COMPLETED <- TRUE
+```
+
+### 環境隔離 {#environment-isolation}
+
+初始化過程建立一個乾淨、一致的環境：
+
+1. **庫載入**：所有需要的庫以一致的順序載入
+2. **函數載入**：載入所需的函數檔案
+3. **配置設置**：載入特定於環境的配置
+4. **資源連接**：建立數據庫和外部資源連接
+5. **安全邊界**：根據當前模式設置訪問權限
+
+## 驗證機制
+
+### 初始化狀態變數 {#initialization-state-variables}
+
+系統維護表示初始化狀態的狀態變數：
+
+| 變數 | 目的 | 設置者 | 檢查者 |
+|------|------|--------|--------|
+| `OPERATION_MODE` | 定義操作上下文 | 主腳本 | 初始化腳本、所有函數 |
+| `INITIALIZATION_IN_PROGRESS` | 表示初始化正在進行 | 初始化腳本 | 實用函數 |
+| `INITIALIZATION_COMPLETED` | 表示初始化已完成 | 初始化腳本 | 所有操作函數 |
+| `VERBOSE_INITIALIZATION` | 控制初始化日誌 | 主腳本（可選） | 初始化腳本 |
+
+### 預設拒絕安全模型 {#default-deny-security}
+
+遵循預設拒絕安全模型：
+
+1. 在初始化完成之前，所有操作都被禁止
+2. 所有操作必須驗證其與當前模式的兼容性
+3. 資源在初始化期間明確授予之前保持不可訪問
+
+## 異常管理
+
+### 處理未初始化執行 {#handling-uninitialized}
+
+如果操作嘗試在沒有初始化的情況下執行：
+
+```r
+# 關鍵操作的守護函數
+execute_with_initialization_check <- function(fn, ...) {
+  if (!exists("INITIALIZATION_COMPLETED") || !INITIALIZATION_COMPLETED) {
+    msg <- paste("嘗試在沒有初始化的情況下執行操作。",
+                "請首先通過設置 OPERATION_MODE",
+                "並載入適當的初始化腳本來初始化系統。")
+    stop(msg)
+  }
+  
+  # 如果初始化完成則執行函數
+  fn(...)
+}
+```
+
+### 初始化失敗恢復 {#initialization-failure-recovery}
+
+當初始化失敗時：
+
+1. 系統設置 `INITIALIZATION_FAILED <- TRUE`
+2. 擷取詳細的錯誤信息
+3. 根據失敗類型建議恢復程序
+4. 清除部分初始化狀態
+
+```r
+# 初始化錯誤處理範例
+tryCatch({
+  # 初始化步驟
+}, error = function(e) {
+  INITIALIZATION_FAILED <- TRUE
+  INITIALIZATION_ERROR <- e$message
+  INITIALIZATION_COMPLETED <- FALSE
+  
+  message("初始化失敗：", e$message)
+  message("請解決問題並重新初始化系統。")
+})
+```
+
+## 與其他原則的整合
+
+### 與操作模式（MP0003）協作 {#working-with-operating-modes}
+
+此原則透過強制執行以下內容來擴展 MP0003（操作模式）：
+
+1. 在任何操作之前必須聲明有效模式
+2. 模式決定執行哪個初始化腳本
+3. 所有操作都尊重聲明模式的安全邊界
+
+### 支援模式層級（MP0004）{#supporting-mode-hierarchy}
+
+此原則透過確保以下內容來支援 MP0004（模式層級）：
+
+1. 初始化總是在特定模式上下文中發生
+2. 模式能力在初始化期間一致地建立
+3. 模式轉換需要適當的重新初始化
+
+### 啟用初始化載入（R13）{#enabling-initialization-sourcing}
+
+此原則透過以下方式為 R13（初始化載入規則）提供基礎：
+
+1. 建立何時必須進行初始化
+2. 設置初始化和操作階段之間的明確邊界
+3. 提供初始化期間組件載入的框架
+
+### 指導初始化導入（R45）{#guiding-initialization-imports}
+
+此原則透過以下方式支援 R45（僅初始化導入）：
+
+1. 定義初始化的目的和範圍
+2. 將初始化關注點與操作功能分離
+3. 創建專注於導入和配置的清晰初始化階段
+
+## 好處
+
+1. **安全性**：沒有代碼可以在沒有適當安全上下文的情況下執行
+2. **一致性**：所有執行都遵循可預測的模式
+3. **可靠性**：保證依賴在需要時可用
+4. **可維護性**：初始化和操作之間的清晰分離
+5. **可調試性**：初始化問題與操作問題清楚分離
+
+## 結論
+
+初始化優先原則建立初始化是所有操作的強制性先決條件，確保一致、安全和可靠的執行環境。通過在任何操作代碼之前強制明確的模式聲明和適當的初始化，此原則為可預測的系統行為和明確的安全邊界創建了基礎。
+
+此元原則作為系統架構的基石，影響代碼執行的每個方面，並建立組件如何與其操作環境互動的基本期望。

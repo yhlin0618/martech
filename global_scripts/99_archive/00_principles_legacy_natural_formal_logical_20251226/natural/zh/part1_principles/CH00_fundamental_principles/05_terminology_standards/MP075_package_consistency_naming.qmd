@@ -1,0 +1,337 @@
+---
+title: "MP074: 套件一致性命名"
+subtitle: "命名規範必須遵循外部套件標準而非內部慣例"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP074"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "meta-principle"
+law: "基本原則法"
+article: 
+  number: 74
+  title: "套件一致性命名"
+implements:
+  - "CH00.MP019: 套件一致性原則"
+related_to:
+  - "UI_R001: UI-Server-Defaults N元組規則"
+  - "SO_P004: 應用程式自下而上建構"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七十四條：套件一致性命名 {#overview}
+
+**基本原則法第七十四條（套件一致性命名）**
+
+當使用外部套件時，函數名稱和檔案名稱必須遵循那些套件的命名慣例而非我們的內部標準。檔案必須以其包含的主要函數命名，以維持程式碼與檔案組織之間的一致性。
+
+:::{.callout-important}
+## 核心原則
+外部套件慣例優先於內部命名標準，以維持生態系統一致性並減少在不同程式設計環境間切換時的認知負荷。
+:::
+
+# 第一項：函數命名要求 {#function-naming}
+
+## 第一款：Shiny 模組函數 {#shiny-modules}
+
+所有 Shiny 模組函數必須遵循 Shiny 的 camelCase 慣例並使用適當的後綴：
+
+```r
+# UI 組件必須使用 camelCase 加 UI 後綴
+moduleNameUI <- function(id) { ... }
+
+# Server 組件必須使用 camelCase 加 Server 後綴
+moduleNameServer <- function(id, ...) { ... }
+
+# Defaults 組件必須使用 camelCase 加 Defaults 後綴
+moduleNameDefaults <- function() { ... }
+```
+
+**範例：**
+- `microCustomerUI`
+- `dataExplorerServer`
+- `rfmAnalysisDefaults`
+
+## 第二款：資料庫介面函數 {#dbi-functions}
+
+資料庫函數必須遵循 DBI 慣例並使用 `db` 前綴：
+
+```r
+# 主要函數使用 dbVerb 格式
+dbConnect <- function(drv, ...) { ... }
+dbGetQuery <- function(conn, statement, ...) { ... }
+
+# 自訂函數維持 db 前綴
+dbFetchAllCustomers <- function(conn = NULL) { ... }
+dbSaveTransaction <- function(conn, transaction_data) { ... }
+```
+
+## 第三款：ggplot2 擴展 {#ggplot2-extensions}
+
+擴展 ggplot2 的函數應遵循其命名模式：
+
+```r
+# Geoms 使用 snake_case 加 geom_ 前綴
+geom_custom_point <- function(mapping = NULL, ...) { ... }
+
+# Stats 使用 snake_case 加 stat_ 前綴
+stat_custom_summary <- function(mapping = NULL, ...) { ... }
+
+# Scales 使用 snake_case 加 scale_ 前綴
+scale_color_custom <- function(...) { ... }
+```
+
+## 第四款：dplyr 擴展 {#dplyr-extensions}
+
+擴展 dplyr 的函數應遵循其動詞優先的 snake_case 模式：
+
+```r
+# 資料操作動詞
+filter_by_segment <- function(data, segment) { ... }
+summarize_by_group <- function(data, ...) { ... }
+```
+
+# 第二項：檔案命名要求 {#file-naming}
+
+檔案名稱必須與其包含的主要函數相符：
+
+```
+# 函數：microCustomerUI()
+microCustomerUI.R
+
+# 函數：dbFetchAllCustomers()
+dbFetchAllCustomers.R
+
+# 函數：geom_custom_point()
+geom_custom_point.R
+```
+
+# 第三項：目錄組織 {#directory-organization}
+
+## 第一款：Shiny 組件 {#shiny-organization}
+
+遵循 UI_R001 中定義的基於資料夾的組織，組件函數名稱決定資料夾結構：
+
+```
+10_rshinyapp_components/
+├── micro/
+│   ├── microCustomer/
+│   │   ├── microCustomerUI.R
+│   │   ├── microCustomerServer.R
+│   │   └── microCustomerDefaults.R
+│   └── microTransactions/
+│       ├── microTransactionsUI.R
+│       ├── microTransactionsServer.R
+│       └── microTransactionsDefaults.R
+└── macro/
+    └── macroOverview/
+        ├── macroOverviewUI.R
+        ├── macroOverviewServer.R
+        └── macroOverviewDefaults.R
+```
+
+## 第二款：資料庫函數 {#database-organization}
+
+將相關的資料庫函數分組到有意義的目錄中：
+
+```
+03_database/
+├── core/
+│   ├── dbConnect.R
+│   ├── dbDisconnect.R
+│   └── dbGetQuery.R
+├── customers/
+│   ├── dbFetchAllCustomers.R
+│   └── dbSaveCustomer.R
+└── transactions/
+    ├── dbGetTransactions.R
+    └── dbSaveTransaction.R
+```
+
+# 第四項：實作範例 {#examples}
+
+## 第一款：Shiny 模組 N元組 {#shiny-example}
+
+```r
+# 檔案：microCustomerUI.R
+#' 微型客戶 UI 組件
+#'
+#' @param id 模組 ID
+#' @export
+microCustomerUI <- function(id) {
+  ns <- NS(id)
+  
+  card(
+    card_header("客戶檔案"),
+    card_body(
+      selectInput(ns("customer_id"), "選擇客戶", choices = NULL),
+      valueBox(
+        title = "客戶價值",
+        value = textOutput(ns("customer_value"))
+      )
+    )
+  )
+}
+
+# 檔案：microCustomerServer.R
+#' 微型客戶 Server 組件
+#'
+#' @param id 模組 ID
+#' @param data_source 資料來源
+#' @export
+microCustomerServer <- function(id, data_source = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # Server 邏輯...
+  })
+}
+
+# 檔案：microCustomerDefaults.R
+#' 微型客戶組件預設值
+#'
+#' @return 預設值的命名列表
+#' @export
+microCustomerDefaults <- function() {
+  list(
+    customer_value = "$0.00"
+  )
+}
+```
+
+## 第二款：資料庫函數 {#database-example}
+
+```r
+# 檔案：dbFetchAllCustomers.R
+#' 從資料庫擷取所有客戶
+#'
+#' @param conn 資料庫連接
+#' @return 包含客戶的資料框
+#' @export
+dbFetchAllCustomers <- function(conn = NULL) {
+  # 如果未提供連接則使用本地連接
+  if (is.null(conn)) {
+    conn <- getDefaultConnection()
+  }
+  
+  # 執行查詢並適當處理錯誤
+  query <- "SELECT * FROM customers WHERE active = 1 ORDER BY created_at DESC"
+  result <- dbGetQuery(conn, query)
+  
+  return(result)
+}
+```
+
+## 第三款：ggplot2 擴展 {#ggplot2-example}
+
+```r
+# 檔案：geom_customer_segments.R
+#' 客戶區段視覺化自訂 Geom
+#'
+#' @inheritParams ggplot2::geom_point
+#' @export
+geom_customer_segments <- function(mapping = NULL, data = NULL, stat = "identity",
+                                   position = "identity", ...) {
+  ggplot2::layer(
+    geom = GeomCustomerSegments,
+    mapping = mapping,
+    data = data,
+    stat = stat,
+    position = position,
+    params = list(...)
+  )
+}
+
+# ggproto 物件定義
+GeomCustomerSegments <- ggplot2::ggproto("GeomCustomerSegments", ggplot2::GeomPoint,
+  # 自訂繪圖函數...
+)
+```
+
+# 第五項：常見錯誤與解決方案 {#errors-solutions}
+
+## 第一款：函數與檔案命名不一致 {#naming-inconsistency}
+
+**❌ 問題**：函數名稱與檔案名稱不符，難以定位函數定義。
+
+```r
+# 檔案：customer_ui.R
+microCustomerUI <- function(id) { ... }
+```
+
+**✅ 解決方案**：重新命名檔案以符合函數名稱：
+
+```r
+# 檔案：microCustomerUI.R
+microCustomerUI <- function(id) { ... }
+```
+
+## 第二款：混合命名慣例 {#mixed-conventions}
+
+**❌ 問題**：相關函數間使用不一致的命名慣例。
+
+```r
+# 不一致的命名
+micro_customer_ui <- function(id) { ... }  # snake_case
+microCustomerServer <- function(id) { ... }  # camelCase
+```
+
+**✅ 解決方案**：一致地遵循套件慣例：
+
+```r
+# 一致的 Shiny 慣例
+microCustomerUI <- function(id) { ... }  # camelCase 加 UI 後綴
+microCustomerServer <- function(id) { ... }  # camelCase 加 Server 後綴
+```
+
+## 第三款：目錄結構不一致 {#directory-inconsistency}
+
+**❌ 問題**：類似組件使用不同的組織模式。
+
+**✅ 解決方案**：對每種類型的函數遵循一致的目錄模式：
+
+```
+# 所有 Shiny 組件的一致結構
+component_name/
+├── componentNameUI.R
+├── componentNameServer.R
+└── componentNameDefaults.R
+```
+
+# 第六項：優勢 {#benefits}
+
+1. **可預測的程式碼導覽**：開發者可以透過檔案名稱輕鬆定位函數定義
+2. **減少認知負荷**：一致的命名減少不同慣例間的環境切換
+3. **改善互操作性**：程式碼遵循其整合生態系統的慣例
+4. **簡化開發**：IDE 自動完成和函數查找更有效率
+5. **清晰的 API 邊界**：來自不同生態系統的函數有明確區別
+6. **更好的可維護性**：標準化命名模式讓新開發者更容易理解程式碼
+7. **更容易的套件開發**：遵循 R 套件標準，便於未來抽取
+
+# 第七項：與其他原則的關係 {#relationships}
+
+## 第一款：與 UI_R001（UI-Server-Defaults N元組規則）的關係 {#ui-r001-relation}
+
+UI_R001 定義 Shiny 組件應如何組織為 UI、server 和 defaults 檔案的 N元組。本原則（MP074）補充 UI_R001，規定該組織結構內函數和檔案的命名模式。
+
+## 第二款：與 MP019（套件一致性原則）的關係 {#mp019-relation}
+
+本原則透過提供在函數和檔案命名中遵循套件慣例的具體要求和範例，直接實作 MP019。
+
+## 第三款：與 SO_P004（應用程式自下而上建構）的關係 {#so-p004-relation}
+
+一致的命名模式透過讓組件更自包含和可重用來支援自下而上建構。
+
+# 結論 {#conclusion}
+
+套件一致性命名原則確保我們的程式碼庫維持與整合的外部套件和生態系統一致的命名模式。透過遵循特定套件的函數命名慣例並確保檔案以其主要函數命名，我們創建了更易導覽、可維護和可互操作的程式碼庫。
+
+---
+
+*基於：基本原則法第七十四條*  
+*相關：[MP019 套件一致性](../../03_development_methodology/MP019_package_consistency.qmd)、[UI_R001 UI-Server-Defaults N元組規則](../../../CH04_ui_components/rules/UI_R001_ui_server_defaults_ntuple.qmd)*

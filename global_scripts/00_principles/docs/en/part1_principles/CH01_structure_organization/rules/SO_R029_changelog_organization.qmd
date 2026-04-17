@@ -1,0 +1,322 @@
+---
+title: "SO_R029: CHANGELOG Organization Rule"
+subtitle: "All principle reviews and system changes must be documented in the CHANGELOG directory"
+author: "Claude"
+date: "2025-08-25"
+categories: [rule, documentation, version-control, changelog]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Rule Statement
+
+All principle reviews, modifications, architectural decisions, and system changes MUST be documented in the CHANGELOG directory following a strict organizational structure. No review or modification documents shall be placed in the principles root directory.
+
+> **Update (2026-02-11):** Issue tracking source of truth is **GitHub Issues**.  
+> Local `CHANGELOG/issues/` is legacy archive only.
+>
+> **Issue Classification Update (2026-02-11):** In the `global_scripts` repository, issue scope labels are:
+> - Company scope: `company:<COMPANY_CODE>` (example: `company:MAMBA`, `company:QEF_DESIGN`)
+> - Module scope: `module:<ModuleName>` (example: `module:BrandEdge`)
+> Do not use `project:*`, `app:*`, or uppercase `Company:*` for scope classification.
+> GitHub Project itself is only a container and does not define scope semantics.
+>
+> **Project Board Update (2026-02-11):**
+> - Use one GitHub Project board per company scope (`company:*`)
+> - Use module-specific boards when needed for module scopes (`module:*`)
+> Every issue must be linked to its corresponding board based on its scope label.
+
+## Required Directory Structure
+
+```
+00_principles/
+├── CHANGELOG/                      # All change documentation
+│   ├── reviews/                   # Audit reports and reviews
+│   │   └── YYYY-MM-DD_topic/    # Date-stamped review sessions
+│   ├── decisions/                 # Architectural decisions
+│   ├── analysis/                  # Deep technical analysis reports
+│   │   └── YYYY-MM-DD_topic_analysis.md
+│   ├── improvements/              # Enhancement proposals
+│   │   ├── PROPOSED/             # New proposals
+│   │   ├── APPROVED/             # Approved for implementation
+│   │   └── IMPLEMENTED/          # Completed improvements
+│   ├── issues/                    # Problem tracking
+│   │   ├── OPEN/                 # New issues
+│   │   ├── IN_PROGRESS/          # Being worked on
+│   │   └── RESOLVED/             # Completed issues
+│   ├── monitoring/                # System monitoring logs and reports
+│   ├── releases/                  # Version release notes
+│   │   └── archive/              # Historical releases
+│   └── archive/                   # Archived materials
+└── [principle directories]        # Active principles only
+```
+
+## Prohibited in Root Directory
+
+The following files must NEVER exist in the `00_principles/` root directory:
+
+### Review and Audit Documents
+- `PRINCIPLE_AUDIT_REPORT_*.md`
+- `PRINCIPLE_MIGRATION_GUIDE_*.md`
+- `PRINCIPLE_CONSTITUTIONAL_AMENDMENTS.md`
+- `PRINCIPLE_CONFLICT_RESOLUTION.md`
+- `PRINCIPLE_CONSOLIDATION_PLAN.md`
+- Any file starting with `PRINCIPLE_`, `CHAPTER_`, `MP_`, `P_`, `R_` that is a review document
+
+### Temporary Working Files
+- Draft documents
+- Work-in-progress reviews
+- Temporary analysis files
+- Personal notes or annotations
+
+## Document Placement Guidelines
+
+### 1. Reviews Directory (`CHANGELOG/reviews/`)
+
+Use for:
+- Comprehensive principle audits
+- Constitutional alignment reviews
+- Conflict resolution documentation
+- Migration guides
+- Consolidation plans
+
+Naming convention: `YYYY-MM-DD_descriptive_topic/`
+
+Example:
+```
+CHANGELOG/reviews/
+└── 2025-08-25_constitutional_alignment/
+    ├── PRINCIPLE_AUDIT_REPORT_20250825.md
+    ├── PRINCIPLE_MIGRATION_GUIDE_20250825.md
+    └── PRINCIPLE_CONSTITUTIONAL_AMENDMENTS.md
+```
+
+### 2. Decisions Directory (`CHANGELOG/decisions/`)
+
+Use for:
+- Architectural Decision Records (ADRs)
+- Design decisions
+- Technology choices
+- Process changes
+
+Naming convention: `YYYY-MM-DD_decision_topic.md` or `ADR_NNN_topic.md`
+
+### 3. Analysis Directory (`CHANGELOG/analysis/`)
+
+Use for:
+- Feasibility analysis reports
+- Dependency analysis documentation
+- Framework evaluation reports
+- Performance analysis studies
+- Architecture exploration documents
+
+Naming convention: `YYYY-MM-DD_topic_analysis.md`
+
+**Distinction from other directories**:
+- Unlike `decisions/`: Analysis documents explore options without making binding decisions
+- Unlike `issues/`: Analysis documents are proactive investigations, not reactive problem-solving
+- Unlike `reviews/`: Analysis documents focus on technical deep-dives, not compliance audits
+
+Examples:
+```
+CHANGELOG/analysis/
+├── 2025-12-03_rsv_framework_feasibility_analysis.md
+├── ISSUE_105_106_dependency_analysis.md
+└── 2025-11-15_performance_bottleneck_analysis.md
+```
+
+### 4. Improvements Directory (`CHANGELOG/improvements/`)
+
+Use for:
+- Enhancement proposals
+- Feature requests
+- Process improvements
+- Optimization suggestions
+
+Workflow: PROPOSED → APPROVED → IMPLEMENTED
+
+### 5. Issues Directory (`CHANGELOG/issues/`) - Legacy Archive
+
+Use for:
+- Historical bug reports and legacy issue notes
+- Backfilled records from pre-GitHub-issue workflow
+
+Current tracking workflow: GitHub Issues (`open` → `closed`)
+
+GitHub label taxonomy for issue scope:
+- `company:<COMPANY_CODE>` = company context in `global_scripts`
+- `module:<ModuleName>` = module context in `global_scripts`
+- `legacy-*` labels = migration/history metadata
+- `type:*` or other functional labels = problem category (optional)
+
+GitHub project board policy:
+- One board per company context (for example: `company:MAMBA`, `company:QEF_DESIGN`)
+- Add module boards for module-only scopes (for example: `module:BrandEdge`)
+- Issues must be added to the matching board based on `company:*` or `module:*`
+- If scope is unclear, place in triage board first, then re-assign when clarified
+
+### 6. Monitoring Directory (`CHANGELOG/monitoring/`)
+
+Use for:
+- System monitoring logs
+- Performance metrics reports
+- Health check results
+- Operational status reports
+
+Naming convention: `YYYY-MM-DD_monitoring_topic.md`
+
+### 7. Releases Directory (`CHANGELOG/releases/`)
+
+Use for:
+- Version release notes
+- Change summaries
+- Breaking changes
+- Migration requirements
+
+## Implementation Requirements
+
+### 1. File Creation
+
+When creating any review or modification document:
+
+```r
+# CORRECT: Place in appropriate CHANGELOG subdirectory
+create_file("CHANGELOG/reviews/2025-08-25_topic/REVIEW.md")
+
+# INCORRECT: Never place in root
+# create_file("PRINCIPLE_REVIEW.md")  # WRONG!
+```
+
+### 2. Migration of Existing Files
+
+If review documents exist in the root directory:
+
+```bash
+# Move to appropriate CHANGELOG location
+mkdir -p CHANGELOG/reviews/YYYY-MM-DD_topic/
+mv PRINCIPLE_*.md CHANGELOG/reviews/YYYY-MM-DD_topic/
+mv CHAPTER_*.md CHANGELOG/reviews/YYYY-MM-DD_topic/
+```
+
+### 3. Documentation Standards
+
+Each CHANGELOG entry should include:
+
+```markdown
+# Document Title
+
+## Date
+YYYY-MM-DD
+
+## Author
+[Name or System]
+
+## Summary
+Brief description of the change or review
+
+## Details
+Comprehensive documentation
+
+## Impact
+- Affected principles
+- Required migrations
+- Breaking changes
+
+## Status
+[PROPOSED | IN_PROGRESS | COMPLETED | ARCHIVED]
+```
+
+## Rationale
+
+### Why CHANGELOG Organization Matters
+
+1. **Clean Root Directory**: Keeps the principles root directory focused on active principles
+2. **Historical Record**: Provides clear timeline of system evolution
+3. **Traceability**: Makes it easy to find when and why changes occurred
+4. **Professional Standards**: Follows industry best practices for change management
+5. **Audit Compliance**: Supports regulatory and compliance requirements
+
+### Benefits of Structured Organization
+
+1. **Discoverability**: Easy to find relevant documentation
+2. **Context Preservation**: Related documents stay together
+3. **Workflow Management**: Clear status tracking for improvements and issues
+4. **Version Control**: Better Git history and diff tracking
+5. **Team Collaboration**: Clear expectations for document placement
+
+## Relationship to Other Principles
+
+- **MP012 (Change Tracking)**: This rule implements the CHANGELOG requirements of MP012
+- **DEV_R035 (Code Compliance Tracking)**: Complementary tracking for code compliance issues
+- **MP007 (Documentation Organization)**: Aligns with overall documentation structure
+- **MP013 (Statute Law Analogy)**: Provides the "legislative history" archive
+- **R002 (Principle Documentation)**: Extends documentation requirements to changes
+
+## Compliance Checklist
+
+- [ ] CHANGELOG directory exists with all required subdirectories
+- [ ] No review documents in the root directory
+- [ ] All new reviews placed in dated folders under CHANGELOG/reviews/
+- [ ] Issues tracked in GitHub Issues and linked in local reports
+- [ ] Improvements follow PROPOSED → APPROVED → IMPLEMENTED flow
+- [ ] Release notes maintained in CHANGELOG/releases/
+- [ ] Archive directory used for obsolete materials
+- [ ] Team trained on CHANGELOG requirements
+
+## Examples
+
+### Example 1: Principle Audit
+
+```bash
+# Creating a new principle audit
+mkdir -p CHANGELOG/reviews/2025-08-25_quarterly_audit/
+touch CHANGELOG/reviews/2025-08-25_quarterly_audit/AUDIT_REPORT.md
+touch CHANGELOG/reviews/2025-08-25_quarterly_audit/RECOMMENDATIONS.md
+touch CHANGELOG/reviews/2025-08-25_quarterly_audit/ACTION_ITEMS.md
+```
+
+### Example 2: Issue Tracking
+
+```bash
+# Creating a new issue in GitHub
+gh issue create \
+  --title "Conflicting Rules R050 and R075" \
+  --body "Details, repro steps, impact, proposed direction"
+
+# Optional: write local implementation report linked to issue number
+# CHANGELOG/reports/YYYY-MM-DD_issue-<number>_rule_conflict.md
+```
+
+### Example 3: Improvement Proposal
+
+```bash
+# Proposing an improvement
+cat > CHANGELOG/improvements/PROPOSED/automated_validation.md << EOF
+# Automated Principle Validation System
+## Proposed: 2025-08-25
+## Author: System Architect
+## Description: Implement automated checking for principle compliance
+EOF
+
+# After approval
+mv CHANGELOG/improvements/PROPOSED/automated_validation.md \
+   CHANGELOG/improvements/APPROVED/automated_validation.md
+
+# After implementation
+mv CHANGELOG/improvements/APPROVED/automated_validation.md \
+   CHANGELOG/improvements/IMPLEMENTED/automated_validation.md
+```
+
+## Enforcement
+
+This rule is mandatory and non-negotiable. Any review or modification documents found in the root directory should be immediately moved to the appropriate CHANGELOG subdirectory. Automated checks may be implemented to enforce this structure.
+
+## Conclusion
+
+The CHANGELOG directory serves as the authoritative record of all system changes, reviews, and evolution. By maintaining strict organization and prohibiting review documents in the root directory, we ensure a clean, professional, and auditable principle management system that supports long-term maintenance and collaboration.

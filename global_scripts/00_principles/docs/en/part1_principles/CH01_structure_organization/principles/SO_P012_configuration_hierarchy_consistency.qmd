@@ -1,0 +1,393 @@
+---
+title: "SO_P012: Configuration Hierarchy Consistency Principle"
+subtitle: "Maintaining conceptual level consistency and domain separation in configuration files"
+chapter: "CH01"
+category: "principle"
+number: "SO_P012"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Structure and Organization Law"
+article-number: "Article 12"
+related_to:
+  - "CH00.MP041: Type-Dependent Operations"
+  - "CH00.MP031: Initialization First"
+  - "SO_P010: Config-Driven Customization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure and Organization Law Article 12 (Configuration Hierarchy Consistency Principle)**
+
+Configuration hierarchies should maintain consistent conceptual levels within each nesting tier, with settings organized by domain rather than by component, and with sensible defaults reducing the need for explicit configuration.
+
+:::{.callout-important}
+## Core Principle
+Each level of configuration structure should represent a consistent conceptual level, domain separation is preferred over component mixing, and convention over configuration.
+:::
+
+# Section 1: Theoretical Foundation {#rationale}
+
+## Subsection 1: Cognitive Coherence {#cognitive-coherence}
+
+Each level of the configuration hierarchy should represent a consistent conceptual level:
+- Avoid mixing different concepts at the same level
+- Maintain clear mental models
+- Reduce cognitive burden for understanding and maintenance
+
+## Subsection 2: Domain Separation Principle {#domain-separation}
+
+Settings from different domains should be separated:
+1. **UI Display Settings**: Labels, styles, layouts
+2. **Functional Settings**: Business logic, calculation rules
+3. **Data Connection Settings**: Data sources, query parameters
+
+## Subsection 3: Convention Over Configuration {#convention-over-configuration}
+
+- Infer sensible defaults from names and context
+- Only require explicit configuration for non-standard settings
+- Reduce boilerplate configuration code
+
+# Section 2: Organization Patterns {#organization-patterns}
+
+## Subsection 1: Horizontal Domain Separation {#horizontal-separation}
+
+Organize by domain first, components second:
+
+```yaml
+# Horizontal separation: Domain -> Component
+ui:
+  component_a:
+    label: "Component A"
+    icon: "chart"
+  component_b:
+    label: "Component B"
+    icon: "table"
+    
+data:
+  component_a:
+    source: "table_a"
+    filters: ["active"]
+  component_b:
+    source: "table_b"
+    filters: ["recent"]
+    
+functionality:
+  component_a:
+    calculation: "sum"
+    aggregation: "daily"
+  component_b:
+    calculation: "average"
+    aggregation: "monthly"
+```
+
+## Subsection 2: Vertical Component Separation {#vertical-separation}
+
+Organize by component first, domain second:
+
+```yaml
+# Vertical separation: Component -> Domain
+components:
+  component_a:
+    ui:
+      label: "Component A"
+      icon: "chart"
+    data:
+      source: "table_a"
+      filters: ["active"]
+    functionality:
+      calculation: "sum"
+      aggregation: "daily"
+      
+  component_b:
+    ui:
+      label: "Component B"
+      icon: "table"
+    data:
+      source: "table_b"
+      filters: ["recent"]
+    functionality:
+      calculation: "average"
+      aggregation: "monthly"
+```
+
+## Subsection 3: Selection Guide {#selection-guide}
+
+| Situation | Recommended Pattern | Reason |
+|-----------|---------------------|--------|
+| Multi-component shared settings | Horizontal separation | Easier to manage common settings |
+| Highly independent components | Vertical separation | Better encapsulation |
+| UI-focused applications | Horizontal separation | Centralized UI settings management |
+| Complex functionality | Vertical separation | Cohesive functional logic |
+
+# Section 3: Default Application {#default-application}
+
+## Subsection 1: Naming Convention Inference {#naming-inference}
+
+```yaml
+# Defaults based on naming
+components:
+  # microCustomer automatically infers:
+  # - Label: "Customer"
+  # - Icon: "user"
+  # - Table: "customers"
+  microCustomer:
+    # Only configure non-standard parts
+    special_filter: "vip_only"
+    
+  # Non-standard component needs explicit configuration
+  specialAnalysis:
+    ui:
+      label: "Special Analysis Tool"  # Override default "Special Analysis"
+      icon: "microscope"              # Cannot infer from name
+    data:
+      source: "complex_view"          # Non-standard data source
+```
+
+## Subsection 2: Default Hierarchy {#default-hierarchy}
+
+```r
+# Default application hierarchy
+get_component_config <- function(component_name, config) {
+  # 1. System defaults
+  defaults <- list(
+    ui = list(
+      label = humanize(component_name),
+      icon = infer_icon(component_name),
+      visible = TRUE
+    ),
+    data = list(
+      source = infer_table(component_name),
+      cache = TRUE
+    )
+  )
+  
+  # 2. Global configuration overrides
+  if (!is.null(config$global)) {
+    defaults <- merge_configs(defaults, config$global)
+  }
+  
+  # 3. Component-specific configuration overrides
+  if (!is.null(config$components[[component_name]])) {
+    defaults <- merge_configs(defaults, config$components[[component_name]])
+  }
+  
+  defaults
+}
+```
+
+# Section 4: Configuration Schema Validation {#schema-validation}
+
+## Subsection 1: Schema Definition {#schema-definition}
+
+```yaml
+# Configuration schema definition
+schema:
+  type: object
+  properties:
+    ui:
+      type: object
+      properties:
+        label:
+          type: string
+          description: "Display label"
+        icon:
+          type: string
+          enum: ["chart", "table", "user", "settings"]
+    data:
+      type: object
+      properties:
+        source:
+          type: string
+          required: true
+        filters:
+          type: array
+          items:
+            type: string
+  required: ["data"]  # Data settings are required
+```
+
+## Subsection 2: Validation Implementation {#validation-implementation}
+
+```r
+# Configuration validation function
+validate_config <- function(config, schema) {
+  errors <- list()
+  
+  # Check required fields
+  for (field in schema$required) {
+    if (is.null(config[[field]])) {
+      errors <- append(errors, 
+        paste("Missing required field:", field))
+    }
+  }
+  
+  # Check type consistency
+  for (field in names(config)) {
+    if (!is.null(schema$properties[[field]])) {
+      expected_type <- schema$properties[[field]]$type
+      actual_type <- class(config[[field]])[1]
+      
+      if (!check_type_match(actual_type, expected_type)) {
+        errors <- append(errors,
+          paste("Type mismatch:", field, 
+                "expected", expected_type, 
+                "actual", actual_type))
+      }
+    }
+  }
+  
+  if (length(errors) > 0) {
+    stop(paste("Configuration validation failed:\n", 
+               paste(errors, collapse = "\n")))
+  }
+  
+  TRUE
+}
+```
+
+# Section 5: Anti-Pattern Identification {#anti-patterns}
+
+## Subsection 1: Mixed Levels {#mixed-levels}
+
+**❌ Wrong: Mixing different concepts at same level**
+```yaml
+components:
+  micro:
+    display: "Customer Analysis"  # UI setting
+    customer_profile: "db_table"  # Data setting
+    color: "blue"                 # UI setting
+    query: "SELECT * FROM..."     # Data setting
+```
+
+**✅ Correct: Clear concept separation**
+```yaml
+components:
+  micro:
+    ui:
+      display: "Customer Analysis"
+      color: "blue"
+    data:
+      table: "customer_profile"
+      query: "SELECT * FROM..."
+```
+
+## Subsection 2: Over-Configuration {#over-configuration}
+
+**❌ Wrong: Configuring inferable defaults**
+```yaml
+components:
+  microCustomer:
+    ui:
+      label: "Customer"      # Can be inferred from name
+      icon: "user"          # Can be inferred from name
+      visible: true         # Default value
+    data:
+      source: "customers"   # Can be inferred from name
+      cache: true          # Default value
+```
+
+**✅ Correct: Only configure non-standard settings**
+```yaml
+components:
+  microCustomer:
+    data:
+      additional_filters: ["vip_only"]  # Non-standard setting
+```
+
+# Section 6: Best Practices {#best-practices}
+
+## Subsection 1: Progressive Detail {#progressive-detail}
+
+```yaml
+# Start with essential settings, add detail progressively
+# Level 1: Minimal configuration
+components:
+  micro:
+    source: "customers"
+
+# Level 2: Add common settings
+components:
+  micro:
+    source: "customers"
+    filters: ["active"]
+
+# Level 3: Full configuration
+components:
+  micro:
+    data:
+      source: "customers"
+      filters: ["active"]
+      cache_duration: 3600
+    ui:
+      custom_label: "VIP Customers"
+    functionality:
+      special_calculation: "weighted_average"
+```
+
+## Subsection 2: Feature Discoverability {#feature-discoverability}
+
+Configuration structure should clearly indicate what can be configured:
+
+```yaml
+# Clear configuration options
+components:
+  available_components:
+    - microCustomer
+    - microProduct
+    - macroTrend
+    
+  # Explicit configurable options for each component
+  microCustomer:
+    configurable:
+      ui: ["label", "icon", "color_scheme"]
+      data: ["source", "filters", "refresh_rate"]
+      functionality: ["calculations", "aggregations"]
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Configuration Hierarchy Consistency Checklist
+
+**Structure Design**:
+- [ ] Choose horizontal or vertical separation pattern
+- [ ] Maintain consistency with chosen pattern
+- [ ] Clear concepts at each level
+- [ ] Explicit domain separation
+
+**Default Management**:
+- [ ] Name-based default definitions
+- [ ] Clear default hierarchy
+- [ ] Configure only non-standard settings
+- [ ] Document default behaviors
+
+**Validation Mechanism**:
+- [ ] Configuration schema defined
+- [ ] Validation function implemented
+- [ ] Clear error messages
+- [ ] Complete type checking
+
+**Maintainability**:
+- [ ] Intuitive configuration structure
+- [ ] High feature discoverability
+- [ ] Complete documentation
+- [ ] Sufficient examples
+:::
+
+# Conclusion {#conclusion}
+
+The Configuration Hierarchy Consistency Principle ensures configuration files are clear, understandable, and maintainable. By maintaining conceptual level consistency, appropriate domain separation, and sensible default application, you can create configuration systems that are both flexible and concise. Remember, good configuration design should make common cases simple while keeping complex cases possible.
+
+---
+
+*Based on: Structure and Organization Law Article 12*  
+*Related to: [MP041 Type-Dependent Operations](../../CH00_fundamental_principles/03_development_methodology/MP041_type_dependent_operations.qmd), [SO_P010 Config-Driven Customization](SO_P010_config_driven_customization.qmd)*

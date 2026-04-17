@@ -1,0 +1,610 @@
+---
+title: "API01: Authentication Patterns"
+subtitle: "OAuth2, API Keys, and Token Management Strategies"
+author: "MAMBA Architecture Team"
+date: "2025-08-27"
+version: "1.0.0"
+---
+
+# Authentication Patterns
+
+## Overview
+
+Different e-commerce platforms use various authentication methods. This document standardizes how MAMBA handles authentication across all platforms.
+
+## Authentication Methods
+
+### 1. API Key Authentication
+
+Simple authentication using API keys in headers or query parameters.
+
+**Platforms**: Cyberbiz, WooCommerce
+
+```r
+# API Key in Header
+add_api_key_header <- function(request, api_key, header_name = "X-API-Key") {
+  httr::add_headers(
+    .headers = setNames(api_key, header_name)
+  )
+}
+
+# API Key in Query Parameter
+add_api_key_query <- function(url, api_key, param_name = "api_key") {
+  paste0(url, ifelse(grepl("\\?", url), "&", "?"), 
+         param_name, "=", api_key)
+}
+
+# Usage example
+response <- httr::GET(
+  url = "https://api.platform.com/endpoint",
+  add_api_key_header(request, Sys.getenv("PLATFORM_API_KEY"))
+)
+```
+
+### 2. API Key + Secret Authentication
+
+Enhanced security using both API key and secret.
+
+**Platforms**: Cyberbiz
+
+```r
+# HMAC Signature Authentication
+generate_hmac_signature <- function(api_secret, method, url, body = NULL) {
+  # Create string to sign
+  string_to_sign <- paste0(
+    toupper(method), "\n",
+    url, "\n",
+    ifelse(is.null(body), "", jsonlite::toJSON(body, auto_unbox = TRUE))
+  )
+  
+  # Generate HMAC-SHA256 signature
+  signature <- openssl::base64_encode(
+    openssl::sha256(
+      charToRaw(string_to_sign),
+      key = charToRaw(api_secret)
+    )
+  )
+  
+  return(signature)
+}
+
+# Cyberbiz specific authentication
+cbz_authenticate <- function(api_key, api_secret, method, endpoint, body = NULL) {
+  base_url <- Sys.getenv("CBZ_API_BASE_URL")
+  full_url <- paste0(base_url, endpoint)
+  
+  signature <- generate_hmac_signature(api_secret, method, full_url, body)
+  
+  headers <- httr::add_headers(
+    "X-API-Key" = api_key,
+    "X-API-Signature" = signature,
+    "Content-Type" = "application/json"
+  )
+  
+  return(headers)
+}
+```
+
+### 3. OAuth 2.0 Authentication
+
+Token-based authentication with refresh capabilities.
+
+**Platforms**: eBay, Amazon SP-API
+
+```r
+# OAuth2 Token Manager
+OAuth2Manager <- R6Class("OAuth2Manager",
+  public = list(
+    initialize = function(platform_code) {
+      private$platform_code <- platform_code
+      private$load_config()
+      private$token_cache <- new.env(hash = TRUE)
+    },
+    
+    get_access_token = function() {
+      # Check cache first
+      cached_token <- private$token_cache$access_token
+      
+      if (!is.null(cached_token) && 
+          cached_token$expires_at > Sys.time()) {
+        return(cached_token$token)
+      }
+      
+      # Refresh or obtain new token
+      new_token <- private$refresh_access_token()
+      
+      # Cache the token
+      private$token_cache$access_token <- list(
+        token = new_token$access_token,
+        expires_at = Sys.time() + new_token$expires_in
+      )
+      
+      return(new_token$access_token)
+    },
+    
+    make_authenticated_request = function(endpoint, method = "GET", body = NULL) {
+      token <- self$get_access_token()
+      
+      response <- httr::VERB(
+        verb = method,
+        url = paste0(private$config$base_url, endpoint),
+        httr::add_headers(
+          "Authorization" = paste("Bearer", token),
+          "Content-Type" = "application/json"
+        ),
+        body = body,
+        encode = "json"
+      )
+      
+      return(response)
+    }
+  ),
+  
+  private = list(
+    platform_code = NULL,
+    config = NULL,
+    token_cache = NULL,
+    
+    load_config = function() {
+      private$config <- list(
+        client_id = Sys.getenv(paste0(private$platform_code, "_CLIENT_ID")),
+        client_secret = Sys.getenv(paste0(private$platform_code, "_CLIENT_SECRET")),
+        refresh_token = Sys.getenv(paste0(private$platform_code, "_REFRESH_TOKEN")),
+        base_url = Sys.getenv(paste0(private$platform_code, "_API_BASE_URL")),
+        token_url = Sys.getenv(paste0(private$platform_code, "_TOKEN_URL"))
+      )
+    },
+    
+    refresh_access_token = function() {
+      response <- httr::POST(
+        url = private$config$token_url,
+        body = list(
+          grant_type = "refresh_token",
+          refresh_token = private$config$refresh_token,
+          client_id = private$config$client_id,
+          client_secret = private$config$client_secret
+        ),
+        encode = "form"
+      )
+      
+      if (httr::status_code(response) != 200) {
+        stop("Failed to refresh access token: ", httr::content(response))
+      }
+      
+      return(httr::content(response))
+    }
+  )
+)
+```
+
+### 4. Session-Based Authentication
+
+Login once, use session token for subsequent requests.
+
+**Platforms**: Some legacy systems
+
+```r
+SessionManager <- R6Class("SessionManager",
+  public = list(
+    initialize = function(platform_config) {
+      private$config <- platform_config
+      private$session_token <- NULL
+      private$session_expires <- NULL
+    },
+    
+    login = function() {
+      response <- httr::POST(
+        url = paste0(private$config$base_url, "/auth/login"),
+        body = list(
+          username = private$config$username,
+          password = private$config$password
+        ),
+        encode = "json"
+      )
+      
+      if (httr::status_code(response) == 200) {
+        content <- httr::content(response)
+        private$session_token <- content$session_token
+        private$session_expires <- Sys.time() + content$expires_in
+        return(TRUE)
+      }
+      
+      return(FALSE)
+    },
+    
+    get_session_token = function() {
+      if (is.null(private$session_token) || 
+          Sys.time() > private$session_expires) {
+        self$login()
+      }
+      return(private$session_token)
+    },
+    
+    logout = function() {
+      if (!is.null(private$session_token)) {
+        httr::POST(
+          url = paste0(private$config$base_url, "/auth/logout"),
+          httr::add_headers("Session-Token" = private$session_token)
+        )
+        private$session_token <- NULL
+        private$session_expires <- NULL
+      }
+    }
+  ),
+  
+  private = list(
+    config = NULL,
+    session_token = NULL,
+    session_expires = NULL
+  )
+)
+```
+
+## Unified Authentication Interface
+
+### Authentication Factory
+
+```r
+create_authenticator <- function(platform_code) {
+  auth_config <- load_platform_auth_config(platform_code)
+  
+  authenticator <- switch(auth_config$type,
+    "api_key" = ApiKeyAuthenticator$new(auth_config),
+    "api_key_secret" = ApiKeySecretAuthenticator$new(auth_config),
+    "oauth2" = OAuth2Manager$new(platform_code),
+    "session" = SessionManager$new(auth_config),
+    stop("Unknown authentication type: ", auth_config$type)
+  )
+  
+  return(authenticator)
+}
+
+# Unified interface wrapper
+AuthenticationWrapper <- RenergyClass("AuthenticationWrapper",
+  public = list(
+    initialize = function(platform_code) {
+      private$authenticator <- create_authenticator(platform_code)
+      private$platform_code <- platform_code
+    },
+    
+    authenticate_request = function(request) {
+      # Delegates to platform-specific authenticator
+      return(private$authenticator$authenticate(request))
+    },
+    
+    refresh_credentials = function() {
+      if ("refresh" %in% names(private$authenticator)) {
+        private$authenticator$refresh()
+      }
+    },
+    
+    is_authenticated = function() {
+      return(private$authenticator$is_valid())
+    }
+  ),
+  
+  private = list(
+    authenticator = NULL,
+    platform_code = NULL
+  )
+)
+```
+
+## Token Storage and Security
+
+### Secure Token Storage
+
+```r
+# Token storage with encryption
+SecureTokenStorage <- R6Class("SecureTokenStorage",
+  public = list(
+    initialize = function(storage_path = "~/.mamba/tokens") {
+      private$storage_path <- storage_path
+      dir.create(dirname(storage_path), showWarnings = FALSE, recursive = TRUE)
+    },
+    
+    store_token = function(platform_code, token_data) {
+      # Encrypt sensitive data
+      encrypted_data <- private$encrypt_data(token_data)
+      
+      # Store with platform identifier
+      token_file <- file.path(private$storage_path, 
+                              paste0(platform_code, ".token"))
+      saveRDS(encrypted_data, token_file)
+    },
+    
+    retrieve_token = function(platform_code) {
+      token_file <- file.path(private$storage_path, 
+                              paste0(platform_code, ".token"))
+      
+      if (!file.exists(token_file)) {
+        return(NULL)
+      }
+      
+      encrypted_data <- readRDS(token_file)
+      return(private$decrypt_data(encrypted_data))
+    },
+    
+    delete_token = function(platform_code) {
+      token_file <- file.path(private$storage_path, 
+                              paste0(platform_code, ".token"))
+      if (file.exists(token_file)) {
+        unlink(token_file)
+      }
+    }
+  ),
+  
+  private = list(
+    storage_path = NULL,
+    
+    encrypt_data = function(data) {
+      # Use system keychain for encryption key
+      key <- sodium::keygen()
+      encrypted <- sodium::data_encrypt(
+        serialize(data, NULL),
+        key
+      )
+      return(list(data = encrypted, key = key))
+    },
+    
+    decrypt_data = function(encrypted_data) {
+      decrypted <- sodium::data_decrypt(
+        encrypted_data$data,
+        encrypted_data$key
+      )
+      return(unserialize(decrypted))
+    }
+  )
+)
+```
+
+### Token Refresh Strategy
+
+```r
+# Automatic token refresh
+TokenRefresher <- R6Class("TokenRefresher",
+  public = list(
+    initialize = function(refresh_fn, refresh_threshold = 300) {
+      private$refresh_fn <- refresh_fn
+      private$refresh_threshold <- refresh_threshold
+    },
+    
+    should_refresh = function(expires_at) {
+      # Refresh if token expires within threshold
+      time_until_expiry <- as.numeric(expires_at - Sys.time(), units = "secs")
+      return(time_until_expiry < private$refresh_threshold)
+    },
+    
+    refresh_if_needed = function(current_token) {
+      if (self$should_refresh(current_token$expires_at)) {
+        return(private$refresh_fn())
+      }
+      return(current_token)
+    }
+  ),
+  
+  private = list(
+    refresh_fn = NULL,
+    refresh_threshold = NULL
+  )
+)
+```
+
+## Platform-Specific Implementations
+
+### Cyberbiz Authentication
+
+```r
+# Configuration in .env
+# CBZ_API_KEY=your_api_key
+# CBZ_API_SECRET=your_api_secret
+
+cbz_auth <- function() {
+  list(
+    type = "api_key_secret",
+    api_key = Sys.getenv("CBZ_API_KEY"),
+    api_secret = Sys.getenv("CBZ_API_SECRET"),
+    sign_request = function(method, url, body = NULL) {
+      timestamp <- as.character(as.integer(Sys.time()))
+      
+      string_to_sign <- paste0(
+        method, "\n",
+        url, "\n",
+        timestamp, "\n",
+        ifelse(is.null(body), "", jsonlite::toJSON(body, auto_unbox = TRUE))
+      )
+      
+      signature <- digest::hmac(
+        key = Sys.getenv("CBZ_API_SECRET"),
+        object = string_to_sign,
+        algo = "sha256"
+      )
+      
+      return(list(
+        headers = c(
+          "X-API-Key" = Sys.getenv("CBZ_API_KEY"),
+          "X-Timestamp" = timestamp,
+          "X-Signature" = signature
+        )
+      ))
+    }
+  )
+}
+```
+
+### eBay OAuth2 Authentication
+
+```r
+# Configuration in .env
+# EBY_APP_ID=your_app_id
+# EBY_CERT_ID=your_cert_id
+# EBY_DEV_ID=your_dev_id
+# EBY_REDIRECT_URI=your_redirect_uri
+
+eby_auth <- function() {
+  oauth2_config <- httr::oauth_app(
+    appname = "ebay_mamba",
+    key = Sys.getenv("EBY_APP_ID"),
+    secret = Sys.getenv("EBY_CERT_ID")
+  )
+  
+  oauth2_endpoint <- httr::oauth_endpoint(
+    authorize = "https://auth.ebay.com/oauth2/authorize",
+    access = "https://api.ebay.com/identity/v1/oauth2/token"
+  )
+  
+  token <- httr::oauth2.0_token(
+    endpoint = oauth2_endpoint,
+    app = oauth2_config,
+    scope = "https://api.ebay.com/oauth/api_scope",
+    cache = TRUE
+  )
+  
+  return(list(
+    type = "oauth2",
+    token = token,
+    add_auth_header = function() {
+      httr::config(token = token)
+    }
+  ))
+}
+```
+
+### Amazon SP-API Authentication
+
+```r
+# Configuration in .env
+# AMZ_CLIENT_ID=your_client_id
+# AMZ_CLIENT_SECRET=your_client_secret
+# AMZ_REFRESH_TOKEN=your_refresh_token
+# AMZ_ROLE_ARN=your_role_arn
+
+amz_auth <- function() {
+  # Get LWA access token
+  lwa_response <- httr::POST(
+    url = "https://api.amazon.com/auth/o2/token",
+    body = list(
+      grant_type = "refresh_token",
+      refresh_token = Sys.getenv("AMZ_REFRESH_TOKEN"),
+      client_id = Sys.getenv("AMZ_CLIENT_ID"),
+      client_secret = Sys.getenv("AMZ_CLIENT_SECRET")
+    ),
+    encode = "form"
+  )
+  
+  access_token <- httr::content(lwa_response)$access_token
+  
+  # Assume AWS STS role
+  sts_client <- paws::sts()
+  role_credentials <- sts_client$assume_role(
+    RoleArn = Sys.getenv("AMZ_ROLE_ARN"),
+    RoleSessionName = "mamba-sp-api"
+  )
+  
+  return(list(
+    type = "aws_sig_v4",
+    access_token = access_token,
+    aws_credentials = role_credentials$Credentials,
+    sign_request = function(request) {
+      # AWS Signature Version 4 signing
+      # Implementation details...
+    }
+  ))
+}
+```
+
+## Error Handling
+
+### Authentication Error Types
+
+```r
+handle_auth_error <- function(error, platform_code) {
+  error_message <- tolower(error$message)
+  
+  if (grepl("unauthorized|401", error_message)) {
+    # Invalid credentials
+    log_auth_error(platform_code, "INVALID_CREDENTIALS")
+    stop("Invalid API credentials for platform: ", platform_code)
+    
+  } else if (grepl("forbidden|403", error_message)) {
+    # Insufficient permissions
+    log_auth_error(platform_code, "INSUFFICIENT_PERMISSIONS")
+    stop("Insufficient API permissions for platform: ", platform_code)
+    
+  } else if (grepl("token.*expired", error_message)) {
+    # Token expired - attempt refresh
+    log_auth_error(platform_code, "TOKEN_EXPIRED")
+    return("REFRESH_TOKEN")
+    
+  } else if (grepl("rate.*limit", error_message)) {
+    # Rate limit on auth endpoint
+    log_auth_error(platform_code, "AUTH_RATE_LIMIT")
+    stop("Authentication rate limit exceeded for platform: ", platform_code)
+    
+  } else {
+    # Unknown error
+    log_auth_error(platform_code, "UNKNOWN", error$message)
+    stop("Authentication failed for platform: ", platform_code, 
+         "\nError: ", error$message)
+  }
+}
+```
+
+## Best Practices
+
+1. **Never Hard-Code Credentials**: Always use environment variables
+2. **Use Secure Storage**: Encrypt tokens when storing locally
+3. **Implement Token Refresh**: Automatically refresh expiring tokens
+4. **Handle Failures Gracefully**: Implement proper error handling
+5. **Log Authentication Events**: Track auth successes and failures
+6. **Rotate Credentials Regularly**: Update API keys periodically
+7. **Use HTTPS Only**: Never send credentials over unencrypted connections
+8. **Implement Rate Limiting**: Respect auth endpoint rate limits
+9. **Cache Tokens Appropriately**: Reduce unnecessary auth requests
+10. **Monitor Authentication Health**: Track auth success rates
+
+## Testing Authentication
+
+```r
+test_platform_authentication <- function(platform_code) {
+  tryCatch({
+    # Create authenticator
+    auth <- create_authenticator(platform_code)
+    
+    # Test authentication
+    test_endpoint <- get_platform_test_endpoint(platform_code)
+    response <- auth$make_authenticated_request(test_endpoint)
+    
+    if (httr::status_code(response) == 200) {
+      message("✓ Authentication successful for ", platform_code)
+      return(TRUE)
+    } else {
+      message("✗ Authentication failed for ", platform_code)
+      message("  Status: ", httr::status_code(response))
+      return(FALSE)
+    }
+  }, error = function(e) {
+    message("✗ Authentication error for ", platform_code)
+    message("  Error: ", e$message)
+    return(FALSE)
+  })
+}
+
+# Test all configured platforms
+test_all_authentications <- function() {
+  platforms <- c("CBZ", "EBY", "AMZ")
+  results <- sapply(platforms, test_platform_authentication)
+  
+  message("\nAuthentication Test Summary:")
+  message("Passed: ", sum(results), "/", length(results))
+  
+  return(results)
+}
+```
+
+## Related Documentation
+
+- [API Architecture Overview](API00_architecture_overview.qmd)
+- [Rate Limiting](API02_rate_limiting.qmd)
+- [Error Handling](API03_error_handling.qmd)
+- [Platform APIs](platforms/)

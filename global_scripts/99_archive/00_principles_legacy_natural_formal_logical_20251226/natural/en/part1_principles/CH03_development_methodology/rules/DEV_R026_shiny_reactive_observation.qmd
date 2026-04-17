@@ -1,0 +1,170 @@
+---
+title: "DEV_R026: Shiny Reactive Observation Rule"
+subtitle: "In Shiny applications, only explicitly observed reactive expressions will trigger execution of dependent code, and only rendered outputs will update the UI. All critical reactive logic must have explicit observers to ensure proper execution"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R026"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 26
+  title: "Shiny Reactive Observation Rule"
+related_to:
+  - "MP52: Unidirectional Data Flow"
+  - "MP53: Feedback Loop"
+  - "MP54: UI-Server Correspondence"
+  - "R88: Shiny Module ID Handling"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 26: Shiny Reactive Observation Rule {#overview}
+
+**Development Methodology Law Article 26 (Shiny Reactive Observation Rule)**
+
+This rule ensures proper execution of reactive logic in Shiny applications, especially in modular applications.
+
+:::{.callout-important}
+## Core Rule
+In Shiny applications, only explicitly observed reactive expressions will trigger execution of dependent code, and only rendered outputs will update the UI. All critical reactive logic must have explicit observers to ensure proper execution, especially in modular applications.
+:::
+
+# Section 1: Rationale {#rationale}
+
+Shiny's reactive programming model depends on establishing clear dependency chains. When these chains are broken or incomplete, components can appear to work but fail to respond to user input or data changes.
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Explicit Observation Required {#explicit-observation-required}
+
+All critical reactive expressions that don't directly connect to an output must be explicitly observed using `observe()` or `observeEvent()`.
+
+## Subsection 2: Module Server Execution {#module-server-execution}
+
+When using Shiny modules, ensure module server functions are explicitly triggered rather than merely defined.
+
+## Subsection 3: UI-Independent Logic {#ui-independent-logic}
+
+Any server-side logic that should execute regardless of UI visibility must be explicitly observed.
+
+## Subsection 4: Debugging Pattern {#debugging-pattern}
+
+If a component works when debugging outputs are displayed but fails when they are hidden, this indicates a broken reactive chain.
+
+## Subsection 5: Complete Reactive Chains {#complete-reactive-chains}
+
+Verify that all reactive expressions are part of complete chains that ultimately connect to UI outputs or explicit observers.
+
+# Section 3: Examples {#examples}
+
+## Subsection 1: Problematic Pattern (Broken Chain) {#problematic-pattern}
+
+```r
+# Definition of reactive expression
+filtered_data <- reactive({
+  # Code to filter data based on input
+  # ...
+})
+
+# UI output that shows debug information
+output$debug_output <- renderPrint({
+  # This output happens to depend on filtered_data()
+  # and is the only thing triggering it to execute
+  str(filtered_data())
+})
+
+# Filter UI shows up but doesn't work when debug output is hidden
+```
+
+## Subsection 2: Corrected Pattern (Complete Chain) {#corrected-pattern}
+
+```r
+# Definition of reactive expression
+filtered_data <- reactive({
+  # Code to filter data based on input
+  # ...
+})
+
+# Explicit observer ensures filtered_data runs regardless of UI visibility
+observe({
+  # Force filtered_data to execute
+  filtered_data()
+})
+
+# Debug output doesn't affect whether filtered_data runs
+output$debug_output <- renderPrint({
+  str(filtered_data())
+})
+
+# Filter will now work regardless of debug output visibility
+```
+
+# Section 4: Module Pattern Best Practice {#module-pattern-best-practice}
+
+When creating Shiny modules, ensure server logic is always executed:
+
+```r
+# Module creation
+myModule <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # Module logic
+  })
+}
+
+# In main app - WRONG: This creates the server function but doesn't execute it!
+server <- function(input, output, session) {
+  my_module_server <- myModule("module1")  # Nothing observes this
+}
+
+# In main app - CORRECT: This ensures the module server runs
+server <- function(input, output, session) {
+  # Call the module directly
+  myModule("module1")
+  
+  # Or if you need to capture its return value
+  my_module_data <- myModule("module1")
+  
+  # Ensure any reactive expressions are observed
+  observe({
+    my_module_data()
+  })
+}
+```
+
+# Section 5: Edge Case - Conditional UI {#edge-case-conditional-ui}
+
+When using conditional UI, be especially careful to ensure server logic is executed regardless of UI visibility:
+
+```r
+# Conditional UI with server logic that must always run
+conditionalPanel(
+  condition = "input.show_panel == true",
+  div(id = "conditional_content", ...)
+)
+
+# Server logic must be observed regardless of panel visibility
+observe({
+  # Logic that operates on the conditional panel's inputs
+  # This runs even when panel is hidden
+})
+```
+
+# Section 6: Related Principles {#related-principles}
+
+- MP52 Unidirectional Data Flow
+- MP53 Feedback Loop
+- MP54 UI-Server Correspondence
+- R88 Shiny Module ID Handling
+
+---
+
+*Based on: Development Methodology Law Article 26*  
+*Related to: [MP52 Unidirectional Data Flow](../../CH00_fundamental_principles/meta_principles/MP052_unidirectional_data_flow.qmd), [R88 Shiny Module ID Handling](../../CH04_ui_components/rules/UI_R002_shiny_module_id_handling.qmd)*

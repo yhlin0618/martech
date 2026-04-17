@@ -1,0 +1,165 @@
+---
+title: "DEV_R012: 在實施前驗證現有函數"
+subtitle: "建立處理程式碼庫中函數的關鍵指導原則，確保一致性、避免重複並維護系統預期行為"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R012"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 12
+  title: "函數驗證規則"
+related_to:
+  - "MP016: 模組化"
+  - "DEV_P003: 相似功能管理"
+  - "DEV_R002: 功能封裝"
+  - "SO_R007: 一個函數一個檔案"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十二條：函數驗證規則 {#overview}
+
+**開發方法法第十二條（函數驗證規則）**
+
+此規則建立處理程式碼庫中函數的關鍵指導原則，確保一致性、避免重複並維護系統預期行為。
+
+:::{.callout-important}
+## 核心規則
+在實施具有相同或相似名稱的新功能之前，始終驗證函數是否已經存在。
+:::
+
+# 第一項：問題背景 {#rationale}
+
+## 第一款：重複函數的危害 {#duplication-harms}
+
+使用相同或相似名稱重複函數可能導致：
+
+1. **不一致行為**：應用程式不同部分之間的行為不一致
+2. **維護困難**：維護多個實施的困難
+3. **意外副作用**：只更新一個實施時的意外副作用
+4. **開發者困惑**：開發者對使用哪個實施的困惑
+5. **錯誤增加**：實施分歧時錯誤的可能性增加
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：函數存在性檢查 {#existence-check}
+
+在實施任何工具或輔助函數之前：
+
+- 使用 grep/搜尋工具尋找現有函數定義
+- 檢查工具模組和通用程式庫
+- 尋找可能服務於相同目的的類似命名函數
+- 檢查匯入語句以識別潛在的外部來源
+
+```r
+# 正確方法 - 首先檢查函數是否存在
+if(!exists("connect_to_database")) {
+  # 只有在不存在時才定義
+  connect_to_database <- function(...) {
+    # 在此實施
+  }
+}
+```
+
+## 第二款：函數分析 {#function-analysis}
+
+如果存在類似函數：
+
+- 檢查其參數、返回值和行為
+- 注意任何環境特定的邏輯或假設
+- 檢查處理的依賴關係和邊界情況
+- 理解現有的錯誤處理機制
+
+## 第三款：實施決策 {#implementation-decision}
+
+基於您的分析：
+
+- **重用現有函數**：如果符合要求（首選）
+- **擴展現有函數**：如果需要小幅修改
+- **創建具有不同名稱的新函數**：如果需要根本不同的行為
+- **創建相容性層**：如果必須維護向後相容性
+
+## 第四款：文件記錄 {#documentation}
+
+處理現有函數時：
+
+- 記錄您的決策過程
+- 如果擴展功能，更新註解
+- 交叉引用相關函數
+- 注意任何相容性問題
+
+# 第三項：實施範例 {#examples}
+
+## 第一款：錯誤方法 {#incorrect-approach}
+
+```r
+# 錯誤：不檢查就創建重複函數
+dbConnect_from_list <- function(db_name) {
+  # 可能與現有實施衝突的新實施
+  # ...
+}
+```
+
+## 第二款：正確方法 {#correct-approach}
+
+```r
+# 正確：檢查並僅在需要時提供後備實施
+if(!exists("dbConnect_from_list")) {
+  # 創建警告日誌
+  message("警告：使用後備 dbConnect_from_list 實施")
+  
+  # 後備實施
+  dbConnect_from_list <- function(db_name, read_only = TRUE, verbose = FALSE) {
+    warning("使用 dbConnect_from_list 的臨時實施")
+    # 匹配介面的基本實施
+    # ...
+  }
+}
+```
+
+# 第四項：函數修改指導原則 {#modification-guidelines}
+
+## 第一款：修改現有函數的步驟 {#modification-steps}
+
+如果需要修改現有函數：
+
+1. **記錄原始行為**：在變更之前記錄原始行為
+2. **維護相同的參數介面**：盡可能維護相同的參數介面
+3. **考慮向後相容性**：考慮向後相容性影響
+4. **添加測試**：添加測試以驗證新舊使用案例
+5. **更新所有相關文件**：更新所有相關文件
+
+# 第五項：合規驗證 {#compliance-verification}
+
+## 第一款：程式碼審查檢查項目 {#review-checklist}
+
+定期程式碼審查應檢查：
+
+1. **重複函數實施**：檢查重複的函數實施
+2. **正確重用現有工具函數**：確保正確重用現有工具函數
+3. **一致的錯誤處理**：跨類似函數的一致錯誤處理
+4. **清晰的函數行為文件**：清晰記錄函數行為
+
+# 第六項：優點 {#benefits}
+
+透過遵守此原則，我們維護：
+
+1. **更一致的程式碼庫**：減少重複和衝突
+2. **更易維護的系統**：集中化的函數實施
+3. **更可靠的行為**：整個系統中的明確預期
+4. **更好的開發者體驗**：清楚知道使用哪個函數
+5. **減少錯誤**：避免實施分歧導致的錯誤
+
+---
+
+*基於：開發方法法第十二條*  
+*相關連結：[MP016 模組化](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [DEV_P003 相似功能管理](../principles/DEV_P003_similar_functionality_management.qmd)*

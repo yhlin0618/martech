@@ -1,0 +1,195 @@
+---
+
+title: "D03_02: Rate Reviews (AI)"
+subtitle: "AI-powered review rating using OpenAI API"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_02"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_01_comment_property_rating"
+outputs_to:
+  - "D03_03_process_reviews"
+implements:
+  - script: "amz_D03_06.R"
+    path: "update_scripts/DRV/amz/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_02: Rate Reviews (AI) {#overview}
+
+This task uses the OpenAI API to rate reviews against specific properties. Each (review, property) pair is analyzed by AI to determine how well the product performs on that property based on the review text.
+
+## Implementation Scripts
+
+| Platform | Script | Location |
+|----------|--------|----------|
+| Amazon | `amz_D03_06.R` | `update_scripts/DRV/amz/` |
+
+## Task Definition (NSQL)
+
+```nsql
+RATE reviews BY property
+USING OpenAI_API
+TO comment_property_rating_results
+```
+
+## Detailed AI Rating (NSQL)
+
+```nsql
+# D03_02: AI-Powered Review Rating
+RATE D03_02_ai_rating:
+  FOR EACH product_line_id IN vec_product_line_id:
+    FROM comment_property_rating.df_sampled_long_{product_line_id}
+
+    # Process each (review, property) pair
+    FOR EACH (review_text, property_name) PAIR:
+      # Call OpenAI API
+      CALL fn_rate_comments(
+        review_text: review_text,
+        property_name: property_name,
+        model: "o4-mini",
+        api_family: "auto",
+        temperature: 0.3
+      )
+
+      # Parse response
+      PARSE:
+        rating: INTEGER [1-5]
+        confidence: FLOAT [0-1]
+        reasoning: VARCHAR
+
+      # Store result
+      OUTPUT TO comment_property_rating_results.df_ratings_{product_line_id}
+
+    # Handle rate limiting
+    RATE_LIMIT:
+      requests_per_minute: 60
+      retry_on_429: TRUE
+      max_retries: 3
+      backoff_seconds: [5, 15, 60]
+```
+
+## AI Prompt Template (NSQL)
+
+```nsql
+# D03_02: AI Prompt Template
+PROMPT D03_02_rating_prompt:
+  SYSTEM:
+    "You are a product review analyst. Rate how well the product performs
+    on the specified property based on the review text.
+    Rate on a scale of 1-5:
+    1 = Very Poor
+    2 = Poor
+    3 = Average
+    4 = Good
+    5 = Excellent
+    If the review doesn't mention the property, respond with NULL."
+
+  USER:
+    "Review: {review_text}
+    Property: {property_name}
+
+    Rate this product on the property '{property_name}' based on the review."
+
+  RESPONSE_FORMAT:
+    type: json_object
+    schema:
+      rating: integer | null
+      confidence: float
+      reasoning: string
+```
+
+## Rate Limiting and Error Handling (NSQL)
+
+```nsql
+# D03_02: Rate Limiting Strategy
+RATE_LIMIT D03_02_rate_limiting:
+  # OpenAI API limits
+  PARAMETERS:
+    requests_per_minute: 60
+    tokens_per_minute: 90000
+
+  # Batch processing
+  BATCH:
+    size: 10
+    delay_between_batches: 1000ms
+
+  # Error handling
+  ON_ERROR:
+    429 (Rate Limited):
+      WAIT exponential_backoff
+      RETRY max 3 times
+
+    500 (Server Error):
+      LOG error
+      SKIP current item
+      CONTINUE
+
+    400 (Bad Request):
+      LOG error
+      MARK as failed
+      CONTINUE
+```
+
+## Implementation Reference {#implementation}
+
+See platform implementation scripts listed in "Implementation Scripts" section above.
+
+Key implementation features:
+- Uses `fn_rate_comments()` for API calls
+- Implements exponential backoff for rate limiting
+- Batches requests to optimize throughput
+- Stores results incrementally to avoid data loss
+
+Scripts follow [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) Five-Part Structure.
+
+## Output Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `review_id` | VARCHAR | Review identifier |
+| `product_id` | VARCHAR | Product ASIN |
+| `property_name` | VARCHAR | Property rated |
+| `ai_rating` | INTEGER | AI-assigned rating (1-5) |
+| `confidence` | FLOAT | Confidence score (0-1) |
+| `reasoning` | VARCHAR | AI explanation |
+| `processed_at` | TIMESTAMP | Processing timestamp |
+
+## Cost Estimation
+
+```nsql
+# D03_02: Cost Estimation
+ESTIMATE D03_02_cost:
+  reviews_per_product_line: ~500
+  properties_per_review: ~10
+  total_api_calls: reviews * properties = ~5000 per product_line
+
+  tokens_per_call:
+    input: ~200
+    output: ~100
+
+  cost_per_1k_tokens:
+    o4-mini: $0.00015 input, $0.0006 output
+
+  estimated_cost_per_product_line: ~$0.50
+```
+
+## Key Principle
+
+AI rating provides **objective property-level insights** that would be impossible to extract manually at scale. The structured output format enables:
+1. Quantitative comparison across products
+2. Property-level aggregation for competitive analysis
+3. Confidence-weighted averaging for reliability
+
+## Next Task
+
+After AI rating, proceed to [D03_03: Process Reviews](D03_03_process_reviews.qmd).

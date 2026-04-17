@@ -1,0 +1,303 @@
+---
+title: "SLN10: Autoinit/Autodeinit Pattern"
+subtitle: "Centralized Initialization and Cleanup for Scripts"
+category: "solution"
+number: "SLN10"
+part: "part2"
+chapter: "CH18"
+date-created: "2025-12-14"
+date-modified: "2025-12-14"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+## Issue
+
+Scripts (ETL, DRV, update scripts) need consistent environment initialization and cleanup across different execution contexts:
+
+- **RStudio**: `.Rprofile` auto-loads
+- **Rscript**: `.Rprofile` does NOT load
+- **{targets} pipeline**: `.Rprofile` does NOT load
+
+Without proper initialization, scripts may fail due to missing path constants, database connections, or configuration.
+
+## Root Cause
+
+R's `.Rprofile` only auto-executes in interactive sessions (RStudio, R console). When scripts are executed via `Rscript` command or through pipeline tools like `{targets}`, the `.Rprofile` is bypassed, leaving the environment uninitialized.
+
+## Solution
+
+### Core Implementation
+
+The `autoinit()`/`autodeinit()` functions are defined in:
+
+```
+scripts/global_scripts/22_initializations/sc_Rprofile.R
+```
+
+### Usage Pattern
+
+Every DRV/ETL script MUST explicitly source and call these functions:
+
+```r
+# PART 1: INITIALIZE
+source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+autoinit()
+
+# ... script logic (PART 2-4) ...
+
+# PART 5: DEINITIALIZE
+autodeinit()  # MUST be LAST statement
+```
+
+## What autoinit() Does
+
+```r
+autoinit <- function() {
+  # 1. Detect Operation Mode
+  OPERATION_MODE <- get_mode(detect_script_path())
+  # Returns: UPDATE_MODE, GLOBAL_MODE, or APP_MODE
+
+  # 2. Set Path Constants
+  APP_DIR              <- here::here()
+  GLOBAL_DIR           <- file.path(APP_DIR, "scripts", "global_scripts")
+  CONFIG_PATH          <- file.path(APP_DIR, "app_config.yaml")
+  APP_DATA_DIR         <- file.path(APP_DIR, "data", "app_data")
+  LOCAL_DATA_DIR       <- file.path(APP_DIR, "data", "local_data")
+  # ... and more
+
+  # 3. Load Database Paths
+  # SourcesX_global_data/db_paths.R
+  # Creates db_path_list in global environment
+
+  # 4. Source Mode-Specific Initialization
+  # UPDATE_MODE: sc_initialization_app_mode.R + sc_initialization_update_mode.R
+  # GLOBAL_MODE: sc_initialization_update_mode.R
+  # APP_MODE:    sc_initialization_app_mode.R
+
+  # 5. Set Completion Flag
+  INITIALIZATION_COMPLETED <- TRUE
+}
+```
+
+## What autodeinit() Does
+
+```r
+autodeinit <- function() {
+  # 1. Close All Database Connections
+  if (exists("dbDisconnect_all")) {
+    dbDisconnect_all()
+  }
+
+  # 2. Clear Global Environment
+  objs <- ls(envir = .GlobalEnv, all.names = TRUE)
+  objs <- setdiff(objs, c(".InitEnv"))  # Keep private environment
+  rm(list = objs, envir = .GlobalEnv)
+
+  # 3. Garbage Collection
+  gc()
+
+  # 4. Rebuild Thin Shell Wrappers
+  assign("autoinit", function(...) .InitEnv$autoinit(...), envir = .GlobalEnv)
+  assign("autodeinit", function(...) .InitEnv$autodeinit(...), envir = .GlobalEnv)
+
+  # 5. Reset Mode Flag
+  .InitEnv$mode <- NULL
+}
+```
+
+## Operation Modes
+
+| Mode | Detection | Initialized Scripts |
+|------|-----------|---------------------|
+| `UPDATE_MODE` | Parent dir is `update_scripts` | app_mode + update_mode |
+| `GLOBAL_MODE` | Parent dir is `global_scripts` | update_mode only |
+| `APP_MODE` | Default (e.g., Shiny app) | app_mode only |
+
+## Best Practices
+
+### 1. Always Source Explicitly
+
+::: {.callout-important}
+## Required for Rscript Execution
+```r
+# ALWAYS include this, even if .Rprofile exists
+source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+autoinit()
+```
+:::
+
+### 2. autodeinit() Must Be Last
+
+::: {.callout-warning}
+## Position Matters
+`autodeinit()` clears the global environment. Any code after it will fail.
+```r
+# CORRECT
+message("Script complete")
+autodeinit()
+
+# WRONG - will fail
+autodeinit()
+message("This will error!")  # .GlobalEnv is cleared
+```
+:::
+
+### 3. Wrapper Scripts Don't Need Init/Deinit
+
+If a script only sources another script that already has `autoinit()`/`autodeinit()`:
+
+```r
+# cbz_D04_04.R (wrapper)
+# NOTE: No autoinit/autodeinit needed - main script handles it
+source("scripts/update_scripts/DRV/cbz/cbz_D04_02.R")
+```
+
+### 4. Track Connection Ownership
+
+Only disconnect connections created by your script:
+
+```r
+# In PART 1
+connection_created <- FALSE
+if (!exists("con") || !inherits(con, "DBIConnection")) {
+  con <- dbConnect(duckdb::duckdb(), DB_PATH)
+  connection_created <- TRUE
+}
+
+# In PART 5
+if (connection_created && exists("con")) {
+  dbDisconnect(con, shutdown = TRUE)
+}
+```
+
+## Common Anti-Patterns
+
+### 1. Relying Only on .Rprofile
+
+::: {.callout-warning}
+## Avoid
+```r
+# Bad: Assumes .Rprofile loaded
+autoinit()  # Will fail in Rscript if .Rprofile not sourced
+```
+:::
+
+### 2. Code After autodeinit()
+
+::: {.callout-warning}
+## Avoid
+```r
+# Bad: Code after deinit
+autodeinit()
+save_results()  # ERROR: environment cleared
+```
+:::
+
+### 3. Missing autodeinit()
+
+::: {.callout-warning}
+## Avoid
+```r
+# Bad: No cleanup
+autoinit()
+# ... logic ...
+# Script ends without autodeinit()
+# Result: Database connections may leak
+```
+:::
+
+## Connection to Principles
+
+| Principle | Connection |
+|-----------|------------|
+| **[DM_R044](../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd)** | Five-part structure requires autoinit/autodeinit |
+| **[MP107](../../part1_principles/CH00_fundamental_principles/04_data_management/MP107_etl_pipeline_independence.qmd)** | ETL independence via self-initialization |
+| **[MP103](../../part1_principles/CH00_fundamental_principles/02_structure_organization/MP103_autodeinit_behavior.qmd)** | Autodeinit behavior specification |
+
+## DRV Script Template
+
+```r
+#!/usr/bin/env Rscript
+#####
+# DERIVATION: {Name}
+# VERSION: {X.Y}
+# PLATFORM: {cbz|amz|eby|all}
+# GROUP: D{nn}
+# SEQUENCE: {seq}
+# PURPOSE: {description}
+# CONSUMES: {input tables}
+# PRODUCES: {output tables}
+# PRINCIPLE: DM_R044, MP064, {others}
+#####
+#{platform}_D{group}_{sequence}
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+
+source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+autoinit()
+
+library(duckdb)
+library(dplyr)
+
+error_occurred <- FALSE
+test_passed <- FALSE
+rows_processed <- 0
+start_time <- Sys.time()
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+
+tryCatch({
+  # Main logic here
+}, error = function(e) {
+  message("ERROR: ", e$message)
+  error_occurred <<- TRUE
+})
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+
+if (!error_occurred) {
+  tryCatch({
+    # Validation tests here
+    test_passed <- TRUE
+  }, error = function(e) {
+    test_passed <<- FALSE
+  })
+}
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+
+end_time <- Sys.time()
+message(sprintf("Status: %s", ifelse(test_passed, "SUCCESS", "FAILED")))
+message(sprintf("Time: %.2f seconds", as.numeric(difftime(end_time, start_time, units = "secs"))))
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+
+autodeinit()  # MUST be LAST statement
+```
+
+## Summary
+
+The `autoinit()`/`autodeinit()` pattern ensures:
+
+1. **Consistent initialization** across all execution contexts
+2. **Proper resource cleanup** (database connections, memory)
+3. **Mode-aware configuration** (UPDATE_MODE, GLOBAL_MODE, APP_MODE)
+4. **Compliance with DM_R044** five-part structure
+
+Always explicitly source `sc_Rprofile.R` - never rely on `.Rprofile` alone for scripts that may run via `Rscript` or `{targets}`.

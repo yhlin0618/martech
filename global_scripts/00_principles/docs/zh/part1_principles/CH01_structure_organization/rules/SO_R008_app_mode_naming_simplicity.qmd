@@ -1,0 +1,188 @@
+---
+title: "SO_R008: 應用程式模式命名簡化規則"
+subtitle: "在 APP_MODE 中，所有資料物件必須只使用剛性識別符，不包含可選描述符。這確保了應用程式執行環境中的一致性、可預測性並消除歧義"
+chapter: "CH01"
+category: "rule"
+number: "SO_R008"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 8
+  title: "應用程式模式命名簡化規則"
+related_to:
+  - "SO_P003: 應用程式構建原則"
+  - "SO_P007: app.R 是全域原則"
+  - "MP077: 物件命名約定"
+  - "MP003: 操作模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第八條：應用程式模式命名簡化規則 {#overview}
+
+**結構組織法第八條（應用程式模式命名簡化規則）**
+
+在 APP_MODE 中，所有資料物件必須只使用剛性識別符，不包含可選描述符。這確保了應用程式執行環境中的一致性、可預測性並消除歧義。
+
+:::{.callout-important}
+## 核心要求
+透過在 APP_MODE 中移除可選描述符，此規則簡化了程式碼、提高了可靠性，並在開發環境（UPDATE_MODE）和生產環境（APP_MODE）之間創建了清晰的分離。
+:::
+
+# 第一項：詳細要求 {#detailed-requirements}
+
+## 第一款：APP_MODE 中無可選描述符 {#no-optional-descriptors}
+
+```
+# 在 APP_MODE 中：
+# 允許：
+df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001
+
+# 不允許：
+df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001___clean
+```
+
+在 APP_MODE 中，所有資料物件必須只透過其剛性識別符引用，不包含三重底線後的任何可選描述符。這適用於命名約定中支援可選描述符的所有物件類型。
+
+## 第二款：規範版本選擇 {#canonical-version-selection}
+
+當將物件從 UPDATE_MODE 轉換到 APP_MODE 時，必須從具有不同描述符的多個潛在版本中選擇一個規範版本。此選擇過程必須：
+
+1. **確定性**：給定相同輸入總是選擇相同版本
+2. **文檔化且一致**：跨所有組件保持一致
+3. **典型偏好**：
+   - 可用時優先手動編輯版本（`___manual`）
+   - 無手動版本時優先完全處理版本（`___clean`）
+   - 無明確定性區別時優先最新版本
+
+## 第三款：APP_MODE 的載入函數 {#loading-functions}
+
+APP_MODE 中的載入函數必須簡化為只使用剛性識別符：
+
+```r
+# APP_MODE 載入函數
+load_app_data <- function(rigid_id) {
+  # 總是載入規範版本，無需描述符
+  return(data)
+}
+```
+
+## 第四款：實施機制 {#implementation-mechanisms}
+
+允許兩種方法來實施此規則：
+
+### 預處理方法 {#preprocessing-approach}
+
+在 APP_MODE 初始化之前，處理所有資料物件以創建沒有可選描述符的規範版本：
+
+```r
+# 從 UPDATE_MODE 轉換到 APP_MODE 期間
+canonicalize_data <- function(rigid_id) {
+  # 根據優先級規則找到最佳版本
+  best_version <- select_canonical_version(rigid_id)
+  
+  # 載入該版本
+  data <- load_version(rigid_id, best_version)
+  
+  # 儲存為規範版本（無描述符）
+  assign(rigid_id, data)
+  
+  # 可選地持久化到磁碟
+  saveRDS(data, paste0(rigid_id, ".rds"))
+}
+```
+
+### 別名方法 {#aliasing-approach}
+
+在 APP_MODE 環境中創建指向規範版本的別名：
+
+```r
+# APP_MODE 初始化期間
+create_canonical_aliases <- function() {
+  for (rigid_id in get_all_rigid_ids()) {
+    best_version <- select_canonical_version(rigid_id)
+    full_name <- if (best_version == "") rigid_id else paste0(rigid_id, "___", best_version)
+    
+    # 在 APP_MODE 環境中創建別名
+    if (exists(full_name)) {
+      assign(rigid_id, get(full_name), envir = app_env)
+    }
+  }
+}
+```
+
+# 第二項：實施範例 {#implementation-examples}
+
+## 第一款：APP_MODE 資料準備 {#app-mode-data-preparation}
+
+```r
+# 轉換到 APP_MODE 期間
+prepare_app_data <- function() {
+  # 對於應用程式所需的每個資料物件
+  required_data <- c(
+    "df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001",
+    "df.sales.transactions.by_customer.at_NY.at_q1_2025.at_000"
+  )
+  
+  for (rigid_id in required_data) {
+    # 取得規範版本
+    canonicalize_data(rigid_id)
+  }
+}
+```
+
+## 第二款：APP_MODE 資料存取 {#app-mode-data-access}
+
+```r
+# 在 APP_MODE 中
+render_sales_dashboard <- function() {
+  # 只透過 rigid_id 存取
+  sales_data <- df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001
+  
+  # 處理和視覺化
+  plot_sales(sales_data)
+}
+```
+
+# 第三項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：實施的原則 {#implements-principles}
+
+此規則實施：
+1. **SO_P003（應用程式構建原則）**：透過確保一致且可預測的資料存取模式
+2. **SO_P007（app.R 是全域）**：透過在 APP_MODE 全域命名空間中標準化命名
+
+## 第二款：相關的原則 {#relates-to-principles}
+
+此規則與以下相關：
+1. **MP077（物件命名約定）**：透過限制其在 APP_MODE 中的完整應用
+2. **MP003（操作模式）**：透過為 APP_MODE 定義特定的資料物件處理
+
+# 第四項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **簡單性**：簡化 APP_MODE 中的資料存取模式
+2. **可靠性**：消除使用哪個版本的歧義
+3. **效能**：減少資料載入函數中的查找開銷
+4. **清晰性**：使應用程式碼更乾淨且更易維護
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **錯誤預防**：防止意外使用非規範資料版本
+2. **環境分離**：在開發和生產環境之間創建清晰的邊界
+3. **一致體驗**：確保所有使用者看到相同的資料版本
+4. **簡化部署**：減少部署時的配置複雜性
+
+---
+
+*基於：結構組織法第八條*  
+*相關連結：[SO_P003 應用程式構建原則](../principles/SO_P003_app_construction.qmd), [MP077 物件命名約定](../../CH00_fundamental_principles/05_terminology_standards/MP077_object_naming_convention.qmd)*

@@ -1,0 +1,277 @@
+---
+title: "DEV_R032: Four-Part Script Structure Rule (ARCHIVED)"
+subtitle: "ARCHIVED - This four-part structure pattern has been deprecated due to autodeinit() variable access issues. Use the five-part structure in active DEV_R032 instead."
+chapter: "CH03"
+category: "rule"
+number: "DEV_R032"
+status: deprecated
+deprecated: 2025-08-28
+replaced_by: "DEV_R032 (five-part structure)"
+reason: "autodeinit() variable access problems - mixing reporting and cleanup in DEINITIALIZE section causes 'object not found' errors"
+date-created: "2025-08-18"
+date-modified: "2025-08-28"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 32
+  title: "Update Script Structure Rule"
+related_to:
+  - "MP31: Initialization First"
+  - "MP33: Deinitialization Final"
+  - "MP42: Runnable First"
+  - "MP58: Database Table Creation Strategy"
+  - "MP70: Type-Prefix Naming"
+  - "P76: Error Handling Patterns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 32: Four-Part Script Structure Rule (LEGACY) {#overview}
+
+**Development Methodology Law Article 32 (Four-Part Script Structure Rule)**
+
+⚠️ **LEGACY RULE**: This rule is maintained for backward compatibility. New development SHOULD use [DEV_R033 Five-Part Script Structure](DEV_R033_five_part_script_structure.qmd) which provides superior separation of concerns and eliminates autodeinit() variable access problems.
+
+:::{.callout-warning}
+## Legacy Status
+This four-part structure (INITIALIZE, MAIN, TEST, DEINITIALIZE) is **LEGACY**. While existing scripts using this pattern remain valid, all new scripts SHOULD adopt the five-part structure (DEV_R033) which adds a SUMMARIZE section between TEST and DEINITIALIZE.
+:::
+
+## Migration Path
+
+**For new scripts**: Use DEV_R033 five-part structure
+**For existing scripts**: Continue using four-part, migrate when updating
+**For ETL scripts**: Strongly recommend immediate migration to five-part
+
+# Section 1: Motivation and Limitations {#motivation}
+
+## Original Motivation
+
+The four-part structure was designed to enforce:
+
+1. **Proper initialization** - Setting up the environment before operations
+2. **Structured execution** - Clearly defined main processing section
+3. **Verification** - Explicit testing that changes were applied correctly
+4. **Cleanup** - Reliable resource deallocation regardless of execution path
+
+## Known Limitations
+
+⚠️ **Critical Issue**: The four-part structure combines reporting/metrics and cleanup in the DEINITIALIZE section, which creates problems with `autodeinit()`:
+
+- `autodeinit()` removes ALL variables, making them inaccessible
+- Any reporting after `autodeinit()` fails with "object not found"
+- Return values cannot be accessed after `autodeinit()`
+- Complex workarounds are required (timing captures, saving to disk)
+
+**Solution**: DEV_R033 five-part structure separates SUMMARIZE from DEINITIALIZE, eliminating these issues entirely.
+
+# Section 2: Implementation (Legacy Pattern) {#implementation}
+
+⚠️ **Note**: This section documents the legacy four-part pattern. See [DEV_R033](DEV_R033_five_part_script_structure.qmd) for the recommended five-part structure.
+
+Legacy scripts using four-part structure contain these sections:
+
+```r
+# 1. INITIALIZE
+# Initialization code...
+
+# 2. MAIN
+# Main processing code with error handling...
+
+# 3. TEST
+# Verification code...
+
+# 4. DEINITIALIZE
+# Cleanup code...
+```
+
+## Subsection 1: INITIALIZE Section {#initialize-section}
+
+The INITIALIZE section MUST:
+
+- Source the appropriate initialization script for the mode
+- Set up database connections
+- Load required packages and dependencies
+- Configure environment variables
+- Initialize error tracking
+
+Example:
+```r
+# 1. INITIALIZE
+# Source initialization script for update mode
+source(file.path("update_scripts", "global_scripts", "00_principles", "sc_initialization_update_mode.R"))
+
+# Connect to required database
+if (!exists("app_data") || !inherits(app_data, "DBIConnection")) {
+  app_data <- dbConnect_from_list("app_data")
+  connection_created <- TRUE
+  message("Connected to app_data database")
+} else {
+  connection_created <- FALSE
+}
+
+# Initialize error tracking
+error_occurred <- FALSE
+```
+
+## Subsection 2: MAIN Section {#main-section}
+
+The MAIN section MUST:
+
+- Be wrapped in a tryCatch block
+- Set error tracking variables on failure
+- Perform the core functionality
+- Log success/failure appropriately
+
+Example:
+```r
+# 2. MAIN
+tryCatch({
+  # Core operation code
+  dbExecute(app_data, create_table_query)
+  
+  message("Main processing completed successfully")
+}, error = function(e) {
+  message("Error in MAIN section: ", e$message)
+  error_occurred <- TRUE
+})
+```
+
+## Subsection 3: TEST Section {#test-section}
+
+The TEST section MUST:
+
+- Verify that changes were applied correctly
+- Only run if the MAIN section succeeded
+- Set a test_passed variable for the DEINITIALIZE section
+- Include appropriate error handling
+
+Example:
+```r
+# 3. TEST
+if (!error_occurred) {
+  tryCatch({
+    # Verification query
+    table_exists <- nrow(dbGetQuery(app_data, "SELECT name FROM sqlite_master WHERE type='table' AND name='target_table'")) > 0
+    
+    if (table_exists) {
+      message("Verification successful: Table exists")
+      test_passed <- TRUE
+    } else {
+      message("Verification failed: Table does not exist")
+      test_passed <- FALSE
+    }
+  }, error = function(e) {
+    message("Error in TEST section: ", e$message)
+    test_passed <- FALSE
+  })
+} else {
+  message("Skipping tests due to error in MAIN section")
+  test_passed <- FALSE
+}
+```
+
+## Subsection 4: DEINITIALIZE Section (Problematic) {#deinitialize-section}
+
+⚠️ **Problem Area**: The DEINITIALIZE section in four-part structure tries to do too much:
+
+- Release all resources acquired in the script
+- Close database connections opened by the script
+- Report final status ⚠️ **(Conflicts with autodeinit)**
+- Return a success/failure boolean value ⚠️ **(Impossible after autodeinit)**
+- Always execute, regardless of errors in previous sections
+
+**This mixing of concerns is why five-part structure (DEV_R033) separates SUMMARIZE from DEINITIALIZE**.
+
+Example:
+```r
+# 4. DEINITIALIZE
+tryCatch({
+  # Close connections opened in this script
+  if (exists("connection_created") && connection_created && 
+      exists("app_data") && inherits(app_data, "DBIConnection")) {
+    dbDisconnect(app_data)
+    message("Database connection closed")
+  }
+  
+  # Report final status
+  if (exists("test_passed") && test_passed) {
+    message("Script executed successfully with all tests passed")
+    final_status <- TRUE
+  } else {
+    message("Script execution incomplete or tests failed")
+    final_status <- FALSE
+  }
+  
+}, error = function(e) {
+  message("Error in DEINITIALIZE section: ", e$message)
+  final_status <- FALSE
+}, finally = {
+  # This will always execute
+  message("Script execution completed at ", Sys.time())
+})
+
+# Return final status
+if (exists("final_status")) {
+  final_status
+} else {
+  FALSE
+}
+```
+
+# Section 3: Enforcement and Migration {#enforcement}
+
+## Current Status
+
+- **New scripts**: SHOULD use DEV_R033 five-part structure
+- **Existing four-part scripts**: Remain valid but are considered legacy
+- **Modified scripts**: SHOULD be migrated to five-part structure
+- **ETL scripts with returns**: MUST migrate to five-part or use workarounds
+
+## Migration Guide
+
+To migrate from four-part to five-part:
+
+1. Keep INITIALIZE, MAIN, TEST sections unchanged
+2. Split DEINITIALIZE into two parts:
+   - Move all reporting, metrics, returns to new SUMMARIZE (Part 4)
+   - Keep only cleanup and autodeinit() in DEINITIALIZE (Part 5)
+3. Update section numbers and comments
+4. Test that autodeinit() is now truly the last operation
+
+# Section 4: Rationale {#rationale}
+
+- Consistent script structure enables rapid comprehension
+- Proper resource management prevents connection leaks
+- Explicit testing ensures changes are verified
+- Clean error handling improves reliability
+- Well-defined return values enable automated execution and monitoring
+
+# Section 5: Related Principles {#related-principles}
+
+## Evolution to Five-Part Structure
+
+- **DEV_R033**: Five-Part Script Structure - The evolved standard that fixes autodeinit() issues
+- **MP103**: Autodeinit Behavior - Documents why four-part structure is problematic
+- **DM_R036**: ETL Return Values - Shows workarounds needed with four-part structure
+
+## Original Related Principles
+
+- MP31: Initialization First - Establishes proper setup before operations
+- MP33: Deinitialization Final - Ensures proper cleanup of resources
+- MP42: Runnable First - Scripts should be runnable without additional steps
+- MP58: Database Table Creation Strategy - Approach for creating database tables
+- MP70: Type-Prefix Naming - Consistent naming with type prefixes
+- P76: Error Handling Patterns - Standardized approaches to error handling
+
+---
+
+*Based on: Development Methodology Law Article 32*
+*Status: ⚠️ LEGACY - Superseded by [DEV_R033 Five-Part Structure](DEV_R033_five_part_script_structure.qmd) for new development*
+*Related to: [MP103 Autodeinit Behavior](../../CH00_fundamental_principles/02_structure_organization/MP103_autodeinit_behavior.qmd), [DEV_R033 Five-Part Structure](DEV_R033_five_part_script_structure.qmd)*

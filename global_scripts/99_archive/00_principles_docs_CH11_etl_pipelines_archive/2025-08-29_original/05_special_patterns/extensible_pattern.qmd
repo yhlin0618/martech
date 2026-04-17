@@ -1,0 +1,335 @@
+---
+id: "ETL004"
+title: "Extensible Data Pipeline Framework"
+type: "etl-operations"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture - 7-Layer"
+  - "DF000": "Data Pipeline Architecture"
+implements:
+  - "Future Data Processing Requirements"
+relates_to:
+  - "MP0052": "Unidirectional Data Flow"
+  - "R091": "Universal Data Access"
+  - "R092": "Universal DBI Approach"
+---
+
+# ETL04: Extensible Data Pipeline Framework
+
+## Core Purpose
+
+ETL04 provides a **template framework** for implementing additional complete end-to-end data pipelines beyond Customer DNA Analysis (ETL01) and Customer View Filtering (ETL02). This framework establishes patterns for extending the ETL architecture to handle new business requirements and data processing scenarios.
+
+## Pipeline Architecture Template
+
+```mermaid
+graph TD
+    A[External Data Source] --> B[raw_data.duckdb]
+    B --> C[staged_data.duckdb] 
+    C --> D[transformed_data.duckdb]
+    D --> E[cleansed_data.duckdb]
+    E --> F[processed_data.duckdb]
+    F --> G[app_data.duckdb]
+    
+    B -.-> B1["Layer 1: Import<br/>• Source-specific ingestion<br/>• Metadata preservation<br/>• Platform identification"]
+    C -.-> C1["Layer 2: Staging<br/>• File preprocessing<br/>• Encoding standardization<br/>• Structure validation"]
+    D -.-> D1["Layer 3: Transformation<br/>• Schema mapping<br/>• Type conversion<br/>• Reference data joining"]
+    E -.-> E1["Layer 4: Cleansing<br/>• Data quality validation<br/>• Duplicate removal<br/>• Missing value handling"]
+    F -.-> F1["Layer 5: Processing<br/>• Business logic application<br/>• Aggregation & calculation<br/>• Domain-specific transforms"]
+    G -.-> G1["Layer 6: Application<br/>• UI-ready formatting<br/>• Performance optimization<br/>• Component integration"]
+```
+
+## Extensible Pipeline Examples
+
+### ETL04A: Product Performance Analysis Pipeline
+
+**Purpose**: Transform raw sales and product data into comprehensive product performance metrics and analytics.
+
+**Key Features**:
+- Product-level aggregation and analysis
+- Performance tier classification
+- Trend analysis and forecasting
+- Cross-platform product comparison
+
+**Output Tables**:
+- `product_performance_metrics`
+- `product_trend_analysis`
+- `product_tier_classification`
+
+### ETL04B: Time Series Aggregation Pipeline
+
+**Purpose**: Create time-based rollups and trend analysis from transaction data.
+
+**Key Features**:
+- Daily/weekly/monthly aggregations
+- Seasonal pattern detection
+- Trend decomposition
+- Forecasting model preparation
+
+**Output Tables**:
+- `daily_aggregates`
+- `weekly_trends`
+- `monthly_summaries`
+- `seasonal_patterns`
+
+### ETL04C: Geographic Analysis Pipeline
+
+**Purpose**: Transform transaction data into geographic insights and regional analytics.
+
+**Key Features**:
+- Regional performance analysis
+- Geographic distribution metrics
+- Market penetration analysis
+- Location-based segmentation
+
+**Output Tables**:
+- `geographic_performance`
+- `regional_analytics`
+- `market_penetration`
+
+## ETL04 Configuration Template
+
+```r
+# Template configuration for new ETL pipelines
+etl04_template_config <- list(
+  etl_name = "custom_data_pipeline",
+  etl_version = "1.0",
+  
+  # Source configuration
+  source = list(
+    type = "csv",  # csv, excel, json, api, database
+    path = "data/source_data.csv",
+    platform_id = "platform_identifier",
+    encoding = "UTF-8",
+    has_header = TRUE,
+    date_format = "%Y-%m-%d %H:%M:%S"
+  ),
+  
+  # Staging configuration
+  staging = list(
+    encoding_target = "UTF-8",
+    line_endings = "LF",
+    validation_required = TRUE,
+    preserve_raw_structure = TRUE,
+    custom_preprocessing = list()
+  ),
+  
+  # Transformation configuration
+  transformation = list(
+    # Define custom column mapping
+    column_mapping = list(
+      # "target_column" = "source_column"
+    ),
+    
+    # Define type conversions
+    type_conversions = list(
+      # "column_name" = "target_type"
+    ),
+    
+    # Custom business rules
+    business_rules = list(),
+    
+    # Reference data joins
+    reference_joins = list()
+  ),
+  
+  # Cleansing configuration
+  cleansing = list(
+    remove_duplicates = TRUE,
+    duplicate_keys = c(),
+    handle_missing_values = TRUE,
+    required_fields = c(),
+    validation_rules = list(),
+    custom_quality_checks = list()
+  ),
+  
+  # Processing configuration (domain-specific)
+  processing = list(
+    # Define custom aggregation rules
+    aggregation_rules = list(),
+    
+    # Define calculation methods
+    calculation_methods = list(),
+    
+    # Define segmentation logic
+    segmentation_logic = list(),
+    
+    # Performance optimization
+    optimization = list(
+      create_indexes = TRUE,
+      use_partitioning = FALSE,
+      materialized_views = c()
+    )
+  ),
+  
+  # Application data preparation
+  application = list(
+    target_tables = c(),
+    optimization_strategy = "query_performance",
+    caching_strategy = "component_based",
+    component_integration = TRUE
+  ),
+  
+  # Execution settings
+  execution = list(
+    parallel_processing = FALSE,
+    chunk_size = 10000,
+    memory_limit = "4GB",
+    timeout_minutes = 60
+  )
+)
+```
+
+## Implementation Pattern
+
+```r
+#' ETL04 Template Implementation
+#' 
+#' Template for implementing custom ETL pipelines following the standard framework
+#'
+etl04_template_implementation <- function(config) {
+  
+  # Layer 1: Import raw data
+  etl04_import_layer <- function(config) {
+    # Implement source-specific data import
+    # Follow standard import patterns from ETL00 framework
+  }
+  
+  # Layer 2: Stage data
+  etl04_staging_layer <- function(config, raw_table_name) {
+    # Implement file-level preprocessing
+    # Apply encoding standardization and validation
+  }
+  
+  # Layer 3: Transform schema
+  etl04_transformation_layer <- function(config, staged_table_name) {
+    # Apply column mapping and type conversions
+    # Join with reference data as needed
+  }
+  
+  # Layer 4: Cleanse data
+  etl04_cleansing_layer <- function(config, transformed_table_name) {
+    # Apply data quality rules
+    # Handle duplicates and missing values
+  }
+  
+  # Layer 5: Process data (domain-specific)
+  etl04_processing_layer <- function(config, cleansed_table_name) {
+    # Apply business-specific logic
+    # Perform domain-specific calculations and aggregations
+  }
+  
+  # Layer 6: Prepare application data
+  etl04_application_layer <- function(config, processed_table_name) {
+    # Optimize for component consumption
+    # Create final application-ready tables
+  }
+  
+  # Execute complete pipeline
+  execute_etl04_pipeline(config)
+}
+```
+
+## Business Domain Extensions
+
+### Customer Analytics Extensions
+- **CLV Pipeline**: Customer Lifetime Value calculations
+- **Churn Pipeline**: Customer churn prediction and analysis
+- **Cohort Pipeline**: Cohort analysis and retention metrics
+
+### Product Analytics Extensions
+- **Inventory Pipeline**: Inventory analysis and optimization
+- **Pricing Pipeline**: Price analysis and optimization
+- **Recommendation Pipeline**: Product recommendation engine data
+
+### Marketing Analytics Extensions
+- **Campaign Pipeline**: Marketing campaign performance analysis
+- **Attribution Pipeline**: Multi-touch attribution modeling
+- **Funnel Pipeline**: Conversion funnel analysis
+
+### Financial Analytics Extensions
+- **Revenue Pipeline**: Revenue analysis and forecasting
+- **Profitability Pipeline**: Product and customer profitability
+- **ROI Pipeline**: Return on investment calculations
+
+## Integration with Existing ETL Operations
+
+### ETL Pipeline Orchestration
+
+```r
+# Execute multiple ETL pipelines in sequence or parallel
+orchestrate_etl_pipelines <- function(pipeline_configs) {
+  
+  results <- list()
+  
+  # Execute core pipelines
+  if ("etl01" %in% names(pipeline_configs)) {
+    results$etl01 <- execute_etl01_complete(pipeline_configs$etl01)
+  }
+  
+  if ("etl02" %in% names(pipeline_configs)) {
+    results$etl02 <- execute_etl02_complete(pipeline_configs$etl02)
+  }
+  
+  # Execute custom ETL04 pipelines
+  for (pipeline_name in names(pipeline_configs)) {
+    if (startsWith(pipeline_name, "etl04")) {
+      pipeline_config <- pipeline_configs[[pipeline_name]]
+      results[[pipeline_name]] <- execute_etl04_pipeline(pipeline_config)
+    }
+  }
+  
+  return(results)
+}
+```
+
+### Data Dependency Management
+
+```r
+# Manage dependencies between ETL pipelines
+etl_dependency_manager <- function() {
+  
+  dependencies <- list(
+    # ETL02 depends on ETL01 for customer profiles
+    "etl02" = c("etl01"),
+    
+    # Custom pipelines can depend on core pipelines
+    "etl04_product_analysis" = c("etl01", "etl02"),
+    "etl04_geographic_analysis" = c("etl01"),
+    "etl04_time_series" = c("etl01", "etl02")
+  )
+  
+  # Execute pipelines in dependency order
+  execute_in_dependency_order(dependencies)
+}
+```
+
+## Future Pipeline Development Guidelines
+
+### 1. Follow Standard Architecture
+- Always implement all six layers of the data pipeline
+- Use consistent naming conventions
+- Follow error handling patterns from ETL00 framework
+
+### 2. Maintain Configuration Standards
+- Use the configuration template structure
+- Document all configuration options
+- Provide sensible defaults
+
+### 3. Ensure Integration Compatibility
+- Design outputs for component consumption
+- Follow database and table naming conventions
+- Implement proper indexing and optimization
+
+### 4. Document Business Logic
+- Clearly document domain-specific calculations
+- Provide examples of expected inputs and outputs
+- Include business context and requirements
+
+## Conclusion
+
+ETL04 establishes a foundation for extending the ETL architecture to meet evolving business requirements. By following the standard six-layer pipeline architecture and configuration patterns, new ETL operations can be implemented consistently while maintaining integration with existing systems and components.
+
+The extensible framework ensures that future data processing needs can be met efficiently while preserving the architectural principles and quality standards established by the core ETL operations.

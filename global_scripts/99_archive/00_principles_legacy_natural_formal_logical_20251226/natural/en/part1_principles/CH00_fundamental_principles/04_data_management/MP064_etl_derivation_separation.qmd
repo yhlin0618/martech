@@ -1,0 +1,536 @@
+---
+id: "MP064"
+title: "ETL-Derivation Separation Principle"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-08-26"
+date_modified: "2025-01-28"
+author: "Claude"
+status: "active"
+version: "2.1"
+weight: 64
+supersedes:
+  - "MP063": "Extends data processing trinity to define clear boundaries"
+related_to:
+  - "MP059": "Unidirectional Data Flow"
+  - "MP031": "Separation of Concerns"
+  - "MP017": "Separation of Concerns"
+  - "DF000": "Data Pipeline Architecture"
+  - "DM_R024": "List Column Handling Rule"
+  - "DM_R025": "Type Conversion Between R and DuckDB"
+  - "DM_R026": "JSON Serialization Strategy"
+implements:
+  - "ETL": "Extract-Transform-Load pattern"
+  - "D": "Derivation business logic pattern"
+---
+
+# MP064: ETL-Derivation Separation Principle
+
+## Core Statement
+
+**ETL (Extract-Transform-Load) pipelines and D (Derivation) functions must maintain strict separation of concerns through mandatory physical directory separation**: ETL handles pure data preparation through a three-phase pattern (0IM→1ST→2TR) and MUST be located in ETL/ directories, while Derivations consume ETL-prepared data to perform business-specific calculations and aggregations and MUST be located in DRV/ directories.
+
+## Physical Directory Separation (MANDATORY)
+
+### Required Directory Structure
+
+**ALL ETL and DRV scripts MUST be organized in separate directory hierarchies**:
+
+```yaml
+update_scripts/
+├── ETL/                    # MANDATORY: All ETL scripts
+│   ├── {platform}/        # Platform-specific ETL scripts
+│   │   └── {platform}_ETL_{datatype}_{phase}.R
+│   └── all/              # Cross-platform ETL summaries
+├── DRV/                    # MANDATORY: All Derivation scripts
+│   ├── {platform}/        # Platform-specific derivations
+│   │   └── {platform}_D{group}_{seq}.R  # Sequential numbering (see DM_R042)
+│   └── all/              # Cross-platform derivations
+└── orchestration/          # Pipeline control and runners
+```
+
+**CRITICAL VIOLATIONS**:
+- ❌ ETL scripts in root directory
+- ❌ DRV scripts in root directory
+- ❌ ETL and DRV scripts mixed in same directory
+- ❌ ETL scripts outside ETL/ hierarchy
+- ❌ DRV scripts outside DRV/ hierarchy
+
+## Architectural Definition
+
+### ETL Pipeline Architecture
+
+ETL pipelines follow a **three-phase data preparation pattern**:
+
+1. **Phase 0IM (Import)**
+   - Extract data from external sources
+   - Preserve raw data structure
+   - Add source metadata and timestamps
+   - Handle complex data types (see DM_R024-R026)
+   - Convert list columns to JSON if needed
+   - No business logic or transformations
+
+2. **Phase 1ST (Staging)**
+   - Standardize encoding (UTF-8)
+   - Fix structural issues (dates, formats)
+   - Validate data integrity
+   - No business calculations
+
+3. **Phase 2TR (Transform)**
+   - Schema standardization
+   - Type conversions
+   - **Structural JOINs**: Combine normalized tables into complete business entities
+   - Join with reference data
+   - Output clean, standardized denormalized records
+
+**ETL Output**: Transaction-level or record-level standardized data ready for analysis
+
+### Derivation (D) Architecture
+
+Derivations consume ETL-prepared data and apply business logic:
+
+1. **Input**: Standardized data from ETL pipelines
+2. **Processing**: Business calculations, aggregations, analytics
+3. **Output**: Entity-level insights (customer, product, etc.)
+
+**Derivation Focus**: Business rules, domain knowledge, analytical calculations
+
+## Boundary Definitions
+
+### ETL Responsibilities (Data Preparation Only)
+
+```yaml
+ETL_scope:
+  allowed:
+    - Data extraction from sources
+    - Format standardization
+    - Encoding corrections
+    - Date/time parsing
+    - Schema mapping
+    - Type conversions
+    - Structural JOINs (normalized → denormalized records)
+    - Reference data joins
+    - Data validation
+    - Duplicate handling
+    - Missing value treatment
+    - List column to JSON conversion
+    - Nested data flattening (structural only)
+    - DuckDB type compatibility fixes
+  
+  prohibited:
+    - Customer aggregations
+    - Business metrics (RFM, CLV)
+    - Scoring algorithms
+    - Segmentation logic
+    - Predictive calculations
+    - Domain-specific rules
+    - Analytical JOINs (cross-entity analysis)
+```
+
+### Derivation Responsibilities (Business Logic Only)
+
+```yaml
+Derivation_scope:
+  allowed:
+    - Entity aggregations
+    - Business metrics calculation
+    - Scoring and ranking
+    - Segmentation algorithms
+    - Predictive analytics
+    - Domain rule application
+    - Cross-entity analysis
+  
+  prohibited:
+    - Raw data import
+    - Format conversions
+    - Schema transformations
+    - Basic data cleaning
+    - Encoding fixes
+```
+
+## JOIN Operation Guidelines
+
+### Structural JOINs (ETL Responsibility - Phase 2TR)
+
+Structural JOINs combine normalized source tables into complete, denormalized business records. These belong in the 2TR (Transform) phase:
+
+```r
+# CORRECT: Structural JOIN in 2TR phase
+# Combining orders and order_details into complete sales records
+etl_sales_2TR <- function() {
+  # Read normalized tables from staging
+  orders <- tbl2(staged_data, "BAYORD") %>% collect()
+  order_details <- tbl2(staged_data, "BAYORE") %>% collect()
+  
+  # Structural JOIN to create denormalized sales records
+  sales_complete <- orders %>%
+    inner_join(order_details, by = "order_id") %>%
+    mutate(
+      total_amount = quantity * unit_price,
+      record_type = "sales_transaction"
+    )
+  
+  # Write denormalized records to transformed layer
+  dbWriteTable(transformed_data, "sales_transactions", sales_complete)
+}
+```
+
+**Examples of Structural JOINs:**
+- Orders + OrderDetails → Sales Transactions
+- Headers + Lines → Complete Documents
+- Customers + Addresses → Customer Records
+- Products + Categories → Product Catalog
+
+### Analytical JOINs (Derivation Responsibility)
+
+Analytical JOINs combine data for business analysis and belong in Derivation functions:
+
+```r
+# CORRECT: Analytical JOIN in Derivation
+d03_customer_product_analysis <- function() {
+  # Read ETL-prepared denormalized data
+  sales <- read_from_etl("sales_transactions")
+  customers <- read_from_etl("customer_records")
+  products <- read_from_etl("product_catalog")
+  
+  # Analytical JOIN for business insights
+  customer_product_matrix <- sales %>%
+    left_join(customers, by = "customer_id") %>%
+    left_join(products, by = "product_id") %>%
+    group_by(customer_segment, product_category) %>%
+    summarize(
+      total_revenue = sum(total_amount),
+      avg_order_value = mean(total_amount)
+    )
+  
+  return(customer_product_matrix)
+}
+```
+
+**Examples of Analytical JOINs:**
+- Sales + Customer Segments → Segment Performance
+- Products + Reviews → Product Sentiment Analysis
+- Transactions + Marketing Campaigns → Campaign ROI
+
+### Key Distinction
+
+**Structural JOIN (ETL)**: Creates a complete record from its normalized parts
+- Purpose: Data preparation and denormalization
+- Location: Phase 2TR only
+- Output: Transaction-level complete records
+
+**Analytical JOIN (Derivation)**: Combines complete records for analysis
+- Purpose: Business analysis and insights
+- Location: Derivation functions
+- Output: Aggregated insights and metrics
+
+## Implementation Patterns
+
+### ETL Pipeline Pattern
+
+```r
+# ETL06 Example: Reviews Data Preparation
+etl06_pipeline <- function() {
+  # Phase 0IM: Import
+  raw_reviews <- import_external_data("reviews.csv")
+  
+  # Handle complex data types for DuckDB (DM_R024)
+  if (has_list_columns(raw_reviews)) {
+    raw_reviews <- convert_list_to_json(raw_reviews)
+  }
+  
+  write_to_layer(raw_reviews, "raw_data")
+  
+  # Phase 1ST: Staging
+  staged_reviews <- standardize_encoding(raw_reviews) %>%
+    fix_date_formats() %>%
+    validate_structure() %>%
+    fix_for_duckdb()  # Apply DM_R025 type conversions
+  write_to_layer(staged_reviews, "staged_data")
+  
+  # Phase 2TR: Transform
+  transformed_reviews <- map_schema(staged_reviews) %>%
+    convert_types() %>%
+    join_product_categories()
+  write_to_layer(transformed_reviews, "transformed_data")
+  
+  return(transformed_reviews)  # Clean, standardized records
+}
+```
+
+### Derivation Pattern
+
+```r
+# D03: Positioning Analysis (consumes ETL output)
+d03_positioning_analysis <- function() {
+  # Consume ETL-prepared data
+  reviews_data <- read_from_etl("transformed_reviews")
+  sales_data <- read_from_etl("transformed_sales")
+  
+  # Apply business logic
+  customer_segments <- reviews_data %>%
+    aggregate_by_customer() %>%
+    calculate_satisfaction_scores() %>%
+    apply_segmentation_rules()
+  
+  product_positioning <- sales_data %>%
+    aggregate_by_product() %>%
+    calculate_market_position() %>%
+    identify_opportunities()
+  
+  return(list(
+    segments = customer_segments,
+    positioning = product_positioning
+  ))
+}
+```
+
+## Benefits of Separation
+
+1. **Clear Responsibilities**: Each component has a well-defined purpose
+2. **Reusability**: ETL outputs can feed multiple derivations
+3. **Maintainability**: Changes to business logic don't affect data preparation
+4. **Testability**: ETL and Derivations can be tested independently
+5. **Scalability**: ETL can be optimized separately from business logic
+6. **Modularity**: New derivations can be added without touching ETL
+
+## DRV File Numbering Requirements (v2.1)
+
+Derivation files MUST follow sequential numbering per DM_R042:
+
+### Required Pattern
+- **Format**: `{platform}_D{group}_{seq}.R`
+- **Example**: `cbz_D01_03.R`, `cbz_D01_04.R`, `cbz_D01_05.R`
+- **Execution**: Files execute in numerical order within each group
+- **NO descriptive suffixes**: Use sequential numbers only (not `_customer`, `_sales`)
+
+### Internal P-Number Mapping
+Each DRV file must contain its P-number on line 2:
+```r
+#####
+#P07_D01_03
+```
+
+The external filename must match: `cbz_D01_03.R`
+
+### Benefits of Sequential Numbering
+- **Clear execution order** from filename alone
+- **Natural sorting** works correctly
+- **Direct mapping** between internal and external identifiers
+- **Simplified orchestration** scripts
+
+See DM_R042 for complete DRV numbering specifications.
+
+## Directory Migration Requirements
+
+### Step 1: Create Mandatory Directory Structure
+
+```r
+# Create the required directory hierarchy
+create_etl_drv_structure <- function(base_path) {
+  # Main directories
+  dir.create(file.path(base_path, "ETL"), showWarnings = FALSE)
+  dir.create(file.path(base_path, "DRV"), showWarnings = FALSE)
+  dir.create(file.path(base_path, "orchestration"), showWarnings = FALSE)
+
+  # Platform subdirectories
+  platforms <- c("cbz", "amz", "eby", "all")
+  for (platform in platforms) {
+    dir.create(file.path(base_path, "ETL", platform), showWarnings = FALSE)
+    dir.create(file.path(base_path, "DRV", platform), showWarnings = FALSE)
+  }
+}
+```
+
+### Step 2: Migrate Scripts to Proper Directories
+
+```r
+# Move ETL scripts to ETL hierarchy
+migrate_etl_scripts <- function(scripts_path) {
+  etl_scripts <- list.files(scripts_path, pattern = ".*_ETL.*\\.R$")
+
+  for (script in etl_scripts) {
+    filename <- basename(script)
+    # Determine platform from filename
+    platform <- substr(filename, 1, 3)
+
+    # Move to ETL/{platform}/ directory
+    old_path <- file.path(scripts_path, filename)
+    new_path <- file.path(scripts_path, "ETL", platform, filename)
+    file.rename(old_path, new_path)
+    message(sprintf("Moved %s to ETL/%s/", filename, platform))
+  }
+}
+
+# Move DRV scripts to DRV hierarchy
+migrate_drv_scripts <- function(scripts_path) {
+  drv_scripts <- list.files(scripts_path, pattern = ".*_D[0-9]{2}.*\\.R$|.*_DRV.*\\.R$")
+
+  for (script in drv_scripts) {
+    filename <- basename(script)
+    # Determine platform from filename
+    platform <- substr(filename, 1, 3)
+
+    # Move to DRV/{platform}/ directory
+    old_path <- file.path(scripts_path, filename)
+    new_path <- file.path(scripts_path, "DRV", platform, filename)
+    file.rename(old_path, new_path)
+    message(sprintf("Moved %s to DRV/%s/", filename, platform))
+  }
+}
+```
+
+## Migration Guidelines
+
+### Converting Mixed ETL-Derivation Code
+
+**Before (Mixed Concerns)**:
+```r
+# Old ETL01: Mixed data prep and business logic
+process_sales <- function() {
+  # Data preparation
+  data <- import_csv("sales.csv")
+  data <- clean_data(data)
+  
+  # Business logic mixed in
+  customer_rfm <- calculate_rfm(data)  # Should be in Derivation
+  customer_segments <- segment_customers(customer_rfm)  # Should be in Derivation
+  
+  return(customer_segments)
+}
+```
+
+**After (Separated Concerns)**:
+```r
+# New ETL01: Pure data preparation
+etl01_sales_preparation <- function() {
+  raw_sales <- import_csv("sales.csv")
+  staged_sales <- standardize_format(raw_sales)
+  transformed_sales <- apply_schema(staged_sales)
+  return(transformed_sales)  # Just clean data
+}
+
+# New D01: Business logic only
+d01_customer_analysis <- function() {
+  sales_data <- read_from_etl("transformed_sales")
+  customer_rfm <- calculate_rfm(sales_data)
+  customer_segments <- segment_customers(customer_rfm)
+  return(customer_segments)
+}
+```
+
+## Compliance Requirements
+
+1. **Physical Separation**: ETL scripts MUST be in ETL/ directories, DRV scripts MUST be in DRV/ directories
+2. **All new data pipelines** must follow the ETL three-phase pattern in ETL/{platform}/ directories
+3. **All business logic** must be implemented as Derivations in DRV/{platform}/ directories
+4. **No mixing** of data preparation and business logic in the same function OR directory
+5. **Clear naming**: Use ETL prefix for data prep (in ETL/), DRV or D prefix for derivations (in DRV/)
+6. **Documentation**: Each pipeline must specify its inputs, outputs, and directory location
+7. **Orchestration**: Pipeline runners must be in orchestration/ directory
+
+## Examples
+
+### Compliant Implementation
+
+```r
+# ETL07: Competitor Sales Data Preparation
+# Pure data preparation, no business logic
+etl07_competitor_sales <- function() {
+  # 0IM: Import competitor data
+  # 1ST: Standardize formats
+  # 2TR: Transform to common schema
+  return(standardized_competitor_data)
+}
+
+# D04: Competitive Analysis
+# Pure business logic, no data preparation
+d04_competitive_analysis <- function() {
+  competitor_data <- read_from_etl("etl07_output")
+  own_data <- read_from_etl("etl01_output")
+  
+  market_share <- calculate_market_share(competitor_data, own_data)
+  competitive_position <- analyze_position(market_share)
+  
+  return(competitive_position)
+}
+```
+
+### Non-Compliant Implementation
+
+```r
+# WRONG: Mixed ETL and business logic
+process_competitor_data <- function() {
+  # ETL part
+  data <- import_csv("competitor.csv")
+  data <- clean_data(data)
+  
+  # Business logic mixed in (VIOLATION)
+  market_analysis <- calculate_market_share(data)
+  recommendations <- generate_strategy(market_analysis)
+  
+  return(recommendations)
+}
+```
+
+## Nested Data Handling
+
+### Complex Data Types in ETL
+
+When handling nested data from APIs or complex sources:
+
+1. **Assess Structure** (Phase 0IM)
+   - Determine if data is regularly structured
+   - Check for list columns or nested objects
+   - Apply DM_R024 for list column detection
+
+2. **Choose Strategy** (Per DM_R026)
+   - **Flatten**: For regular structures (e.g., line items)
+   - **Normalize**: For complex relationships
+   - **Serialize to JSON**: For irregular/complex structures
+
+3. **Implementation Example**
+
+```r
+# ETL with nested API data
+etl_api_import <- function(api_response) {
+  # Phase 0IM: Handle nested structure
+  df <- jsonlite::fromJSON(api_response, flatten = TRUE)
+  
+  # Check for list columns (DM_R024)
+  list_cols <- sapply(df, is.list)
+  
+  if (any(list_cols)) {
+    # Decision based on structure (DM_R026)
+    for (col in names(df)[list_cols]) {
+      if (is_regular_structure(df[[col]])) {
+        # Flatten regular nested data
+        df <- tidyr::unnest(df, all_of(col), keep_empty = TRUE)
+      } else {
+        # Serialize irregular nested data
+        df[[paste0(col, "_json")]] <- sapply(df[[col]], 
+                                              jsonlite::toJSON, 
+                                              auto_unbox = TRUE)
+        df[[col]] <- NULL
+      }
+    }
+  }
+  
+  # Ensure DuckDB compatibility (DM_R025)
+  df <- fix_for_duckdb(df)
+  
+  return(df)
+}
+```
+
+## Conclusion
+
+The ETL-Derivation Separation Principle ensures clean architecture by maintaining strict boundaries between data preparation (ETL) and business logic (Derivation). This separation is enforced through mandatory physical directory separation, enabling modular, maintainable, and scalable data processing systems where each component has a single, well-defined responsibility and location.
+
+Version 1.1 adds specific guidance for handling complex data types and nested structures, ensuring compatibility with DuckDB storage requirements while maintaining the separation of concerns.
+
+Version 1.2 clarifies the critical distinction between structural JOINs (ETL responsibility in 2TR phase) and analytical JOINs (Derivation responsibility), providing concrete examples and implementation patterns for each type.
+
+Version 2.0 mandates physical directory separation with ETL scripts required to be in ETL/{platform}/ directories and DRV scripts in DRV/{platform}/ directories, enforcing architectural boundaries through file system organization.
+
+Version 2.1 adds DRV file numbering requirements following DM_R042, mandating sequential numbering pattern `{platform}_D{group}_{seq}.R` to ensure clear execution order and direct mapping to internal P-numbers.

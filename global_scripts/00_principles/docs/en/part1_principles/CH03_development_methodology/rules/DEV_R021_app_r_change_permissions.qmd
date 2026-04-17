@@ -1,0 +1,178 @@
+---
+title: "DEV_R021: App.R Change Permission Rule"
+subtitle: "All changes to app.R MUST be explicitly permitted before implementation. The app.R file is considered a critical system component that requires special protection to maintain system stability and reliability"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R021"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article-number: 
+  number: 21
+  title: "App.R Change Permission Rule"
+extends:
+  - "MP002: Default Deny"
+implements:
+  - "R066: App.R Function Prohibition"
+  - "P012: App.R is Global"
+  - "MP031: Initialization First"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 21: App.R Change Permission Rule {#overview}
+
+**Development Methodology Law Article 21 (App.R Change Permission Rule)**
+
+This rule establishes that all changes to app.R must be explicitly permitted before implementation.
+
+:::{.callout-important}
+## Core Rule
+**All modifications to app.R MUST be explicitly permitted through formal approval before implementation.**
+:::
+
+# Section 1: Rationale {#rationale}
+
+The app.R file is the central entry point for the Shiny application and contains critical configuration and initialization code. Uncontrolled changes to this file can:
+
+1. **Break the entire application functionality**
+2. **Introduce security vulnerabilities**
+3. **Create complex dependencies that are difficult to maintain**
+4. **Lead to inconsistent application behavior**
+5. **Result in difficult-to-debug issues**
+
+This rule extends MP0002 (Default Deny) specifically to app.R, recognizing its special status in the application architecture.
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Permission Process {#permission-process}
+
+Before modifying app.R:
+
+### 1. Formal Documentation {#formal-documentation}
+- Document the proposed change with clear justification
+- Explain why the change cannot be implemented through modules or components
+- Identify potential impacts on system functionality
+
+### 2. Review Requirements {#review-requirements}
+- Changes must be reviewed by at least one other developer
+- Verify compliance with R0066 (App.R Function Prohibition)
+- Check for consistency with existing principles
+
+### 3. Testing Plan {#testing-plan}
+- Develop a comprehensive testing plan for the change
+- Include pre-change and post-change validation steps
+- Document expected outcomes and verification methods
+
+### 4. Implementation Control {#implementation-control}
+- Implement changes using version control
+- Include detailed commit messages referencing the permission
+- Document the change in system logs
+
+## Subsection 2: Permitted Changes {#permitted-changes}
+
+Only the following types of changes are generally permissible:
+
+1. **Module Loading**: Adding or removing module sourcing
+2. **UI Structure**: Modifications to the high-level UI structure (not component details)
+3. **Initialization Sequence**: Changes to the initialization sequence
+4. **Configuration Parameters**: Updates to configuration parameters
+5. **Global Dependencies**: Management of global dependencies
+
+All other changes should be implemented through modules, components, or other decoupled mechanisms.
+
+## Subsection 3: Emergency Exception {#emergency-exception}
+
+In emergency situations, temporary changes may be permitted without full process if:
+
+1. The change is required to restore critical functionality
+2. The change is documented after implementation
+3. A formal review is conducted within 48 hours
+4. A permanent solution following the full permission process is implemented
+
+# Section 3: Example {#example}
+
+## Subsection 1: Permission Request Format {#permission-request-format}
+
+```
+APP.R MODIFICATION REQUEST
+===========================
+Date: 2025-04-08
+Requester: John Smith
+
+PROPOSED CHANGE:
+Add initialization code for the new analytics module in app.R
+
+JUSTIFICATION:
+The analytics module requires initialization at application startup before any UI components load.
+
+IMPLEMENTATION DETAILS:
+Will add the following code to app.R's initialization section:
+```R
+# Initialize analytics module
+source(file.path(root_path, "update_scripts/global_scripts/04_utils/analytics/initialize.R"))
+```
+
+TESTING PLAN:
+1. Verify application loads without errors
+2. Confirm analytics module functionality through unit tests
+3. Validate no performance impact on application startup
+
+REVIEWED BY:
+Jane Doe (2025-04-08)
+```
+
+## Subsection 2: Code Implementation {#code-implementation}
+
+Before modifying app.R, check permission:
+
+```r
+# Check if modification is permitted
+if (!has_permission_to_modify("app.R")) {
+  log_unauthorized_attempt("app.R_modification")
+  stop("Permission denied: Cannot modify app.R without formal approval")
+}
+
+# Proceed only if explicitly permitted
+# ... implementation code ...
+```
+
+# Section 4: Interaction with Other Principles {#interaction-with-principles}
+
+This rule reinforces and extends:
+
+- **MP0002 (Default Deny)**: Applying the default deny principle specifically to app.R
+- **R0066 (App.R Function Prohibition)**: Further restricting what can be included in app.R
+- **P0012 (App.R is Global)**: Recognizing the global impact of app.R changes
+- **MP0031 (Initialization First)**: Ensuring careful management of initialization code
+
+# Section 5: Compliance Verification {#compliance-verification}
+
+To verify compliance with this rule:
+
+1. **Audit all app.R changes**: Against permission documentation
+2. **Verify each change**: Had proper review and testing
+3. **Confirm emergency changes**: Were properly documented and reviewed
+4. **Check**: That no unauthorized functions were added to app.R
+
+# Section 6: Benefits {#benefits}
+
+By enforcing this rule, we ensure:
+
+1. **Stability**: app.R remains stable and predictable
+2. **Maintainability**: Changes are properly documented and understood
+3. **Security**: Reduced risk of introducing vulnerabilities
+4. **Architecture Integrity**: Maintains the system's architectural principles
+5. **Accountability**: All changes have clear responsibility attribution
+
+---
+
+*Based on: Development Methodology Law Article 21*  
+*Related to: [MP002 Default Deny](../../CH00_fundamental_principles/meta_principles/MP002_default_deny.qmd), [R066 App.R Function Prohibition](./DEV_R019_app_r_function_prohibition.qmd)*

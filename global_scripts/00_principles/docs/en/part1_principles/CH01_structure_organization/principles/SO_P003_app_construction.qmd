@@ -1,0 +1,297 @@
+---
+title: "SO_P003: App Construction Principles"
+subtitle: "Core principles for constructing Shiny applications"
+chapter: "CH01"
+category: "principle"
+number: "SO_P003"
+date-created: "2025-03-10"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "結構組織法 (Structure & Organization Law)"
+article-number: "第3條"
+derives_from:
+  - "CH00.MP002: Structural Blueprint"
+  - "CH00.MP001: Primitive Terms and Definitions"
+  - "CH00.MP012: Company-Centered Design"
+influences:
+  - "CH01.SO_P004: App Bottom-Up Construction"
+  - "CH01.SO_R004: App YAML Configuration"
+  - "CH01.SO_R001: Directory Structure"
+  - "UI_R001: UI-Server-Defaults Triple Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**結構組織法第3條（應用程式建構原則）**
+
+本條規定 Shiny 應用程式建構之核心實作原則，確保應用程式結構、配置和行為的一致性與專業性。
+
+# 第一項：核心實作原則 {#core-principles}
+
+## 第一款：內容處理規則 {#content-treatment}
+
+內容處理遵循以下原則：
+
+- 若內容視為常數（非變數），保持與參考應用程式完全相同
+- 若內容視為變數，可修改以符合特定需求
+
+## 第二款：無捲動 UI 規則 {#scroll-free-ui}
+
+:::{.callout-note}
+## UI 設計原則
+- 避免應用程式介面中不必要的捲動
+- 使用導航面板（nav_panel）而非長捲動頁面
+- 保持所有關鍵資訊無需捲動即可見
+:::
+
+## 第三款：品牌保護與商業產品規則 {#brand-protection}
+
+:::{.callout-warning}
+## 品牌保護要求
+- 絕不在使用者介面元素中顯示公司名稱
+- 使用通用應用程式名稱（如「AI行銷科技平台」）
+- 在所有 UI 組件中維護客戶身份的保密性
+- 即使在開發和內部測試環境中也要應用此規則
+- 絕不向終端使用者顯示維護或技術資訊
+- 從商業應用程式介面中移除所有開發者導向元素
+- 記住應用程式將作為商業產品銷售給公司 - 維持專業外觀
+:::
+
+## 第四款：組件重用規則 {#component-reuse}
+
+所有應用程式功能基於既有組件：
+
+1. 基於 `10_rshinyapp_components` 和 `11_rshinyapp_utils` 目錄中的既有組件
+2. 不在這些既定組件之外創建新的 UI 或伺服器函數
+3. 只在應用程式結構內利用和安排既有組件
+4. 調整配置但不調整組件的核心功能
+
+## 第五款：由下而上建構規則 {#bottom-up}
+
+:::{.callout-tip}
+## 建構順序
+1. 從資料獲取和處理組件開始
+2. 建立執行特定功能的小型、專注的組件
+3. 整合前單獨測試組件
+4. 漸進式組裝應用程式，只添加必要組件
+5. 避免在實際需要前添加功能
+:::
+
+## 第六款：UI-Server-Defaults 三元模式 {#triple-pattern}
+
+- 遵循 UI_R001（UI-Server-Defaults 三元規則）進行所有組件開發
+- 為每個組件創建 UI、伺服器和預設檔案
+- 詳見 UI_R001 了解詳細實作要求和範例
+
+## 第七款：基於初始化的載入規則 {#initialization-loading}
+
+:::{.callout-important}
+## 載入原則
+- 使用適當的模式特定初始化腳本載入組件
+- 不在應用程式腳本中手動載入個別組件檔案
+- 依賴初始化系統確保所有相依性正確載入
+- 組件應根據其位置和命名慣例自動載入
+- 只對初始化腳本未涵蓋的自訂組件使用明確的 source()
+:::
+
+## 第八款：標準化資料來源處理規則 {#data-source-processing}
+
+- 使用 processDataSource 工具函數處理資料來源規範
+- 一致支援多種資料來源格式（NULL、字串、陣列、物件）
+- 確保伺服器組件可與所有支援的格式配合
+- 使用配置和組件初始化之間的清晰映射
+- 當資料來源不可用時始終提供合理的預設值
+- 反應式處理資料來源以回應變更
+
+# 第二項：組件命名慣例 {#naming-convention}
+
+## 組件檔案命名 {#file-naming}
+
+Shiny 組件遵循腳本分離原則中定義的命名慣例：
+
+```
+ui_[section]_[component].R
+server_[section]_[component].R
+defaults_[section]_[component].R
+```
+
+其中：
+- **section**：識別主要應用程式區段（macro、micro、target）
+- **component**：描述特定功能
+
+## 組件儲存位置 {#component-storage}
+
+組件儲存在 `10_rshinyapp_components` 目錄中，按區段組織：
+
+範例：
+- `10_rshinyapp_components/macro/ui_macro_overview.R`
+- `10_rshinyapp_components/micro/ui_micro_customer.R`
+- `10_rshinyapp_components/target/ui_target_segmentation.R`
+
+# 第三項：實作細節 {#implementation-details}
+
+## 第一款：常數元素（完全保留）{#constant-elements}
+
+這些元素不得更改，因為它們是核心應用程式結構的一部分：
+
+### 面板組織 {#panel-organization}
+- 三個主要面板：總覽（Macro Overview）、微觀（Micro Customer）、目標群組（Target Profiling）
+- 每個面板內元素的配置
+- 面板順序和層級
+
+### UI 組件 {#ui-components}
+- 值框結構和排列
+- 圖表類型和視覺化方法
+- 過濾機制和配置
+- 網格和卡片配置模式
+
+### 互動模式 {#interaction-patterns}
+- 過濾如何影響資料顯示
+- 互動式圖表行為
+- 視圖之間的導航
+- 選擇機制
+
+### 程式碼架構 {#code-architecture}
+- 模組結構和組織
+- 反應式資料流模式
+- 伺服器端資料處理方法
+- 錯誤處理方法
+
+## 第二款：變數元素（可調整）{#variable-elements}
+
+這些元素可修改以符合特定需求：
+
+### 資料來源 {#data-sources}
+- 來自目錄的產品類別
+- 特定的配送通道
+- 相關的地理位置
+- 如需要的時間尺度選項
+
+### 術語 {#terminology}
+- 指標的文字標籤
+- 類別名稱
+- 狀態描述
+- 價值區段和忠誠度層級標籤
+
+### 品牌元素 {#brand-elements}
+- 應用程式標題包含品牌名稱
+- 如品牌指南中指定的配色方案
+- 特定於業務上下文的術語
+
+### 資料處理 {#data-processing}
+- 特定指標的計算
+- 如何為客戶衍生 DNA 區段
+- 適當的預設過濾值
+
+# 第四項：實際範例 {#practical-examples}
+
+## 初始化載入範例 {#initialization-examples}
+
+:::{.panel-tabset}
+
+### ✅ 正確做法
+```r
+# 透過初始化載入所有組件
+if (!exists("INITIALIZATION_COMPLETED") || !INITIALIZATION_COMPLETED) {
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+}
+
+# 應用程式現在可以直接使用初始化載入的任何組件
+ui <- fluidPage(
+  microCustomerUI("customer_module")
+)
+```
+
+### ❌ 錯誤做法
+```r
+# 不要這樣做
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                 "micro", "ui_micro_customer.R"))
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                 "micro", "server_micro_customer.R"))
+```
+
+:::
+
+## 資料來源處理範例 {#data-source-examples}
+
+:::{.panel-tabset}
+
+### 伺服器組件
+```r
+# 在 server_micro_customer.R 中
+microCustomerServer <- function(id, data_source = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 使用工具函數處理資料來源
+    tables <- reactive({
+      processDataSource(
+        data_source = data_source, 
+        table_names = c("primary", "sales_by_customer", "customers"),
+        get_table_func = get_table
+      )
+    })
+    
+    # 透過標準化表格結構存取資料
+    data <- reactive({ tables()$primary })
+  })
+}
+```
+
+### YAML 配置
+```yaml
+components:
+  micro:
+    # 簡單情況 - 單一表格
+    customer_profile: "customer_details"
+    
+    # 複雜情況 - 多個表格與角色
+    sales_analysis:
+      primary: "sales_summary"
+      history: "sales_history"
+      details: "transaction_details"
+      
+    # 陣列情況 - 排序表格
+    product_trends:
+      - "product_data"
+      - "trend_data"
+      - "forecast_data"
+```
+
+:::
+
+# 第五項：維護指導原則 {#maintenance}
+
+更新應用程式時：
+
+:::{.callout-note}
+## 維護檢查清單
+1. 始終對照參考應用程式檢查，確保常數元素保持不變
+2. 只在特定需求變更時更新變數元素
+3. 記錄任何偏離參考的情況並提供明確理由
+4. 徹底測試以確保結構完整性和特定功能
+5. 驗證沒有公司或品牌名稱出現在任何使用者介面元素中
+6. 在所有 UI 組件和文件中一致應用品牌保護規則
+7. 只使用來自 10_rshinyapp_components 和 11_rshinyapp_utils 目錄的既有組件
+8. 如需新功能，先將其添加到這些目錄中的適當組件
+9. 始終將 UI 和伺服器組件作為配對實作
+10. 依賴初始化腳本載入組件而非手動載入
+:::
+
+# 結論 {#conclusion}
+
+透過遵循這些應用程式建構原則，我們確保 Shiny 應用程式維持專業、一致和可維護的結構，同時保護客戶隱私並支援商業部署需求。
+
+---
+
+*依據：結構組織法第3條*  
+*影響：[SO_P004 由下而上建構](SO_P004_app_bottom_up_construction.qmd)*  
+*相關規則：[SO_R004 YAML 配置](../rules/SO_R004_app_yaml_configuration.qmd)、[UI_R001 UI-Server-Defaults 三元規則](../../CH04_ui_components/rules/UI_R001_ui_server_defaults.qmd)*

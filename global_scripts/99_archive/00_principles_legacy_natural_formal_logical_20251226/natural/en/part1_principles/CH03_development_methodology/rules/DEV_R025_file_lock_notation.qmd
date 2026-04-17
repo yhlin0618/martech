@@ -1,0 +1,170 @@
+---
+title: "DEV_R025: File Lock Notation Rule"
+subtitle: "Critical files that should not be modified directly must be clearly marked with a standardized #LOCK FILE notation at the beginning of the file in a way that does not conflict with documentation tools like Roxygen2"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R025"
+date-created: "2025-04-10"
+date-modified: "2025-08-18"
+author: "Development Team"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 25
+  title: "File Lock Notation Rule"
+extends:
+  - "MP017: Separation of Concerns"
+  - "MP037: Comment Only for Temporary or Uncertain"
+aliases:
+  - "File Lock Comment"
+  - "LOCK FILE Notation"
+key_terms:
+  - "file lock"
+  - "file protection"
+  - "lock notation"
+  - "code protection"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 25: File Lock Notation Rule {#overview}
+
+**Development Methodology Law Article 25 (File Lock Notation Rule)**
+
+This rule ensures critical system files are protected from accidental modification and provides a consistent pattern for identifying file status.
+
+:::{.callout-important}
+## Core Statement
+Critical files that should not be modified directly must be clearly marked with a standardized `#LOCK FILE` notation at the beginning of the file in a way that does not conflict with documentation tools like Roxygen2.
+:::
+
+# Section 1: Rationale {#rationale}
+
+Marking files as locked provides several benefits:
+
+1. Prevents accidental modification of critical system files
+2. Makes it clear which files should only be changed through approved processes
+3. Ensures that automated tools and scripts can identify protected files
+4. Establishes a consistent pattern for identifying file status
+5. Reduces the risk of breaking core functionality through improper edits
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+Files should be marked as locked using one of the following three approved methods, all of which ensure compatibility with Roxygen2 and other documentation tools:
+
+## Subsection 1: Top of File Method {#top-of-file-method}
+
+Place the lock notation as the very first line of the file, on a line by itself:
+
+```r
+#LOCK FILE
+
+# Rest of the file contents...
+```
+
+## Subsection 2: After Header Method {#after-header-method}
+
+Place the lock notation after any file preamble, copyright notices, or license headers, but before any Roxygen2 documentation:
+
+```r
+# Copyright (c) 2025 Company Name
+# License: MIT
+
+#LOCK FILE
+
+#' @title Function title
+#' @description Function description
+```
+
+## Subsection 3: After Shebang Method {#after-shebang-method}
+
+For executable scripts that include a shebang line, place the lock notation immediately after the shebang:
+
+```r
+#!/usr/bin/env Rscript
+
+#LOCK FILE
+
+# Rest of the script...
+```
+
+# Section 3: Additional Notation {#additional-notation}
+
+For files that contain multiple sections that need to be protected independently, use secondary lock notations:
+
+```r
+#LOCK ON
+# Protected content begins
+...protected code...
+#LOCK OFF
+
+# Unprotected section
+...modifiable code...
+
+#LOCK ON
+# Another protected section begins
+...protected code...
+#LOCK OFF
+```
+
+# Section 4: Validation Rules {#validation-rules}
+
+1. The lock notation must always be on a line by itself
+2. Use a regular comment (`#`) not a Roxygen2 comment (`#'`)
+3. Place it before any Roxygen2 documentation blocks
+4. Ensure it's not inside a function or code block
+
+# Section 5: Application Scope {#application-scope}
+
+This file lock notation should be used for:
+
+1. Core application files like app.R that serve as application entry points
+2. Initialization and configuration scripts that establish the application environment
+3. Files that implement critical business logic and core functionality
+4. Files that define centralized processes like authentication or logging
+5. Any file where uncontrolled changes could break the entire application
+
+# Section 6: Relationship to Other Rules {#relationship-to-other-rules}
+
+- **MP017 (Separation of Concerns)**: By clearly marking which files serve critical system roles
+- **MP037 (Comment Only for Temporary or Uncertain)**: By establishing a standard comment pattern with specific meaning
+- **R073 (App.R Change Permissions)**: By providing a mechanism to implement the permission restrictions
+
+# Section 7: Implementation Process {#implementation-process}
+
+1. Identify critical files that should be protected
+2. Add the lock notation following one of the three approved methods
+3. Document the locked status in relevant project documentation
+4. Update build and deployment processes to respect lock notations
+5. Educate team members about the meaning and purpose of locked files
+
+# Section 8: Benefits {#benefits}
+
+- **Reduced Risk**: Lower chance of accidental modifications to critical components
+- **Clear Boundaries**: Explicit indication of which files should not be modified directly
+- **Enhanced Documentation**: Better understanding of the system's architecture
+- **Process Support**: Automated tools can detect and enforce file lock status
+- **Team Alignment**: Shared understanding of file status
+
+# Section 9: Related Concepts {#related-concepts}
+
+## Shebang Line (Hashbang)
+
+A shebang line (`#!/usr/bin/env Rscript`) is a special notation used at the beginning of script files to specify the interpreter that should be used to execute the script. This allows R scripts to be run directly as executable programs from the command line.
+
+Benefits of using shebang lines:
+- **Portability**: Using `/usr/bin/env` locates the interpreter in the user's environment
+- **Command-line utility**: Allows scripts to be executed directly without explicitly invoking R
+- **Integration**: Makes it easier to include R scripts in system workflows
+
+When used with the lock notation, always place the shebang at the very top, followed by the lock notation.
+
+---
+
+*Based on: Development Methodology Law Article 25*  
+*Related to: [MP017 Separation of Concerns](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [MP037 Comment Only for Temporary or Uncertain](../../CH00_fundamental_principles/meta_principles/MP037_comment_only_for_temporary_or_uncertain.qmd)*

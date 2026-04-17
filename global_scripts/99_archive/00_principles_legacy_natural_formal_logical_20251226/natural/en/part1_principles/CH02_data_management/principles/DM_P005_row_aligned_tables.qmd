@@ -1,0 +1,401 @@
+---
+title: "DM_P005: Row-Aligned Tables Principle"
+subtitle: "Optimizing database table operations through row alignment"
+chapter: "CH02"
+category: "principle"
+number: "DM_P005"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Data Management Law"
+article: 
+  number: 5
+  title: "Row-Aligned Tables Principle"
+related_to:
+  - "CH00.MP043: Database Documentation"
+  - "CH00.MP045: Automatic Data Availability Detection"
+  - "DM_R002: Universal Data Access"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Data Management Law Article 5 (Row-Aligned Tables Principle)**
+
+When database tables maintain the same row order and share a common key, they should be marked as row-aligned to enable optimized operations. Row-aligned tables permit the use of highly optimized row-wise operations like `bind_cols()` instead of more expensive join operations.
+
+:::{.callout-important}
+## Core Principle
+Row-aligned tables have identical row counts, same ordering, and corresponding records at the same positions, enabling optimized operations like `bind_cols()` instead of expensive `join` operations.
+:::
+
+# Section 1: Theoretical Foundation {#rationale}
+
+## Subsection 1: Alignment Concept {#alignment-concept}
+
+Row-aligned tables have the following characteristics:
+1. **Shared Primary Key**: Tables share the same primary key (e.g., `customer_id`)
+2. **Same Row Order**: Maintain identical record ordering
+3. **Position Correspondence**: Corresponding records at the same row positions
+
+## Subsection 2: Performance Benefits {#performance-benefits}
+
+Optimizations enabled by row-aligned structure:
+- Significantly faster data merging using `bind_cols()` instead of `left_join()`
+- Reduced memory usage during analytics operations
+- Simplified data processing code
+- Avoidance of complex join logic
+
+## Subsection 3: Use Cases {#use-cases}
+
+Examples in the MAMBA application:
+- `df_customer_profile` and `df_dna_by_customer` tables
+- Customer master and customer attribute tables
+- Product information and product feature tables
+
+# Section 2: Implementation Requirements {#implementation}
+
+## Subsection 1: Explicit Documentation {#documentation}
+
+Row-aligned tables should be clearly marked in database documentation:
+
+```yaml
+# database_schema.yaml
+row_aligned_tables:
+  - group: customer_data
+    tables:
+      - df_customer_profile
+      - df_dna_by_customer
+    key: customer_id
+    description: "Customer master and DNA data row-aligned by customer_id"
+    
+  - group: product_data
+    tables:
+      - df_product_info
+      - df_product_features
+    key: product_id
+    description: "Product info and features row-aligned by product_id"
+```
+
+## Subsection 2: Structural Verification {#verification}
+
+Add validation routines to ensure row alignment is maintained:
+
+```r
+# Verify row alignment function
+verify_row_alignment <- function(table1, table2, key_column) {
+  # Check if row counts are the same
+  if (nrow(table1) != nrow(table2)) {
+    warning(paste("Tables have different row counts:", 
+                  nrow(table1), "vs", nrow(table2)))
+    return(FALSE)
+  }
+  
+  # Check if key values are identical
+  if (!identical(table1[[key_column]], table2[[key_column]])) {
+    warning("Key values have different order or don't match")
+    return(FALSE)
+  }
+  
+  message("Row alignment verification passed")
+  return(TRUE)
+}
+
+# Batch verification function
+verify_all_alignments <- function(alignment_config) {
+  results <- list()
+  
+  for (group in alignment_config) {
+    tables <- group$tables
+    key <- group$key
+    
+    # Verify each pair of tables
+    for (i in 1:(length(tables) - 1)) {
+      table1 <- get(tables[i])
+      table2 <- get(tables[i + 1])
+      
+      result <- verify_row_alignment(table1, table2, key)
+      results[[paste(tables[i], tables[i + 1], sep = "_")]] <- result
+    }
+  }
+  
+  return(results)
+}
+```
+
+## Subsection 3: Schema Enforcement {#schema-enforcement}
+
+When modifying row-aligned tables, operations must maintain alignment:
+
+```r
+# Safe row-aligned table insertion
+insert_aligned_rows <- function(tables, new_data, key_column) {
+  # Ensure all tables get new data
+  for (table_name in names(tables)) {
+    if (!table_name %in% names(new_data)) {
+      stop(paste("Missing new data for table:", table_name))
+    }
+  }
+  
+  # Verify new data has same key values
+  key_values <- NULL
+  for (data in new_data) {
+    if (is.null(key_values)) {
+      key_values <- data[[key_column]]
+    } else {
+      if (!identical(key_values, data[[key_column]])) {
+        stop("Key values in new data are inconsistent")
+      }
+    }
+  }
+  
+  # Insert into all tables simultaneously
+  for (table_name in names(tables)) {
+    tables[[table_name]] <- rbind(tables[[table_name]], 
+                                   new_data[[table_name]])
+  }
+  
+  return(tables)
+}
+
+# Safe row-aligned table deletion
+delete_aligned_rows <- function(tables, condition, key_column) {
+  # Apply same deletion condition across all tables
+  for (table_name in names(tables)) {
+    tables[[table_name]] <- tables[[table_name]][!condition, ]
+  }
+  
+  # Verify alignment still holds
+  verify_all_alignments(tables)
+  
+  return(tables)
+}
+```
+
+# Section 3: Data Access Patterns {#access-patterns}
+
+## Subsection 1: Optimized Merge Operations {#optimized-merging}
+
+Prefer column binding over joins for row-aligned tables:
+
+```r
+# ✅ PREFERRED: Use bind_cols for row-aligned tables
+combine_aligned_tables <- function(df_profile, df_dna) {
+  # Verify alignment
+  if (!verify_row_alignment(df_profile, df_dna, "customer_id")) {
+    stop("Tables are not properly aligned")
+  }
+  
+  # Use bind_cols for fast merging
+  # Remove key column from second table to avoid duplication
+  combined_data <- bind_cols(
+    df_profile, 
+    df_dna[, !names(df_dna) %in% "customer_id"]
+  )
+  
+  return(combined_data)
+}
+
+# ❌ AVOID: Using join for row-aligned tables (less efficient)
+combine_with_join <- function(df_profile, df_dna) {
+  # Less efficient for row-aligned tables
+  combined_data <- left_join(df_profile, df_dna, by = "customer_id")
+  return(combined_data)
+}
+```
+
+## Subsection 2: Performance Comparison {#performance-comparison}
+
+```r
+# Performance testing function
+benchmark_merge_methods <- function(n_rows = 100000) {
+  # Create test data
+  df1 <- data.frame(
+    id = 1:n_rows,
+    value1 = rnorm(n_rows)
+  )
+  
+  df2 <- data.frame(
+    id = 1:n_rows,
+    value2 = rnorm(n_rows)
+  )
+  
+  # Test bind_cols
+  time_bind <- system.time({
+    result_bind <- bind_cols(df1, df2[, -1])
+  })
+  
+  # Test left_join
+  time_join <- system.time({
+    result_join <- left_join(df1, df2, by = "id")
+  })
+  
+  # Report results
+  cat("bind_cols time:", time_bind[3], "seconds\n")
+  cat("left_join time:", time_join[3], "seconds\n")
+  cat("Speedup:", time_join[3] / time_bind[3], "x\n")
+}
+```
+
+# Section 4: Consistency Checks {#consistency-checks}
+
+## Subsection 1: Periodic Verification {#periodic-verification}
+
+```r
+# Automated alignment checking
+schedule_alignment_checks <- function() {
+  # Daily check
+  check_daily <- function() {
+    config <- load_alignment_config()
+    results <- verify_all_alignments(config)
+    
+    if (any(!unlist(results))) {
+      send_alert("Row alignment verification failed", results)
+    }
+    
+    log_results(results)
+  }
+  
+  # Schedule execution
+  schedule_task(check_daily, "daily", "02:00")
+}
+```
+
+## Subsection 2: Repair Mechanism {#repair-mechanism}
+
+```r
+# Repair row alignment
+repair_row_alignment <- function(tables, key_column) {
+  # Find common key values
+  common_keys <- Reduce(intersect, 
+                        lapply(tables, function(t) t[[key_column]]))
+  
+  # Sort and filter by common keys
+  aligned_tables <- list()
+  for (name in names(tables)) {
+    table <- tables[[name]]
+    # Keep only common key values
+    table <- table[table[[key_column]] %in% common_keys, ]
+    # Sort by key values
+    table <- table[order(table[[key_column]]), ]
+    aligned_tables[[name]] <- table
+  }
+  
+  # Verify repair results
+  verify_all_alignments(aligned_tables)
+  
+  return(aligned_tables)
+}
+```
+
+# Section 5: Violation Scenarios {#violations}
+
+## Subsection 1: Common Violations {#common-violations}
+
+1. **Inconsistent Insertion**: Records added to one table but not the corresponding row-aligned table
+2. **Independent Sorting**: Tables sorted independently, breaking row-order correspondence
+3. **Selective Deletion**: Records deleted from one table without removing corresponding rows in aligned tables
+4. **Import/Export Errors**: Row alignment not verified after import/export operations
+
+## Subsection 2: Prevention Measures {#prevention}
+
+```r
+# Encapsulated row-aligned table operations class
+AlignedTableGroup <- R6::R6Class("AlignedTableGroup",
+  public = list(
+    tables = NULL,
+    key_column = NULL,
+    
+    initialize = function(tables, key_column) {
+      self$tables <- tables
+      self$key_column <- key_column
+      self$verify_alignment()
+    },
+    
+    verify_alignment = function() {
+      # Verify all tables are aligned
+      for (i in 1:(length(self$tables) - 1)) {
+        if (!verify_row_alignment(
+          self$tables[[i]], 
+          self$tables[[i + 1]], 
+          self$key_column)) {
+          stop("Tables not aligned at initialization")
+        }
+      }
+    },
+    
+    insert = function(new_data) {
+      self$tables <- insert_aligned_rows(
+        self$tables, new_data, self$key_column)
+      invisible(self)
+    },
+    
+    delete = function(condition) {
+      self$tables <- delete_aligned_rows(
+        self$tables, condition, self$key_column)
+      invisible(self)
+    },
+    
+    merge = function() {
+      result <- self$tables[[1]]
+      for (i in 2:length(self$tables)) {
+        result <- bind_cols(result, 
+          self$tables[[i]][, !names(self$tables[[i]]) %in% self$key_column])
+      }
+      return(result)
+    }
+  )
+)
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Row-Aligned Tables Implementation Checklist
+
+**Documentation**:
+- [ ] Row-aligned tables marked in schema documentation
+- [ ] Alignment key columns documented
+- [ ] Purpose and benefits of alignment explained
+- [ ] Usage examples provided
+
+**Verification Mechanism**:
+- [ ] `verify_row_alignment()` function implemented
+- [ ] Periodic verification scheduled
+- [ ] Verification failure alerts established
+- [ ] Verification results logged
+
+**Operation Safety**:
+- [ ] Encapsulated insertion functions used
+- [ ] Encapsulated deletion functions used
+- [ ] Repair mechanism implemented
+- [ ] Independent modifications prevented
+
+**Performance Optimization**:
+- [ ] `bind_cols()` used for merging
+- [ ] Unnecessary `join` operations avoided
+- [ ] Regular performance benchmarking
+- [ ] Memory usage monitored
+
+**Maintenance Process**:
+- [ ] Verification during import/export
+- [ ] Batch operations maintain alignment
+- [ ] Violation handling documented
+- [ ] Team trained
+:::
+
+# Conclusion {#conclusion}
+
+The Row-Aligned Tables Principle achieves significant performance improvements by maintaining row correspondence between tables. Using `bind_cols()` instead of `join` operations can dramatically reduce computation time and memory usage. The key is rigorous maintenance of the alignment property through automated verification and encapsulated operations to ensure data consistency.
+
+---
+
+*Based on: Data Management Law Article 5*  
+*Related to: [MP043 Database Documentation](../../CH00_fundamental_principles/04_data_management/MP043_database_documentation.qmd), [DM_R002 Universal Data Access](../rules/DM_R002_universal_data_access.qmd)*

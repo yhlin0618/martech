@@ -1,0 +1,1037 @@
+# ========================================
+# CH01: Structure & Organization Principles
+# Version: 1.1
+# Last Updated: 2025-12-26
+#
+# Contains: SO_P001-SO_P017 (17 principles) + SO_R001-SO_R037 (37 rules)
+# Total: 54 principles
+# ========================================
+
+chapter: "CH01_structure"
+description: "Structure & Organization Principles and Rules"
+principle_count: 54
+
+principles:
+
+  # ====================
+  # SO_P PRINCIPLES (14)
+  # ====================
+
+  - id: SO_P001
+    type: principle
+    name: project_principles
+    display_name: "Project Principles"
+    one_liner: "Core principles guiding project development and organization"
+    file_path: "CH01_structure_organization/principles/SO_P001_project_principles.qmd"
+
+    rule_natural: |
+      Projects must follow standardized organization:
+      - Use numbered directories (00_, 01_, etc.) for clear loading order
+      - Follow snake_case naming for all files and directories
+      - One function per file rule
+      - Never modify raw data files
+      - Use file.path() for cross-platform compatibility
+
+    rule_formal: |
+      RULE SO_P001_STRUCTURE:
+      FOR ALL project P:
+      has_numbered_directories(P)
+      AND uses_snake_case(P)
+      AND follows_one_function_per_file(P)
+
+    violations:
+      - "Creating directories without numeric prefix in global_scripts"
+      - "Using camelCase for file names"
+      - "Putting multiple functions in one file"
+
+    compliant:
+      - "01_db/, 02_db_utils/, 04_utils/ directories"
+      - "fn_calculate_rfm.R with single function"
+
+  - id: SO_P002
+    type: principle
+    name: script_separation
+    display_name: "Script Separation"
+    one_liner: "Update scripts orchestrate; global_scripts contain core functionality"
+    file_path: "CH01_structure_organization/principles/SO_P002_script_separation.qmd"
+
+    rule_natural: |
+      Maintain clear separation between execution scripts and reusable components:
+      - update_scripts/ contains executable scripts (ETL, derivation, updates)
+      - global_scripts/ contains reusable functions, modules, components
+      - Execution scripts source reusable components, never reverse
+
+    rule_formal: |
+      RULE SO_P002_SEPARATION:
+      FOR ALL script S in update_scripts/:
+      sources_from(S, "global_scripts/")
+      AND NOT defines_reusable_functions(S)
+
+      FOR ALL function F:
+      IF is_reusable(F)
+      THEN in_directory(F, "global_scripts/")
+
+    violations:
+      - "Defining complex functions in update_scripts/"
+      - "global_scripts sourcing from update_scripts"
+
+    compliant:
+      - "ETL script sources fn_*.R from global_scripts"
+      - "All reusable logic in global_scripts/"
+
+  - id: SO_P003
+    type: principle
+    name: app_construction
+    display_name: "App Construction"
+    one_liner: "Shiny apps constructed from modular components"
+    file_path: "CH01_structure_organization/principles/SO_P003_app_construction.qmd"
+
+    rule_natural: |
+      Applications must be built from modular, reusable components.
+      Components should be organized by application section (macro, micro, data, target).
+      app.R should be minimal, delegating to component modules.
+
+    rule_formal: |
+      RULE SO_P003_MODULAR:
+      FOR ALL app A:
+      app_r_is_minimal(A)
+      AND uses_component_modules(A)
+
+  - id: SO_P004
+    type: principle
+    name: app_bottom_up_construction
+    display_name: "App Bottom-Up Construction"
+    one_liner: "Build apps from atomic components upward"
+    file_path: "CH01_structure_organization/principles/SO_P004_app_bottom_up_construction.qmd"
+
+    rule_natural: |
+      Application construction follows bottom-up approach:
+      1. Build atomic UI elements first
+      2. Compose into component modules
+      3. Integrate modules into pages
+      4. Assemble pages into complete app
+
+    rule_formal: |
+      RULE SO_P004_BOTTOM_UP:
+      FOR ALL component C:
+      built_from_smaller_components(C)
+      OR is_atomic(C)
+
+  - id: SO_P005
+    type: principle
+    name: naming_principles
+    display_name: "Naming Principles"
+    one_liner: "Consistent naming conventions across all project artifacts"
+    file_path: "CH01_structure_organization/principles/SO_P005_naming_principles.qmd"
+
+    rule_natural: |
+      All naming must follow consistent patterns:
+      - Files: snake_case with appropriate prefixes (fn_, sc_, etc.)
+      - Variables: descriptive snake_case
+      - Functions: verb_noun pattern
+      - Directories: numbered prefix + descriptive name
+
+    rule_formal: |
+      RULE SO_P005_NAMING:
+      FOR ALL file F:
+      uses_snake_case(filename(F))
+      FOR ALL variable V:
+      is_descriptive(name(V))
+
+  - id: SO_P006
+    type: principle
+    name: case_sensitivity
+    display_name: "Case Sensitivity"
+    one_liner: "Treat all identifiers as case-sensitive"
+    file_path: "CH01_structure_organization/principles/SO_P006_case_sensitivity.qmd"
+
+    rule_natural: |
+      All identifiers (files, variables, functions) must be treated as case-sensitive.
+      Use consistent casing to avoid cross-platform issues.
+      Prefer lowercase with underscores for most identifiers.
+
+    rule_formal: |
+      RULE SO_P006_CASE:
+      FOR ALL identifier I:
+      consistent_casing(I)
+      AND prefer_lowercase(I)
+
+  - id: SO_P007
+    type: principle
+    name: app_r_is_global
+    display_name: "app.R is Global"
+    one_liner: "app.R serves as global namespace for Shiny app"
+    file_path: "CH01_structure_organization/principles/SO_P007_app_r_is_global.qmd"
+
+    rule_natural: |
+      app.R establishes the global namespace for the entire Shiny application.
+      It should source initialization, set up global variables, and define the app structure.
+      Avoid defining functions directly in app.R.
+
+    rule_formal: |
+      RULE SO_P007_GLOBAL:
+      FOR ALL app_r A:
+      NOT contains_function_definitions(A)
+      AND sources_initialization(A)
+      AND defines_app_structure(A)
+
+  - id: SO_P008
+    type: principle
+    name: documentation_update
+    display_name: "Documentation Update"
+    one_liner: "Keep documentation synchronized with code changes"
+    file_path: "CH01_structure_organization/principles/SO_P008_documentation_update.qmd"
+
+    rule_natural: |
+      Documentation must be updated whenever code changes.
+      Never duplicate documentation - reference authoritative sources.
+      Each directory should have a README explaining its purpose.
+
+    rule_formal: |
+      RULE SO_P008_SYNC:
+      FOR ALL code_change C:
+      has_corresponding_doc_update(C)
+
+  - id: SO_P009
+    type: principle
+    name: language_standard_adherence
+    display_name: "Language Standard Adherence"
+    one_liner: "Follow established language conventions and standards"
+    file_path: "CH01_structure_organization/principles/SO_P009_language_standard_adherence.qmd"
+
+    rule_natural: |
+      Code must follow established language conventions:
+      - R: tidyverse style guide
+      - Python: PEP 8
+      - YAML: consistent indentation (2 spaces)
+
+    rule_formal: |
+      RULE SO_P009_STANDARDS:
+      FOR ALL R_code R:
+      follows_tidyverse_style(R)
+
+  - id: SO_P010
+    type: principle
+    name: config_driven_customization
+    display_name: "Config-Driven Customization"
+    one_liner: "Use configuration files for customization, not code changes"
+    file_path: "CH01_structure_organization/principles/SO_P010_config_driven_customization.qmd"
+
+    rule_natural: |
+      Application behavior should be controlled through configuration files.
+      app_config.yaml should define all customizable settings.
+      Code should read configuration, not hardcode values.
+
+    rule_formal: |
+      RULE SO_P010_CONFIG:
+      FOR ALL customizable_setting S:
+      defined_in_config_file(S)
+      AND NOT hardcoded_in_source(S)
+
+  - id: SO_P011
+    type: principle
+    name: parameter_organization_structure
+    display_name: "Parameter Organization Structure"
+    one_liner: "Parameters organized hierarchically in configuration"
+    file_path: "CH01_structure_organization/principles/SO_P011_parameter_organization_structure.qmd"
+
+    rule_natural: |
+      Parameters must be organized hierarchically:
+      - Global parameters at top level
+      - Module-specific parameters nested under module names
+      - Environment-specific overrides clearly separated
+
+    rule_formal: |
+      RULE SO_P011_HIERARCHY:
+      FOR ALL config C:
+      has_hierarchical_structure(C)
+
+  - id: SO_P012
+    type: principle
+    name: configuration_hierarchy_consistency
+    display_name: "Configuration Hierarchy Consistency"
+    one_liner: "Configuration follows consistent hierarchy across all apps"
+    file_path: "CH01_structure_organization/principles/SO_P012_configuration_hierarchy_consistency.qmd"
+
+    rule_natural: |
+      All applications must use the same configuration hierarchy structure.
+      app_config.yaml structure should be standardized across projects.
+
+    rule_formal: |
+      RULE SO_P012_CONSISTENCY:
+      FOR ALL app A:
+      config_structure(A) EQUALS standard_structure()
+
+  - id: SO_P013
+    type: principle
+    name: ntuple_independent_loading
+    display_name: "N-Tuple Independent Loading"
+    one_liner: "UI-Server-Defaults triple can be loaded independently"
+    file_path: "CH01_structure_organization/principles/SO_P013_ntuple_independent_loading.qmd"
+
+    rule_natural: |
+      Each part of the UI-Server-Defaults triple must be independently loadable.
+      No circular dependencies between the three parts.
+      Each can be tested in isolation.
+
+    rule_formal: |
+      RULE SO_P013_INDEPENDENT:
+      FOR ALL component C:
+      ui_loadable_independently(C)
+      AND server_loadable_independently(C)
+      AND defaults_loadable_independently(C)
+
+  - id: SO_P014
+    type: principle
+    name: template_organization
+    display_name: "Template Organization"
+    one_liner: "Templates organized in dedicated directories with clear structure"
+    file_path: "CH01_structure_organization/principles/SO_P014_template_organization.qmd"
+
+    rule_natural: |
+      Templates must be organized in dedicated template directories.
+      Use consistent naming for template files.
+      Templates should be parameterized, not hardcoded.
+
+    rule_formal: |
+      RULE SO_P014_TEMPLATES:
+      FOR ALL template T:
+      in_template_directory(T)
+      AND is_parameterized(T)
+
+  - id: SO_P017
+    type: principle
+    name: platform_specific_feature_gating
+    display_name: "Platform-Specific Feature Gating"
+    one_liner: "Features can be enabled/disabled per platform through configuration"
+    file_path: "CH01_structure_organization/principles/SO_P017_platform_specific_feature_gating.qmd"
+
+    rule_natural: |
+      Feature availability is determined by configuration:
+      - Define features in app_config.yaml features section
+      - Use enabled_for list to specify platforms
+      - Default to enabled when not configured
+      - Use is_feature_enabled_for_platform() to check
+
+    rule_formal: |
+      RULE SO_P017_FEATURE_GATING:
+      FOR ALL feature F:
+      availability_in_config(F)
+      AND NOT hardcoded_platform_check(F)
+      default_enabled(F) IF NOT configured(F)
+
+    violations:
+      - "if (platform == 'eby') show_feature()"
+      - "Hardcoded platform-specific logic"
+    compliant:
+      - "is_feature_enabled_for_platform('feature', platform)"
+      - "Configuration-driven feature availability"
+
+  # ====================
+  # SO_R RULES (37)
+  # ====================
+
+  - id: SO_R001
+    type: rule
+    name: directory_structure
+    display_name: "Directory Structure"
+    one_liner: "Standard directory structure with numbered prefixes for global_scripts"
+    file_path: "CH01_structure_organization/rules/SO_R001_directory_structure.qmd"
+
+    rule_natural: |
+      Projects must follow standard directory structure:
+      - global_scripts/ uses numbered directories (00_, 01_, 02_, etc.)
+      - Lower numbers indicate lower dependency level
+      - update_scripts/ contains executable scripts
+      - Each directory has single, clear purpose
+
+    rule_formal: |
+      RULE SO_R001_STRUCTURE:
+      FOR ALL dir D in global_scripts/:
+      has_numeric_prefix(D)
+      AND has_clear_purpose(D)
+
+    violations:
+      - "Creating 'utils' directory without numeric prefix"
+      - "Mixing ETL and derivation scripts in same directory"
+
+    compliant:
+      - "00_principles/, 01_db/, 02_db_utils/, 04_utils/"
+      - "Clear separation of concerns per directory"
+
+  - id: SO_R002
+    type: rule
+    name: file_naming_convention
+    display_name: "File Naming Convention"
+    one_liner: "Files use snake_case with type prefixes"
+    file_path: "CH01_structure_organization/rules/SO_R002_file_naming_convention.qmd"
+
+    rule_natural: |
+      File naming must follow pattern: prefix_descriptive_name.R
+      Prefixes: fn_ (function), sc_ (script), test_ (test)
+      Use snake_case, never camelCase or PascalCase.
+
+    rule_formal: |
+      RULE SO_R002_NAMING:
+      FOR ALL file F:
+      filename(F) MATCHES "{prefix}_{snake_case_name}.R"
+      WHERE prefix IN ["fn", "sc", "test", "app"]
+
+    violations:
+      - "calculateRfm.R (missing prefix, wrong case)"
+      - "FN_Calculate_RFM.R (wrong case)"
+
+    compliant:
+      - "fn_calculate_rfm.R"
+      - "sc_update_database.R"
+
+  - id: SO_R003
+    type: rule
+    name: app_structure_standard
+    display_name: "App Structure Standard"
+    one_liner: "Standard Shiny app structure with required directories"
+    file_path: "CH01_structure_organization/rules/SO_R003_app_structure_standard.qmd"
+
+    rule_natural: |
+      Shiny apps must have standard structure:
+      - app.R (entry point)
+      - app_config.yaml (configuration)
+      - www/ (static assets)
+      - manifest.json (deployment)
+
+    rule_formal: |
+      RULE SO_R003_APP:
+      FOR ALL shiny_app A:
+      exists_file(A, "app.R")
+      AND exists_file(A, "app_config.yaml")
+      AND exists_dir(A, "www/")
+
+  - id: SO_R004
+    type: rule
+    name: principle_documentation
+    display_name: "Principle Documentation"
+    one_liner: "All principles documented in 00_principles directory"
+    file_path: "CH01_structure_organization/rules/SO_R004_principle_documentation.qmd"
+
+    rule_natural: |
+      All system principles must be documented in 00_principles/.
+      Use .qmd format for detailed documentation.
+      Reference principles by ID (e.g., SO_R004).
+
+    rule_formal: |
+      RULE SO_R004_DOCS:
+      FOR ALL principle P:
+      documented_in(P, "00_principles/")
+      AND has_unique_id(P)
+
+  - id: SO_R005
+    type: rule
+    name: app_yaml_configuration
+    display_name: "App YAML Configuration"
+    one_liner: "All app settings in app_config.yaml"
+    file_path: "CH01_structure_organization/rules/SO_R005_app_yaml_configuration.qmd"
+
+    rule_natural: |
+      Application configuration must be in app_config.yaml.
+      Include: app_info, deployment settings, components config, theme.
+      Never hardcode configuration values in R code.
+
+    rule_formal: |
+      RULE SO_R005_CONFIG:
+      FOR ALL app A:
+      has_file(A, "app_config.yaml")
+      AND config_contains(A, ["app_info", "deployment", "components"])
+
+  - id: SO_R006
+    type: rule
+    name: archiving_standard
+    display_name: "Archiving Standard"
+    one_liner: "Archived files in 99_archive with date prefix"
+    file_path: "CH01_structure_organization/rules/SO_R006_archiving_standard.qmd"
+
+    rule_natural: |
+      Files to be archived go in 99_archive/ directory.
+      Archive filename: YYYY-MM-DD_original_name.ext
+      Archived files are immutable per MP030.
+
+    rule_formal: |
+      RULE SO_R006_ARCHIVE:
+      FOR ALL archived_file F:
+      in_directory(F, "99_archive/")
+      AND filename(F) MATCHES "YYYY-MM-DD_*"
+
+  - id: SO_R007
+    type: rule
+    name: one_function_one_file
+    display_name: "One Function One File"
+    one_liner: "Each function in its own file named fn_{function_name}.R"
+    file_path: "CH01_structure_organization/rules/SO_R007_one_function_one_file.qmd"
+
+    rule_natural: |
+      Each R function must be in its own file.
+      File named fn_{function_name}.R where function_name matches the function.
+      No multiple function definitions in same file.
+
+    rule_formal: |
+      RULE SO_R007_ONE_FUNCTION:
+      FOR ALL function F:
+      filename(file_of(F)) EQUALS "fn_" + name(F) + ".R"
+      AND count_functions_in(file_of(F)) EQUALS 1
+
+    violations:
+      - "utils.R with 5 helper functions"
+      - "fn_process.R with process() and helper()"
+
+    compliant:
+      - "fn_calculate_rfm.R with only calculate_rfm()"
+      - "fn_validate_input.R with only validate_input()"
+
+  - id: SO_R008
+    type: rule
+    name: app_mode_naming_simplicity
+    display_name: "App Mode Naming Simplicity"
+    one_liner: "Simple mode names in app configuration"
+    file_path: "CH01_structure_organization/rules/SO_R008_app_mode_naming_simplicity.qmd"
+
+    rule_natural: |
+      Application modes use simple, clear names.
+      Examples: development, production, test.
+      Avoid complex mode naming schemes.
+
+    rule_formal: |
+      RULE SO_R008_MODES:
+      FOR ALL mode M:
+      name(M) IN ["development", "production", "test", "staging"]
+
+  - id: SO_R009
+    type: rule
+    name: two_tier_directory_structure
+    display_name: "Two-Tier Directory Structure"
+    one_liner: "Maximum two levels of nesting in global_scripts"
+    file_path: "CH01_structure_organization/rules/SO_R009_two_tier_directory_structure.qmd"
+
+    rule_natural: |
+      Directory nesting in global_scripts limited to 2 levels.
+      Example: global_scripts/10_components/macro/ is acceptable.
+      Deeper nesting requires justification.
+
+    rule_formal: |
+      RULE SO_R009_NESTING:
+      FOR ALL path P in global_scripts/:
+      depth(P) <= 3
+
+  - id: SO_R010
+    type: rule
+    name: implementation_naming_convention
+    display_name: "Implementation Naming Convention"
+    one_liner: "Implementation files follow module naming pattern"
+    file_path: "CH01_structure_organization/rules/SO_R010_implementation_naming_convention.qmd"
+
+    rule_natural: |
+      Implementation files named after their module.
+      Pattern: M{number}_{verb}ing_{object}/
+      Example: M01_summarizing_database/
+
+    rule_formal: |
+      RULE SO_R010_IMPL:
+      FOR ALL module M:
+      directory_name(M) MATCHES "M[0-9]+_*ing_*"
+
+  - id: SO_R011
+    type: rule
+    name: folder_structure_dsm_nodes
+    display_name: "Folder Structure DSM Nodes"
+    one_liner: "DSM node organization in component folders"
+    file_path: "CH01_structure_organization/rules/SO_R011_folder_structure_dsm_nodes.qmd"
+
+    rule_natural: |
+      Component folders organized by DSM (Data Structure Map) nodes.
+      Each node represents a distinct data domain.
+      Nodes: macro, micro, data, target.
+
+    rule_formal: |
+      RULE SO_R011_DSM:
+      FOR ALL component_folder F in 10_rshinyapp_components/:
+      name(F) IN ["common", "macro", "micro", "data", "target"]
+
+  - id: SO_R012
+    type: rule
+    name: path_modification
+    display_name: "Path Modification"
+    one_liner: "Use file.path() for all path construction"
+    file_path: "CH01_structure_organization/rules/SO_R012_path_modification.qmd"
+
+    rule_natural: |
+      All file paths constructed using file.path().
+      Never hardcode path separators (/ or \).
+      Store base paths in configuration.
+
+    rule_formal: |
+      RULE SO_R012_PATHS:
+      FOR ALL path_construction P:
+      uses_function(P, "file.path")
+      AND NOT contains_hardcoded_separator(P)
+
+    violations:
+      - 'path <- "data/files/output.csv"'
+      - 'paste0(base, "/", file)'
+
+    compliant:
+      - 'path <- file.path("data", "files", "output.csv")'
+      - 'file.path(base_dir, filename)'
+
+  - id: SO_R013
+    type: rule
+    name: initialization_imports_only
+    display_name: "Initialization Imports Only"
+    one_liner: "Initialization files only import and configure"
+    file_path: "CH01_structure_organization/rules/SO_R013_initialization_imports_only.qmd"
+
+    rule_natural: |
+      Initialization files (sc_initialization_*.R) only do:
+      - Import libraries
+      - Source utility files
+      - Set environment variables
+      Never define functions in initialization files.
+
+    rule_formal: |
+      RULE SO_R013_INIT:
+      FOR ALL init_file I:
+      IF filename(I) MATCHES "sc_initialization_*.R"
+      THEN NOT contains_function_definitions(I)
+
+    violations:
+      - "Defining helper functions in sc_initialization_app_mode.R"
+
+    compliant:
+      - "Initialization only sources fn_*.R files"
+
+  - id: SO_R014
+    type: rule
+    name: source_directories
+    display_name: "Source Directories"
+    one_liner: "Source entire directories, not individual files"
+    file_path: "CH01_structure_organization/rules/SO_R014_source_directories.qmd"
+
+    rule_natural: |
+      When sourcing multiple files, source the directory.
+      Use recursive sourcing patterns.
+      Avoid long lists of individual source() calls.
+
+    rule_formal: |
+      RULE SO_R014_SOURCE:
+      FOR ALL sourcing_block B:
+      IF sources_multiple_files(B)
+      THEN uses_directory_sourcing(B)
+
+  - id: SO_R015
+    type: rule
+    name: component_folder_organization
+    display_name: "Component Folder Organization"
+    one_liner: "UI components in folder with UI, Server, Defaults files"
+    file_path: "CH01_structure_organization/rules/SO_R015_component_folder_organization.qmd"
+
+    rule_natural: |
+      Each Shiny component has its own folder containing:
+      - componentNameUI.R
+      - componentNameServer.R
+      - componentNameDefaults.R
+
+    rule_formal: |
+      RULE SO_R015_COMPONENT:
+      FOR ALL component C:
+      exists_file(C, name(C) + "UI.R")
+      AND exists_file(C, name(C) + "Server.R")
+      AND exists_file(C, name(C) + "Defaults.R")
+
+  - id: SO_R016
+    type: rule
+    name: folder_based_sourcing
+    display_name: "Folder-Based Sourcing"
+    one_liner: "Source all R files in a folder using pattern matching"
+    file_path: "CH01_structure_organization/rules/SO_R016_folder_based_sourcing.qmd"
+
+    rule_natural: |
+      Use pattern matching to source all R files in directory:
+      lapply(list.files(path, pattern = "\\.R$", full.names = TRUE), source)
+
+    rule_formal: |
+      RULE SO_R016_PATTERN:
+      FOR ALL directory_source D:
+      uses_list_files_pattern(D)
+
+  - id: SO_R017
+    type: rule
+    name: function_location
+    display_name: "Function Location"
+    one_liner: "Functions in appropriate numbered directory based on purpose"
+    file_path: "CH01_structure_organization/rules/SO_R017_function_location.qmd"
+
+    rule_natural: |
+      Functions placed in directory matching their purpose:
+      - Database functions: 01_db or 02_db_utils
+      - General utilities: 04_utils
+      - Data processing: 05_data_processing
+
+    rule_formal: |
+      RULE SO_R017_LOCATION:
+      FOR ALL function F:
+      directory(F) matches purpose(F)
+
+  - id: SO_R018
+    type: rule
+    name: configuration_requirement
+    display_name: "Configuration Requirement"
+    one_liner: "All configurable values in configuration files"
+    file_path: "CH01_structure_organization/rules/SO_R018_configuration_requirement.qmd"
+
+    rule_natural: |
+      All values that might change between environments or deployments
+      must be in configuration files, not hardcoded in source.
+
+    rule_formal: |
+      RULE SO_R018_CONFIG:
+      FOR ALL configurable_value V:
+      in_config_file(V)
+
+  - id: SO_R019
+    type: rule
+    name: dependency_based_sourcing
+    display_name: "Dependency-Based Sourcing"
+    one_liner: "Source dependencies before dependents"
+    file_path: "CH01_structure_organization/rules/SO_R019_dependency_based_sourcing.qmd"
+
+    rule_natural: |
+      Source files in dependency order.
+      Lower-numbered directories sourced before higher.
+      Explicit dependency documentation when needed.
+
+    rule_formal: |
+      RULE SO_R019_ORDER:
+      FOR ALL source_order S:
+      dependencies_before_dependents(S)
+
+  - id: SO_R020
+    type: rule
+    name: supplemental_description_notation
+    display_name: "Supplemental Description Notation"
+    one_liner: "Use # DESCRIPTION comments for supplemental documentation"
+    file_path: "CH01_structure_organization/rules/SO_R020_supplemental_description_notation.qmd"
+
+    rule_natural: |
+      Add # DESCRIPTION: comments for supplemental documentation.
+      Place at top of file or before complex code blocks.
+
+    rule_formal: |
+      RULE SO_R020_DESCRIPTION:
+      FOR ALL complex_code C:
+      has_description_comment(C)
+
+  - id: SO_R021
+    type: rule
+    name: module_naming_convention
+    display_name: "Module Naming Convention"
+    one_liner: "Modules named with M prefix and purpose"
+    file_path: "CH01_structure_organization/rules/SO_R021_module_naming_convention.qmd"
+
+    rule_natural: |
+      Module directories: M{number}_{verb}ing_{object}
+      Example: M01_summarizing_database, M02_processing_customers
+
+    rule_formal: |
+      RULE SO_R021_MODULE:
+      FOR ALL module M:
+      name(M) MATCHES "M[0-9]+_*ing_*"
+
+  - id: SO_R022
+    type: rule
+    name: temporary_file_handling
+    display_name: "Temporary File Handling"
+    one_liner: "Temporary files in designated temp directories"
+    file_path: "CH01_structure_organization/rules/SO_R022_temporary_file_handling.qmd"
+
+    rule_natural: |
+      Temporary files in data/temp/ or system temp directory.
+      Clean up temporary files after use.
+      Never commit temporary files to repository.
+
+    rule_formal: |
+      RULE SO_R022_TEMP:
+      FOR ALL temp_file T:
+      in_temp_directory(T)
+      AND cleaned_after_use(T)
+
+  - id: SO_R023
+    type: rule
+    name: yaml_parameter_configuration
+    display_name: "YAML Parameter Configuration"
+    one_liner: "Use YAML for all parameter configuration"
+    file_path: "CH01_structure_organization/rules/SO_R023_yaml_parameter_configuration.qmd"
+
+    rule_natural: |
+      Parameters configured in YAML files.
+      Use consistent YAML structure across projects.
+      2-space indentation for YAML.
+
+    rule_formal: |
+      RULE SO_R023_YAML:
+      FOR ALL parameter_config P:
+      format(P) EQUALS "YAML"
+
+  - id: SO_R024
+    type: rule
+    name: update_script_naming
+    display_name: "Update Script Naming"
+    one_liner: "Update scripts follow platform_type_number_stage pattern"
+    file_path: "CH01_structure_organization/rules/SO_R024_update_script_naming.qmd"
+
+    rule_natural: |
+      Update script pattern: {platform}_{type}{number}_{stage}.R
+      Examples: cbz_ETL01_0IM.R, amz_D01_01.R
+      Platform IDs: cbz, eby, amz
+
+    rule_formal: |
+      RULE SO_R024_UPDATE:
+      FOR ALL update_script S:
+      filename(S) MATCHES "{platform}_{type}[0-9]+_{stage}.R"
+
+  - id: SO_R025
+    type: rule
+    name: global_parameter_organization
+    display_name: "Global Parameter Organization"
+    one_liner: "Global parameters in 03_config directory"
+    file_path: "CH01_structure_organization/rules/SO_R025_global_parameter_organization.qmd"
+
+    rule_natural: |
+      Global configuration parameters in global_scripts/03_config/.
+      Separate files for different parameter categories.
+
+    rule_formal: |
+      RULE SO_R025_GLOBAL:
+      FOR ALL global_param P:
+      in_directory(P, "global_scripts/03_config/")
+
+  - id: SO_R026
+    type: rule
+    name: function_file_naming
+    display_name: "Function File Naming"
+    one_liner: "Function files use fn_ prefix"
+    file_path: "CH01_structure_organization/rules/SO_R026_function_file_naming.qmd"
+
+    rule_natural: |
+      All function files must use fn_ prefix.
+      Pattern: fn_{function_name}.R
+      Function name in file matches actual function name.
+
+    rule_formal: |
+      RULE SO_R026_FN:
+      FOR ALL function_file F:
+      filename(F) MATCHES "fn_*.R"
+
+  - id: SO_R027
+    type: rule
+    name: n_tuple_delimiter
+    display_name: "N-Tuple Delimiter"
+    one_liner: "Use underscore to separate N-tuple component names"
+    file_path: "CH01_structure_organization/rules/SO_R027_n_tuple_delimiter.qmd"
+
+    rule_natural: |
+      Component files use underscore before type suffix:
+      componentName_UI.R, componentName_Server.R, componentName_Defaults.R
+
+    rule_formal: |
+      RULE SO_R027_DELIMITER:
+      FOR ALL component_file F:
+      uses_underscore_delimiter(F)
+
+  - id: SO_R028
+    type: rule
+    name: env_file_standard
+    display_name: "Env File Standard"
+    one_liner: ".env files for environment variables, .env.example committed"
+    file_path: "CH01_structure_organization/rules/SO_R028_env_file_standard.qmd"
+
+    rule_natural: |
+      Use .env files for environment variables.
+      .env is gitignored, .env.example is committed.
+      .env.example contains variable names without values.
+
+    rule_formal: |
+      RULE SO_R028_ENV:
+      FOR ALL repo R:
+      gitignore_contains(R, ".env")
+      AND exists_file(R, ".env.example")
+
+  - id: SO_R029
+    type: rule
+    name: changelog_organization
+    display_name: "Changelog Organization"
+    one_liner: "Changelogs in CHANGELOG directory with date prefix"
+    file_path: "CH01_structure_organization/rules/SO_R029_changelog_organization.qmd"
+
+    rule_natural: |
+      Change documentation in CHANGELOG/ directory.
+      Filename: YYYY-MM-DD_description.md
+      Organize by date and topic.
+
+    rule_formal: |
+      RULE SO_R029_CHANGELOG:
+      FOR ALL changelog C:
+      in_directory(C, "CHANGELOG/")
+      AND filename(C) MATCHES "YYYY-MM-DD_*.md"
+
+  - id: SO_R030
+    type: rule
+    name: operational_documentation_location
+    display_name: "Operational Documentation Location"
+    one_liner: "All operational docs in CHANGELOG/ with YYYY-MM-DD prefix"
+    file_path: "CH01_structure_organization/rules/SO_R030_operational_documentation_location.qmd"
+
+    rule_natural: |
+      All operational documentation (debug reports, fix reports, implementation docs)
+      must be in CHANGELOG/ directory.
+      Use lowercase snake_case with YYYY-MM-DD prefix.
+      Never in project root.
+
+    rule_formal: |
+      RULE SO_R030_OPDOCS:
+      FOR ALL operational_doc D:
+      in_directory(D, "CHANGELOG/")
+      AND filename(D) MATCHES "YYYY-MM-DD_*.md"
+
+  - id: SO_R031
+    type: rule
+    name: backup_file_management
+    display_name: "Backup File Management"
+    one_liner: "Backup files retained 7 days, then archived"
+    file_path: "CH01_structure_organization/rules/SO_R031_backup_file_management.qmd"
+
+    rule_natural: |
+      Backup file naming: original.backup_YYYYMMDD_HHMMSS
+      Retained for 7 days, then archived to CHANGELOG/archive/backups_YYYYMM/
+      30+ day old backups compressed.
+
+    rule_formal: |
+      RULE SO_R031_BACKUP:
+      FOR ALL backup B:
+      filename(B) MATCHES "*.backup_*"
+      AND retention_days(B) <= 7 OR archived(B)
+
+  - id: SO_R032
+    type: rule
+    name: documentation_template_system
+    display_name: "Documentation Template System"
+    one_liner: "Standardized templates for operational documentation"
+    file_path: "CH01_structure_organization/rules/SO_R032_documentation_template_system.qmd"
+
+    rule_natural: |
+      Use standardized templates for operational docs.
+      Templates include embedded path guidance and required metadata.
+      Pre-filled date patterns.
+
+    rule_formal: |
+      RULE SO_R032_TEMPLATES:
+      FOR ALL operational_doc D:
+      follows_template(D)
+
+  - id: SO_R033
+    type: rule
+    name: test_script_location
+    display_name: "Test Script Location"
+    one_liner: "Test scripts in 98_test/ or component tests/ directories"
+    file_path: "CH01_structure_organization/rules/SO_R033_test_script_location.qmd"
+
+    rule_natural: |
+      All test/validation scripts in designated test directories:
+      - scripts/global_scripts/98_test/
+      - component tests/ directories
+      Never in project root.
+      Naming: test_, validate_, verify_, check_ prefixes.
+
+    rule_formal: |
+      RULE SO_R033_TEST:
+      FOR ALL test_script T:
+      in_directory(T, "98_test/") OR in_directory(T, "tests/")
+      AND filename(T) MATCHES "(test|validate|verify|check)_*.R"
+
+  - id: SO_R034
+    type: rule
+    name: debug_script_management
+    display_name: "Debug Script Management"
+    one_liner: "Debug scripts are temporary, archived after resolution"
+    file_path: "CH01_structure_organization/rules/SO_R034_debug_script_management.qmd"
+
+    rule_natural: |
+      Debug scripts are TEMPORARY investigation tools.
+      Lifecycle: Create -> Use -> Archive after issue resolution.
+      Archive to: ISSUE_TRACKER/archive/debugging/[YYYYMMDD]_[issue]/
+
+    rule_formal: |
+      RULE SO_R034_DEBUG:
+      FOR ALL debug_script D:
+      is_temporary(D)
+      AND archived_after_resolution(D)
+
+  - id: SO_R035
+    type: rule
+    name: temp_file_log_management
+    display_name: "Temporary File and Log Management"
+    one_liner: "Logs in logs/active/, temp data with retention policies"
+    file_path: "CH01_structure_organization/rules/SO_R035_temp_file_log_management.qmd"
+
+    rule_natural: |
+      Log files in logs/active/[component]/ - retained 30 days.
+      Temp data in data/temp/cache/ - retained 7 days.
+      Scratch data in data/temp/scratch/ - retained 1 day.
+      Never in project root.
+
+    rule_formal: |
+      RULE SO_R035_TEMP:
+      FOR ALL log_file L:
+      in_directory(L, "logs/active/")
+      FOR ALL temp_file T:
+      in_directory(T, "data/temp/")
+
+  - id: SO_R037
+    type: rule
+    name: feature_flag_configuration
+    display_name: "Feature Flag Configuration"
+    one_liner: "Standard pattern for feature flags in app_config.yaml"
+    file_path: "CH01_structure_organization/rules/SO_R037_feature_flag_configuration.qmd"
+
+    rule_natural: |
+      Feature flags configuration pattern:
+      - Define in features section of app_config.yaml
+      - Use enabled_for list with platform_ids
+      - "all" keyword enables for all platforms
+      - Empty list disables for all
+
+    rule_formal: |
+      RULE SO_R037_FEATURE_FLAGS:
+      config.features.{name}.enabled_for = [platforms]
+      "all" IN enabled_for => enabled_for_all
+      empty(enabled_for) => disabled_for_all
+
+    violations:
+      - "Boolean feature flag: my_feature: true"
+      - "Wrong key name: feature_flags instead of features"
+    compliant:
+      - "features: { my_feature: { enabled_for: ['eby'] } }"
+      - "features: { global_feature: { enabled_for: ['all'] } }"
+
+# ============================================================
+# DEPENDENCIES
+# ============================================================
+
+internal_dependencies:
+  - from: SO_R037
+    to: SO_P017
+    reason: "Feature flag configuration implements feature gating principle"
+
+  - from: SO_P017
+    to: SO_P010
+    reason: "Feature gating extends config-driven customization"
+
+# ============================================================
+# END OF FILE
+# ============================================================

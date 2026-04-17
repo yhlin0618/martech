@@ -1,0 +1,316 @@
+---
+title: "DM_R013: dplyr 使用規則"
+subtitle: "精準行銷應用程式中的所有資料操作必須遵循一致的 dplyr 使用模式，優先考慮清晰度、可維護性和性能，同時避免常見陷阱和警告訊息"
+chapter: "CH02"
+category: "rule"
+number: "DM_R013"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 13
+  title: "dplyr 使用規則"
+related_to:
+  - "MP30: 向量化原則"
+  - "MP47: 函數式編程"
+  - "MP60: 簡約性"
+  - "R49: 應用優於循環"
+  - "R48: Switch 優於 If-Else"
+  - "P77: 性能優化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十三條：dplyr 使用規則 {#overview}
+
+**資料管理法第十三條（dplyr 使用規則）**
+
+精準行銷應用程式中的所有資料操作必須遵循一致的 dplyr 使用模式，優先考慮清晰度、可維護性和性能，同時避免常見陷阱和警告訊息。
+
+:::{.callout-important}
+## 核心需求
+精準行銷應用程式中的所有資料操作必須遵循一致的 dplyr 使用模式，優先考慮清晰度、可維護性和性能，同時避免常見陷阱和警告訊息。
+:::
+
+# 第一項：模式描述 {#pattern-description}
+
+dplyr 使用規則標準化了整個應用程式中如何執行資料操作，確保一致性、可讀性和最佳性能。這些規則建立了使用 dplyr 資料操作文法的最佳實踐，並解決可能導致警告、錯誤或低效代碼的常見問題。
+
+## 第一款：群組管理 {#group-management}
+
+使用分組操作時，始終明確管理群組狀態：
+
+```r
+# 正確：明確處理分組
+df %>%
+  group_by(customer_id) %>%
+  summarize(
+    purchase_count = n(),
+    total_spent = sum(amount),
+    .groups = "drop"  # 明確刪除分組
+  )
+
+# 正確：需要進一步操作時保持分組
+df %>%
+  group_by(customer_id, product_category) %>%
+  summarize(
+    purchase_count = n(),
+    .groups = "keep"  # 明確保持分組（維持 customer_id 分組）
+  ) %>%
+  # 繼續分組操作
+  mutate(category_percentage = purchase_count / sum(purchase_count))
+```
+
+## 第二款：函數命名空間 {#function-namespacing}
+
+始終在套件代碼和複雜腳本中為 dplyr 函數添加命名空間：
+
+```r
+# 正確：明確的命名空間函數
+df %>%
+  dplyr::filter(amount > 100) %>%
+  dplyr::mutate(tax = amount * 0.05) %>%
+  dplyr::select(customer_id, product_id, amount, tax)
+
+# 錯誤：隱式函數使用（不要這樣做）
+df %>%
+  filter(amount > 100) %>%
+  mutate(tax = amount * 0.05) %>%
+  select(customer_id, product_id, amount, tax)
+```
+
+## 第三款：處理 dplyr 生成的警告 {#handling-warnings}
+
+使用可能觸發警告的分組操作時，使用適當的策略：
+
+```r
+# 正確：使用 .groups 參數
+result <- df %>%
+  dplyr::group_by(customer_id, date) %>%
+  dplyr::summarize(
+    total = sum(amount),
+    count = dplyr::n(),
+    .groups = "drop"  # 明確刪除所有分組
+  )
+
+# 正確：需要時使用 ungroup()
+result <- df %>%
+  dplyr::group_by(customer_id, date) %>%
+  dplyr::summarize(
+    total = sum(amount),
+    count = dplyr::n()
+  ) %>%
+  dplyr::ungroup()  # 明確移除所有分組
+```
+
+## 第四款：變數選擇 {#variable-selection}
+
+使用一致的模式選擇或引用變數：
+
+```r
+# 正確：對外部列名向量使用 all_of()
+selected_cols <- c("customer_id", "product_id", "amount")
+df %>% dplyr::select(dplyr::all_of(selected_cols))
+
+# 正確：當某些列可能缺失時使用 any_of()
+optional_cols <- c("discount", "coupon_code", "referrer")
+df %>% dplyr::select(dplyr::any_of(optional_cols))
+
+# 正確：使用 across() 將函數應用於多列
+df %>%
+  dplyr::mutate(dplyr::across(
+    .cols = dplyr::where(is.numeric),
+    .fns = ~ replace(., is.na(.), 0)
+  ))
+```
+
+## 第五款：連接操作 {#join-operations}
+
+使用明確的連接變體並始終指定 by：
+
+```r
+# 正確：帶有 by 參數的明確連接類型
+customers %>%
+  dplyr::left_join(
+    orders,
+    by = "customer_id"
+  )
+
+# 正確：處理不同名稱的連接列
+customers %>%
+  dplyr::left_join(
+    orders,
+    by = c("customer_id" = "buyer_id")
+  )
+```
+
+# 第二項：實施 {#implementation}
+
+## 第一款：處理缺失值 {#handling-missing-values}
+
+始終明確處理缺失值：
+
+```r
+# 正確：聚合中的明確 NA 處理
+df %>%
+  dplyr::group_by(customer_id) %>%
+  dplyr::summarize(
+    total_purchases = sum(amount, na.rm = TRUE),
+    avg_value = mean(amount, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## 第二款：函數組合 {#function-composition}
+
+優先使用管道運算子組合操作：
+
+```r
+# 正確：使用管道以提高清晰度
+df %>%
+  dplyr::filter(!is.na(customer_id)) %>%
+  dplyr::group_by(customer_id) %>%
+  dplyr::summarize(
+    purchase_count = dplyr::n(),
+    total_spent = sum(amount, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(dplyr::desc(total_spent))
+```
+
+## 第三款：確保可重現性 {#ensuring-reproducibility}
+
+在隨機操作之前始終設定隨機種子：
+
+```r
+# 正確：在 sample_n/sample_frac 之前設定種子
+set.seed(123)
+df %>% dplyr::sample_n(10)
+```
+
+## 第四款：處理大型資料 {#handling-large-data}
+
+對大型資料使用適當的策略：
+
+```r
+# 正確：對大型資料使用 slice 操作
+df %>% 
+  dplyr::arrange(date) %>%
+  dplyr::slice_tail(n = 1000)  # 比 tail() 更有效率
+```
+
+## 第五款：因子的模型公式構建 {#model-formula-construction}
+
+準備建模資料時，使用明確的因子轉換和適當的公式構建：
+
+```r
+# 問題：機器學習模型的不正確因子處理
+train_data <- train_data %>% 
+  mutate(product_id=as.factor(product_id), prev_product_id=as.factor(prev_product_id))
+
+formula_str <- paste("(product_id) ~", 
+                     paste(c("(prev_product_id)", covariate_cols), collapse = " + "))
+# 這將失敗，因為 product_id 和 prev_product_id 缺少 as.factor() 包裝
+# 此外，如果已經轉換，在公式中嘗試添加 as.factor() 是多餘的
+
+# 正確：使用命名空間的適當因子轉換
+train_data <- train_data %>% 
+  dplyr::mutate(
+    product_id = as.factor(product_id),
+    prev_product_id = as.factor(prev_product_id)
+  )
+
+# 正確：公式直接引用列名（已經是因子）
+formula_str <- paste("product_id ~", 
+                     paste(c("prev_product_id", covariate_cols), collapse = " + "))
+
+model <- randomForest::randomForest(
+  formula = as.formula(formula_str),
+  data = train_data,
+  ntree = 100
+)
+```
+
+# 第三項：常見警告和解決方案 {#common-warnings}
+
+## 第一款：「添加缺失的分組變數」{#adding-missing-grouping}
+
+當 summarize 操作刪除某些分組變數時會出現此警告：
+
+```r
+# 問題：產生關於缺失分組變數的警告
+df %>%
+  dplyr::group_by(customer_id, product_id) %>%
+  dplyr::summarize(total = sum(amount))  # 警告在此處出現
+
+# 解決方案 1：使用 .groups 參數
+df %>%
+  dplyr::group_by(customer_id, product_id) %>%
+  dplyr::summarize(
+    total = sum(amount),
+    .groups = "drop"  # 明確刪除所有分組
+  )
+```
+
+## 第二款：「未知或未初始化的列」{#unknown-column}
+
+當引用不存在或尚未創建的列時會出現此錯誤：
+
+```r
+# 解決方案：使用 any_of() 安全選擇可能不存在的列
+df %>%
+  dplyr::mutate(
+    tax = amount * 0.05,
+    total = amount + tax
+  ) %>%
+  dplyr::select(dplyr::any_of(c("sales_id", "total")))
+```
+
+## 第三款：「使用 by = NULL 連接」{#joining-by-null}
+
+在不指定連接列的情況下執行連接時會出現此警告：
+
+```r
+# 問題：
+df1 %>% dplyr::left_join(df2)  # 警告：使用 `by = NULL` 連接
+
+# 解決方案：始終明確指定連接列
+df1 %>% dplyr::left_join(df2, by = "customer_id")
+```
+
+# 第四項：優點 {#benefits}
+
+1. **一致性**：整個應用程式中統一的資料操作模式
+2. **可讀性**：清晰、可預測的代碼，更易於維護
+3. **性能**：優化的資料操作，避免常見的低效率
+4. **可重現性**：通過一致的方法獲得確定性結果
+5. **可維護性**：更容易調試和更少的警告訊息
+6. **明確意圖**：代碼清楚地傳達開發人員的意圖
+
+# 第五項：相關原則 {#related-principles}
+
+此規則實施：
+- MP30（向量化原則）：通過促進向量化操作而非循環
+- MP47（函數式編程）：通過使用函數式資料轉換方法
+- MP60（簡約性）：通過創建簡潔、可讀的資料操作代碼
+
+關聯到：
+- R49（應用優於循環）：通過提供命令式循環的 dplyr 替代方案
+- R48（Switch 優於 If-Else）：通過促進宣告式模式而非命令式模式
+- P77（性能優化）：通過建立高效的資料操作模式
+
+# 第六項：結論 {#conclusion}
+
+dplyr 使用規則標準化了整個應用程式中的資料操作，確保一致、可讀和高性能的代碼。通過遵循這些規則，開發人員可以避免常見陷阱，最小化警告，並創建更易於維護和擴展的代碼。這些規則建立在函數式編程範式和向量化原則的基礎上，建立了一種宣告式、管道導向的資料轉換方法。
+
+---
+
+*基於：資料管理法第十三條*  
+*相關連結：[MP30 向量化原則](../../CH00_fundamental_principles/meta_principles/MP030_vectorization.qmd), [MP47 函數式編程](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd)*

@@ -1,0 +1,153 @@
+---
+title: "DM_R017: 記憶體常駐參數規則"
+subtitle: "所有配置參數和參考資料必須在應用程式模式初始化期間載入到 R 記憶體（globalenv）中，並在整個應用程式執行期間直接從記憶體存取。記憶體將在去初始化期間清除"
+chapter: "CH02"
+category: "rule"
+number: "DM_R017"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 17
+  title: "記憶體常駐參數規則"
+related_to:
+  - "MP15: 貨幣原則"
+  - "MP31: 初始化優先"
+  - "MP48: 通用初始化"
+  - "MP33: 去初始化最終"
+  - "R58: 全域參數組織"
+  - "P18: 雙重參數來源"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十七條：記憶體常駐參數規則 {#overview}
+
+**資料管理法第十七條（記憶體常駐參數規則）**
+
+所有配置參數和參考資料必須在應用程式模式初始化期間載入到 R 記憶體（globalenv）中，並在整個應用程式執行期間直接從記憶體存取。記憶體將在去初始化期間清除。
+
+:::{.callout-important}
+## 陳述
+所有配置參數和參考資料必須在應用程式模式初始化期間載入到 R 記憶體（globalenv）中，並在整個應用程式執行期間直接從記憶體存取。記憶體將在去初始化期間清除。
+:::
+
+# 第一項：原理 {#rationale}
+
+記憶體常駐參數提供幾個關鍵優勢：
+
+1. **性能**：消除頻繁使用值的重複磁碟/資料庫存取
+2. **一致性**：確保所有應用程式組件參考相同的參數值
+3. **集中化**：為配置設定提供單一真實來源
+4. **可觀察性**：允許直接檢查當前參數值
+5. **可修改性**：在執行期間實現參數的即時修改
+6. **生命週期管理**：參數在應用程式模式初始化時載入，在去初始化時清除
+
+這種方法允許高效操作，同時保持參數來源和變更的清晰可追溯性以及適當的記憶體管理。
+
+# 第二項：實施要求 {#implementation-requirements}
+
+## 第一款：參數載入順序 {#parameter-loading-sequence}
+
+- 全域參數必須在初始化階段載入到記憶體中
+- 參數載入必須在任何相依組件初始化之前發生
+- 參數必須以適當前綴的名稱儲存在 globalenv 中
+- 來源檔案路徑必須記錄在初始化日誌中
+- 載入順序必須遵循 R048 通用初始化原則
+
+## 第二款：參數命名慣例 {#parameter-naming-convention}
+
+- 參數資料框必須使用 `df_` 前綴（例如，`df_product_line_profile`）
+- 列表參數必須使用 `list_` 前綴
+- 向量參數必須使用 `vec_` 前綴
+- 標量參數必須使用描述性名稱而不帶前綴
+- 所有參數物件應包含記錄其來源的出處屬性
+
+## 第三款：記憶體管理 {#memory-management}
+
+- 參數物件必須保持合理大小以防止記憶體問題
+- 大型資料集應保留在資料庫中，僅將索引/查找保留在記憶體中
+- 少於 10,000 行的參考表應完全常駐記憶體
+- 動態參數必須受到保護以防止意外修改
+- 所有參數必須在應用程式模式初始化期間載入
+- 所有參數必須在應用程式模式去初始化期間清除
+
+## 第四款：來源檔案結構 {#source-file-structure}
+
+- 來源 CSV/Excel 檔案必須遵循既定的組織規則
+- SCD Type 1 參數的檔案必須放在 `app_data/parameters/scd_type1/` 目錄中
+- SCD Type 2 參數的檔案必須放在 `app_data/parameters/scd_type2/` 目錄中
+- 全域參數檔案必須放在 `global_scripts/parameters/` 中
+
+## 第五款：存取模式 {#access-pattern}
+
+- 組件必須直接從 globalenv 存取參數
+- 函數不應不必要地從磁碟/資料庫重新載入參數
+- 參數存在的驗證應在初始化時發生，而不是在使用時
+- 參數更新必須遵循維護記憶體/磁碟同步的受控模式
+
+# 第三項：範例 {#examples}
+
+## 第一款：正確實施 {#correct-implementation}
+
+```r
+# 在初始化腳本中
+# 1. 從來源檔案載入
+product_line_csv <- file.path("app_data", "parameters", "scd_type1", "product_line.csv")
+df_product_line_profile <- read_csvxlsx(product_line_csv)
+
+# 2. 添加出處屬性
+attr(df_product_line_profile, "source_file") <- product_line_csv
+attr(df_product_line_profile, "load_time") <- Sys.time()
+
+# 3. 以規定的前綴放入全域環境
+assign("df_product_line_profile", df_product_line_profile, envir = globalenv())
+
+# 稍後在應用程式代碼中 - 直接從記憶體存取
+filtered_products <- filter(df_product_line_profile, included == 1)
+```
+
+## 第二款：錯誤實施 {#incorrect-implementation}
+
+```r
+# 錯誤：在函數中從磁碟重新載入
+get_product_lines <- function() {
+  # 錯誤：每次從磁碟重新載入而不是使用記憶體常駐版本
+  product_line_csv <- file.path("app_data", "parameters", "scd_type1", "product_line.csv")
+  read_csvxlsx(product_line_csv)
+}
+
+# 錯誤：未遵循命名慣例
+# 錯誤：資料框缺少 df_ 前綴
+product_line_profile <- read_csvxlsx(product_line_csv)
+assign("product_line_profile", product_line_profile, envir = globalenv())
+```
+
+# 第四項：與其他原則的關係 {#relationship-to-other-principles}
+
+- **MP15：貨幣原則** - 記憶體常駐參數仍必須遵循貨幣要求
+- **MP31：初始化優先** - 參數載入是關鍵的初始化步驟
+- **MP33：去初始化最終** - 記憶體清除發生在去初始化期間
+- **MP48：通用初始化** - 參數是通用初始化順序的一部分
+- **R58：全域參數組織** - 定義參數來源檔案的結構
+- **P18：雙重參數來源** - 將 YAML 和 Excel 定義為主要參數來源
+
+# 第五項：優點 {#benefits}
+
+1. **性能優化**：在正常操作期間消除檔案 I/O 和資料庫查詢
+2. **簡化開發**：為所有應用程式組件創建一致的存取模式
+3. **增強調試**：能夠直接檢查當前參數值
+4. **審計能力**：參數出處屬性支援全面審計
+5. **即時適應**：支援在執行期間對參數進行受控修改
+
+---
+
+*基於：資料管理法第十七條*  
+*相關連結：[MP31 初始化優先](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [MP48 通用初始化](../../CH00_fundamental_principles/meta_principles/MP048_universal_initialization.qmd)*

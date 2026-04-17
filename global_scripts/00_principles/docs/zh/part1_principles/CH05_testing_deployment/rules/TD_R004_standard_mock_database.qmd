@@ -1,0 +1,216 @@
+---
+title: "TD_R004: 標準模擬資料庫規則"
+subtitle: "所有測試、開發和演示環境必須使用位於 global_scripts/30_global_data 目錄中的標準化 mock_data.duckdb 資料庫作為主要模擬資料來源，確保整個應用程式的測試資料一致"
+chapter: "CH05"
+category: "rule"
+number: "TD_R004"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "測試部署法"
+article-number: 
+  number: 4
+  title: "標準模擬資料庫規則"
+related_to:
+  - "MP16: 模組化"
+  - "MP17: 關注點分離"
+  - "MP51: 測試資料設計"
+  - "R74: Shiny 測試資料規則"
+  - "R91: 通用資料存取模式"
+  - "R92: 通用 DBI 方法"
+  - "P9: 真實環境測試"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第四條：標準模擬資料庫規則 {#overview}
+
+**測試部署法第四條（標準模擬資料庫規則）**
+
+所有測試、開發和演示環境必須使用位於 `global_scripts/30_global_data` 目錄中的標準化 `mock_data.duckdb` 資料庫作為主要模擬資料來源，確保整個應用程式的測試資料一致。
+
+:::{.callout-important}
+## 核心需求
+所有測試、開發和演示環境必須使用位於 `global_scripts/30_global_data` 目錄中的標準化 `mock_data.duckdb` 資料庫作為主要模擬資料來源，確保整個應用程式的測試資料一致。
+:::
+
+# 第一項：模式描述 {#pattern-description}
+
+標準模擬資料庫規則通過將模擬資料集中在 DuckDB 資料庫檔案中，為模擬資料建立單一真實來源。這種方法標準化了測試資料環境，確保不同開發和測試環境的一致性，並提供生產資料存取模式的真實模擬。
+
+## 第一款：標準化位置和格式 {#standardized-location-format}
+
+模擬資料庫必須：
+
+- 位於 `global_scripts/30_global_data/mock_data.duckdb`
+- 使用提供的腳本 `sc_create_mock_duckdb.R` 初始化
+- 使用版本控制維護以確保一致性
+- 使用標準 DBI 連接模式存取
+
+```r
+# 連接到模擬資料庫的標準方式
+mock_db_path <- file.path("update_scripts", "global_scripts", "30_global_data", "mock_data.duckdb")
+mock_db_conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE)
+```
+
+## 第二款：一致的資料模型 {#consistent-data-model}
+
+模擬資料庫必須維護一致的資料模型：
+
+- 反映生產資料的結構
+- 包含基本功能所需的所有標準表
+- 包含各種測試場景的適當範例資料
+- 保留表之間的關係
+
+## 第三款：與測試框架整合 {#integration-with-testing-framework}
+
+所有測試必須使用標準模擬資料庫：
+
+```r
+# 測試設定
+setup({
+  # 連接到標準模擬資料庫
+  test_conn <- DBI::dbConnect(duckdb::duckdb(), 
+                             dbdir = "../30_global_data/mock_data.duckdb", 
+                             read_only = TRUE)
+  
+  # 使連接可用於測試
+  assign("test_conn", test_conn, envir = parent.frame())
+})
+
+# 測試拆卸
+teardown({
+  # 斷開資料庫連接
+  DBI::dbDisconnect(test_conn, shutdown = TRUE)
+})
+
+# 測試範例
+test_that("組件檢索客戶資料", {
+  # 使用標準連接
+  result <- universal_data_accessor(test_conn, "customer_profile")
+  
+  # 針對模擬資料庫中的已知資料進行測試
+  expect_equal(nrow(result), 3)  # 模擬資料庫中的已知行數
+  expect_true("name" %in% colnames(result))
+})
+```
+
+# 第二項：實施 {#implementation}
+
+## 第一款：資料庫初始化 {#database-initialization}
+
+使用提供的腳本初始化或更新模擬資料庫：
+
+```r
+# 從 01_db 目錄運行
+source("sc_create_mock_duckdb.R")
+```
+
+## 第二款：連接工廠配置 {#connection-factory-configuration}
+
+配置連接工廠以在開發模式中使用標準模擬資料庫：
+
+```r
+# 在 db_connection_factory.R 中
+db_connection_factory <- function(mode = "development", ...) {
+  if (mode == "development" || mode == "testing") {
+    # 使用標準模擬資料庫
+    mock_db_path <- file.path(find_project_root(), "update_scripts", 
+                             "global_scripts", "30_global_data", "mock_data.duckdb")
+    return(DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE))
+  } else {
+    # 生產連接邏輯
+    # ...
+  }
+}
+```
+
+## 第三款：測試固定裝置整合 {#test-fixture-integration}
+
+創建提供模擬資料庫連接的標準測試固定裝置函數：
+
+```r
+# 在 test_helpers.R 中
+get_test_db_connection <- function() {
+  # 獲取相對於當前腳本的路徑
+  script_dir <- dirname(sys.frame(1)$ofile)
+  proj_root <- dirname(dirname(dirname(script_dir)))
+  
+  mock_db_path <- file.path(proj_root, "update_scripts", 
+                           "global_scripts", "30_global_data", "mock_data.duckdb")
+  
+  # 連接到標準模擬資料庫
+  DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE)
+}
+```
+
+# 第三項：優點 {#benefits}
+
+1. **一致性**：確保所有測試使用相同的基準資料
+2. **真實性**：更緊密地模擬生產資料庫互動
+3. **可維護性**：集中測試資料定義
+4. **效率**：消除跨測試重新創建類似測試資料的需要
+5. **完整性**：提供具有適當關係的完整資料環境
+6. **版本控制**：能夠與代碼一起追蹤測試資料的變更
+
+# 第四項：資料庫結構 {#database-structure}
+
+標準模擬資料庫包含這些基本表：
+
+## 第一款：customer_profile {#customer-profile}
+
+基本客戶資訊
+- id：客戶識別碼
+- name：客戶名稱
+- signup_date：註冊日期
+
+## 第二款：orders {#orders}
+
+購買記錄
+- order_id：訂單識別碼
+- customer_id：客戶參考
+- amount：購買金額
+- order_date：購買日期
+
+可以根據需要向標準資料庫添加其他表，並提供適當的文檔和一致性。
+
+# 第五項：擴展模擬資料庫 {#extending-mock-database}
+
+擴展模擬資料庫時：
+
+1. 使用新表更新 `sc_create_mock_duckdb.R` 腳本
+2. 在腳本註釋中記錄更改
+3. 如果進行結構更改，更新所有相關測試
+4. 將更新的腳本提交到版本控制（而不是資料庫檔案本身）
+
+# 第六項：例外 {#exceptions}
+
+在需要無法在標準模擬資料庫中容納的專門測試資料的特定情況下，測試可以使用替代資料來源，但必須記錄偏離的原因。
+
+# 第七項：相關原則 {#related-principles}
+
+此規則實施：
+- MP16（模組化）：通過為測試提供模組化資料來源
+- MP17（關注點分離）：通過將測試資料與測試邏輯分離
+- MP51（測試資料設計）：通過建立測試資料設計標準
+
+關聯到：
+- R74（Shiny 測試資料規則）：通過提供測試資料模式的資料庫實施
+- R91（通用資料存取模式）：通過建立測試的標準資料來源
+- R92（通用 DBI 方法）：通過在測試中強制執行 DBI 存取模式
+- P9（真實環境測試）：通過創建真實的測試環境
+
+# 第八項：結論 {#conclusion}
+
+標準模擬資料庫規則通過將測試資料集中在標準 DuckDB 資料庫中，建立了一致的測試資料方法。這種方法提高了測試一致性，減少了重複，並創建了更真實的測試環境，緊密反映生產資料存取模式。通過使用此規則，所有組件都可以針對相同的基準資料進行測試，確保整個應用程式的一致行為。
+
+---
+
+*基於：測試部署法第四條*  
+*相關連結：[MP51 測試資料設計](../../CH00_fundamental_principles/meta_principles/MP051_test_data_design.qmd), [R91 通用資料存取模式](../../CH02_data_management/rules/DM_R002_universal_data_access.qmd)*

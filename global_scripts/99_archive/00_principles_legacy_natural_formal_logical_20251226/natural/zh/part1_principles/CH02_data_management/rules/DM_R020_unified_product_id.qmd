@@ -1,0 +1,152 @@
+---
+title: "DM_R020: 統一產品 ID 規則"
+subtitle: "所有平台特定的產品識別碼必須在應用層使用的最終資料結構中標準化為 product_id"
+chapter: "CH02"
+category: "rule"
+number: "DM_R020"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 20
+  title: "統一產品 ID 規則"
+related_to:
+  - "MP47: 函數式編程"
+  - "R76: 模組資料連接"
+  - "R91: 通用資料存取模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十條：統一產品 ID 規則 {#overview}
+
+**資料管理法第二十條（統一產品 ID 規則）**
+
+所有平台特定的產品識別碼必須在應用層使用的最終資料結構中標準化為 `product_id`。
+
+:::{.callout-important}
+## 陳述
+所有平台特定的產品識別碼必須在應用層使用的最終資料結構中標準化為 `product_id`。
+:::
+
+# 第一項：原理 {#rationale}
+
+不同的電子商務平台使用不同的產品識別碼命名慣例：
+
+- 亞馬遜使用 `asin`（Amazon Standard Identification Number）
+- eBay 使用 `ebay_product_number`
+- 其他平台可能使用 `sku`、`product_id` 等
+
+為了確保應用層的一致性並簡化儀表板開發，所有平台特定的識別碼都應該重新命名為統一的 `product_id` 欄位。
+
+# 第二項：實施指南 {#implementation-guidelines}
+
+## 第一款：資料處理層 {#data-processing-layer}
+
+在資料處理期間（例如，在 D03 衍生流程中），為了清晰和可追溯性，保持平台特定的欄位名稱：
+
+```r
+# 處理層 - 使用平台特定名稱
+df_amz_competitor_products$asin
+df_eby_competitor_products$ebay_product_number
+```
+
+## 第二款：應用資料層 {#application-data-layer}
+
+在創建供應用使用的最終表格時（例如，位置表、app_data 表），重新命名為 `product_id`：
+
+```r
+# 應用層 - 標準化為 product_id
+combined_data %>%
+  dplyr::rename(product_id = !!sym(product_col))
+```
+
+## 第三款：平台感知函數 {#platform-aware-functions}
+
+跨平台工作的函數應該：
+- 接受 `platform` 參數
+- 內部映射平台到適當的欄位名稱
+- 在最終結果中輸出標準化的 `product_id`
+
+範例：
+```r
+product_col <- switch(platform,
+  "amz" = "asin",
+  "eby" = "ebay_product_number",
+  stop(paste("Unknown platform:", platform))
+)
+
+# 使用平台特定欄位處理
+result <- data %>%
+  group_by(!!sym(product_col)) %>%
+  summarise(...) %>%
+  # 返回前標準化
+  rename(product_id = !!sym(product_col))
+```
+
+## 第四款：資料庫架構 {#database-schema}
+
+- 原始資料表：保留原始平台特定欄位名稱
+- 處理後的資料表：為可追溯性保留平台特定名稱
+- 應用資料表：使用標準化的 `product_id`
+
+## 第五款：連接操作 {#join-operations}
+
+在應用層連接表格時，始終使用 `product_id`：
+
+```r
+# 應用層連接
+df_position %>%
+  left_join(df_supplementary, by = c("product_id", "product_line_id"))
+```
+
+# 第三項：優點 {#benefits}
+
+1. **一致性**：所有儀表板和視覺化中的單一欄位名稱
+2. **可維護性**：UI 組件中不需要平台特定邏輯
+3. **可擴展性**：無需更改應用程式碼即可輕鬆添加新平台
+4. **簡單性**：開發人員只需記住一個欄位名稱
+
+# 第四項：範例 {#examples}
+
+## 第一款：良好實踐 {#good-practice}
+
+```r
+# 在 process_position_table 函數中
+combined_position___with_ideal <- combined_position %>%
+  # ... 處理 ...
+  dplyr::rename(product_id = !!sym(product_col))  # 最後標準化
+```
+
+## 第二款：不良實踐 {#bad-practice}
+
+```r
+# 不要在應用層使用平台特定名稱
+if (platform == "amz") {
+  df_position$asin
+} else if (platform == "eby") {
+  df_position$ebay_product_number
+}
+```
+
+# 第五項：相關原則 {#related-principles}
+
+- **MP47：函數式編程** - 函數式方法促進標準化
+- **R76：模組資料連接** - 模組間的一致資料介面
+- **R91：通用資料存取模式** - 統一的資料存取方法
+
+# 第六項：注意事項 {#notes}
+
+此規則適用於應用程式使用的最終資料結構。在中間處理步驟中，保持平台特定的名稱可以提高程式碼清晰度和調試效率。
+
+---
+
+*基於：資料管理法第二十條*  
+*相關連結：[MP47 函數式編程](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd), [R91 通用資料存取模式](DM_R001_universal_data_access_pattern.qmd)*

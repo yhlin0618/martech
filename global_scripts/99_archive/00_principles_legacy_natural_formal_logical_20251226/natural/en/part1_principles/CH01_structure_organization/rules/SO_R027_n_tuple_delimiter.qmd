@@ -1,0 +1,261 @@
+---
+title: "SO_R019: N-Tuple Delimiter Rule"
+subtitle: "Establishes a clear, consistent pattern for visually separating components in n-tuples (particularly UI-server-defaults triples) using the '####component.name####' delimiter pattern. This enhances code readability and maintainability by clearly delineating boundaries between related components"
+chapter: "CH01"
+category: "rule"
+number: "SO_R019"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article: 
+  number: 19
+  title: "N-Tuple Delimiter Rule"
+implements:
+  - "R009: UI Server Defaults Triple"
+  - "MP017: Separation of Concerns"
+  - "R019: Object Naming Convention"
+related_to:
+  - "R021: One Function One File"
+  - "P072: UI Package Consistency"
+  - "P073: Server-to-UI Data Flow"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 19: N-Tuple Delimiter Rule {#overview}
+
+**Structure & Organization Law Article 19 (N-Tuple Delimiter Rule)**
+
+This rule establishes a standard for visually separating n-tuple components using delimiter patterns.
+
+:::{.callout-important}
+## Core Requirement
+Establishes a clear, consistent pattern for visually separating components in n-tuples (particularly UI-server-defaults triples) using the `####component.name####` delimiter pattern.
+:::
+
+# Section 1: Implementation Principles {#implementation}
+
+## Subsection 1: Delimiter Pattern {#delimiter-pattern}
+
+When implementing n-tuples (such as UI-server-defaults triples), use the following delimiter pattern to separate components:
+
+```
+####component.name####
+```
+
+Where:
+- The delimiter consists of four hash symbols (`####`) on each side
+- `component.name` follows the object naming convention from R19
+- No spaces should be used within the delimiter
+
+## Subsection 2: UI-Server-Defaults Implementation {#ui-server-defaults-implementation}
+
+For UI-server-defaults triples, implement the delimiter pattern as follows:
+
+```r
+####ui.component_name####
+# UI component implementation
+ui.component_name <- function(id) {
+  # UI implementation
+}
+
+####server.component_name####
+# Server component implementation
+server.component_name <- function(id, data) {
+  # Server implementation
+}
+
+####defaults.component_name####
+# Default values for the component
+defaults.component_name <- list(
+  # Default values
+)
+```
+
+## Subsection 3: File Organization Options {#file-organization-options}
+
+The delimiter pattern can be used in two ways:
+
+### Single File Implementation {#single-file}
+
+```r
+# File: component_name.R
+
+####ui.component_name####
+ui.component_name <- function(id) {
+  # UI implementation
+}
+
+####server.component_name####
+server.component_name <- function(id, data) {
+  # Server implementation
+}
+
+####defaults.component_name####
+defaults.component_name <- list(
+  # Default values
+)
+```
+
+### Multiple File Implementation {#multiple-files}
+
+When following R0021 (One Function One File), use consistent delimiter comments at the beginning of each file:
+
+```r
+# File: fn_ui_component_name.R
+####ui.component_name####
+ui.component_name <- function(id) {
+  # UI implementation
+}
+```
+
+```r
+# File: fn_server_component_name.R
+####server.component_name####
+server.component_name <- function(id, data) {
+  # Server implementation
+}
+```
+
+```r
+# File: defaults_component_name.R
+####defaults.component_name####
+defaults.component_name <- list(
+  # Default values
+)
+```
+
+## Subsection 4: Extended N-Tuples {#extended-n-tuples}
+
+For components with more than three parts, maintain the same delimiter pattern:
+
+```r
+####ui.component_name####
+# UI implementation
+
+####server.component_name####
+# Server implementation
+
+####defaults.component_name####
+# Defaults implementation
+
+####tests.component_name####
+# Tests implementation
+
+####docs.component_name####
+# Documentation implementation
+```
+
+# Section 2: Examples {#examples}
+
+## Subsection 1: Customer Profile Component Triple {#customer-profile-triple}
+
+```r
+####ui.customer_profile####
+ui.customer_profile <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    class = "profile-container",
+    h3("Customer Profile"),
+    textOutput(ns("customer_name")),
+    textOutput(ns("customer_email")),
+    valueBoxOutput(ns("total_purchases"))
+  )
+}
+
+####server.customer_profile####
+server.customer_profile <- function(id, customer_data) {
+  moduleServer(id, function(input, output, session) {
+    output$customer_name <- renderText({
+      customer_data()$name
+    })
+    
+    output$customer_email <- renderText({
+      customer_data()$email
+    })
+    
+    output$total_purchases <- renderValueBox({
+      valueBox(
+        customer_data()$purchase_count,
+        "Total Purchases",
+        icon = icon("shopping-cart")
+      )
+    })
+  })
+}
+
+####defaults.customer_profile####
+defaults.customer_profile <- list(
+  empty_customer = list(
+    name = "No customer selected",
+    email = "N/A",
+    purchase_count = 0
+  ),
+  refresh_interval = 30,
+  max_history_products = 10
+)
+```
+
+## Subsection 2: Data Filter Component with Documentation {#data-filter-with-docs}
+
+```r
+####ui.data_filter####
+ui.data_filter <- function(id) {
+  # UI implementation
+}
+
+####server.data_filter####
+server.data_filter <- function(id, data_source) {
+  # Server implementation
+}
+
+####defaults.data_filter####
+defaults.data_filter <- list(
+  # Defaults implementation
+)
+
+####docs.data_filter####
+# Data Filter Component
+# 
+# This component provides filtering capabilities for tabular data.
+# It supports:
+# - Text search
+# - Date range filtering
+# - Category selection
+# - Numeric range filters
+#
+# Usage: 
+# ```r
+# ui.data_filter("my_filter")
+# server.data_filter("my_filter", reactive(my_data))
+# ```
+```
+
+# Section 3: Benefits {#benefits}
+
+1. **Visual Clarity**: Creates clear visual separation between component parts
+2. **Consistent Structure**: Establishes a predictable pattern for code organization
+3. **Searchability**: Makes it easy to search for specific components using the delimiter pattern
+4. **Organization**: Helps maintain organization even in larger files with multiple components
+5. **Readability**: Improves code readability and navigation
+6. **Documentation**: Serves as self-documenting code structure
+
+# Section 4: Implementation Guidance {#implementation-guidance}
+
+1. Apply this pattern to all new component development
+2. Add delimiters when modifying existing components
+3. Use find-and-replace to add delimiters to existing codebases in bulk
+4. Consider adding syntax highlighting in IDE for these delimiters to enhance visibility
+
+---
+
+*Based on: Structure & Organization Law Article 19*  
+*Related to: [R009 UI Server Defaults Triple](../../CH04_ui_components/rules/UI_R001_ui_server_defaults_ntuple.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd)*

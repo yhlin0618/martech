@@ -1,0 +1,441 @@
+---
+title: "SO_P013: N-tuple Independent Loading Principle"
+subtitle: "Components in n-tuple pattern should be loaded and handled independently by aspect rather than by component"
+chapter: "CH01"
+category: "principle"
+number: "SO_P013"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Structure and Organization Law"
+article: 
+  number: 13
+  title: "N-tuple Independent Loading Principle"
+related_to:
+  - "UI_P004: Component N-tuple Pattern"
+  - "UI_P003: Sidebar Filtering Only"
+  - "CH00.MP017: Separation of Concerns"
+  - "CH00.MP016: Modularity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure and Organization Law Article 13 (N-tuple Independent Loading Principle)**
+
+Components in an n-tuple pattern should be loaded and handled independently, treated as distinct entities each serving a specific purpose rather than as a single combined unit. Loading should be organized by aspect rather than by component.
+
+:::{.callout-important}
+## Core Principle
+Load components by aspect type (all UIs together, all Servers together) rather than loading all aspects of a single component, aligning with the application's execution flow.
+:::
+
+# Section 1: Theoretical Foundation {#rationale}
+
+## Subsection 1: Aspect-Oriented Loading {#aspect-oriented-loading}
+
+The n-tuple pattern (like UI-Server-Defaults-Filters pattern) divides functionality into distinct aspects:
+- Each aspect serves a specific purpose
+- Aspects are conceptually related but executionally independent
+- Loading order should align with execution flow
+
+## Subsection 2: Independence Advantages {#independence-advantages}
+
+1. **Selective Loading**: Only necessary aspects can be loaded when needed (e.g., loading only UI/Server in view-only mode)
+2. **Independent Testing**: Each aspect can be tested independently of others
+3. **Clearer Dependency Flow**: Dependencies between aspects become explicit rather than implicit
+4. **Parallel Processing**: Aspects can be executed in parallel when appropriate
+5. **Substitutability**: Individual aspects can be replaced or modified without affecting others
+
+# Section 2: Loading Patterns {#loading-patterns}
+
+## Subsection 1: Loading by Aspect (Recommended) {#by-aspect}
+
+```r
+# ✅ GOOD: Loading by aspect type
+# Step 1: Load all UI components
+ui_files <- list.files(
+  path = "components",
+  pattern = "*UI\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(ui_files, source)
+
+# Step 2: Load all Server components
+server_files <- list.files(
+  path = "components",
+  pattern = "*Server\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(server_files, source)
+
+# Step 3: Load all Defaults components
+defaults_files <- list.files(
+  path = "components",
+  pattern = "*Defaults\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(defaults_files, source)
+
+# Step 4: Load all Filters components
+filters_files <- list.files(
+  path = "components",
+  pattern = "*Filters\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(filters_files, source)
+```
+
+## Subsection 2: Loading by Component (Not Recommended) {#by-component}
+
+```r
+# ❌ BAD: Loading all aspects of a component together
+# This violates the aspect independence principle
+source("components/sidebar/marketingChannel/marketingChannelUI.R")
+source("components/sidebar/marketingChannel/marketingChannelServer.R")
+source("components/sidebar/marketingChannel/marketingChannelFilters.R")
+source("components/sidebar/marketingChannel/marketingChannelDefaults.R")
+
+# Then loading next component...
+source("components/sidebar/productCategory/productCategoryUI.R")
+source("components/sidebar/productCategory/productCategoryServer.R")
+# ...
+```
+
+# Section 3: Organization Structure {#organization-structure}
+
+## Subsection 1: Directory Structure {#directory-structure}
+
+```
+components/
+├── sidebar/
+│   ├── sidebarUI.R
+│   ├── sidebarServer.R
+│   ├── marketingChannel/
+│   │   ├── marketingChannelUI.R
+│   │   ├── marketingChannelServer.R
+│   │   ├── marketingChannelDefaults.R
+│   │   └── marketingChannelFilters.R
+│   └── productCategory/
+│       ├── productCategoryUI.R
+│       ├── productCategoryServer.R
+│       ├── productCategoryDefaults.R
+│       └── productCategoryFilters.R
+├── main/
+│   ├── dashboard/
+│   │   ├── dashboardUI.R
+│   │   ├── dashboardServer.R
+│   │   └── dashboardDefaults.R
+│   └── analysis/
+│       ├── analysisUI.R
+│       ├── analysisServer.R
+│       └── analysisDefaults.R
+```
+
+## Subsection 2: Loading Order Strategy {#loading-order}
+
+```r
+# Define loading order
+loading_order <- list(
+  # 1. Infrastructure
+  infrastructure = c("config", "utils", "database"),
+  
+  # 2. Defaults (load first as others may depend on them)
+  defaults = "*Defaults.R",
+  
+  # 3. UI components (define interface)
+  ui = "*UI.R",
+  
+  # 4. Server logic (handle interactions)
+  server = "*Server.R",
+  
+  # 5. Filters (data processing)
+  filters = "*Filters.R",
+  
+  # 6. Tests (if in development mode)
+  test = if (dev_mode) "*Test.R" else NULL
+)
+
+# Execute loading
+for (aspect in names(loading_order)) {
+  pattern <- loading_order[[aspect]]
+  if (!is.null(pattern)) {
+    files <- list.files(
+      path = "components",
+      pattern = pattern,
+      recursive = TRUE,
+      full.names = TRUE
+    )
+    lapply(files, source)
+    message(sprintf("Loaded %d %s files", length(files), aspect))
+  }
+}
+```
+
+# Section 4: Function Organization {#function-organization}
+
+## Subsection 1: Naming Conventions {#naming-conventions}
+
+```r
+# UI functions follow UI patterns and return UI elements
+marketingChannelUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    selectInput(ns("channel"), "Marketing Channel", choices = NULL)
+  )
+}
+
+productCategoryUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    selectInput(ns("category"), "Product Category", choices = NULL)
+  )
+}
+
+# Server functions follow server patterns and handle reactivity
+marketingChannelServer <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    # Reactive logic
+  })
+}
+
+productCategoryServer <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    # Reactive logic
+  })
+}
+
+# Filter functions follow data processing patterns
+marketingChannelFilters <- function(data, selection) {
+  data %>%
+    filter(channel %in% selection)
+}
+
+productCategoryFilters <- function(data, selection) {
+  data %>%
+    filter(category %in% selection)
+}
+```
+
+## Subsection 2: Aspect Interface Definition {#aspect-interfaces}
+
+```r
+# Define clear interfaces for each aspect
+# UI aspect interface
+create_ui_aspect <- function(component_name) {
+  list(
+    render = function(id) {
+      # Return UI elements
+    },
+    validate = function() {
+      # Validate UI structure
+    }
+  )
+}
+
+# Server aspect interface
+create_server_aspect <- function(component_name) {
+  list(
+    initialize = function(id, data) {
+      # Initialize server logic
+    },
+    update = function(new_data) {
+      # Update reactive values
+    }
+  )
+}
+
+# Filter aspect interface
+create_filter_aspect <- function(component_name) {
+  list(
+    apply = function(data, criteria) {
+      # Apply filtering
+    },
+    reset = function() {
+      # Reset filters
+    }
+  )
+}
+```
+
+# Section 5: Testing Strategy {#testing-strategy}
+
+## Subsection 1: Independent Aspect Testing {#independent-testing}
+
+```r
+# Test UI aspect (without Server)
+test_that("UI components render correctly", {
+  ui <- marketingChannelUI("test")
+  expect_s3_class(ui, "shiny.tag.list")
+  expect_true(grepl("selectInput", as.character(ui)))
+})
+
+# Test Server aspect (with mock UI)
+test_that("Server logic handles inputs correctly", {
+  testServer(marketingChannelServer, {
+    session$setInputs(channel = "online")
+    expect_equal(selected_channel(), "online")
+  })
+})
+
+# Test Filter aspect (pure function testing)
+test_that("Filter correctly filters data", {
+  test_data <- data.frame(
+    channel = c("online", "offline", "online"),
+    value = c(100, 200, 300)
+  )
+  
+  filtered <- marketingChannelFilters(test_data, "online")
+  expect_equal(nrow(filtered), 2)
+  expect_true(all(filtered$channel == "online"))
+})
+```
+
+## Subsection 2: Integration Testing {#integration-testing}
+
+```r
+# Test aspect integration only when necessary
+test_that("UI and Server aspects integrate correctly", {
+  # Create test app
+  ui <- fluidPage(
+    marketingChannelUI("test")
+  )
+  
+  server <- function(input, output, session) {
+    marketingChannelServer("test", reactive(test_data))
+  }
+  
+  # Run integration test
+  app <- shinytest2::AppDriver$new(
+    app = shinyApp(ui, server)
+  )
+  
+  # Verify integrated behavior
+  app$set_inputs(`test-channel` = "online")
+  output <- app$get_value(output = "test-result")
+  expect_equal(output$channel, "online")
+})
+```
+
+# Section 6: Best Practices {#best-practices}
+
+## Subsection 1: Conditional Loading {#conditional-loading}
+
+```r
+# Selectively load aspects based on application mode
+load_app_aspects <- function(mode = "full") {
+  base_path <- "components"
+  
+  if (mode == "full") {
+    # Load all aspects
+    load_aspect(base_path, "*Defaults.R")
+    load_aspect(base_path, "*UI.R")
+    load_aspect(base_path, "*Server.R")
+    load_aspect(base_path, "*Filters.R")
+    
+  } else if (mode == "view_only") {
+    # Read-only mode: only UI and basic Server
+    load_aspect(base_path, "*UI.R")
+    load_aspect(base_path, "*Server.R")
+    
+  } else if (mode == "api") {
+    # API mode: only data processing
+    load_aspect(base_path, "*Filters.R")
+    load_aspect(base_path, "*Defaults.R")
+  }
+}
+
+load_aspect <- function(path, pattern) {
+  files <- list.files(
+    path = path,
+    pattern = pattern,
+    recursive = TRUE,
+    full.names = TRUE
+  )
+  lapply(files, source)
+  invisible(files)
+}
+```
+
+## Subsection 2: Dependency Management {#dependency-management}
+
+```r
+# Explicitly declare dependencies between aspects
+aspect_dependencies <- list(
+  UI = c(),                    # UI has no dependencies
+  Defaults = c(),              # Defaults has no dependencies
+  Server = c("UI", "Defaults"), # Server depends on UI and Defaults
+  Filters = c("Defaults")      # Filters depends on Defaults
+)
+
+# Load in dependency order
+load_with_dependencies <- function(aspect, loaded = character()) {
+  if (aspect %in% loaded) return(loaded)
+  
+  # Load dependencies first
+  deps <- aspect_dependencies[[aspect]]
+  for (dep in deps) {
+    loaded <- load_with_dependencies(dep, loaded)
+  }
+  
+  # Load current aspect
+  load_aspect("components", paste0("*", aspect, ".R"))
+  c(loaded, aspect)
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## N-tuple Independent Loading Checklist
+
+**Loading Strategy**:
+- [ ] Load by aspect not by component
+- [ ] Loading order aligns with execution flow
+- [ ] Support selective loading
+- [ ] Dependencies explicit
+
+**File Organization**:
+- [ ] Clear directory structure
+- [ ] Consistent naming conventions
+- [ ] Aspect files properly separated
+- [ ] Easy to locate specific aspects
+
+**Test Coverage**:
+- [ ] Each aspect tested independently
+- [ ] Aspect interfaces tested
+- [ ] Integration tests when necessary
+- [ ] Test loading order
+
+**Performance Optimization**:
+- [ ] Avoid duplicate loading
+- [ ] Support lazy loading
+- [ ] Parallel loading possibility
+- [ ] Memory efficiency
+
+**Maintainability**:
+- [ ] Clear aspect boundaries
+- [ ] Complete documentation
+- [ ] Easy to add aspects
+- [ ] Easy to replace aspects
+:::
+
+# Conclusion {#conclusion}
+
+The N-tuple Independent Loading Principle ensures flexibility and maintainability in component architecture. By organizing loading by aspect rather than by component, applications gain better modularity, testability, and performance. Remember, the power of the n-tuple pattern lies in the independence of aspects, and proper loading strategy is key to achieving this independence.
+
+---
+
+*Based on: Structure and Organization Law Article 13*  
+*Related to: [UI_P004 Component N-tuple Pattern](../../CH04_ui_components/principles/UI_P004_component_ntuple_pattern.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/03_development_methodology/MP017_separation_of_concerns.qmd)*

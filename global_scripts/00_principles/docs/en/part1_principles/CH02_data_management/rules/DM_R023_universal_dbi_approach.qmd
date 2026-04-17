@@ -1,0 +1,245 @@
+---
+title: "DM_R006: Universal DBI Approach Rule"
+subtitle: "All data access in precision marketing applications must use a consistent Database Interface (DBI) pattern, where data is accessed exclusively through database connection objects (real or mock) using standardized query methods, ensuring consistent data flow regardless of the actual data source"
+chapter: "CH02"
+category: "rule"
+number: "DM_R006"
+date-created: "2025-04-10"
+date-modified: "2025-12-25"
+revision_history:
+  - date: 2025-12-25
+    version: "1.1"
+    changes: "Clarify tbl2-only reads and disallow raw SQL read access"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 6
+  title: "Universal DBI Approach Rule"
+implements:
+  - "MP016: Modularity"
+  - "MP017: Separation of Concerns"
+  - "MP052: Unidirectional Data Flow"
+related_to:
+  - "R076: Module Data Connection Rule"
+  - "R091: Universal Data Access Pattern"
+  - "P076: Error Handling Patterns"
+  - "P077: Performance Optimization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 6: Universal DBI Approach Rule {#overview}
+
+**Data Management Law Article 6 (Universal DBI Approach Rule)**
+
+This rule standardizes how applications access data.
+
+:::{.callout-important}
+## Core Requirement
+All data access in precision marketing applications must use a consistent Database Interface (DBI) pattern, where data is accessed exclusively through database connection objects (real or mock) using standardized query methods, ensuring consistent data flow regardless of the actual data source.
+For database reads, use `tbl2()` (the extended `dplyr::tbl()` interface) and avoid raw SQL string queries.
+:::
+
+# Section 1: Pattern Description {#pattern-description}
+
+The Universal DBI Approach standardizes how data is accessed throughout the application by enforcing a database-centric access pattern. This creates a clear separation between data storage and application logic, improves testability, and enables seamless transitions between development, testing, and production environments.
+
+## Subsection 1: Central Connection Management {#central-connection-management}
+
+Applications must establish database connections through a central factory:
+
+```r
+# In app.R
+app_db_conn <- initialize_app_db_connection()
+
+# Server function uses the connection
+server <- function(input, output, session) {
+  # Make connection available to all modules
+  moduleServer("module1", function(input, output, session) {
+    # Module uses the connection  
+  }, app_db_conn)
+}
+```
+
+## Subsection 2: Consistent Access Patterns {#consistent-access-patterns}
+
+All data retrieval must use the same patterns, regardless of whether the data comes from a real database or mock data. Read access must use `tbl2()` directly or a wrapper that calls `tbl2()` internally:
+
+```r
+# Inside a module server function
+getData <- reactive({
+  req(app_data_connection)
+  
+  # Use universal_data_accessor with any connection type
+  universal_data_accessor(
+    app_data_connection, 
+    "customer_profile"
+  )
+})
+```
+
+## Subsection 3: Environment Adaptability {#environment-adaptability}
+
+Applications must adapt to different environments without code changes:
+
+- **Production**: Uses real database connections
+- **Development**: Can use mock connections with sample data
+- **Testing**: Uses deterministic mock data
+
+## Subsection 4: Interface Standardization {#interface-standardization}
+
+All database access must follow standard DBI patterns:
+
+- Use `tbl2()` for data retrieval (reads)
+- Use `dbWriteTable()` and `dbExecute()` for data modification
+- Use `dbListTables()` for schema introspection
+
+# Section 2: Implementation {#implementation}
+
+## Subsection 1: Connection Factory {#connection-factory}
+
+Use the provided connection factory to create database connections:
+
+```r
+# Production connection
+conn <- db_connection_factory("production")
+
+# Development connection with mock data
+conn <- db_connection_factory("development", 
+                             mock_data_list = test_data)
+```
+
+## Subsection 2: Universal Data Accessor {#universal-data-accessor}
+
+Use `tbl2()` for all data retrieval:
+
+```r
+customer_data <- tbl2(conn, "customer_profile") %>% collect()
+```
+
+## Subsection 3: Mock DBI for Testing {#mock-dbi-testing}
+
+Use mock DBI connections for testing:
+
+```r
+# Create test data
+test_data <- list(
+  customer_profile = data.frame(...),
+  dna_by_customer = data.frame(...)
+)
+
+# Create mock connection
+mock_conn <- list_to_mock_dbi(test_data)
+
+# Run tests with mock connection
+test_result <- test_module(mock_conn)
+```
+
+# Section 3: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Consistency**: Uniform data access patterns across the application
+2. **Testability**: Easier to test with mock data
+3. **Separation of Concerns**: Data storage decoupled from application logic
+4. **Performance**: Database operations can be optimized centrally
+5. **Scalability**: Easy transition path from development to production
+6. **Maintainability**: Centralized data access simplifies updates
+
+# Section 4: Code Example {#code-example}
+
+Example application structure implementing the Universal DBI Approach:
+
+```r
+# app.R
+library(shiny)
+library(dplyr)
+
+# 1. Source required utilities
+source("scripts/global_scripts/00_principles/02_db_utils/fn_db_connection_factory.R")
+source("scripts/global_scripts/00_principles/02_db_utils/fn_universal_data_accessor.R")
+
+# 2. Initialize database connection
+app_db_conn <- initialize_app_db_connection()
+
+# 3. UI Definition
+ui <- fluidPage(
+  titlePanel("Universal DBI Approach Example"),
+  sidebarLayout(
+    sidebarPanel(
+      # Customer module UI
+      microCustomerFilterUI("customer_module")
+    ),
+    mainPanel(
+      # Customer display UI
+      microCustomerUI("customer_module"),
+      # Debug info
+      verbatimTextOutput("connection_info")
+    )
+  )
+)
+
+# 4. Server function
+server <- function(input, output, session) {
+  # Initialize modules with the database connection
+  filtered_data <- microCustomerServer("customer_module", app_db_conn)
+  
+  # Display connection information
+  output$connection_info <- renderPrint({
+    get_connection_info(app_db_conn)
+  })
+}
+
+# 5. Run the application
+shinyApp(ui, server)
+```
+
+# Section 5: Testing Approach {#testing-approach}
+
+When using the Universal DBI Approach, tests should:
+
+1. Create mock connections with deterministic test data
+2. Pass these connections to components and modules
+3. Verify outputs based on known inputs
+4. Test both normal and error conditions
+
+Example test:
+
+```r
+test_that("Customer module displays correct data", {
+  # Create mock connection with test data
+  mock_conn <- list_to_mock_dbi(list(
+    customer_profile = data.frame(
+      customer_id = 1:3,
+      buyer_name = c("Test 1", "Test 2", "Test 3")
+    ),
+    dna_by_customer = data.frame(
+      customer_id = 1:2,
+      r_value = c(5, 10)
+    )
+  ))
+  
+  # Test the module
+  testServer(microCustomerServer, args = list(app_data_connection = mock_conn), {
+    # Verify correct initialization
+    expect_equal(length(valid_customer_ids()), 2)
+    
+    # Simulate user interaction
+    session$setInputs(customer_filter = "1")
+    
+    # Verify result
+    expect_equal(filtered_data()$customer_id, 1)
+  })
+})
+```
+
+---
+
+*Based on: Data Management Law Article 6*  
+*Related to: [R076 Module Data Connection Rule](../../CH03_development_methodology/rules/DEV_R022_module_data_connection.qmd), [R091 Universal Data Access Pattern](./DM_R002_universal_data_access.qmd)*

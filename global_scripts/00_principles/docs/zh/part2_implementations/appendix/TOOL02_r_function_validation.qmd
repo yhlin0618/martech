@@ -1,0 +1,340 @@
+---
+title: "Tool Configuration 02: R Function Validation Rules"
+subtitle: "Mandatory validation requirements for R function usage"
+chapter: "Appendix"
+category: "tool-config"
+number: "TOOL02"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "tool-configuration"
+law: "Development Tools"
+article-number: "Tool Config 2"
+related_to:
+  - "R043_check_existing_functions"
+  - "R094_roxygen2_function_examples"
+  - "R095_import_requirements_rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Tool Config 2: R Function Validation Rules {#overview}
+
+::: {.callout-important}
+This is a **MANDATORY RULE** that must always be applied when writing R code. This document is derived from `cursor_rules/r_function_validation.mdc` which is automatically enforced by Cursor editor.
+:::
+
+## Section 1: Reference Resources {#resources}
+
+### Subsection 1: Package Documentation {#package-docs}
+
+The latest R packages GitHub backups are stored in: `update_scripts/global_scripts/20_R_packages/`
+
+For querying specific function availability or package information, refer to the GitHub documentation in that directory.
+
+### Subsection 2: Documentation Structure {#doc-structure}
+
+```
+20_R_packages/
+├── CRAN/                 # CRAN package documentation
+├── Bioconductor/        # Bioconductor packages
+├── GitHub/              # GitHub-hosted packages
+└── Custom/              # Custom internal packages
+```
+
+## Section 2: Mandatory Principle {#mandatory}
+
+### Subsection 1: Core Requirement {#core-requirement}
+
+When writing R code, **you must verify that any function actually exists before using it**. This is a **MANDATORY RULE** with no exceptions.
+
+### Subsection 2: Rationale {#rationale}
+
+This validation prevents:
+- Syntax errors from non-existent functions
+- Runtime errors from missing packages
+- Confusion from typos in function names
+- Issues from unloaded packages
+
+## Section 3: Validation Methods {#validation-methods}
+
+### Subsection 1: Using `?` to Query Function Documentation {#help-query}
+
+```r
+# Check if function exists and view its documentation
+?function_name
+
+# Example
+?filter  # Will show dplyr::filter documentation if available
+```
+
+**Interpretation:**
+- If documentation appears: Function exists
+- If "No documentation found": Function doesn't exist or package not loaded
+
+### Subsection 2: Using `??` to Search for Functions {#search-query}
+
+```r
+# Search for function across all loaded packages
+??function_name
+
+# Example
+??mutate  # Searches for 'mutate' in all packages
+```
+
+**Use cases:**
+- Finding functions when unsure of package
+- Discovering similar function names
+- Checking for function availability
+
+### Subsection 3: Using `exists()` for Custom Functions {#exists-check}
+
+```r
+# Check if function exists in current environment
+exists("function_name")
+
+# Example with conditional execution
+if (exists("custom_analysis")) {
+  result <- custom_analysis(data)
+} else {
+  warning("custom_analysis function not found, using default")
+  result <- default_analysis(data)
+}
+```
+
+### Subsection 4: Verifying Package Function Availability {#package-check}
+
+```r
+# Check if package is loaded
+"package:dplyr" %in% search()
+
+# Check if specific function exists in package
+exists("filter", where = "package:dplyr")
+
+# Complete validation pattern
+if (requireNamespace("dplyr", quietly = TRUE)) {
+  if (exists("filter", where = asNamespace("dplyr"))) {
+    # Safe to use dplyr::filter
+    result <- dplyr::filter(data, condition)
+  }
+}
+```
+
+## Section 4: Common Patterns and Examples {#patterns}
+
+### Subsection 1: Error Examples {#error-examples}
+
+#### Bad Practice {#bad-practice}
+
+```r
+# ❌ WRONG: Using function without validation
+names(formals(func))  # formals might not exist
+
+# ❌ WRONG: Assuming package is loaded
+data %>% 
+  filter(x > 0) %>%  # filter might not be available
+  summarize(mean = mean(y))
+
+# ❌ WRONG: Using custom function without checking
+result <- process_data(input)  # process_data might not be defined
+```
+
+#### Good Practice {#good-practice}
+
+```r
+# ✅ CORRECT: Validate before use
+if (exists("formals")) {
+  param_names <- names(formals(func))
+} else {
+  stop("formals function not available")
+}
+
+# ✅ CORRECT: Ensure package functions are available
+if (requireNamespace("dplyr", quietly = TRUE)) {
+  library(dplyr)
+  data %>% 
+    filter(x > 0) %>%
+    summarize(mean = mean(y))
+} else {
+  stop("dplyr package required but not installed")
+}
+
+# ✅ CORRECT: Check custom function existence
+if (exists("process_data")) {
+  result <- process_data(input)
+} else {
+  stop("Required function 'process_data' not found. Please source the appropriate file.")
+}
+```
+
+### Subsection 2: Validation Patterns {#validation-patterns}
+
+#### Pattern 1: Package Function Validation {#pattern-package}
+
+```r
+validate_package_function <- function(package_name, function_name) {
+  # Check if package is installed
+  if (!requireNamespace(package_name, quietly = TRUE)) {
+    stop(sprintf("Package '%s' is not installed", package_name))
+  }
+  
+  # Check if function exists in package
+  if (!exists(function_name, where = asNamespace(package_name))) {
+    stop(sprintf("Function '%s' not found in package '%s'", 
+                 function_name, package_name))
+  }
+  
+  return(TRUE)
+}
+
+# Usage
+validate_package_function("dplyr", "filter")
+```
+
+#### Pattern 2: Batch Function Validation {#pattern-batch}
+
+```r
+validate_required_functions <- function(required_functions) {
+  missing <- character()
+  
+  for (func in required_functions) {
+    if (!exists(func)) {
+      missing <- c(missing, func)
+    }
+  }
+  
+  if (length(missing) > 0) {
+    stop(sprintf("Missing required functions: %s", 
+                 paste(missing, collapse = ", ")))
+  }
+  
+  return(TRUE)
+}
+
+# Usage
+required <- c("read_csv", "write_csv", "filter", "select")
+validate_required_functions(required)
+```
+
+## Section 5: Scope of Application {#scope}
+
+### Subsection 1: Where This Rule Applies {#where-applies}
+
+This validation rule applies to ALL R code writing, including but not limited to:
+
+1. **Shiny Applications**
+   - UI component definitions
+   - Server logic implementation
+   - Module development
+
+2. **Data Analysis Scripts**
+   - Data processing pipelines
+   - Statistical analyses
+   - Report generation
+
+3. **Function Definitions**
+   - Custom function development
+   - Utility function creation
+   - Package development
+
+4. **Module Development**
+   - Component modules
+   - Data processing modules
+   - Integration modules
+
+### Subsection 2: No Exceptions {#no-exceptions}
+
+There are **NO EXCEPTIONS** to this rule. Even for commonly used functions like:
+- Base R functions (still validate in case of typos)
+- Well-known package functions
+- Functions you "know" exist
+
+Always validate before use.
+
+## Section 6: Integration with Development Workflow {#integration}
+
+### Subsection 1: Pre-commit Validation {#pre-commit}
+
+```r
+# pre-commit-validate.R
+# Run before committing code
+
+source_files <- list.files(pattern = "\\.R$", recursive = TRUE)
+
+for (file in source_files) {
+  tryCatch({
+    # Parse file to check for function calls
+    parsed <- parse(file = file)
+    # Additional validation logic here
+  }, error = function(e) {
+    stop(sprintf("Validation failed for %s: %s", file, e$message))
+  })
+}
+```
+
+### Subsection 2: Development Environment Setup {#dev-setup}
+
+```r
+# .Rprofile or initialization script
+options(
+  warn = 2,  # Convert warnings to errors
+  error = function() {
+    # Check if error is due to missing function
+    if (grepl("could not find function", geterrmessage())) {
+      cat("\n⚠️ VALIDATION ERROR: Function not found!\n")
+      cat("Please validate function existence before use.\n")
+    }
+  }
+)
+```
+
+## Section 7: Quick Reference Card {#quick-reference}
+
+### Validation Commands {#commands}
+
+| Command | Purpose | Example |
+|---------|---------|---------|
+| `?func` | Check and view documentation | `?filter` |
+| `??func` | Search for function | `??mutate` |
+| `exists("func")` | Check existence | `exists("my_func")` |
+| `"package:pkg" %in% search()` | Check package loaded | `"package:dplyr" %in% search()` |
+| `requireNamespace("pkg")` | Check package available | `requireNamespace("ggplot2")` |
+
+### Decision Tree {#decision-tree}
+
+```
+Is it a base R function?
+├── Yes → Still validate (typos happen)
+└── No → Is it from a package?
+    ├── Yes → Check package loaded → Check function exists
+    └── No → Is it custom?
+        ├── Yes → Use exists() to verify
+        └── No → ERROR: Unknown function source
+```
+
+## Section 8: Enforcement in Cursor {#cursor-enforcement}
+
+### Subsection 1: Automatic Application {#auto-application}
+
+When `alwaysApply: true` is set in the MDC file, Cursor will:
+1. Apply these rules to all R files
+2. Provide inline validation hints
+3. Suggest validation code when needed
+
+### Subsection 2: MDC Configuration {#mdc-config}
+
+```yaml
+---
+description: R function validation requirements
+globs: ["*.R", "*.r", "*.Rmd", "*.qmd"]
+alwaysApply: true  # Always enforced
+---
+```
+
+---
+*This mandatory validation rule ensures robust and error-free R code development across the project.*

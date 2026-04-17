@@ -1,0 +1,861 @@
+---
+title: "MP115: Security Audit and Logging"
+subtitle: "Comprehensive security event logging, monitoring, and incident response"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP115"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-meta-principle"
+law: "Security Monitoring and Audit Law"
+article: 
+  number: 115
+  title: "Security Audit, Logging, and Monitoring Framework"
+influences:
+  - "MP012: Change Tracking"
+  - "MP053: Information Flow Transparency"
+  - "MP110: Security Credentials Management"
+  - "MP112: Access Control and Authorization"
+extends:
+  - "MP012: Change Tracking"
+  - "MP053: Information Flow Transparency"
+criticality: "CRITICAL"
+enforcement: "MANDATORY"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+---
+
+## Core Statement
+
+All security-relevant events MUST be logged with sufficient detail for forensic analysis, monitored in real-time for anomaly detection, stored in tamper-proof audit trails, and integrated with incident response procedures to ensure rapid detection and response to security threats.
+
+## Logging Architecture
+
+### Centralized Logging System
+
+```r
+# Centralized logging configuration
+configure_logging_system <- function() {
+  logging_config <- list(
+    # Log levels
+    levels = c("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "SECURITY"),
+    
+    # Log destinations
+    destinations = list(
+      local = "/var/log/mamba/security.log",
+      remote = Sys.getenv("LOG_SERVER_URL"),
+      siem = Sys.getenv("SIEM_ENDPOINT")
+    ),
+    
+    # Retention policies
+    retention = list(
+      security_logs = 365 * 2,  # 2 years
+      audit_logs = 365 * 7,     # 7 years
+      application_logs = 90,     # 90 days
+      debug_logs = 7            # 7 days
+    ),
+    
+    # Encryption
+    encryption = list(
+      at_rest = TRUE,
+      in_transit = TRUE,
+      algorithm = "AES-256-GCM"
+    )
+  )
+  
+  return(logging_config)
+}
+
+# Initialize logging
+init_security_logging <- function() {
+  # Create logger instance
+  logger <- log4r::logger(
+    threshold = "INFO",
+    appenders = list(
+      log4r::file_appender(
+        file = "/var/log/mamba/security.log",
+        layout = log4r::json_layout()
+      ),
+      log4r::syslog_appender(
+        identifier = "mamba-security",
+        facility = "local0"
+      )
+    )
+  )
+  
+  # Set global logger
+  options(mamba.logger = logger)
+  
+  return(logger)
+}
+```
+
+### Security Event Schema
+
+```r
+# Standardized security event structure
+create_security_event <- function(event_type, severity, details) {
+  event <- list(
+    # Metadata
+    event_id = generate_uuid(),
+    timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%S.%OSZ"),
+    event_type = event_type,
+    severity = severity,
+    
+    # Context
+    application = "MAMBA",
+    environment = Sys.getenv("ENVIRONMENT", "production"),
+    version = packageVersion("mamba"),
+    
+    # Actor information
+    user_id = get_current_user_id(),
+    session_id = get_session_id(),
+    ip_address = get_client_ip(),
+    user_agent = get_user_agent(),
+    
+    # Event details
+    details = details,
+    
+    # Security context
+    authentication_method = get_auth_method(),
+    authorization_level = get_auth_level(),
+    
+    # System context
+    hostname = Sys.info()["nodename"],
+    process_id = Sys.getpid(),
+    
+    # Compliance tags
+    compliance = list(
+      gdpr = is_gdpr_relevant(event_type),
+      pci = is_pci_relevant(event_type),
+      hipaa = is_hipaa_relevant(event_type)
+    )
+  )
+  
+  # Add hash for integrity
+  event$hash <- calculate_event_hash(event)
+  
+  return(event)
+}
+
+# Calculate event hash for integrity
+calculate_event_hash <- function(event) {
+  # Remove hash field if exists
+  event$hash <- NULL
+  
+  # Serialize and hash
+  event_string <- jsonlite::toJSON(event, auto_unbox = TRUE)
+  hash <- digest::digest(event_string, algo = "sha256")
+  
+  return(hash)
+}
+```
+
+## Security Event Categories
+
+### Authentication Events
+
+```r
+# Log authentication events
+log_authentication_event <- function(action, user_id, success, method = NULL, reason = NULL) {
+  event <- create_security_event(
+    event_type = paste0("AUTH_", toupper(action)),
+    severity = ifelse(success, "INFO", "WARNING"),
+    details = list(
+      action = action,
+      user_id = user_id,
+      success = success,
+      method = method,
+      reason = reason,
+      attempts = get_login_attempts(user_id),
+      last_success = get_last_successful_login(user_id)
+    )
+  )
+  
+  write_security_log(event)
+  
+  # Alert on suspicious patterns
+  if (!success) {
+    check_brute_force(user_id)
+    if (get_failed_attempts(user_id) > 5) {
+      alert_security_team("BRUTE_FORCE_SUSPECTED", event)
+    }
+  }
+}
+
+# Track authentication patterns
+track_auth_patterns <- function() {
+  patterns <- list(
+    # Successful logins
+    successful_logins = count_events("AUTH_LOGIN", success = TRUE),
+    
+    # Failed attempts
+    failed_logins = count_events("AUTH_LOGIN", success = FALSE),
+    
+    # Password changes
+    password_changes = count_events("AUTH_PASSWORD_CHANGE"),
+    
+    # MFA events
+    mfa_challenges = count_events("AUTH_MFA_CHALLENGE"),
+    
+    # Session events
+    session_created = count_events("AUTH_SESSION_CREATE"),
+    session_expired = count_events("AUTH_SESSION_EXPIRE")
+  )
+  
+  return(patterns)
+}
+```
+
+### Authorization Events
+
+```r
+# Log authorization decisions
+log_authorization_event <- function(resource, action, user_id, granted, reason = NULL) {
+  event <- create_security_event(
+    event_type = "AUTHZ_DECISION",
+    severity = ifelse(granted, "INFO", "WARNING"),
+    details = list(
+      resource = resource,
+      action = action,
+      user_id = user_id,
+      granted = granted,
+      reason = reason,
+      user_role = get_user_role(user_id),
+      required_permission = get_required_permission(resource, action),
+      context = capture_authorization_context()
+    )
+  )
+  
+  write_security_log(event)
+  
+  # Track authorization failures
+  if (!granted) {
+    track_authorization_failure(user_id, resource, action)
+  }
+}
+
+# Monitor privilege escalation
+monitor_privilege_changes <- function() {
+  privilege_events <- get_events_by_type("AUTHZ_PRIVILEGE_CHANGE")
+  
+  for (event in privilege_events) {
+    # Check for suspicious escalation
+    if (is_suspicious_escalation(event)) {
+      alert_security_team("PRIVILEGE_ESCALATION", event)
+    }
+  }
+}
+```
+
+### Data Access Events
+
+```r
+# Log data access
+log_data_access <- function(table, operation, records_affected, user_id) {
+  event <- create_security_event(
+    event_type = "DATA_ACCESS",
+    severity = "INFO",
+    details = list(
+      table = table,
+      operation = operation,
+      records_affected = records_affected,
+      user_id = user_id,
+      query_hash = hash_query(get_last_query()),
+      sensitive_data = is_sensitive_table(table),
+      export = operation == "EXPORT"
+    )
+  )
+  
+  write_security_log(event)
+  
+  # Alert on bulk operations
+  if (records_affected > 1000 || operation == "EXPORT") {
+    alert_data_protection_team(event)
+  }
+  
+  # Track for GDPR compliance
+  if (is_personal_data(table)) {
+    log_gdpr_access(event)
+  }
+}
+
+# Monitor data exfiltration
+detect_data_exfiltration <- function() {
+  # Get recent data access events
+  recent_access <- get_recent_events("DATA_ACCESS", hours = 1)
+  
+  # Analyze patterns
+  by_user <- aggregate(
+    records_affected ~ user_id,
+    data = recent_access,
+    FUN = sum
+  )
+  
+  # Alert on anomalies
+  for (i in 1:nrow(by_user)) {
+    if (by_user$records_affected[i] > get_baseline(by_user$user_id[i]) * 10) {
+      alert_security_team("POSSIBLE_DATA_EXFILTRATION", by_user[i,])
+    }
+  }
+}
+```
+
+### Security Configuration Changes
+
+```r
+# Log security configuration changes
+log_security_config_change <- function(setting, old_value, new_value, changed_by) {
+  event <- create_security_event(
+    event_type = "CONFIG_CHANGE",
+    severity = "WARNING",
+    details = list(
+      setting = setting,
+      old_value = mask_sensitive_value(old_value),
+      new_value = mask_sensitive_value(new_value),
+      changed_by = changed_by,
+      change_approved = check_change_approval(setting, changed_by),
+      impact = assess_security_impact(setting, new_value)
+    )
+  )
+  
+  write_security_log(event)
+  
+  # Require approval for critical changes
+  if (is_critical_setting(setting)) {
+    if (!check_change_approval(setting, changed_by)) {
+      rollback_change(setting, old_value)
+      alert_security_team("UNAUTHORIZED_CONFIG_CHANGE", event)
+    }
+  }
+}
+```
+
+## Real-time Monitoring
+
+### Anomaly Detection
+
+```r
+# Real-time anomaly detection
+detect_anomalies <- function() {
+  # Statistical anomaly detection
+  anomaly_detector <- list(
+    
+    # Login anomalies
+    login_anomalies = function() {
+      detect_unusual_login_times()
+      detect_impossible_travel()
+      detect_new_device_login()
+      detect_concurrent_sessions()
+    },
+    
+    # Access pattern anomalies
+    access_anomalies = function() {
+      detect_unusual_data_access()
+      detect_privilege_abuse()
+      detect_lateral_movement()
+    },
+    
+    # System anomalies
+    system_anomalies = function() {
+      detect_resource_exhaustion()
+      detect_unusual_processes()
+      detect_file_integrity_violations()
+    }
+  )
+  
+  # Run detectors
+  for (detector in anomaly_detector) {
+    tryCatch({
+      detector()
+    }, error = function(e) {
+      log_error("ANOMALY_DETECTOR_ERROR", e$message)
+    })
+  }
+}
+
+# Impossible travel detection
+detect_impossible_travel <- function() {
+  user_sessions <- get_active_sessions()
+  
+  for (user_id in unique(user_sessions$user_id)) {
+    sessions <- filter(user_sessions, user_id == !!user_id)
+    
+    if (nrow(sessions) > 1) {
+      for (i in 1:(nrow(sessions)-1)) {
+        distance <- calculate_geo_distance(
+          sessions$ip_location[i],
+          sessions$ip_location[i+1]
+        )
+        time_diff <- difftime(
+          sessions$timestamp[i+1],
+          sessions$timestamp[i],
+          units = "hours"
+        )
+        
+        # Check if travel is impossible (>500 mph)
+        if (distance / as.numeric(time_diff) > 500) {
+          alert_security_team("IMPOSSIBLE_TRAVEL", list(
+            user_id = user_id,
+            locations = sessions$ip_location[c(i, i+1)],
+            time_diff = time_diff
+          ))
+        }
+      }
+    }
+  }
+}
+```
+
+### Security Metrics and KPIs
+
+```r
+# Calculate security metrics
+calculate_security_metrics <- function() {
+  metrics <- list(
+    # Authentication metrics
+    failed_login_rate = calculate_rate("AUTH_LOGIN", success = FALSE),
+    mfa_adoption = calculate_mfa_adoption(),
+    password_strength = assess_password_strength(),
+    
+    # Authorization metrics
+    privilege_escalations = count_events("AUTHZ_PRIVILEGE_CHANGE"),
+    access_violations = count_events("AUTHZ_DECISION", granted = FALSE),
+    
+    # Incident metrics
+    mean_time_to_detect = calculate_mttd(),
+    mean_time_to_respond = calculate_mttr(),
+    incidents_per_month = count_monthly_incidents(),
+    
+    # Compliance metrics
+    audit_coverage = calculate_audit_coverage(),
+    log_retention_compliance = check_retention_compliance(),
+    
+    # System health
+    log_volume = measure_log_volume(),
+    alert_fatigue = measure_alert_fatigue()
+  )
+  
+  return(metrics)
+}
+
+# Dashboard for security monitoring
+create_security_dashboard <- function() {
+  ui <- dashboardPage(
+    dashboardHeader(title = "Security Monitoring"),
+    dashboardSidebar(
+      sidebarMenu(
+        menuItem("Overview", tabName = "overview"),
+        menuItem("Authentication", tabName = "auth"),
+        menuItem("Threats", tabName = "threats"),
+        menuItem("Compliance", tabName = "compliance")
+      )
+    ),
+    dashboardBody(
+      tabItems(
+        tabItem(tabName = "overview",
+          fluidRow(
+            valueBoxOutput("failed_logins"),
+            valueBoxOutput("active_threats"),
+            valueBoxOutput("compliance_score")
+          ),
+          fluidRow(
+            box(plotlyOutput("security_timeline")),
+            box(DT::dataTableOutput("recent_alerts"))
+          )
+        )
+      )
+    )
+  )
+  
+  return(ui)
+}
+```
+
+## Incident Response Integration
+
+```r
+# Incident response workflow
+handle_security_incident <- function(incident) {
+  # Create incident record
+  incident_id <- create_incident_record(incident)
+  
+  # Immediate response
+  immediate_response <- list(
+    # Contain the threat
+    containment = contain_threat(incident),
+    
+    # Preserve evidence
+    evidence = preserve_evidence(incident),
+    
+    # Notify stakeholders
+    notifications = notify_incident_response_team(incident)
+  )
+  
+  # Investigation
+  investigation <- list(
+    # Collect forensic data
+    forensics = collect_forensic_data(incident),
+    
+    # Analyze root cause
+    root_cause = analyze_root_cause(incident),
+    
+    # Assess impact
+    impact = assess_incident_impact(incident)
+  )
+  
+  # Remediation
+  remediation <- list(
+    # Fix vulnerabilities
+    fixes = apply_security_fixes(incident),
+    
+    # Update controls
+    controls = update_security_controls(incident),
+    
+    # Verify remediation
+    verification = verify_remediation(incident)
+  )
+  
+  # Post-incident
+  post_incident <- list(
+    # Lessons learned
+    lessons = document_lessons_learned(incident),
+    
+    # Update procedures
+    procedures = update_incident_procedures(incident),
+    
+    # Report to compliance
+    compliance = report_to_compliance(incident)
+  )
+  
+  # Update incident record
+  update_incident_record(incident_id, list(
+    immediate_response = immediate_response,
+    investigation = investigation,
+    remediation = remediation,
+    post_incident = post_incident,
+    status = "RESOLVED",
+    resolved_at = Sys.time()
+  ))
+  
+  return(incident_id)
+}
+
+# Automated incident response
+automate_incident_response <- function(alert) {
+  response_actions <- list(
+    # Account lockout for brute force
+    BRUTE_FORCE = function(alert) {
+      lock_user_account(alert$user_id)
+      force_password_reset(alert$user_id)
+      notify_user(alert$user_id, "Security alert: Multiple failed login attempts")
+    },
+    
+    # Block IP for scanning
+    PORT_SCAN = function(alert) {
+      block_ip_address(alert$source_ip)
+      log_to_firewall(alert$source_ip)
+    },
+    
+    # Isolate for malware
+    MALWARE_DETECTED = function(alert) {
+      isolate_system(alert$hostname)
+      initiate_scan(alert$hostname)
+      create_incident_ticket(alert)
+    }
+  )
+  
+  # Execute response if automated
+  if (alert$type %in% names(response_actions)) {
+    response_actions[[alert$type]](alert)
+  }
+}
+```
+
+## Log Storage and Retention
+
+```r
+# Secure log storage
+store_security_logs <- function(logs) {
+  # Encrypt logs before storage
+  encrypted_logs <- encrypt_logs(logs)
+  
+  # Store with integrity protection
+  storage_result <- store_with_integrity(encrypted_logs)
+  
+  # Replicate to multiple locations
+  replicate_logs(encrypted_logs, locations = c("primary", "secondary", "archive"))
+  
+  # Update index for searching
+  update_log_index(logs)
+  
+  return(storage_result)
+}
+
+# Log rotation and archival
+rotate_logs <- function() {
+  current_date <- Sys.Date()
+  
+  # Rotate daily logs
+  daily_logs <- list.files(
+    path = "/var/log/mamba",
+    pattern = paste0("security-", format(current_date - 1, "%Y%m%d"), "\\.log$"),
+    full.names = TRUE
+  )
+  
+  for (log_file in daily_logs) {
+    # Compress
+    compressed <- compress_log(log_file)
+    
+    # Archive
+    archive_log(compressed)
+    
+    # Verify archive
+    if (verify_archive(compressed)) {
+      unlink(log_file)
+    }
+  }
+  
+  # Clean old logs based on retention policy
+  enforce_retention_policy()
+}
+
+# Tamper-proof audit trail
+create_audit_trail <- function(events) {
+  # Create blockchain-style linked list
+  for (i in seq_along(events)) {
+    if (i == 1) {
+      events[[i]]$previous_hash <- "GENESIS"
+    } else {
+      events[[i]]$previous_hash <- events[[i-1]]$hash
+    }
+    
+    # Recalculate hash with previous hash
+    events[[i]]$hash <- calculate_event_hash(events[[i]])
+  }
+  
+  # Store in immutable storage
+  store_immutable(events)
+  
+  return(events)
+}
+```
+
+## Compliance and Reporting
+
+```r
+# Generate compliance reports
+generate_compliance_report <- function(standard = "SOC2") {
+  report <- list(
+    metadata = list(
+      standard = standard,
+      period = list(
+        start = Sys.Date() - 30,
+        end = Sys.Date()
+      ),
+      generated_at = Sys.time(),
+      generated_by = get_current_user()
+    )
+  )
+  
+  # Standard-specific requirements
+  if (standard == "SOC2") {
+    report$controls <- list(
+      CC6.1 = verify_logical_access_controls(),
+      CC6.2 = verify_user_authentication(),
+      CC6.3 = verify_privilege_management(),
+      CC7.1 = verify_system_monitoring(),
+      CC7.2 = verify_anomaly_detection()
+    )
+  } else if (standard == "PCI") {
+    report$requirements <- list(
+      req_10.1 = verify_audit_trails(),
+      req_10.2 = verify_user_actions_logged(),
+      req_10.3 = verify_log_details(),
+      req_10.4 = verify_time_synchronization(),
+      req_10.5 = verify_log_security()
+    )
+  } else if (standard == "GDPR") {
+    report$articles <- list(
+      art_32 = verify_security_measures(),
+      art_33 = verify_breach_notification(),
+      art_35 = verify_privacy_impact()
+    )
+  }
+  
+  # Generate evidence
+  report$evidence <- collect_compliance_evidence(standard)
+  
+  # Sign report
+  report$signature <- sign_report(report)
+  
+  return(report)
+}
+
+# Audit log analysis
+analyze_audit_logs <- function(timeframe = "last_30_days") {
+  logs <- retrieve_logs(timeframe)
+  
+  analysis <- list(
+    # User activity
+    user_activity = analyze_user_activity(logs),
+    
+    # Access patterns
+    access_patterns = analyze_access_patterns(logs),
+    
+    # Security events
+    security_events = analyze_security_events(logs),
+    
+    # Compliance violations
+    violations = detect_compliance_violations(logs),
+    
+    # Trends
+    trends = analyze_security_trends(logs)
+  )
+  
+  return(analysis)
+}
+```
+
+## Alert Management
+
+```r
+# Alert routing and escalation
+route_security_alert <- function(alert) {
+  severity_routing <- list(
+    CRITICAL = c("security_team", "ciso", "ops_team"),
+    HIGH = c("security_team", "ops_team"),
+    MEDIUM = c("security_team"),
+    LOW = c("security_analyst"),
+    INFO = c()
+  )
+  
+  recipients <- severity_routing[[alert$severity]]
+  
+  # Send notifications
+  for (recipient in recipients) {
+    notify_recipient(recipient, alert)
+  }
+  
+  # Escalation timer
+  if (alert$severity %in% c("CRITICAL", "HIGH")) {
+    schedule_escalation(alert, minutes = 15)
+  }
+  
+  # Create incident if critical
+  if (alert$severity == "CRITICAL") {
+    create_incident_from_alert(alert)
+  }
+}
+
+# Alert aggregation and correlation
+correlate_alerts <- function() {
+  recent_alerts <- get_recent_alerts(minutes = 60)
+  
+  # Group related alerts
+  correlated <- list()
+  
+  # Correlate by user
+  by_user <- split(recent_alerts, recent_alerts$user_id)
+  for (user_alerts in by_user) {
+    if (length(user_alerts) > 5) {
+      correlated <- append(correlated, list(
+        type = "MULTIPLE_ALERTS_SINGLE_USER",
+        alerts = user_alerts
+      ))
+    }
+  }
+  
+  # Correlate by source IP
+  by_ip <- split(recent_alerts, recent_alerts$source_ip)
+  for (ip_alerts in by_ip) {
+    if (length(ip_alerts) > 10) {
+      correlated <- append(correlated, list(
+        type = "MULTIPLE_ALERTS_SINGLE_IP",
+        alerts = ip_alerts
+      ))
+    }
+  }
+  
+  # Create meta-alerts
+  for (correlation in correlated) {
+    create_meta_alert(correlation)
+  }
+}
+```
+
+## Integration Requirements
+
+### SIEM Integration
+
+```r
+# Send logs to SIEM
+send_to_siem <- function(event) {
+  siem_endpoint <- Sys.getenv("SIEM_ENDPOINT")
+  siem_token <- Sys.getenv("SIEM_TOKEN")
+  
+  # Format for SIEM
+  siem_event <- format_for_siem(event)
+  
+  # Send via API
+  response <- httr::POST(
+    url = siem_endpoint,
+    body = siem_event,
+    encode = "json",
+    httr::add_headers(
+      Authorization = paste("Bearer", siem_token),
+      `Content-Type` = "application/json"
+    )
+  )
+  
+  # Verify delivery
+  if (httr::status_code(response) != 200) {
+    fallback_to_local_queue(event)
+  }
+}
+```
+
+## Related Rules and Principles
+
+### Security Implementation Rules
+- **R250**: Logging standards and formats
+- **R251**: Log retention requirements
+- **R252**: Incident response procedures
+- **R253**: Alert threshold configuration
+- **R254**: SIEM integration requirements
+
+### Integration with Other MPs
+- **MP012**: Change Tracking
+- **MP053**: Information Flow Transparency
+- **MP110**: Security Credentials Management
+- **MP112**: Access Control and Authorization
+
+## Compliance Requirements
+
+- **SOC 2**: CC7.1-CC7.4 Monitoring requirements
+- **PCI DSS**: Requirement 10 - Logging and monitoring
+- **GDPR**: Article 33 - Breach notification
+- **ISO 27001**: A.12.4 - Logging and monitoring
+- **NIST 800-53**: AU - Audit and accountability
+
+## Validation Checklist
+
+- [ ] All security events logged
+- [ ] Real-time monitoring active
+- [ ] Anomaly detection configured
+- [ ] Incident response integrated
+- [ ] Logs encrypted and tamper-proof
+- [ ] Retention policies enforced
+- [ ] SIEM integration functional
+- [ ] Compliance reports automated
+- [ ] Alert routing configured
+- [ ] Forensic capabilities ready
+
+---
+
+**Visibility is security**: You cannot protect what you cannot see. Log everything, monitor continuously, respond immediately.

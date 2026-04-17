@@ -1,0 +1,317 @@
+---
+title: "UI_R006: 三元組預設值規則"
+subtitle: "所有預設值、佔位符資料和備援選項必須定義在 UI-Server-Defaults 三元組的 Defaults 組件中，而不是在 app.R 檔案、YAML 配置或其他應用程式碼中。app.R 檔案應該只專注於結構和組合，依賴三元組組件來處理包括預設值在內的實施細節"
+chapter: "CH04"
+category: "rule"
+number: "UI_R006"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article: 
+  number: 6
+  title: "三元組預設值規則"
+related_to:
+  - "SO_P007: app.R 是全域原則"
+  - "UI_R001: UI-Server-Defaults 三元組規則"
+  - "MP017: 關注點分離原則"
+  - "DEV_R009: 初始化來源規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第六條：三元組預設值規則 {#overview}
+
+**UI組件法第六條（三元組預設值規則）**
+
+所有預設值、佔位符資料和備援選項必須定義在 UI-Server-Defaults 三元組的 Defaults 組件中，而不是在 app.R 檔案、YAML 配置或其他應用程式碼中。雖然參數（可配置值）應該在 YAML 配置中指定，但當參數未指定時的實際預設值必須位於 Defaults 組件中。app.R 檔案應該只專注於結構和組合，依賴三元組組件來處理包括預設值在內的實施細節。
+
+:::{.callout-important}
+## 核心要求
+透過將所有預設值集中在 Defaults 組件中，此規則使應用程式碼保持簡潔，提高了組件的可測試性和韌性。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：預設值放置位置 {#default-values-placement}
+
+**預設值必須放置在：**
+
+1. **Defaults 組件**：所有預設值必須定義在 Defaults 組件檔案中（例如 `componentDefaults.R`）
+2. **Defaults 函數**：預設值必須由 Defaults 組件中的函數返回
+3. **組件特定預設值**：每個組件必須有自己的 Defaults 組件和相關預設值
+4. **全面覆蓋**：必須為組件使用的所有輸入、輸出和反應式提供預設值
+
+## 第二款：禁止的預設值位置 {#prohibited-default-locations}
+
+**預設值不得定義在：**
+
+1. **App.R 檔案**：主應用程式檔案不應包含任何預設值
+2. **UI 組件**：UI 組件應該引用預設值，而不是定義它們
+3. **Server 組件**：Server 組件應該在需要時使用預設值，而不是定義它們
+4. **全域變數**：預設值不應儲存在全域變數中
+
+## 第三款：預設值與配置參數的區別 {#defaults-vs-configuration}
+
+**預設值和參數之間有明確的區別：**
+
+1. **預設值（在三元組中）**：當參數未指定時的備援值
+   - 必須定義在 Defaults 組件檔案中
+   - 應提供合理、可用的值
+   - 處理所有可能的未定義參數情況
+   - 允許組件在沒有外部配置的情況下運作
+
+2. **參數（在 YAML 中）**：覆蓋預設值的可配置值
+   - 應在 YAML 配置中指定
+   - 定義定位、連接和可自訂行為
+   - 可以省略，此時應用三元組的預設值
+   - 專注於應用程式之間需要改變的內容
+
+3. **預設參數處理**：當 YAML 中未指定參數時
+   - 參數應預設為空而不是硬編碼值
+   - Defaults 組件應優雅地處理這種情況
+   - 永遠不要在 app.R 或 server 程式碼中設置預設參數值
+
+## 第四款：預設值使用時機 {#default-values-usage}
+
+**預設值應該用於：**
+
+1. **資料不可用時**：作為預期資料來源不可用時的備援
+2. **參數未定義時**：當 YAML 配置省略特定參數時
+3. **用於演示**：作為演示用途的範例資料
+4. **開發期間**：作為開發期間的佔位符
+5. **用於測試**：作為組件測試的一致測試資料
+
+## 第五款：預設值結構 {#default-values-structure}
+
+**預設值應該結構化為：**
+
+1. **型別返回**：返回與 UI 和 server 組件期望匹配的型別
+2. **完整物件**：具有所有必需屬性的完整物件
+3. **真實值**：看起來真實的資料，而不是空的或佔位符內容
+4. **國際化內容**：應用程式適當語言的內容
+5. **優雅降級**：允許組件以有限功能運作的值
+
+# 第二項：實施範例 {#implementation-examples}
+
+## 第一款：三元組結構中的正確預設值 {#proper-defaults-in-triple}
+
+**SidebarDefaults.R：**
+```r
+sidebarDefaults <- function() {
+  list(
+    # 預設產品類別
+    product_categories = list(
+      "服裝 (Clothing)" = "clothing",
+      "電子產品 (Electronics)" = "electronics",
+      "家居用品 (Home Goods)" = "homegoods"
+    ),
+    
+    # 預設地理區域
+    geographic_regions = list(
+      "全部 (All)" = "all",
+      "北部 (North)" = "north",
+      "南部 (South)" = "south"
+    ),
+    
+    # 預設客戶區段
+    customer_segments = list(
+      "高價值忠誠客戶 (High-Value Loyal)" = "high_value_loyal",
+      "休眠顧客 (Dormant)" = "dormant",
+      "新顧客 (New Customers)" = "new_customers"
+    )
+  )
+}
+```
+
+**SidebarServer.R（使用預設值）：**
+```r
+sidebarServer <- function(id, data_source = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 取得預設值
+    defaults <- sidebarDefaults()
+    
+    # 使用資料或預設值更新 UI
+    observe({
+      product_data <- if (!is.null(data_source) && !is.null(data_source$products)) {
+        data_source$products()
+      } else {
+        NULL
+      }
+      
+      if (!is.null(product_data) && nrow(product_data) > 0) {
+        # 使用實際資料
+        categories <- setNames(
+          as.list(product_data$category_id),
+          product_data$category_name
+        )
+      } else {
+        # 資料不可用時使用預設值
+        categories <- defaults$product_categories
+      }
+      
+      updateSelectInput(session, "product_category", choices = categories)
+    })
+  })
+}
+```
+
+**App.R（無預設值）：**
+```r
+ui <- page_navbar(
+  title = config$title,
+  
+  nav_panel(
+    title = "微觀分析",
+    page_sidebar(
+      sidebar = sidebarUI("app_sidebar"),
+      microCustomerUI("customer_module")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # 使用資料來源初始化側邊欄
+  sidebarServer("app_sidebar", data_source = reactive({
+    # 從配置或資料庫取得資料
+    # 這裡沒有預設值 - 那些來自 sidebarDefaults
+    list(
+      products = function() { productData() },
+      regions = function() { regionData() }
+    )
+  }))
+  
+  # 初始化客戶模組
+  microCustomerServer("customer_module", data_source = customerData)
+}
+```
+
+## 第二款：App 中的錯誤預設值（違反規則）{#incorrect-defaults-in-app}
+
+```r
+# 錯誤：預設值定義在 app.R 中
+ui <- page_navbar(
+  title = config$title,
+  
+  nav_panel(
+    title = "微觀分析",
+    page_sidebar(
+      sidebar = sidebarUI("app_sidebar"),
+      microCustomerUI("customer_module")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # 錯誤：預設值直接定義在 server 函數中
+  default_products <- data.frame(
+    category_id = c("electronics", "clothing", "homegoods"),
+    category_name = c("電子產品", "服裝", "家居用品")
+  )
+  
+  default_regions <- data.frame(
+    region_id = c("north", "south", "east", "west"),
+    region_name = c("北部", "南部", "東部", "西部")
+  )
+  
+  # 使用資料來源中的預設值初始化側邊欄
+  sidebarServer("app_sidebar", data_source = reactive({
+    list(
+      # 錯誤：使用在 app.R 中定義的預設值
+      products = function() { default_products },
+      regions = function() { default_regions }
+    )
+  }))
+}
+```
+
+# 第三項：常見錯誤和解決方案 {#common-errors}
+
+## 第一款：App.R 中的硬編碼預設值 {#error-hardcoded-defaults}
+
+**問題**：預設值直接硬編碼在 app.R 檔案中。
+
+**解決方案**：
+- 將所有預設值移至 Defaults 組件
+- 透過組件的預設函數引用預設值
+- 在 app.R 中使用可在需要時回退到預設值的資料來源
+
+## 第二款：不完整的預設值 {#error-incomplete-defaults}
+
+**問題**：預設值未涵蓋組件使用的所有輸入和輸出。
+
+**解決方案**：
+- 確保預設值是全面的
+- 創建代表實際使用案例的範例資料
+- 僅使用預設值測試組件以確保完整性
+
+## 第三款：不一致的預設結構 {#error-inconsistent-structure}
+
+**問題**：預設值與 UI 和 server 組件中的預期結構不匹配。
+
+**解決方案**：
+- 將預設結構與預期的資料結構對齊
+- 使用與實際資料相同的型別和命名慣例
+- 在 Defaults 組件中記錄預期的結構
+
+## 第四款：全域預設值 {#error-global-defaults}
+
+**問題**：使用全域變數作為預設值。
+
+**解決方案**：
+- 將預設值封裝在組件特定的函數中
+- 避免使用全域變數作為預設值
+- 如需要，使用函數閉包來維護狀態
+
+# 第四項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與 app.R 是全域原則的關聯（SO_P007）{#relation-to-app-r-global}
+
+此規則透過以下方式支援 app.R 是全域：
+1. **移除細節**：從 app.R 中移除如預設值等實施細節
+2. **專注於結構**：保持 app.R 專注於結構和組合
+3. **可攜性**：使 app.R 在應用程式間更具可攜性
+4. **關注點分離**：分離應用程式結構與組件實施
+
+## 第二款：與 UI-Server-Defaults 三元組規則的關聯（UI_R001）{#relation-to-ui-server-defaults}
+
+此規則透過以下方式實施 UI-Server-Defaults 三元組規則：
+1. **正確使用**：確保正確使用 Defaults 組件
+2. **完整三元組**：強調所有三個組件的重要性
+3. **清晰責任**：釐清每個組件的責任
+4. **一致性**：確保所有 UI-Server-Defaults 三元組的一致性
+
+## 第三款：與關注點分離原則的關聯（MP017）{#relation-to-separation-of-concerns}
+
+此規則透過以下方式支援關注點分離：
+1. **資料與結構**：分離資料關注點與結構關注點
+2. **預設值與即時資料**：分離預設值與即時資料
+3. **組件獨立性**：透過自包含的預設值支援組件獨立性
+4. **測試隔離**：能夠使用預設值隔離測試組件
+
+# 第五項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **更乾淨的應用程式碼**：App.R 保持乾淨並專注於結構
+2. **組件獨立性**：組件更加自包含和獨立
+3. **更好的測試**：組件可以使用預設值獨立測試
+4. **更容易維護**：預設值集中且更容易更新
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **韌性組件**：即使資料不可用時組件也能運作
+2. **一致體驗**：使用者在資料載入時看到一致的佔位符
+3. **開發效率**：開發人員可以在沒有真實資料的情況下開發組件
+4. **文件化**：預設值作為預期資料結構的文件
+
+---
+
+*基於：UI組件法第六條*  
+*相關連結：[SO_P007 app.R 是全域原則](../../CH01_structure_organization/principles/SO_P007_app_r_is_global.qmd), [UI_R001 UI-Server-Defaults 三元組規則](../UI_R001_ui_server_defaults_ntuple.qmd)*

@@ -1,0 +1,638 @@
+---
+title: "UI_P008: 組件組合原則"
+subtitle: "應用程式應透過組合具有明確介面的小型、專業化組件來構建。組件組合必須遵循一致的模式進行通訊、嵌套和狀態共享，同時維護清晰的邊界和責任"
+chapter: "CH04"
+category: "principle"
+number: "UI_P008"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI組件法"
+article-number: 
+  number: 8
+  title: "組件組合原則"
+related_to:
+  - "MP016: 模組化原則"
+  - "MP017: 關注點分離"
+  - "SO_P004: 應用底層建構原則"
+  - "UI_R001: UI-伺服器-預設值三元組"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第八條：組件組合原則 {#overview}
+
+**UI組件法第八條（組件組合原則）**
+
+應用程式應透過組合具有明確介面的小型、專業化組件來構建。組件組合必須遵循一致的模式進行通訊、嵌套和狀態共享，同時維護清晰的邊界和責任。
+
+:::{.callout-important}
+## 核心原則
+透過合成模式建構複雜應用程式，使用小型、專注的組件，這些組件具有清晰的介面、一致的通訊模式和明確的責任邊界。
+:::
+
+# 第一項：組合模式分類 {#composition-patterns}
+
+## 第一款：階層式組合 {#hierarchical-composition}
+
+**組件階層結構：**
+
+1. **根組件**：管理路由和全域狀態的頂層應用容器
+2. **區段組件**：代表主要應用程式區段的組件
+3. **功能組件**：實施特定功能的組件
+4. **基礎組件**：提供基本UI元素的可重用原子組件
+
+**階層範例：**
+```
+App                        # 根組件
+├── Dashboard              # 區段組件
+│   ├── MetricsPanel       # 功能組件  
+│   │   ├── MetricCard     # 基礎組件
+│   │   └── TrendChart     # 基礎組件
+│   └── ActivityFeed       # 功能組件
+└── Settings               # 區段組件
+    ├── UserProfile        # 功能組件
+    └── Preferences        # 功能組件
+```
+
+## 第二款：通訊模式 {#communication-patterns}
+
+**組件通訊策略：**
+
+1. **父子屬性傳遞**：父組件向子組件傳遞資料和回調函數
+2. **子父事件通知**：子組件透過回調函數通知父組件變更
+3. **兄弟組件通訊**：兄弟組件透過共享父組件狀態通訊
+4. **遠距離通訊**：遠距離組件透過共享服務或狀態通訊
+
+## 第三款：組合類型 {#composition-types}
+
+**不同組合類型的目的：**
+
+1. **包含式組合**：父組件包裝子組件並控制其排列
+2. **專業化組合**：組件擴展或專業化其他組件
+3. **功能式組合**：組件結合創建功能鏈
+4. **佈局組合**：組件結合創建佈局結構
+
+# 第二項：組件介面設計 {#component-interface-design}
+
+## 第一款：標準介面實施 {#standard-interface-implementation}
+
+**指標卡組件範例：**
+```r
+#' 指標卡組件UI
+#'
+#' @param id 模組ID
+#' @param title 卡片標題
+#' @param icon 可選圖示名稱
+#' @param color 卡片主題色彩
+#' @param elevation 卡片立體度 (1-5)
+#'
+#' @return UI元素
+#' @export
+metricCardUI <- function(id, title, icon = NULL, color = "default", elevation = 3) {
+  ns <- NS(id)
+  
+  card(
+    id = ns("card"),
+    class = paste0("metric-card metric-card-", color),
+    style = paste0("--card-elevation: ", elevation, "px;"),
+    
+    # 帶標題和圖示的卡片標頭
+    card_header(
+      div(class = "metric-card-header",
+        if (!is.null(icon)) icon(icon) else NULL,
+        h4(title)
+      )
+    ),
+    
+    # 帶指標值的卡片主體（由server渲染）
+    card_body(
+      div(class = "metric-value-container",
+        textOutput(ns("value")),
+        div(class = "metric-trend", 
+          uiOutput(ns("trend"))
+        )
+      )
+    )
+  )
+}
+
+#' 指標卡組件伺服器
+#'
+#' @param id 模組ID
+#' @param value_provider 提供顯示值的反應式表達式
+#' @param previous_value_provider 前期值的可選反應式（用於趨勢）
+#' @param formatter 格式化值的函數（預設：千分位格式）
+#'
+#' @return 帶卡片狀態的反應式列表
+#' @export
+metricCardServer <- function(
+  id, 
+  value_provider, 
+  previous_value_provider = NULL,
+  formatter = function(x) format(x, big.mark = ",")
+) {
+  moduleServer(id, function(input, output, session) {
+    # 取得當前值
+    current_value <- reactive({
+      req(value_provider())
+      value_provider()
+    })
+    
+    # 渲染值
+    output$value <- renderText({
+      formatter(current_value())
+    })
+    
+    # 如果提供前期值則計算並渲染趨勢
+    output$trend <- renderUI({
+      # 如果沒有前期值提供者則跳過
+      if (is.null(previous_value_provider)) return(NULL)
+      
+      req(previous_value_provider())
+      prev_value <- previous_value_provider()
+      curr_value <- current_value()
+      
+      if (is.na(prev_value) || is.na(curr_value) || prev_value == 0) {
+        return(NULL)
+      }
+      
+      # 計算百分比變化
+      pct_change <- (curr_value - prev_value) / abs(prev_value) * 100
+      
+      # 確定方向和外觀
+      if (pct_change > 0) {
+        div(class = "trend positive",
+          icon("arrow-up"),
+          sprintf("%.1f%%", pct_change)
+        )
+      } else if (pct_change < 0) {
+        div(class = "trend negative",
+          icon("arrow-down"),
+          sprintf("%.1f%%", abs(pct_change))
+        )
+      } else {
+        div(class = "trend neutral",
+          icon("minus"),
+          "0.0%"
+        )
+      }
+    })
+    
+    # 回傳反應式值
+    return(list(
+      value = current_value
+    ))
+  })
+}
+```
+
+# 第三項：組合實施策略 {#composition-implementation}
+
+## 第一款：父子組合 {#parent-child-composition}
+
+**儀錶板指標面板實施：**
+```r
+#' 儀錶板指標面板UI
+#'
+#' @param id 模組ID
+#' @return UI元素
+#' @export
+dashboardMetricsPanelUI <- function(id) {
+  ns <- NS(id)
+  
+  div(class = "metrics-panel",
+    h3("關鍵指標"),
+    
+    div(class = "metrics-grid",
+      # 具有不同配置的組合指標卡
+      metricCardUI(ns("revenue"), "總收入", icon = "dollar-sign", color = "primary"),
+      metricCardUI(ns("customers"), "活躍客戶", icon = "users", color = "success"),
+      metricCardUI(ns("orders"), "新訂單", icon = "shopping-cart"),
+      metricCardUI(ns("conversion"), "轉換率", icon = "percentage", color = "info")
+    )
+  )
+}
+
+#' 儀錶板指標面板伺服器
+#'
+#' @param id 模組ID
+#' @param data_source 反應式資料來源
+#' @return 帶面板狀態的反應式列表
+#' @export
+dashboardMetricsPanelServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # 當前期間資料
+    current_data <- reactive({
+      req(data_source())
+      data_source()$current
+    })
+    
+    # 前期期間資料
+    previous_data <- reactive({
+      req(data_source())
+      data_source()$previous
+    })
+    
+    # 初始化子組件
+    revenue <- metricCardServer("revenue", 
+      value_provider = reactive({ current_data()$total_revenue }),
+      previous_value_provider = reactive({ previous_data()$total_revenue }),
+      formatter = function(x) paste0("$", format(x, big.mark = ","))
+    )
+    
+    customers <- metricCardServer("customers",
+      value_provider = reactive({ current_data()$active_customers }),
+      previous_value_provider = reactive({ previous_data()$active_customers })
+    )
+    
+    orders <- metricCardServer("orders", 
+      value_provider = reactive({ current_data()$new_orders }),
+      previous_value_provider = reactive({ previous_data()$new_orders })
+    )
+    
+    conversion <- metricCardServer("conversion", 
+      value_provider = reactive({ current_data()$conversion_rate * 100 }),
+      previous_value_provider = reactive({ previous_data()$conversion_rate * 100 }),
+      formatter = function(x) paste0(format(x, nsmall = 1, digits = 1), "%")
+    )
+    
+    # 回傳面板狀態
+    return(list(
+      metrics = reactive({
+        list(
+          revenue = revenue$value(),
+          customers = customers$value(),
+          orders = orders$value(),
+          conversion = conversion$value()
+        )
+      })
+    ))
+  })
+}
+```
+
+## 第二款：專業化組合 {#specialization-composition}
+
+**組件專業化實施：**
+```r
+#' 建立組件的專業化版本
+#'
+#' @param base_component 要專業化的基礎組件函數
+#' @param default_args 要覆蓋的預設參數
+#' @return 具有預設值的新組件函數
+#' @export
+specialize_component <- function(base_component, default_args) {
+  function(...) {
+    # 結合提供的參數與預設值，提供的參數優先
+    args <- c(list(...), default_args[!names(default_args) %in% names(list(...))])
+    do.call(base_component, args)
+  }
+}
+
+# 建立指標卡的專業化版本
+successMetricCard <- specialize_component(metricCardUI, 
+  list(color = "success", elevation = 4, icon = "check-circle")
+)
+
+warningMetricCard <- specialize_component(metricCardUI, 
+  list(color = "warning", elevation = 2, icon = "exclamation-triangle")
+)
+
+# 在組件中的使用
+div(
+  successMetricCard(id = ns("completion"), title = "完成率"),
+  warningMetricCard(id = ns("errors"), title = "錯誤計數")
+)
+```
+
+## 第三款：功能式組合 {#functional-composition}
+
+**資料處理管道組合：**
+```r
+#' 資料處理管道組合
+#'
+#' @param data_source 反應式資料來源
+#' @param transformations 要應用的轉換函數列表
+#' @return 具有轉換資料的反應式表達式
+#' @export
+compose_data_pipeline <- function(data_source, transformations) {
+  # 建立反應式管道
+  result <- reactive({
+    # 從來源資料開始
+    current_data <- data_source()
+    
+    # 如果沒有資料或沒有轉換則跳過
+    if (is.null(current_data) || length(transformations) == 0) {
+      return(current_data)
+    }
+    
+    # 按順序應用每個轉換
+    for (transform_fn in transformations) {
+      current_data <- transform_fn(current_data)
+    }
+    
+    return(current_data)
+  })
+  
+  return(result)
+}
+
+# 在組件中的使用
+data_pipeline <- compose_data_pipeline(
+  data_source = raw_data,
+  transformations = list(
+    function(data) { filter(data, region %in% input$selected_regions) },
+    function(data) { mutate(data, revenue_per_customer = revenue / customers) },
+    function(data) { arrange(data, desc(revenue_per_customer)) }
+  )
+)
+```
+
+## 第四款：佈局組合 {#layout-composition}
+
+**雙欄佈局實施：**
+```r
+#' 建立雙欄佈局
+#'
+#' @param left_component 左欄UI
+#' @param right_component 右欄UI
+#' @param left_width 左欄寬度 (1-12)
+#' @param container_class 容器的額外CSS類別
+#' @return UI元素
+#' @export
+twoColumnLayout <- function(left_component, right_component, left_width = 4, container_class = "") {
+  right_width <- 12 - left_width
+  
+  fluidRow(
+    class = paste("two-column-layout", container_class),
+    
+    column(left_width, left_component),
+    column(right_width, right_component)
+  )
+}
+
+# 使用範例
+twoColumnLayout(
+  left_component = filterPanelUI(ns("filters")),
+  right_component = dataTableUI(ns("results")),
+  left_width = 3,
+  container_class = "data-explorer"
+)
+```
+
+# 第四項：狀態管理模式 {#state-management-patterns}
+
+## 第一款：狀態向下傳遞 {#passing-state-down}
+
+**向下傳遞狀態的父組件：**
+```r
+#' 向下傳遞狀態的父組件
+parentComponentServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # 為所有子組件處理資料
+    processed_data <- reactive({
+      req(data_source())
+      process_data(data_source())
+    })
+    
+    # 設定過濾
+    filtered_data <- reactive({
+      req(processed_data())
+      filter_data(processed_data(), input$filter_criteria)
+    })
+    
+    # 使用處理後的資料初始化子組件
+    child1 <- child1Server("child1", filtered_data)
+    child2 <- child2Server("child2", filtered_data)
+    
+    # 必要時處理子組件互動
+    observe({
+      req(child1$selected_product())
+      # 對子組件狀態變化做出反應
+    })
+  })
+}
+```
+
+## 第二款：狀態向上提升 {#lifting-state-up}
+
+**將狀態提升到父組件的子組件：**
+```r
+#' 將狀態提升到父組件的子組件
+childComponentServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # 本地狀態
+    selected_product <- reactiveVal(NULL)
+    
+    # 處理選取
+    observeEvent(input$select, {
+      product_id <- input$select
+      product_data <- data_source()[data_source()$id == product_id, ]
+      selected_product(product_data)
+    })
+    
+    # 將選取的產品回傳給父組件
+    return(list(
+      selected_product = selected_product
+    ))
+  })
+}
+
+#' 接收提升狀態的父組件
+parentComponentServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # 初始化子組件
+    child <- childComponentServer("child", data_source)
+    
+    # 使用來自子組件的提升狀態
+    selected_details <- reactive({
+      req(child$selected_product())
+      generate_details(child$selected_product())
+    })
+    
+    # 使用提升的狀態
+    output$details <- renderUI({
+      req(selected_details())
+      # 渲染詳情
+    })
+  })
+}
+```
+
+# 第五項：常見組合模式 {#common-composition-patterns}
+
+## 第一款：容器/展示模式 {#container-presentational-pattern}
+
+**分離資料管理與展示：**
+```r
+#' 展示組件 - 僅渲染UI，無資料處理
+userCardUI <- function(id) {
+  ns <- NS(id)
+  div(class = "user-card",
+    div(class = "user-avatar", uiOutput(ns("avatar"))),
+    div(class = "user-info",
+      h4(textOutput(ns("name"))),
+      p(textOutput(ns("role"))),
+      p(textOutput(ns("email")))
+    )
+  )
+}
+
+#' 容器組件 - 處理資料獲取/處理
+userCardContainer <- function(id, user_id) {
+  ui <- userCardUI(id)
+  
+  server <- function(id) {
+    moduleServer(id, function(input, output, session) {
+      # 獲取用戶資料
+      user_data <- reactive({
+        req(user_id())
+        get_user_data(user_id())
+      })
+      
+      # 渲染用戶詳情
+      output$avatar <- renderUI({
+        req(user_data())
+        img(src = user_data()$avatar_url, alt = "用戶頭像")
+      })
+      
+      output$name <- renderText({
+        req(user_data())
+        user_data()$name
+      })
+      
+      output$role <- renderText({
+        req(user_data())
+        user_data()$role
+      })
+      
+      output$email <- renderText({
+        req(user_data())
+        user_data()$email
+      })
+    })
+  }
+  
+  list(ui = ui, server = server)
+}
+```
+
+## 第二款：高階組件模式 {#higher-order-component-pattern}
+
+**增強組件的附加功能：**
+```r
+#' 為任何組件添加載入狀態
+#'
+#' @param component_ui 組件的UI函數
+#' @return 增強的UI函數
+#' @export
+withLoading <- function(component_ui) {
+  function(id, ...) {
+    ns <- NS(id)
+    
+    div(class = "with-loading",
+      # 載入覆蓋層
+      div(id = ns("loading_overlay"), class = "loading-overlay",
+        div(class = "loading-spinner",
+          icon("spinner", class = "fa-spin"),
+          "載入中..."
+        )
+      ),
+      
+      # 包裝的組件
+      component_ui(id, ...)
+    )
+  }
+}
+
+#' 載入狀態的伺服器端實施
+#'
+#' @param component_server 組件的伺服器函數
+#' @param data_source 要檢查的反應式資料來源
+#' @return 增強的伺服器函數
+#' @export
+withLoadingServer <- function(component_server, data_source) {
+  function(id, ...) {
+    moduleServer(id, function(input, output, session) {
+      # 根據資料可用性顯示/隱藏載入
+      observe({
+        is_loading <- is.null(data_source()) || isTRUE(attr(data_source(), "loading", exact = TRUE))
+        
+        if (is_loading) {
+          shinyjs::show(id = "loading_overlay")
+        } else {
+          shinyjs::hide(id = "loading_overlay")
+        }
+      })
+      
+      # 初始化包裝的組件
+      component_server(id, ...)
+    })
+  }
+}
+
+# 使用範例
+UserCardWithLoading <- withLoading(userCardUI)
+userCardWithLoadingServer <- withLoadingServer(userCardServer, user_data)
+```
+
+# 第六項：組合反模式 {#composition-anti-patterns}
+
+## 第一款：緊密耦合組件 {#tightly-coupled-components}
+
+**問題**：組件對父組件或兄弟組件實施細節有隱性依賴  
+**解決方案**：定義清晰的介面並使用依賴注入
+
+## 第二款：屬性鑽探 {#prop-drilling}
+
+**問題**：透過許多不使用這些屬性的中間組件傳遞屬性  
+**解決方案**：使用組合模式避免深層屬性鑽探
+
+## 第三款：巨型組件 {#mega-components}
+
+**問題**：試圖做太多事情的大型組件  
+**解決方案**：分解為具有單一責任的較小、專注組件
+
+## 第四款：全域狀態濫用 {#global-state-abuse}
+
+**問題**：將全域狀態用於組件特定關注點  
+**解決方案**：將狀態保持在組件階層的適當層級
+
+## 第五款：邊界定義不良 {#poor-boundary-definition}
+
+**問題**：父子組件間責任邊界不清晰  
+**解決方案**：清楚定義哪個組件擁有什麼資料和行為
+
+# 第七項：組件組合效益 {#benefits-of-composition}
+
+## 第一款：核心效益 {#core-benefits}
+
+1. **可重用性**：良好組合的組件可在應用程式中重複使用
+2. **可維護性**：較小、專注的組件更容易理解和維護
+3. **可測試性**：具有清晰介面的組件更容易獨立測試
+4. **開發效率**：組合透過重用和一致性加速開發
+5. **靈活性**：良好組合的系統可以更容易地重新配置
+6. **關注點分離**：組合自然鼓勵關注點分離
+
+# 第八項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **擴展 MP016（模組化原則）**：透過提供組件組合的特定模式
+2. **實施 MP017（關注點分離）**：透過組件邊界定義
+3. **支援 SO_P004（應用底層建構原則）**：定義底層組件如何結合
+4. **補充 MP052（單向資料流）**：定義資料如何在組件間流動
+
+---
+
+*基於：UI組件法第八條*  
+*相關連結：[MP016 模組化原則](../../CH00_fundamental_principles/meta_principles/MP016_modularity_principle.qmd), [UI_R001 UI-伺服器-預設值三元組](../rules/UI_R001_ui_server_defaults_ntuple.qmd)*

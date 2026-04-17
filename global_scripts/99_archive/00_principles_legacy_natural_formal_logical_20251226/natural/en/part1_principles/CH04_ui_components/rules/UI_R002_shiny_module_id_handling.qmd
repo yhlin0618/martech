@@ -1,0 +1,249 @@
+---
+title: "UI_R002: Shiny Module ID Handling Rule"
+subtitle: "Module component IDs must be consistently handled within Shiny's namespacing system"
+chapter: "CH04"
+category: "rule"
+number: "UI_R002"
+date-created: "2025-04-10"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法施行細則 (UI Components Law Implementation Rules)"
+article: "第2條"
+related_to:
+  - "CH04.UI_R001: UI-Server-Defaults N-tuple"
+  - "CH01.SO_R076: Module Data Connection Rule"
+  - "CH02.DM_R089: Integer ID Type Conversion"
+  - "CH00.MP017: Separation of Concerns"
+  - "CH00.MP054: UI-Server Correspondence"
+  - "CH01.SO_P080: Integer ID Consistency"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**UI Components Law Implementation Rules Article 2 (Shiny Module ID Handling Rule)**
+
+This article stipulates that module component IDs must be consistently handled within Shiny's namespacing system to avoid creating double namespacing.
+
+:::{.callout-important}
+## Core Principle
+Module component IDs must be consistently handled within Shiny's namespacing system to avoid double namespacing and ensure proper communication between UI and server components.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Implementation Reasons {#implementation-reasons}
+
+1. **Consistent Interface**: Creates a predictable pattern for working with module IDs
+2. **Error Prevention**: Prevents namespacing issues when modules are nested or reused
+3. **Clarity**: Makes the relationship between UI and server components explicit
+4. **Debugging**: Reduces difficult-to-trace errors related to ID resolution
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Namespacing in UI Components {#ui-namespacing}
+
+When defining UI components within a module, always use the `ns()` function to namespace input and output IDs:
+
+```r
+moduleNameUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    selectInput(ns("selector"), "Select an option:", choices = c("A", "B", "C")),
+    textOutput(ns("result"))
+  )
+}
+```
+
+## Subsection 2: Accessing Inputs in Server Functions {#server-access}
+
+When accessing inputs within a module server function, use `input$name` directly without re-namespacing:
+
+```r
+moduleNameServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # CORRECT: Direct access of input value
+    output$result <- renderText({
+      paste("Selected:", input$selector)
+    })
+  })
+}
+```
+
+## Subsection 3: Updating Inputs within Module {#update-inputs}
+
+When updating inputs within a module server function, use the input ID without namespacing, since `session` already has the namespace context:
+
+```r
+moduleNameServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # CORRECT: Directly use the input ID without re-namespacing
+    updateSelectInput(
+      session = session,
+      inputId = "selector", # Do not use ns("selector") here!
+      choices = c("X", "Y", "Z")
+    )
+  })
+}
+```
+
+# Section 3: Anti-patterns {#anti-patterns}
+
+## Subsection 1: Double Namespacing Error {#double-namespacing}
+
+:::{.callout-warning}
+## Common Error: Double Namespacing
+
+```r
+# INCORRECT: Double namespacing
+moduleNameServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    ns <- NS(id) # Creating another namespace function inside moduleServer
+    
+    updateSelectInput(
+      session = session,
+      inputId = ns("selector"), # This causes double namespacing!
+      choices = c("X", "Y", "Z")
+    )
+  })
+}
+```
+
+This causes the input ID to be namespaced twice, resulting in update failure.
+:::
+
+# Section 4: Advanced Patterns {#advanced-patterns}
+
+## Subsection 1: Handling Multiple Module Inputs {#multiple-modules}
+
+When a server function handles multiple module IDs (like filter and display components), use separate session objects and proper namespacing:
+
+```r
+# CORRECT: Proper handling for multiple components
+moduleNameServer <- function(id, filter_id = NULL, display_id = NULL) {
+  filter_id <- if (is.null(filter_id)) id else filter_id
+  display_id <- if (is.null(display_id)) id else display_id
+  
+  # The main module
+  moduleServer(id, function(input, output, session) {
+    # Within this scope, use unnamespaced IDs
+    updateSelectInput(
+      session = session,
+      inputId = "selector",
+      choices = c("X", "Y", "Z")
+    )
+  })
+}
+```
+
+# Section 5: Implementation Examples {#examples}
+
+## Subsection 1: Correct Implementation Example {#correct-example}
+
+```r
+# Module with filter and display components
+customerModuleServer <- function(id, filter_id = NULL, display_id = NULL) {
+  # Default to main id if specific ids aren't provided
+  filter_id <- if (is.null(filter_id)) id else filter_id
+  display_id <- if (is.null(display_id)) id else display_id
+  
+  moduleServer(id, function(input, output, session) {
+    # Access inputs directly using input$name
+    observeEvent(input$customer_select, {
+      # Process selection
+    })
+    
+    # Update inputs directly using the input ID without re-namespacing
+    observe({
+      updateSelectizeInput(
+        session = session,
+        inputId = "customer_select", # Correct - no namespacing
+        choices = customer_choices
+      )
+    })
+  })
+}
+```
+
+## Subsection 2: Nested Module Handling {#nested-modules}
+
+```r
+# Parent module
+parentModuleUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    childModuleUI(ns("child")), # Namespaced child module ID
+    actionButton(ns("action"), "Action")
+  )
+}
+
+parentModuleServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # Call child module
+    childModuleServer("child") # No need to re-namespace
+    
+    observeEvent(input$action, {
+      # Handle action
+    })
+  })
+}
+```
+
+# Section 6: Common Issues and Solutions {#common-issues}
+
+## Subsection 1: Update Not Working {#update-not-working}
+
+**Problem**: When using `updateXXX` functions, the input doesn't update.
+
+**Cause**: Likely double namespacing or missing namespace.
+
+**Solution**:
+1. Inside `moduleServer`, use the input ID directly (without `ns()`)
+2. Ensure the `session` parameter comes from `moduleServer`'s callback function
+
+## Subsection 2: Input Not Found {#input-not-found}
+
+**Problem**: `input$xxx` returns NULL or not found.
+
+**Cause**: Namespace mismatch between UI and server.
+
+**Solution**:
+1. Ensure UI uses `ns()` to namespace all IDs
+2. Ensure server uses the same module ID
+3. In server, access inputs using unnamespaced names
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Shiny Module ID Handling Checklist
+
+When implementing modules, confirm:
+
+- [ ] UI function uses `NS(id)` to create namespace function
+- [ ] All UI input/output IDs use `ns()` for namespacing
+- [ ] Server function uses `moduleServer(id, ...)`
+- [ ] Inside `moduleServer`, access inputs directly (no re-namespacing)
+- [ ] Update functions use unnamespaced IDs
+- [ ] Nested modules handle namespacing correctly
+- [ ] Multiple module IDs are handled separately
+- [ ] No double namespacing patterns
+- [ ] Test module works in different contexts
+- [ ] Documentation explains namespace requirements
+:::
+
+# Conclusion {#conclusion}
+
+The Shiny Module ID Handling Rule ensures modules work correctly within Shiny's namespacing system. By following consistent patterns for namespacing UI components and accessing inputs in server functions, we avoid common pitfalls like double namespacing and create reusable, maintainable module components.
+
+---
+
+*Based on: UI Components Law Implementation Rules Article 2*  
+*Related: [UI_R001 UI-Server-Defaults N-tuple](UI_R001_ui_server_defaults_ntuple.qmd), [SO_R076 Module Data Connection Rule](../../CH01_structure_organization/rules/SO_R076_module_data_connection.qmd)*

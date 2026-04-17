@@ -1,0 +1,207 @@
+---
+title: "SO_R019: 基於依賴的來源規則"
+subtitle: "檔案來源必須通過代碼註解支援明確的依賴管理，確保檔案以正確的順序載入，同時防止循環依賴和冗餘載入"
+chapter: "CH01"
+category: "rule"
+number: "SO_R019"
+date-created: "2025-04-15"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 19
+  title: "基於依賴的來源規則"
+implements:
+  - "MP031: 初始化優先"
+  - "MP016: 模組化"
+related_to:
+  - "R033: 遞迴來源"
+  - "R056: 基於資料夾的來源"
+  - "P055: N 元組獨立載入"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十九條：基於依賴的來源規則 {#overview}
+
+**結構組織法第十九條（基於依賴的來源規則）**
+
+此規則建立了智慧檔案載入系統，基於實際依賴而非位置或命名慣例來確保正確的初始化。
+
+:::{.callout-important}
+## 核心概念
+檔案來源必須通過代碼註解支援明確的依賴管理，確保檔案以正確的順序載入，同時防止循環依賴和冗餘載入。
+:::
+
+# 第一項：動機 {#motivation}
+
+隨著應用程式複雜性的增長，簡單的基於資料夾或詞彙排序的檔案來源變得不足。組件之間的依賴通常跨越目錄結構，需要更複雜的方法來確保正確的初始化。此規則建立了依賴註解系統，使基於實際依賴的智慧檔案載入成為可能。
+
+# 第二項：實施需求 {#implementation-requirements}
+
+## 第一款：依賴註解格式 {#dependency-annotation-format}
+
+檔案必須使用標準化註解格式在檔案頂部聲明其依賴：
+
+```r
+# 標準 roxygen 風格註解
+#' @requires path/to/dependency.R
+
+# 替代註釋註解
+# @requires path/to/dependency.R
+
+# 使用 @depends 的替代格式
+#' @depends path/to/dependency.R
+```
+
+這些註解應出現在檔案的前 30 行中，以便來源系統正確檢測。
+
+## 第二款：增強的來源函數 {#enhanced-source-function}
+
+系統必須實施具有以下功能的增強來源函數（`source_with_verbose`）：
+
+1. **依賴解析**：在載入前解析和解決檔案依賴
+2. **載入追蹤**：維護已載入檔案的註冊表以防止冗餘載入
+3. **循環檢測**：檢測並防止循環依賴
+4. **詳細日誌**：提供詳細的調試日誌
+5. **錯誤處理**：優雅地處理載入失敗並提供資訊豐富的訊息
+
+```r
+source_with_verbose <- function(file_path, verbose = VERBOSE_INITIALIZATION, max_attempts = 3) {
+  # 根據 fn_source_with_verbose.R 實施
+  # 必須在全域註冊表中追蹤載入的檔案
+  # 必須提取依賴並首先載入它們
+  # 必須防止循環載入和無限遞迴
+}
+```
+
+## 第三款：依賴發現 {#dependency-discovery}
+
+系統必須實施強大的依賴路徑解析：
+
+1. **處理相對路徑**：相對於當前檔案定位依賴
+2. **解析模糊名稱**：當未完全限定時，在應用程式中尋找檔案
+3. **尊重應用程式結構**：基於應用程式目錄層次結構優先匹配
+4. **處理檔案擴展名**：缺少時自動添加 `.R` 擴展名
+
+發現過程應按順序在這些位置搜尋：
+
+1. 如果提供，精確路徑
+2. 與請求檔案相同的目錄
+3. 添加 `.R` 擴展名的相同目錄
+4. 應用程式定義的搜尋目錄（通常在 ordered_directories 列表中定義）
+
+## 第四款：載入保護措施 {#loading-safeguards}
+
+為防止來源問題：
+
+1. **嘗試限制**：限制遞迴載入嘗試以避免無限循環
+2. **全域註冊表**：維護載入檔案的全域註冊表（`LOADED_FILES`）
+3. **嘗試追蹤**：追蹤每個檔案的載入嘗試以檢測有問題的依賴
+4. **警告機制**：為未解決的依賴提供清晰的警告
+
+## 第五款：工具函數 {#utility-functions}
+
+系統必須提供工具函數以：
+
+1. **獲取載入的檔案**：檢索當前載入的檔案列表
+   ```r
+   get_loaded_files <- function() {
+     # 返回載入檔案的註冊表
+   }
+   ```
+
+2. **重置追蹤**：需要時重置載入註冊表
+   ```r
+   reset_source_tracking <- function(clear_loaded = TRUE) {
+     # 重置嘗試計數器並可選地清除載入的檔案
+   }
+   ```
+
+# 第三項：使用指南 {#usage-guidelines}
+
+## 第一款：基本使用 {#basic-usage}
+
+```r
+# 使用依賴解析來源檔案
+source_with_verbose("path/to/component.R")
+
+# 查看當前載入的檔案
+loaded_files <- get_loaded_files()
+
+# 重置追蹤（通常在新初始化之前）
+reset_source_tracking()
+```
+
+## 第二款：檔案結構 {#file-structure}
+
+檔案應如下結構其依賴：
+
+```r
+#' @file example_component.R
+#' @requires base_utilities.R
+#' @requires data_functions.R
+#' @depends component_shared.R
+#'
+#' # 組件實施隨後...
+```
+
+## 第三款：初始化整合 {#initialization-integration}
+
+在應用程式初始化中：
+
+```r
+# 在開發期間設定詳細模式
+VERBOSE_INITIALIZATION <- TRUE
+
+# 在初始化開始時重置追蹤
+reset_source_tracking(clear_loaded = TRUE)
+
+# 使用依賴解析來源核心組件
+source_with_verbose("app/initialization/core_components.R")
+```
+
+# 第四項：調試提示 {#debugging-tips}
+
+1. **啟用詳細模式**：設定 `VERBOSE_INITIALIZATION <- TRUE` 以查看詳細的載入日誌
+2. **檢查載入的檔案**：使用 `get_loaded_files()` 查看已載入的內容
+3. **檢查循環依賴**：如果載入在 `max_attempts` 停止，尋找循環引用
+4. **驗證註解**：確保依賴註解在每個檔案的前 30 行內
+5. **檢查路徑有效性**：確保依賴路徑有效且可解析
+
+# 第五項：優點 {#benefits}
+
+1. **順序獨立**：檔案可以放置在目錄結構的任何位置
+2. **自我文檔化**：依賴在需要它們的檔案中明確聲明
+3. **錯誤預防**：防止由於缺少依賴而導致的最常見初始化錯誤
+4. **優化**：防止在多個地方需要的檔案的冗餘載入
+5. **可維護性**：使依賴關係明確且可見
+
+# 第六項：與其他原則的關係 {#relationship-to-other-principles}
+
+此規則：
+
+1. **實施 MP031（初始化優先）**：確保正確的初始化順序
+2. **實施 MP016（模組化）**：支援創建具有明確依賴的真正模組化組件
+3. **擴展 R033（遞迴來源）**：為遞迴檔案發現添加依賴感知來源
+4. **補充 R056（基於資料夾的來源）**：提供細粒度的依賴管理，同時保留基於資料夾的組織
+5. **支援 P055（N 元組獨立載入）**：啟用組件 N 元組的獨立載入
+
+# 第七項：範例實施 {#example-implementation}
+
+請參閱 `04_utils` 目錄中的 `fn_source_with_verbose.R` 以獲取此規則的參考實施。
+
+# 第八項：結論 {#conclusion}
+
+基於依賴的來源創建了一個自組織載入系統，其中檔案聲明自己的依賴，消除了手動排序或僅為載入目的而設計的複雜目錄結構的需要。這在維護可靠初始化的同時實現了更靈活的代碼組織。
+
+---
+
+*基於：結構組織法第十九條*  
+*相關連結：[MP031 初始化優先](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [R033 遞迴來源](../SO_R033_recursive_sourcing.qmd)*

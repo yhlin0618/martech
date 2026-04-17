@@ -1,0 +1,211 @@
+---
+title: "MP144: Unique Identity Principle"
+subtitle: "唯一識別原則"
+chapter: "CH00"
+category: "MP"
+number: "144"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP001: Primitive Terms and Definitions"
+influences:
+  - "MP062: Key Selection Principle"
+  - "CH09: ETL Pipeline Naming Conventions"
+  - "All naming conventions using ___ suffix system"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+    number-sections: true
+---
+
+# 核心概念 {#core-concept}
+
+本原則確立了系統中所有實體的唯一識別要求。每個實體必須擁有唯一識別符，且相同名稱必須指向相同事物。違反此原則將導致實體無法被正確識別。
+
+## 原則的目的 {#purpose}
+
+在任何系統中，能夠唯一識別實體是最基本的要求。本原則建立了：
+
+1. 識別唯一性的公理基礎
+2. 命名規範的理論依據
+3. 防止歧義的設計準則
+4. 資料溯源的識別機制
+
+# 核心公理 {#core-axioms}
+
+## 公理 1：同名必同物 {#axiom-1}
+
+:::{.callout-important}
+## 同一性公理
+$$\forall x \forall y: \text{name}(x) = \text{name}(y) \rightarrow x = y$$
+
+如果兩個實體擁有相同的名稱，則它們必須是同一個實體。
+:::
+
+這個公理意味著：
+- 名稱是實體的唯一識別符
+- 相同名稱不能指向不同的事物
+- 名稱與實體之間是一對一的映射關係
+
+## 公理 2：異物必異名 {#axiom-2}
+
+:::{.callout-important}
+## 區別性公理（逆否命題）
+$$x \neq y \rightarrow \text{name}(x) \neq \text{name}(y)$$
+
+如果兩個實體是不同的，則它們必須擁有不同的名稱。
+:::
+
+這個公理意味著：
+- 不同的實體需要不同的識別符
+- 不能用同一個名稱指代不同的事物
+- 必須為每個獨特實體分配獨特名稱
+
+# 違反偵測 {#violation-detection}
+
+## 違反情境 {#violation-scenarios}
+
+:::{.callout-warning}
+## 違反範例
+當系統中出現以下情況時，表示違反了唯一識別原則：
+:::
+
+### 情境 1：同名歧義
+
+```r
+# 違反：同一名稱在不同資料庫中指向不同資料
+raw_data.duckdb    -> df_orders  # 原始訂單資料
+app_data.duckdb    -> df_orders  # 處理後的訂單資料
+
+# 問題：df_orders 到底是哪一個？
+```
+
+### 情境 2：處理階段混淆
+
+```r
+# 違反：無法區分資料處於哪個處理階段
+df_customer_data  # 這是原始的還是轉換後的？
+df_customer_data  # 這是 0IM 階段還是 2TR 階段？
+```
+
+### 情境 3：跨層重名
+
+```r
+# 違反：不同層級使用相同名稱
+processed_data.duckdb  -> df_sales
+app_data.duckdb        -> df_sales
+
+# 問題：tbl(con, "df_sales") 指向哪個？
+```
+
+## 違反後果 {#violation-consequences}
+
+1. **無法追溯**：無法確定資料的來源和處理歷程
+2. **除錯困難**：出錯時無法定位問題發生的階段
+3. **資料覆蓋**：可能意外覆蓋不同階段的資料
+4. **邏輯混亂**：程式碼中的資料參照變得模糊
+
+# 資料管線應用 {#data-pipeline-application}
+
+## `___` 後綴命名系統 {#suffix-naming-system}
+
+為了在資料管線中實現唯一識別原則，系統採用 `___`（三底線）後綴命名法：
+
+:::{.callout-note}
+## 6 層對稱架構命名規範
+:::
+
+| 層級 | 階段 | 代碼 | 後綴 | 資料庫 | 範例 |
+|------|------|------|------|--------|------|
+| 0 | Import | 0IM | `___raw` | raw_data.duckdb | `df_cbz_orders___raw` |
+| 1 | Staging | 1ST | `___staged` | staged_data.duckdb | `df_cbz_orders___staged` |
+| 2 | Transform | 2TR | `___transformed` | transformed_data.duckdb | `df_cbz_orders___transformed` |
+| 3 | Process | 3PR | `___processed` | processed_data.duckdb | `df_cbz_orders___processed` |
+| 4 | Cleanse | 4CL | `___cleansed` | cleansed_data.duckdb | `df_cbz_orders___cleansed` |
+| 5 | Normalize | 5NM | *(無後綴)* | app_data.duckdb | `df_cbz_orders` |
+
+## 設計理念 {#design-rationale}
+
+### 為何使用後綴而非前綴？
+
+1. **基礎名稱優先**：`df_cbz_orders___raw` 中，`df_cbz_orders` 是核心識別符
+2. **自動補全友善**：IDE 輸入 `df_cbz_orders` 可看到所有處理階段
+3. **排序一致性**：同一實體的所有階段在排序時會相鄰
+
+### 為何 app_data 無後綴？
+
+1. **最終產物標記**：無後綴表示這是「完成品」
+2. **簡潔性**：應用程式使用時不需要記住後綴
+3. **終點明確**：清楚標示資料管線的終點
+
+## 應用範例 {#application-example}
+
+```r
+# 正確：每個階段有唯一識別
+con_raw <- dbConnect(duckdb::duckdb(), "raw_data.duckdb")
+con_app <- dbConnect(duckdb::duckdb(), "app_data.duckdb")
+
+# 讀取原始資料
+orders_raw <- tbl(con_raw, "df_cbz_orders___raw")
+
+# 讀取應用資料
+orders_final <- tbl(con_app, "df_cbz_orders")
+
+# 名稱不同，實體不同，符合唯一識別原則
+```
+
+```r
+# 錯誤：相同名稱用於不同階段
+# 這違反了唯一識別原則！
+df_orders <- tbl(con_raw, "df_orders")
+df_orders <- tbl(con_staged, "df_orders")  # 覆蓋了前一個！
+```
+
+# 憲法性意義 {#constitutional-significance}
+
+## 基礎性質 {#fundamental-nature}
+
+唯一識別原則是系統所有命名規範的基礎，如同憲法是法律體系的基礎：
+
+:::{.callout-tip}
+## 與其他原則的關係
+```
+MP144 (唯一識別原則)
+    │
+    ├─> MP062 (Key Selection Principle)
+    │       └─ 主鍵設計必須確保唯一識別
+    │
+    ├─> CH09 (ETL Pipeline Naming)
+    │       └─ ___ 後綴系統源自此原則
+    │
+    └─> All Naming Conventions
+            └─ 所有命名規範必須遵守此原則
+```
+:::
+
+## 哲學基礎 {#philosophical-basis}
+
+本原則源自萊布尼茲的「不可分辨者同一」原則 (Leibniz's Identity of Indiscernibles)：
+
+> 如果兩個事物在所有屬性上都相同，則它們是同一個事物。
+
+在資料系統中，我們將此原則具體化為：
+- **名稱**是實體最重要的屬性之一
+- **相同名稱**暗示**相同屬性**暗示**相同實體**
+
+# 實作檢查清單 {#implementation-checklist}
+
+- [ ] 每個資料表名稱在系統中是唯一的
+- [ ] 不同處理階段的資料使用適當的後綴
+- [ ] app_data 中的資料不使用後綴（最終產物）
+- [ ] 程式碼中沒有使用相同變數名稱指代不同資料
+- [ ] 文件中的資料參照與實際名稱一致
+
+# 結論 {#conclusion}
+
+唯一識別原則確保了系統中每個實體都能被明確識別。透過 `___` 後綴命名系統，我們實現了資料管線中資料的唯一識別，使得資料溯源、除錯和維護都變得更加清晰和可靠。此原則是所有其他命名規範的基礎，必須被嚴格遵守。

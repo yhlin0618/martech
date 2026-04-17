@@ -1,0 +1,258 @@
+---
+title: "MP145: Documentation-Implementation Alignment"
+subtitle: "Implementation scripts MUST faithfully execute their documented responsibility"
+author: "Claude"
+date: "2025-12-26"
+date-modified: "2026-02-13"
+categories: [meta-principle, documentation, implementation, compliance, code-review]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Statement
+
+**Implementation scripts MUST faithfully execute their documented responsibility - no more, no less.**
+
+If documentation is the "law" (per MP005 Statute Law Analogy), then MP145 declares: **"The law must be obeyed."**
+
+## Philosophy
+
+Documentation defines what code SHOULD do. Code defines what actually HAPPENS. When these diverge:
+
+- **Documentation says X, code does Y** → Users/developers misunderstand behavior
+- **Documentation says X, code does X+Z** → Hidden side effects, unexpected behavior
+- **Documentation says X, code does X-W** → Missing functionality, incomplete implementation
+
+MP145 requires **exact alignment**: code does precisely what documentation specifies.
+
+## Why This Matters
+
+### The Trust Problem
+
+```
+Developer reads: "D01_03 performs DNA analysis using analysis_dna()"
+Developer expects: D01_03 calls analysis_dna()
+Reality: D01_03 does something else, DNA analysis is in D01_06
+
+Result: Confusion, debugging time wasted, incorrect modifications
+```
+
+### The Maintenance Problem
+
+When fixing bugs or adding features:
+1. Developer reads documentation to understand system
+2. Makes changes based on documented behavior
+3. Breaks unexpected undocumented behavior
+4. System fails in production
+
+**MP145 prevents this** by ensuring documentation is reliable.
+
+## Implementation Requirements
+
+### For All Documented Components
+
+| Documentation Says | Implementation Must |
+|-------------------|---------------------|
+| "Calls function X()" | Call function X() |
+| "Outputs to table Y" | Write to table Y |
+| "Performs calculation Z" | Execute calculation Z |
+| "Orchestrates steps A-E" | Only coordinate A-E, no computation |
+
+### For Derivation Modules (D_XX)
+
+Per `_implementation_rules.yaml` companion files:
+
+```yaml
+# Each step has documented responsibility
+d01_03:
+  responsibility: "Transform RFM into customer DNA segments"
+  must_call: "analysis_dna()"
+  output_table: "df_dna_by_customer___cleansed"
+
+# Enforcement
+enforcement:
+  rule: "Script MUST implement ONLY documented responsibility"
+```
+
+### Spec-First Conflict Protocol
+
+If an implementation change requirement is not covered by the current documentation/spec:
+
+1. Update `_implementation_rules.yaml` (and any linked task doc) first.
+2. Record updated responsibility, constraints, and outputs.
+3. Re-verify the script against the new specification.
+4. Only then edit code.
+
+This is a hard precedence rule: no undocumented behavior.
+
+When implementation work is requested in this situation, documentation/specification changes are mandatory and have priority.
+
+### For ETL Scripts
+
+| Phase | Documentation Defines | Implementation Follows |
+|-------|----------------------|----------------------|
+| 0IM | Data import sources | Import from those sources |
+| 1ST | Staging transformations | Apply those transformations |
+| 2TR | Transform logic | Execute that logic |
+
+## Verification Pattern
+
+### Code Review Checklist
+
+For any script with documentation:
+
+1. **Read documentation** - What does it say the script should do?
+2. **Read implementation** - What does the script actually do?
+3. **Compare** - Are they identical?
+
+```markdown
+## Code Review: {script_name}
+
+### Documentation Claims
+- [ ] Claim 1: _____
+- [ ] Claim 2: _____
+- [ ] Claim 3: _____
+
+### Implementation Verification
+- [ ] Claim 1: Implemented correctly? ___
+- [ ] Claim 2: Implemented correctly? ___
+- [ ] Claim 3: Implemented correctly? ___
+
+### Violations Found
+- None / List specific discrepancies
+```
+
+### Automated Verification
+
+For derivation modules with `_implementation_rules.yaml`:
+
+```r
+# Pseudocode for verification
+verify_mp145_compliance <- function(script_path, rules_yaml) {
+  rules <- yaml::read_yaml(rules_yaml)
+  script_content <- readLines(script_path)
+
+  # Check: Does script call required function?
+  if (!is.null(rules$must_call)) {
+    if (!any(grepl(rules$must_call, script_content))) {
+      return(list(
+        compliant = FALSE,
+        violation = paste("Missing required call:", rules$must_call)
+      ))
+    }
+  }
+
+  # Check: Does script write to correct output?
+  # ... additional checks
+
+  return(list(compliant = TRUE))
+}
+```
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Documentation Drift
+
+```r
+# Documentation says: "Calculates RFM scores"
+# Actual code:
+calculate_metrics <- function(df) {
+  # Originally calculated RFM
+  # Someone added customer lifetime value
+  # Someone added churn prediction
+  # Documentation never updated
+
+  rfm <- calculate_rfm(df)
+  clv <- calculate_clv(df)      # Undocumented!
+  churn <- predict_churn(df)    # Undocumented!
+
+  return(list(rfm, clv, churn))
+}
+```
+
+**Fix**: Update documentation OR remove undocumented functionality.
+
+### Anti-Pattern 2: Partial Implementation
+
+```r
+# Documentation says: "Performs steps A, B, C"
+# Actual code:
+execute_pipeline <- function() {
+  step_a()
+  step_b()
+  # step_c() - TODO: implement later
+}
+```
+
+**Fix**: Implement step_c() OR update documentation to say "Performs A, B".
+
+### Anti-Pattern 3: Responsibility Creep
+
+```r
+# D01_06 documentation: "Orchestrates D01_00-D01_05"
+# Actual D01_06 code:
+orchestrate <- function() {
+  run_d01_00()
+  run_d01_01()
+  # ...
+
+  # VIOLATION: D01_06 should NOT compute!
+  df$dna_score <- calculate_dna_scores(df)  # This belongs in D01_03!
+}
+```
+
+**Fix**: Move calculation to D01_03 where it's documented.
+
+## Companion Files
+
+MP145 works with companion specification files (per MP005 Case Law pattern):
+
+```
+D01_dna_analysis/
+├── D01_03_dna_analysis.qmd           # Documentation ("statute")
+├── _implementation_rules.yaml         # Specification ("case law")
+└── (actual scripts in update_scripts/)
+```
+
+The `_implementation_rules.yaml` provides machine-readable specifications for verification.
+
+## Relationship to Other Principles
+
+| Principle | Relationship |
+|-----------|-------------|
+| **MP005** | Foundation - "Documentation is law" |
+| **MP145** | Extension - "Law must be obeyed" |
+| **MP064** | Application - ETL vs DRV separation |
+| **DEV_R037** | Specific rule for derivation step isolation |
+| **DM_R044** | Template structure for implementations |
+| **MP028** | Instance vs Principle |
+| **MP037** | Principle-Guided Modifications |
+
+## Benefits
+
+1. **Trust**: Developers can rely on documentation
+2. **Maintainability**: Changes based on docs work as expected
+3. **Onboarding**: New team members learn accurate information
+4. **Debugging**: Behavior matches expectations
+5. **Code Review**: Clear criteria for compliance
+
+## Enforcement
+
+MP145 compliance should be:
+
+1. **Part of code review** - Reviewer checks doc-implementation alignment
+2. **Documented in PRs** - "Verified MP145 compliance for X, Y, Z"
+3. **Automated where possible** - Using `_implementation_rules.yaml` specs
+4. **Pre-change check** - If requested behavior is missing from docs, update docs/spec first, then code.
+
+## Conclusion
+
+Documentation-Implementation Alignment (MP145) ensures that code does exactly what documentation says - no more, no less. This principle transforms documentation from "aspirational" to "contractual", making the codebase more trustworthy, maintainable, and understandable.
+
+When combined with MP005 (Statute Law Analogy) and companion specification files, MP145 creates a verifiable contract between documentation and implementation.

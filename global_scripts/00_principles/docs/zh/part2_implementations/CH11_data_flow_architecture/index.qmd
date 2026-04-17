@@ -1,0 +1,302 @@
+---
+
+title: "Chapter 10: Data Processing Architecture"
+subtitle: "6-Layer Symmetric Pipeline Architecture (ETL + DRV)"
+chapter: "CH10"
+category: "implementation"
+number: "CH10"
+date-created: "2025-08-23"
+date-modified: "2025-12-25"
+author: "Claude"
+type: "chapter"
+law: "Data Processing Framework"
+article-number: "Chapter 10"
+related_to:
+  - "MP052_unidirectional_data_flow"
+  - "MP006_data_source_hierarchy"
+  - "MP058_database_table_creation_strategy"
+  - "R091_universal_data_access"
+  - "R092_universal_dbi_approach"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Data Processing Architecture {#overview}
+
+This chapter documents the **6-Layer Symmetric Pipeline Architecture**, a streamlined data processing framework with two parallel 3-phase pipelines: ETL (data movement) and DRV (data intelligence).
+
+## Architecture Overview {#architecture}
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ETL Pipeline (資料移動)                                     │
+│  0IM → raw_data.duckdb         原始資料保存                   │
+│  1ST → staged_data.duckdb      格式標準化                    │
+│  2TR → transformed_data.duckdb 結構轉換、JOIN                │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  DRV Pipeline (資料智慧)                                     │
+│  3PR → processed_data.duckdb   商業邏輯產出                   │
+│  4CL → cleansed_data.duckdb    品質清理後                    │
+│  5NM → app_data.duckdb         標準化並交付                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Principle: Symmetric 3-Phase Structure**
+- **ETL**: Import → Stage → Transform (data movement, no business logic)
+- **DRV**: Process → Cleanse → Normalize (business intelligence)
+
+### Metadata (Cross-Cutting)
+
+All layers emit operational metadata (ingest, transform, processing, delivery) for auditability and lineage. The metadata layer is defined in [DF06: Metadata Management](./DF_architecture/DF06_metadata_management.qmd).
+
+### Metadata Tables vs Transaction Data (DM_R054)
+
+**Important Distinction**: Not all data flows through the 6-layer pipeline.
+
+```
+Transaction Data (orders, sales, events):
+  0IM → 1ST → 2TR → 3PR → 4CL → 5NM (full pipeline)
+
+Metadata Tables (mappings, lookups, configs):
+  source → app_data.duckdb (direct)
+```
+
+**Metadata tables** write directly to `app_data.duckdb`, bypassing the 6-layer flow:
+
+| Table Type | Examples | Storage |
+|------------|----------|---------|
+| Product Mapping | `df_product_mapping` | app_data (direct) |
+| Lookup Tables | `df_product_line`, `df_platform` | app_data (direct) |
+| Config Tables | `df_variable_metadata`, `df_config_*` | app_data (direct) |
+| Transaction Data | `df_cbz_orders`, `df_eby_sales` | 6-Layer ETL |
+
+See **DM_R054: Metadata Table Storage Pattern** for detailed specification.
+
+## Part 1: Data Flow Architecture (DF Series) {#df-series}
+
+The DF series defines the 6-layer data processing architecture:
+
+### Core Architecture Documents
+
+- [DF00: Pipeline Architecture - 6-Layer](./DF_architecture/DF00_pipeline_architecture.qmd)
+  - Master architecture document defining the symmetric ETL+DRV framework
+  - Establishes principles for unidirectional data flow
+
+### ETL Pipeline Operations (Layers 0-2)
+
+1. [DF01: Staging Operations](./DF_architecture/DF01_staging_operations.qmd)
+   - Layer 1ST: Initial data staging and format standardization
+
+2. [DF02: Transformation Operations](./DF_architecture/DF02_transformation_operations.qmd)
+   - Layer 2TR: Schema transformation, type conversion, structural JOINs
+
+### DRV Pipeline Operations (Layers 3-5)
+
+3. [DF04: Processing Operations](./DF_architecture/DF04_processing_operations.qmd)
+   - Layer 3PR: Business logic processing (derivations)
+
+4. [DF03: Cleansing Operations](./DF_architecture/DF03_cleansing_operations.qmd)
+   - Layer 4CL: Data quality validation and cleansing
+
+5. [DF05: Application Data](./DF_architecture/DF05_application_data.qmd)
+   - Layer 5NM + APP: Normalization and application-ready delivery
+
+### Supporting Documents
+
+6. [DF06: Metadata Management](./DF_architecture/DF06_metadata_management.qmd)
+   - Cross-cutting: Metadata tracking across all layers
+
+7. [DF07: ETL Implementation Framework](./DF_architecture/DF07_etl_implementation_framework.qmd)
+   - Framework for implementing ETL pipelines
+
+8. [DF08: Extensible Patterns](./DF_architecture/DF08_extensible_patterns.qmd)
+   - Patterns for extending the architecture
+   - **Specialized Database Patterns** (NEW): `{Layer}/scd_type{N}/` structure for AI processing and historical data
+
+### Specialized Databases (Beyond 6-Layer)
+
+In addition to the standard 6-Layer databases, certain derivation analyses require **specialized databases**:
+
+```
+data/local_data/
+├── [Standard 6-Layer databases]         # Main pipeline
+│
+├── 3PR/                                  # 3PR layer specialized databases
+│   └── scd_type2/                        # SCD Type 2: Cannot delete (historical)
+│       ├── comment_property_rating.duckdb
+│       └── comment_property_rating_results.duckdb
+```
+
+**Key Concepts:**
+- **Location**: `{Layer}/scd_type{N}/` nested structure
+- **Purpose**: AI processing intermediate results, historical tracking, parallel writes
+- **SCD Type 2**: Historical data that cannot be deleted (fool-proofing)
+
+See [DF08: Specialized Database Patterns](./DF_architecture/DF08_extensible_patterns.qmd#specialized-databases) for detailed specifications.
+
+## Part 2: ETL Implementation Patterns {#etl-patterns}
+
+For concrete ETL pipeline implementations, see:
+
+- **[CH11: ETL Pipelines](../CH12_etl_pipelines/index.qmd)** - Implementation patterns and best practices
+
+**Relationship between CH10 and CH11:**
+- **CH10** (this chapter): Conceptual 6-layer symmetric architecture (ETL + DRV)
+- **CH11**: Practical ETL implementation patterns organized by data domain
+
+### Additional Architecture Guides
+
+- [GUIDE02: ID Extraction in Data Pipeline](./DF_architecture/GUIDE02_id_extraction_in_data_pipeline.qmd)
+  - Best practices for extracting and managing IDs across pipeline stages
+
+- [S01: Product Profile Construction](./DF_architecture/S01_product_profile_construction.qmd)
+  - Specification for building product profiles through the pipeline
+
+## Implementation Status {#status}
+
+The 6-layer symmetric architecture with corresponding DuckDB databases:
+
+### ETL Pipeline (Data Movement)
+
+| Layer | Code | Database | Status | Description |
+|-------|------|----------|--------|-------------|
+| 0IM   | Import | `raw_data.duckdb` | ✅ Implemented | Raw data ingestion from APIs/files |
+| 1ST   | Staging | `staged_data.duckdb` | ✅ Implemented | Format standardization, column naming |
+| 2TR   | Transform | `transformed_data.duckdb` | ✅ Implemented | Schema transformation + Structural JOINs |
+
+### DRV Pipeline (Data Intelligence)
+
+| Layer | Code | Database | Status | Description |
+|-------|------|----------|--------|-------------|
+| 3PR   | Process | `processed_data.duckdb` | ✅ Implemented | Business logic, derivations |
+| 4CL   | Cleanse | `cleansed_data.duckdb` | 🔲 Planned | Data quality validation & cleansing |
+| 5NM   | Normalize | `app_data.duckdb` | ✅ Implemented | Statistical normalization → APP delivery |
+
+**Full Pipeline Path:** `0IM → 1ST → 2TR → 3PR → 4CL → 5NM → APP`
+
+### Design-time Decisions (Not Runtime)
+
+Database normalization (1NF, 2NF, 3NF) is a **schema design decision**, not a runtime pipeline phase. It is decided when tables are created, before data flows through the pipeline.
+
+## Data Flow Principles {#principles}
+
+### 6-Layer Symmetric Architecture
+
+```
+        ETL Pipeline                 DRV Pipeline
+    ┌─────────────────┐          ┌─────────────────┐
+    │ 0IM: Import     │          │ 3PR: Process    │
+    │ raw_data        │          │ processed_data  │
+    └────────┬────────┘          └────────┬────────┘
+             ↓                            ↓
+    ┌─────────────────┐          ┌─────────────────┐
+    │ 1ST: Stage      │          │ 4CL: Cleanse    │
+    │ staged_data     │          │ cleansed_data   │
+    └────────┬────────┘          └────────┬────────┘
+             ↓                            ↓
+    ┌─────────────────┐          ┌─────────────────┐
+    │ 2TR: Transform  │    →     │ 5NM: Normalize  │
+    │ transformed_data│          │ app_data        │
+    └─────────────────┘          └─────────────────┘
+```
+
+### Why This Order?
+
+**ETL Pipeline:**
+1. **0IM first**: Preserve raw data for audit/debugging
+2. **1ST second**: Standardize format before structural operations
+3. **2TR third**: Safe to JOIN after format is unified
+
+**DRV Pipeline:**
+1. **3PR first**: Apply business logic (RFM, segmentation)
+2. **4CL second**: Clean after processing (business context needed for cleaning rules)
+3. **5NM third**: Normalize after cleaning (z-score/min-max sensitive to outliers)
+
+### Key Design Patterns
+
+1. **Unidirectional Flow**: Data flows in one direction through layers
+2. **Symmetric Structure**: ETL and DRV both have 3 phases
+3. **Layer Independence**: Each layer can be tested independently
+4. **Metadata Tracking**: All operations tracked for audit
+5. **Pipeline Separation**: ETL moves data, DRV adds intelligence
+
+## Implementation Guidelines {#guidelines}
+
+### Creating New Pipelines
+
+**For ETL (0IM, 1ST, 2TR):**
+1. Define data source and target format
+2. Implement 3-phase structure (Import → Stage → Transform)
+3. No business logic allowed in ETL
+4. See [CH11](../CH12_etl_pipelines/index.qmd) for patterns
+
+**For DRV (3PR, 4CL, 5NM):**
+1. Define business logic requirements
+2. Implement as derivation scripts (D01, D02, ...)
+3. Follow: Process → Cleanse → Normalize order
+4. See [CH12](../CH13_derivations/index.qmd) for patterns
+
+### Pipeline Separation Principle
+
+| Pipeline | Does | Does NOT |
+|----------|------|----------|
+| **ETL** | Data movement, format conversion, structural JOINs | Business logic, calculations, filtering by business rules |
+| **DRV** | Business logic, calculations, quality decisions | Raw data extraction, format conversion |
+
+## Relationships {#relationships}
+
+### With Other Chapters
+
+- **CH12 Derivations**: Business derivations use ETL pipelines
+- **CH13 Modules**: ETL operations implemented as modules
+- **CH14 Functions**: Layer operations use utility functions
+
+### With Principles
+
+**Core Data Flow Principles:**
+- **MP052**: Unidirectional Data Flow
+- **MP006**: Data Source Hierarchy
+- **MP058**: Database Table Creation Strategy
+- **R091**: Universal Data Access
+- **R092**: Universal DBI Approach
+
+**Pipeline Orchestration Principles (NEW 2025-12-23):**
+- **MP140**: Pipeline Orchestration Principle - On-demand execution with declarative dependencies
+- **MP141**: Scheduled Execution Pattern - Manual + scheduled modes with observability
+- **MP142**: Configuration-Driven Pipeline - Centralized YAML configuration (`_targets_config.yaml`)
+
+## Pipeline Orchestration {#orchestration}
+
+The 6-layer architecture is orchestrated via the `{targets}` R package:
+
+```bash
+# Run specific target with auto-resolved dependencies
+make run TARGET=cbz_D04_02
+
+# Run specific platform
+make run PLATFORM=cbz
+
+# Run ETL layer only
+make run LAYER=etl
+
+# Visualize dependency graph
+make vis
+```
+
+### Configuration Location
+- **Config File**: `update_scripts/_targets_config.yaml`
+- **Main Control**: `update_scripts/_targets.R`
+- **CLI Interface**: `update_scripts/Makefile`
+
+See [MP140](../../part1_principles/CH00_fundamental_principles/04_data_management/MP140_pipeline_orchestration.qmd), [MP141](../../part1_principles/CH00_fundamental_principles/04_data_management/MP141_scheduled_execution_pattern.qmd), [MP142](../../part1_principles/CH00_fundamental_principles/04_data_management/MP142_configuration_driven_pipeline.qmd) for detailed specifications.
+
+---
+
+*This chapter documents the 6-Layer Symmetric Pipeline Architecture, revised 2025-12-24 from the original 7-layer model. Key change: removed 5DN (DB Normalize) as it's a design-time decision, not a runtime phase. Renumbered 6NM to 5NM for the final DRV phase.*

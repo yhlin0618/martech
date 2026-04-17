@@ -1,0 +1,396 @@
+---
+title: "MP058: 資料庫表格建立策略"
+subtitle: "對於 SQL 資料庫表格，當結構固定且穩定時使用明確的表格建立與模式定義；當結構可變或演化時使用動態讀取"
+author: "Claude"
+date: "2025-04-15"
+date-modified: "2025-08-16"
+categories: [元原則, 資料庫管理, 模式設計, 資料策略]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 原則
+
+**對於 SQL 資料庫表格，當結構固定且穩定時使用明確的表格建立與模式定義；當結構可變或演化時使用動態讀取。當附加資料時，優先使用基於鍵值的建立並附加操作，而非覆寫操作，以保持資料完整性和歷史記錄。**
+
+## 原理說明
+
+在明確建立具有預定義模式的表格與動態讀取和推斷模式之間的選擇，直接影響應用程式的健壯性、維護性和效能。此元原則提供基於資料結構的穩定性和可預測性選擇適當策略的指導。
+
+## 實作要求
+
+### 1. 固定模式策略 {#fixed-schema}
+
+當表格結構定義良好且穩定時：
+
+1. **明確模式定義**：使用 SQL `CREATE TABLE` 語句明確定義模式，包含：
+   - 欄位名稱
+   - 資料類型
+   - 限制條件（NOT NULL、UNIQUE 等）
+   - 主鍵和外鍵
+   - 優化查詢的索引
+
+2. **模式演化管理**：
+   - 對模式定義使用版本控制
+   - 實作模式遷移流程
+   - 記錄模式變更及其原因
+
+3. **主要優點**：
+   - 透過適當的索引提升效能
+   - 透過限制條件強制資料完整性
+   - 預期資料結構的清晰文件
+   - 防止類型推斷錯誤
+
+### 2. 動態模式策略 {#dynamic-schema}
+
+當表格結構可能演化或不完全已知時：
+
+1. **動態模式推斷**：在以下情況使用動態讀取和模式推斷：
+   - 資料來源的結構經常變化
+   - 來源是外部的且不受應用程式控制
+   - 需要容納多個相似但不完全相同的結構
+
+2. **模式監控**：
+   - 實作模式監控以偵測和記錄變更
+   - 為重大結構修改建立警報
+   - 建立對意外欄位的彈性處理
+
+3. **主要優點**：
+   - 處理變化資料結構的靈活性
+   - 減少快速演化模式的維護
+   - 更好地容納外部資料來源
+
+### 3. 資料附加策略 {#data-append}
+
+對於持續的資料擷取或更新：
+
+1. **基於鍵值的附加操作**：新增資料時：
+   - 使用唯一鍵識別記錄
+   - 實作 `INSERT ... ON CONFLICT` 模式（upsert）
+   - 在附加期間維護交易完整性
+
+2. **避免覆寫操作**：
+   - 優先使用目標更新而非整批表格覆寫
+   - 使用交易確保一致性
+   - 在關鍵欄位實作變更追蹤
+
+3. **主要優點**：
+   - 保留資料歷史
+   - 降低資料遺失風險
+   - 更有效率的更新，需要較少的 I/O
+   - 更好的資料變更可追蹤性
+
+## 決策框架
+
+使用此框架決定適當的策略：
+
+### 使用明確模式建立的時機： {#explicit-when}
+
+1. 資料結構穩定且充分理解
+2. 資料完整性要求高
+3. 效能優化很重要
+4. 應用程式對資料來源有控制權
+5. 需要索引的複雜查詢很常見
+6. 需要強制執行表格之間的關係
+
+### 使用動態模式讀取的時機： {#dynamic-when}
+
+1. 資料結構正在演化或不確定
+2. 使用具有不同模式的外部資料來源
+3. 快速原型開發優先於效能
+4. 靈活性比嚴格驗證更重要
+5. 模式遷移的成本過高
+
+### 使用基於鍵值附加的時機： {#append-when}
+
+1. 增量更新頻繁
+2. 必須保留歷史資料
+3. 交易完整性至關重要
+4. 更新期間的效能很重要
+5. 需要變更追蹤
+
+## 實作範例
+
+### 範例 1：明確模式建立 {#example-explicit}
+
+```r
+create_or_replace_customer_table <- function(conn) {
+  message("使用明確模式建立/替換客戶表格")
+  
+  query <- "
+  CREATE TABLE IF NOT EXISTS customers (
+    customer_id INTEGER PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    registration_date TIMESTAMP NOT NULL,
+    last_login TIMESTAMP,
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+    total_purchases NUMERIC DEFAULT 0
+  );
+  
+  -- 為常見查詢模式建立索引
+  CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+  CREATE INDEX IF NOT EXISTS idx_customers_status ON customers(status);
+  CREATE INDEX IF NOT EXISTS idx_customers_registration ON customers(registration_date);
+  "
+  
+  DBI::dbExecute(conn, query)
+  message("客戶表格與索引建立成功")
+}
+```
+
+### 範例 2：動態模式讀取 {#example-dynamic}
+
+```r
+import_from_dynamic_source <- function(conn, source_path) {
+  message("使用動態模式推斷匯入資料")
+  
+  # 判斷檔案類型並讀取資料
+  if (grepl("\\.csv$", source_path)) {
+    data <- read.csv(source_path)
+  } else if (grepl("\\.(xlsx|xls)$", source_path)) {
+    data <- readxl::read_excel(source_path)
+  } else if (grepl("\\.json$", source_path)) {
+    data <- jsonlite::fromJSON(source_path, flatten = TRUE)
+  } else {
+    stop("不支援的檔案格式")
+  }
+  
+  # 處理資料以確保相容性
+  data <- as.data.frame(data)
+  names(data) <- make.names(names(data), unique = TRUE)
+  
+  # 將清單欄位轉換為 JSON 處理
+  list_cols <- sapply(data, is.list)
+  if (any(list_cols)) {
+    for (col in names(data)[list_cols]) {
+      data[[col]] <- sapply(data[[col]], jsonlite::toJSON)
+    }
+  }
+  
+  # 新增中繼資料
+  data$import_timestamp <- Sys.time()
+  data$source_file <- basename(source_path)
+  
+  # 寫入資料庫（讓 DBI 推斷模式）
+  table_name <- paste0("dynamic_", gsub("[^a-zA-Z0-9]", "_", basename(source_path)))
+  message("寫入表格：", table_name)
+  
+  DBI::dbWriteTable(conn, table_name, data, overwrite = TRUE)
+  message("匯入 ", nrow(data), " 列，", ncol(data), " 欄")
+  
+  return(table_name)
+}
+```
+
+### 範例 3：基於鍵值的附加策略 {#example-append}
+
+```r
+append_customer_data <- function(conn, new_data) {
+  message("使用基於鍵值的策略附加客戶資料")
+  
+  # 確保必要的鍵存在
+  if (!"customer_id" %in% names(new_data)) {
+    stop("附加操作需要 customer_id 鍵")
+  }
+  
+  # 取得目前表格結構以確保相容性
+  current_cols <- DBI::dbListFields(conn, "customers")
+  
+  # 篩選資料只包含有效欄位
+  valid_cols <- intersect(names(new_data), current_cols)
+  new_data <- new_data[, valid_cols, drop = FALSE]
+  
+  # 取得現有客戶 ID
+  existing_ids <- DBI::dbGetQuery(
+    conn, 
+    "SELECT customer_id FROM customers"
+  )$customer_id
+  
+  # 將資料分為新記錄和更新
+  is_new <- !new_data$customer_id %in% existing_ids
+  new_records <- new_data[is_new, , drop = FALSE]
+  updates <- new_data[!is_new, , drop = FALSE]
+  
+  # 開始交易
+  DBI::dbBegin(conn)
+  
+  tryCatch({
+    # 插入新記錄
+    if (nrow(new_records) > 0) {
+      DBI::dbAppendTable(conn, "customers", new_records)
+      message("新增 ", nrow(new_records), " 筆新客戶記錄")
+    }
+    
+    # 更新現有記錄
+    if (nrow(updates) > 0) {
+      for (i in 1:nrow(updates)) {
+        update_row <- updates[i, , drop = FALSE]
+        update_cols <- setdiff(names(update_row), "customer_id")
+        
+        if (length(update_cols) > 0) {
+          # 建立 SET 子句
+          set_clause <- paste(
+            paste0(update_cols, " = ?"),
+            collapse = ", "
+          )
+          
+          # 執行更新
+          query <- sprintf(
+            "UPDATE customers SET %s WHERE customer_id = ?",
+            set_clause
+          )
+          
+          params <- c(
+            as.list(update_row[1, update_cols, drop = FALSE]),
+            list(update_row$customer_id)
+          )
+          
+          do.call(
+            DBI::dbExecute,
+            c(list(conn, query), params)
+          )
+        }
+      }
+      message("更新 ", nrow(updates), " 筆現有客戶記錄")
+    }
+    
+    # 提交交易
+    DBI::dbCommit(conn)
+    message("客戶資料附加成功完成")
+    
+  }, error = function(e) {
+    # 錯誤時回滾交易
+    DBI::dbRollback(conn)
+    stop("附加客戶資料時發生錯誤：", e$message)
+  })
+  
+  return(nrow(new_data))
+}
+```
+
+## 效能考量
+
+### 1. 模式定義影響 {#performance-schema}
+
+1. **明確模式**：
+   - 由於優化的類型處理，查詢更快
+   - 由於適當的類型選擇，儲存更有效率
+   - 透過統計和索引獲得更好的查詢規劃
+
+2. **動態模式**：
+   - 類型推斷的開銷較高
+   - 由於次優類型可能導致效率低下
+   - 通用類型可能需要更多儲存空間
+
+### 2. 附加 vs. 覆寫效能 {#performance-append}
+
+1. **附加操作**：
+   - 增量更新的 I/O 效率更高
+   - 減少鎖定競爭
+   - 分散式資料庫的網路流量較少
+
+2. **覆寫操作**：
+   - 實作較簡單但資源使用較高
+   - 可能有較長的表格鎖定
+   - 較高的網路和磁碟 I/O 需求
+
+## 應避免的常見反模式
+
+1. **過度規範模式**：為演化的資料來源定義過於嚴格的模式
+2. **普遍動態讀取**：無論穩定性如何，對所有表格使用動態讀取
+3. **盲目覆寫**：當只需要更新少數記錄時替換整個表格
+4. **遺漏限制條件**：即使對於穩定的模式也未能定義關鍵限制條件
+5. **不一致的附加邏輯**：在相似表格中使用不同的附加策略
+6. **模式漂移**：允許推斷的模式在沒有監控或控制的情況下分歧
+
+## 與其他原則的關係
+
+### 與資料來源層級的關係 (MP0006) {#relation-hierarchy}
+
+此原則透過以下方式補充資料來源層級：
+- 提供如何實作資料庫介面的具體指導
+- 加強原始資料和處理資料之間的分離
+- 支援資料透過處理階段的清晰進展
+
+### 與關注點分離的關係 (MP0017) {#relation-separation}
+
+此原則透過以下方式實作關注點分離：
+- 將資料結構定義與存取模式隔離
+- 分離模式管理和資料擷取
+- 在儲存和應用程式邏輯之間建立清晰的邊界
+
+### 與全類別特殊處理的關係 (MP0034) {#relation-categories}
+
+此原則透過以下方式支援全類別特殊處理：
+- 在資料庫設計中為「全部」類別提供特定處理
+- 確保模式設計考慮聚合操作
+
+### 與資料庫文件的關係 (MP0043) {#relation-documentation}
+
+此原則透過以下方式增強資料庫文件：
+- 提供可以良好文件化的穩定結構
+- 建立作為文件的明確模式定義
+- 透過清晰的模式定義支援自動化文件
+
+## 資料流系列實作
+
+此原則在資料流 (DF) 系列中透過層級特定策略實作：
+
+### 層級特定的表格建立策略 {#layer-strategies}
+
+| 層級 | 策略 | 原理 | 實作 |
+|-------|----------|-----------|----------------|
+| **[@DF001] 暫存** | 動態模式 | 檔案格式不同，結構未知 | 模式推斷，靈活處理 |
+| **[@DF002] 轉換** | 明確模式 | 標準化結構，已知模式 | 使用定義類型的 CREATE TABLE |
+| **[@DF003] 清理** | 明確模式 | 品質保證，穩定結構 | 具有驗證的限制模式 |
+| **[@DF004] 處理** | 明確模式 | 業務邏輯，為查詢優化 | 索引模式，效能調整 |
+| **[@DF005] 應用** | 明確模式 | UI 優化，快取結構 | 大量索引，查詢優化 |
+
+### 按層級的資料附加策略 {#append-strategies}
+
+```r
+# 第 1-2 層：完全重新整理（原始和暫存資料）
+# 來自外部來源的新鮮資料
+DBI::dbWriteTable(conn, table_name, data, overwrite = TRUE)
+
+# 第 3-4 層：基於鍵值的附加（轉換和清理）
+# 具有資料血統的增量更新
+upsert_with_keys(conn, table_name, data, key_columns)
+
+# 第 5-6 層：優化快取（處理和應用）
+# 效能優化的重新整理策略
+refresh_with_optimization(conn, table_name, data, cache_strategy)
+```
+
+### 模式演化管理 {#schema-evolution}
+
+每個 DF 層級實作適當的模式演化：
+
+- **DF01-DF02**：對傳入資料變化的模式靈活性
+- **DF03-DF04**：可靠業務邏輯的模式穩定性
+- **DF05**：應用程式效能的模式優化
+
+### 與通用資料存取的整合 {#integration-access}
+
+所有層級遵循通用資料庫存取模式：
+
+```r
+# 跨所有管道層級的一致存取
+staged_data <- tbl2(dbConnect_from_list("staged_data"), "customers")
+processed_data <- tbl2(dbConnect_from_list("processed_data"), "customer_analytics")
+app_data <- tbl2(dbConnect_from_list("app_data"), "component_customer_profile")
+```
+
+## 結論
+
+資料庫表格建立策略元原則指導開發人員選擇適當的資料庫表格建立、模式管理和資料更新方法。透過在資料流系列中實作層級特定策略 - 從暫存中的動態模式到應用層中的明確模式 - 系統在靈活性和效能之間達到最佳平衡。
+
+DF 系列提供了具體的實作模式，在所有資料處理階段一致地應用此原則，確保整個管道中更好的效能、可維護性和資料完整性。

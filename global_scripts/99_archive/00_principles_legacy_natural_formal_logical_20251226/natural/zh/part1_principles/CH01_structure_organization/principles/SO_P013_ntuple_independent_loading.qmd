@@ -1,0 +1,439 @@
+---
+title: "SO_P013: N元組獨立載入原則"
+subtitle: "N元組模式中的元件應獨立載入和處理，按面向而非按元件組織"
+chapter: "CH01"
+category: "principle"
+number: "SO_P013"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "結構組織法"
+article: "第十三條"
+related_to:
+  - "UI_P004: 元件N元組模式"
+  - "UI_P003: 側邊欄純篩選"
+  - "CH00.MP017: 關注點分離"
+  - "CH00.MP016: 模組化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**結構組織法第十三條（N元組獨立載入原則）**
+
+N元組模式中的元件應獨立載入和處理，將其視為各自服務特定目的的獨立實體，而非單一組合單元。載入應按面向（aspect）組織，而非按元件組織。
+
+:::{.callout-important}
+## 核心原則
+按面向類型載入元件（所有UI一起、所有Server一起），而非載入單一元件的所有面向，以符合應用程式的執行流程。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：面向導向載入 {#aspect-oriented-loading}
+
+N元組模式（如UI-Server-Defaults-Filters模式）將功能分為不同面向：
+- 每個面向服務特定目的
+- 面向在概念上相關但執行上獨立
+- 載入順序應符合執行流程
+
+## 第二款：獨立性優勢 {#independence-advantages}
+
+1. **選擇性載入**：只載入需要的面向（如只讀模式只載入UI/Server）
+2. **獨立測試**：每個面向可獨立於其他面向進行測試
+3. **清晰依賴流**：面向間的依賴關係變得明確而非隱含
+4. **平行處理**：適當時可平行執行面向
+5. **可替換性**：可替換或修改個別面向而不影響其他面向
+
+# 第二項：載入模式 {#loading-patterns}
+
+## 第一款：按面向載入（推薦）{#by-aspect}
+
+```r
+# ✅ 正確：按面向類型載入
+# 步驟 1：載入所有 UI 元件
+ui_files <- list.files(
+  path = "components",
+  pattern = "*UI\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(ui_files, source)
+
+# 步驟 2：載入所有 Server 元件
+server_files <- list.files(
+  path = "components",
+  pattern = "*Server\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(server_files, source)
+
+# 步驟 3：載入所有 Defaults 元件
+defaults_files <- list.files(
+  path = "components",
+  pattern = "*Defaults\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(defaults_files, source)
+
+# 步驟 4：載入所有 Filters 元件
+filters_files <- list.files(
+  path = "components",
+  pattern = "*Filters\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+lapply(filters_files, source)
+```
+
+## 第二款：按元件載入（不推薦）{#by-component}
+
+```r
+# ❌ 錯誤：載入元件的所有面向
+# 這違反了面向獨立性原則
+source("components/sidebar/marketingChannel/marketingChannelUI.R")
+source("components/sidebar/marketingChannel/marketingChannelServer.R")
+source("components/sidebar/marketingChannel/marketingChannelFilters.R")
+source("components/sidebar/marketingChannel/marketingChannelDefaults.R")
+
+# 然後載入下一個元件...
+source("components/sidebar/productCategory/productCategoryUI.R")
+source("components/sidebar/productCategory/productCategoryServer.R")
+# ...
+```
+
+# 第三項：組織結構 {#organization-structure}
+
+## 第一款：目錄結構 {#directory-structure}
+
+```
+components/
+├── sidebar/
+│   ├── sidebarUI.R
+│   ├── sidebarServer.R
+│   ├── marketingChannel/
+│   │   ├── marketingChannelUI.R
+│   │   ├── marketingChannelServer.R
+│   │   ├── marketingChannelDefaults.R
+│   │   └── marketingChannelFilters.R
+│   └── productCategory/
+│       ├── productCategoryUI.R
+│       ├── productCategoryServer.R
+│       ├── productCategoryDefaults.R
+│       └── productCategoryFilters.R
+├── main/
+│   ├── dashboard/
+│   │   ├── dashboardUI.R
+│   │   ├── dashboardServer.R
+│   │   └── dashboardDefaults.R
+│   └── analysis/
+│       ├── analysisUI.R
+│       ├── analysisServer.R
+│       └── analysisDefaults.R
+```
+
+## 第二款：載入順序策略 {#loading-order}
+
+```r
+# 定義載入順序
+loading_order <- list(
+  # 1. 基礎設施
+  infrastructure = c("config", "utils", "database"),
+  
+  # 2. 預設值（最先載入，因為其他面向可能依賴）
+  defaults = "*Defaults.R",
+  
+  # 3. UI 元件（定義介面）
+  ui = "*UI.R",
+  
+  # 4. Server 邏輯（處理互動）
+  server = "*Server.R",
+  
+  # 5. 篩選器（資料處理）
+  filters = "*Filters.R",
+  
+  # 6. 測試（如果在開發模式）
+  test = if (dev_mode) "*Test.R" else NULL
+)
+
+# 執行載入
+for (aspect in names(loading_order)) {
+  pattern <- loading_order[[aspect]]
+  if (!is.null(pattern)) {
+    files <- list.files(
+      path = "components",
+      pattern = pattern,
+      recursive = TRUE,
+      full.names = TRUE
+    )
+    lapply(files, source)
+    message(sprintf("載入 %d 個 %s 檔案", length(files), aspect))
+  }
+}
+```
+
+# 第四項：函數組織 {#function-organization}
+
+## 第一款：命名慣例 {#naming-conventions}
+
+```r
+# UI 函數遵循 UI 模式並返回 UI 元素
+marketingChannelUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    selectInput(ns("channel"), "行銷通路", choices = NULL)
+  )
+}
+
+productCategoryUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    selectInput(ns("category"), "產品類別", choices = NULL)
+  )
+}
+
+# Server 函數遵循 server 模式並處理反應性
+marketingChannelServer <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    # 反應邏輯
+  })
+}
+
+productCategoryServer <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    # 反應邏輯
+  })
+}
+
+# Filter 函數遵循資料處理模式
+marketingChannelFilters <- function(data, selection) {
+  data %>%
+    filter(channel %in% selection)
+}
+
+productCategoryFilters <- function(data, selection) {
+  data %>%
+    filter(category %in% selection)
+}
+```
+
+## 第二款：面向介面定義 {#aspect-interfaces}
+
+```r
+# 為每個面向定義清晰的介面
+# UI 面向介面
+create_ui_aspect <- function(component_name) {
+  list(
+    render = function(id) {
+      # 返回 UI 元素
+    },
+    validate = function() {
+      # 驗證 UI 結構
+    }
+  )
+}
+
+# Server 面向介面
+create_server_aspect <- function(component_name) {
+  list(
+    initialize = function(id, data) {
+      # 初始化 server 邏輯
+    },
+    update = function(new_data) {
+      # 更新反應值
+    }
+  )
+}
+
+# Filter 面向介面
+create_filter_aspect <- function(component_name) {
+  list(
+    apply = function(data, criteria) {
+      # 應用篩選
+    },
+    reset = function() {
+      # 重置篩選
+    }
+  )
+}
+```
+
+# 第五項：測試策略 {#testing-strategy}
+
+## 第一款：獨立面向測試 {#independent-testing}
+
+```r
+# 測試 UI 面向（不需要 Server）
+test_that("UI 元件正確渲染", {
+  ui <- marketingChannelUI("test")
+  expect_s3_class(ui, "shiny.tag.list")
+  expect_true(grepl("selectInput", as.character(ui)))
+})
+
+# 測試 Server 面向（使用模擬 UI）
+test_that("Server 邏輯正確處理輸入", {
+  testServer(marketingChannelServer, {
+    session$setInputs(channel = "online")
+    expect_equal(selected_channel(), "online")
+  })
+})
+
+# 測試 Filter 面向（純函數測試）
+test_that("Filter 正確篩選資料", {
+  test_data <- data.frame(
+    channel = c("online", "offline", "online"),
+    value = c(100, 200, 300)
+  )
+  
+  filtered <- marketingChannelFilters(test_data, "online")
+  expect_equal(nrow(filtered), 2)
+  expect_true(all(filtered$channel == "online"))
+})
+```
+
+## 第二款：整合測試 {#integration-testing}
+
+```r
+# 只在需要時測試面向整合
+test_that("UI 和 Server 面向正確整合", {
+  # 創建測試應用
+  ui <- fluidPage(
+    marketingChannelUI("test")
+  )
+  
+  server <- function(input, output, session) {
+    marketingChannelServer("test", reactive(test_data))
+  }
+  
+  # 執行整合測試
+  app <- shinytest2::AppDriver$new(
+    app = shinyApp(ui, server)
+  )
+  
+  # 驗證整合行為
+  app$set_inputs(test-channel = "online")
+  output <- app$get_value(output = "test-result")
+  expect_equal(output$channel, "online")
+})
+```
+
+# 第六項：最佳實踐 {#best-practices}
+
+## 第一款：條件載入 {#conditional-loading}
+
+```r
+# 根據應用模式選擇性載入面向
+load_app_aspects <- function(mode = "full") {
+  base_path <- "components"
+  
+  if (mode == "full") {
+    # 載入所有面向
+    load_aspect(base_path, "*Defaults.R")
+    load_aspect(base_path, "*UI.R")
+    load_aspect(base_path, "*Server.R")
+    load_aspect(base_path, "*Filters.R")
+    
+  } else if (mode == "view_only") {
+    # 只讀模式：只載入 UI 和基本 Server
+    load_aspect(base_path, "*UI.R")
+    load_aspect(base_path, "*Server.R")
+    
+  } else if (mode == "api") {
+    # API 模式：只載入資料處理
+    load_aspect(base_path, "*Filters.R")
+    load_aspect(base_path, "*Defaults.R")
+  }
+}
+
+load_aspect <- function(path, pattern) {
+  files <- list.files(
+    path = path,
+    pattern = pattern,
+    recursive = TRUE,
+    full.names = TRUE
+  )
+  lapply(files, source)
+  invisible(files)
+}
+```
+
+## 第二款：依賴管理 {#dependency-management}
+
+```r
+# 明確宣告面向間的依賴
+aspect_dependencies <- list(
+  UI = c(),                    # UI 無依賴
+  Defaults = c(),              # Defaults 無依賴
+  Server = c("UI", "Defaults"), # Server 依賴 UI 和 Defaults
+  Filters = c("Defaults")      # Filters 依賴 Defaults
+)
+
+# 按依賴順序載入
+load_with_dependencies <- function(aspect, loaded = character()) {
+  if (aspect %in% loaded) return(loaded)
+  
+  # 先載入依賴
+  deps <- aspect_dependencies[[aspect]]
+  for (dep in deps) {
+    loaded <- load_with_dependencies(dep, loaded)
+  }
+  
+  # 載入當前面向
+  load_aspect("components", paste0("*", aspect, ".R"))
+  c(loaded, aspect)
+}
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## N元組獨立載入檢查清單
+
+**載入策略**：
+- [ ] 按面向而非按元件載入
+- [ ] 載入順序符合執行流程
+- [ ] 支援選擇性載入
+- [ ] 依賴關係明確
+
+**檔案組織**：
+- [ ] 清晰的目錄結構
+- [ ] 一致的命名慣例
+- [ ] 面向檔案正確分離
+- [ ] 易於定位特定面向
+
+**測試覆蓋**：
+- [ ] 每個面向獨立測試
+- [ ] 面向介面測試
+- [ ] 必要時進行整合測試
+- [ ] 測試載入順序
+
+**效能優化**：
+- [ ] 避免重複載入
+- [ ] 支援懶載入
+- [ ] 平行載入可能性
+- [ ] 記憶體效率
+
+**維護性**：
+- [ ] 清晰的面向界限
+- [ ] 文件完整
+- [ ] 易於新增面向
+- [ ] 易於替換面向
+:::
+
+# 結論 {#conclusion}
+
+N元組獨立載入原則確保元件架構的靈活性和可維護性。通過按面向而非按元件組織載入，應用程式獲得更好的模組化、測試性和效能。記住，N元組模式的力量在於面向的獨立性，而正確的載入策略是實現這種獨立性的關鍵。
+
+---
+
+*基於：結構組織法第十三條*  
+*相關：[UI_P004 元件N元組模式](../../CH04_ui_components/principles/UI_P004_component_ntuple_pattern.qmd)、[MP017 關注點分離](../../CH00_fundamental_principles/03_development_methodology/MP017_separation_of_concerns.qmd)*

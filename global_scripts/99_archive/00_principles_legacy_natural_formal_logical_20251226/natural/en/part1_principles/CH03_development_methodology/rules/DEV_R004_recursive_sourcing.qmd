@@ -1,0 +1,414 @@
+---
+title: "DEV_R004: Recursive Sourcing Rule"
+subtitle: "Recursive loading of R files from nested directory structures"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R004"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law Implementation Rules"
+article: "Article 4"
+derives_from:
+  - "DEV_P001: Debug Principles"
+related_to:
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Implementation Rules Article 4 (Recursive Sourcing Rule)**
+
+This article mandates that all initialization scripts must recursively source R files from subdirectories to ensure proper loading of all components regardless of directory depth.
+
+:::{.callout-important}
+## Core Rule
+All initialization scripts must recursively source R files from subdirectories to ensure that all components are properly loaded regardless of their directory depth.
+:::
+
+# Section 1: Implementation Guidelines {#implementation}
+
+## Subsection 1: Recursive File Discovery {#discovery}
+
+第一項：遞迴檔案發現 (Recursive file discovery)
+
+Initialization scripts must recursively search for R files in all subdirectories:
+
+```r
+# Function to recursively discover R files
+get_r_files_recursive <- function(dir_path, 
+                                 include_pattern = "\\.R$", 
+                                 exclude_pattern = NULL,
+                                 max_depth = Inf) {
+  
+  # Check if directory exists
+  if (!dir.exists(dir_path)) {
+    warning("Directory does not exist: ", dir_path)
+    return(character(0))
+  }
+  
+  # Get all files and directories
+  all_contents <- list.files(dir_path, full.names = TRUE, 
+                             recursive = FALSE, 
+                             include.dirs = TRUE, 
+                             all.files = FALSE)
+  
+  # Split into files and directories
+  is_dir <- dir.exists(all_contents)
+  files <- all_contents[!is_dir]
+  subdirs <- all_contents[is_dir]
+  
+  # Filter files based on patterns
+  if (!is.null(include_pattern)) {
+    files <- files[grepl(include_pattern, basename(files))]
+  }
+  
+  if (!is.null(exclude_pattern)) {
+    files <- files[!grepl(exclude_pattern, basename(files))]
+  }
+  
+  # Recursively process subdirectories
+  if (length(subdirs) > 0 && max_depth > 1) {
+    subdir_files <- lapply(subdirs, function(subdir) {
+      get_r_files_recursive(subdir, 
+                          include_pattern = include_pattern,
+                          exclude_pattern = exclude_pattern,
+                          max_depth = max_depth - 1)
+    })
+    
+    files <- c(files, unlist(subdir_files))
+  }
+  
+  return(files)
+}
+```
+
+## Subsection 2: Deterministic Loading Order {#order}
+
+第一項：確定性載入順序 (Deterministic loading order)
+
+Files must be loaded in a deterministic order to ensure consistent behavior:
+
+1. **Sort By Path**: Files sorted by their full path
+2. **Priority Loading**: Priority markers in filenames
+3. **Dependency Resolution**: Analyze and resolve dependencies when possible
+
+```r
+# Sort files for deterministic loading
+r_files <- sort(r_files)
+```
+
+第二項：載入優先級 (Loading priority)
+
+Consider implementing priority prefixes:
+- `00_` for critical infrastructure
+- `01_` for core utilities
+- `02_` for standard components
+- `99_` for optional features
+
+# Section 2: Error Handling {#error-handling}
+
+## Subsection 1: Comprehensive Error Handling {#comprehensive}
+
+第一項：錯誤處理機制 (Error handling mechanism)
+
+Sourceing failures must be properly handled and reported:
+
+```r
+# Source a file with error handling
+source_with_verbose <- function(file_path, 
+                                verbose = VERBOSE_INITIALIZATION) {
+  if (verbose) {
+    message(paste("Sourcing file:", file_path))
+  }
+  
+  result <- tryCatch({
+    source(file_path)
+    if (verbose) message(paste("Successfully loaded:", file_path))
+    TRUE
+  }, error = function(e) {
+    message(paste("Error loading", file_path, ":", e$message))
+    FALSE
+  })
+  
+  return(result)
+}
+```
+
+## Subsection 2: Unified Source Function {#unified}
+
+第一項：統一載入函數 (Unified source function)
+
+A unified function should be used for sourcing files from directories:
+
+```r
+# Source all files in a directory and subdirectories
+source_all_files <- function(
+  dir_path, 
+  include_pattern = "^(fn_|ui_|server_|defaults_|.*UI|.*Server|.*Defaults).*\\.R$",
+  exclude_pattern = "(initialization|deinitialization)",
+  verbose = VERBOSE_INITIALIZATION) {
+  
+  # Get all R files recursively
+  r_files <- get_r_files_recursive(
+    dir_path, 
+    include_pattern = include_pattern,
+    exclude_pattern = exclude_pattern
+  )
+  
+  # Sort files to ensure deterministic loading order
+  r_files <- sort(r_files)
+  
+  # Track results
+  loaded_files <- character(0)
+  failed_files <- character(0)
+  
+  # Source each file
+  if (length(r_files) > 0) {
+    if (verbose) {
+      message(paste("Found", length(r_files), "files in", dir_path))
+    }
+    
+    for (file in r_files) {
+      result <- source_with_verbose(file, verbose)
+      
+      if (result) {
+        loaded_files <- c(loaded_files, file)
+      } else {
+        failed_files <- c(failed_files, file)
+      }
+    }
+  } else if (verbose) {
+    message(paste("No files found in", dir_path, "matching pattern"))
+  }
+  
+  # Return results
+  return(list(
+    loaded = loaded_files,
+    failed = failed_files
+  ))
+}
+```
+
+# Section 3: Pattern Matching {#patterns}
+
+## Subsection 1: Component Discovery Patterns {#discovery-patterns}
+
+第一項：標準命名模式 (Standard naming patterns)
+
+Files with standard prefixes:
+```r
+"^(fn_|ui_|server_|defaults_).*\\.R$"
+```
+
+Used for general utility functions and standard components.
+
+第二項：組件特定命名 (Component-specific naming)
+
+Files with component-specific naming:
+- UI components: `".*UI\\.R$"` (e.g., "sidebarHybridUI.R")
+- Server components: `".*Server\\.R$"` (e.g., "microCustomerServer.R")
+- Default configurations: `".*Defaults\\.R$"` (e.g., "sidebarHybridDefaults.R")
+
+第三項：排除模式 (Exclude patterns)
+
+Files to be excluded:
+```r
+"(initialization|deinitialization)"
+```
+
+第四項：組合模式 (Combined pattern)
+
+The combined pattern should include both standard and component-specific:
+
+```r
+include_pattern = "^(fn_|ui_|server_|defaults_|.*UI|.*Server|.*Defaults).*\\.R$"
+```
+
+# Section 4: Application to Initialization Modes {#modes}
+
+## Subsection 1: APP_MODE Initialization {#app-mode}
+
+第一項：應用模式初始化 (App mode initialization)
+
+The APP_MODE initialization script must use recursive sourcing:
+
+```r
+# For each directory in the ordered list
+for (dir_name in ordered_directories) {
+  dir_path <- file.path(Func_dir, dir_name)
+  
+  # Check if directory exists
+  if (dir.exists(dir_path)) {
+    # Source all files recursively
+    results <- source_all_files(
+      dir_path,
+      include_pattern = "^(fn_|ui_|server_|defaults_|.*UI|.*Server|.*Defaults).*\\.R$",
+      exclude_pattern = "(initialization|deinitialization)",
+      verbose = VERBOSE_INITIALIZATION
+    )
+    
+    # Update tracking
+    loaded_files <- c(loaded_files, results$loaded)
+    failed_files <- c(failed_files, results$failed)
+  }
+}
+```
+
+## Subsection 2: Other Modes {#other-modes}
+
+第一項：其他模式應用 (Other mode applications)
+
+The same recursive sourcing pattern should be applied to:
+- GLOBAL_MODE initialization
+- UPDATE_MODE initialization
+- TEST_MODE initialization
+
+# Section 5: Directory Organization {#organization}
+
+## Subsection 1: Best Practices {#best-practices}
+
+第一項：目錄組織原則 (Directory organization principles)
+
+To work effectively with recursive sourcing:
+
+1. **Logical Grouping**: Organize related components in subdirectories
+2. **Depth Limitation**: Avoid excessive nesting (>3-4 levels deep)
+3. **Clear Naming**: Use descriptive directory names
+4. **Documentation**: Include README.md in each directory
+
+第二項：範例目錄結構 (Example directory structure)
+
+```
+10_rshinyapp_components/
+├── README.md
+├── charts/
+│   ├── README.md
+│   ├── ui_barChart.R
+│   ├── ui_lineChart.R
+│   └── ui_pieChart.R
+├── inputs/
+│   ├── README.md
+│   ├── ui_dateRange.R
+│   └── ui_filterInput.R
+├── micro/
+│   ├── README.md
+│   └── microCustomer/
+│       ├── microCustomerUI.R
+│       ├── microCustomerServer.R
+│       └── microCustomerDefaults.R
+└── sidebars/
+    ├── README.md
+    ├── sidebarBasic/
+    │   ├── ui_sidebarBasic.R
+    │   └── server_sidebarBasic.R
+    └── sidebarHybrid/
+        ├── sidebarHybridUI.R
+        ├── sidebarHybridServer.R
+        └── sidebarHybridDefaults.R
+```
+
+# Section 6: Debugging and Troubleshooting {#debugging}
+
+## Subsection 1: Debugging Techniques {#techniques}
+
+第一項：除錯技術 (Debugging techniques)
+
+When debugging sourcing issues:
+
+1. **Enable Verbose Mode**: Set `VERBOSE_INITIALIZATION <- TRUE`
+2. **Check Loading Order**: Review the order of file loading
+3. **Inspect Failures**: Examine failed files and error messages
+4. **Verify Patterns**: Confirm file naming follows expected patterns
+
+## Subsection 2: Common Issues {#issues}
+
+第一項：常見問題與解決方案 (Common issues and solutions)
+
+| Issue | Solution |
+|-------|----------|
+| Files not being sourced | Check file naming patterns |
+| Loading order problems | Implement priority prefixes |
+| Circular dependencies | Restructure code to eliminate circles |
+| Excessive loading time | Limit recursive depth or implement lazy loading |
+| Path-related errors | Use platform-neutral path construction |
+
+# Section 7: Performance Considerations {#performance}
+
+## Subsection 1: Optimization Strategies {#optimization}
+
+第一項：效能優化策略 (Performance optimization strategies)
+
+1. **Depth Limitation**: Set reasonable max_depth parameter
+2. **Lazy Loading**: Load components only when needed
+3. **Caching**: Cache loaded components for reuse
+4. **Parallel Loading**: Consider parallel sourcing for independent modules
+
+第二項：效能監控 (Performance monitoring)
+
+```r
+# Track loading time
+start_time <- Sys.time()
+results <- source_all_files(dir_path)
+end_time <- Sys.time()
+
+if (verbose) {
+  message(sprintf("Loading took %.2f seconds", 
+                  as.numeric(end_time - start_time)))
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Recursive Sourcing Checklist
+
+**Implementation:**
+- [ ] Recursive file discovery function implemented
+- [ ] Include/exclude patterns defined
+- [ ] Deterministic loading order ensured
+- [ ] Error handling in place
+
+**Directory Organization:**
+- [ ] Logical grouping of components
+- [ ] Reasonable nesting depth (≤4 levels)
+- [ ] Clear directory naming
+- [ ] README files in directories
+
+**Pattern Matching:**
+- [ ] Standard naming patterns supported
+- [ ] Component-specific patterns included
+- [ ] Exclude patterns configured
+- [ ] Combined pattern covers all cases
+
+**Debugging:**
+- [ ] Verbose mode available
+- [ ] Loading order trackable
+- [ ] Failed files reported
+- [ ] Error messages informative
+
+**Performance:**
+- [ ] Depth limitation considered
+- [ ] Loading time acceptable
+- [ ] No circular dependencies
+- [ ] Path construction platform-neutral
+:::
+
+# Conclusion {#conclusion}
+
+The Recursive Sourcing Rule ensures that all components are properly loaded regardless of their location in the directory hierarchy. By implementing recursive sourcing with proper error handling and pattern matching, the system can support logical organization of components while maintaining reliable initialization across all operating modes. This approach enhances modularity and separation of concerns while providing robust debugging capabilities.
+
+---
+
+*Based on: Development Methodology Law Implementation Rules Article 4*  
+*Derives from: [DEV_P001 Debug Principles](../principles/DEV_P001_debug_principles.qmd)*  
+*Related to: [MP016 Modularity](../../CH00_fundamental_principles/MP016_modularity.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*

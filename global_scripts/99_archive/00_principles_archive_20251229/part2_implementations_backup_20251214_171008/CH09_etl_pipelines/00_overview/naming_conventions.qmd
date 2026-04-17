@@ -1,0 +1,419 @@
+---
+id: "ETL005"
+title: "ETL Naming Conventions"
+type: "etl-operations"
+date_created: "2025-07-13"
+date_modified: "2025-07-13"
+author: "Claude"
+derives_from:
+  - "R019": "Object Naming Convention"
+  - "R023": "Object File Name Translation"
+  - "DF000": "Data Pipeline Architecture - 7-Layer"
+implements:
+  - "ETL Pipeline Table Naming Standards"
+relates_to:
+  - "MP070": "Type Prefix Naming"
+  - "MP068": "Language as Index"
+---
+
+# ETL05: ETL Naming Conventions
+
+## Core Purpose
+
+ETL05 establishes **standardized naming conventions** for database tables throughout the ETL pipeline, ensuring consistent identification of data transformation stages while adhering to R019 Object Naming Convention and R023 File Name Translation principles.
+
+## Naming Framework Overview
+
+### ETL Stage Identifiers
+
+All ETL pipeline tables follow the **triple underscore (___) convention** from R019:
+
+```
+table_name = rigid_identifier + "___" + stage_descriptor
+```
+
+| Stage | Code | Descriptor | Purpose | Database Layer |
+|-------|------|------------|---------|---------------|
+| 0 | Import | `(none)` | Raw data ingestion | raw_data |
+| 1 | Staging | `___staged` | File preprocessing and validation | staged_data |
+| 2 | Transform | `___transformed` | Schema mapping and type conversion | transformed_data |
+| 3 | Cleanse | `___cleansed` | Data quality and duplicate handling | cleansed_data |
+| 4 | Process | `___processed` | Business logic and aggregation | processed_data |
+| 5 | Application | `___application` | UI-ready optimization | app_data |
+
+### Complete Naming Pattern
+
+```
+df_[platform]_[purpose]_[entity]___[stage_descriptor]
+```
+
+Where:
+- **df_**: Data frame type prefix (from R019)
+- **platform**: Data source platform (amazon, shopee, momo, etc.)
+- **purpose**: Primary data function (product_property, sales_data, etc.)
+- **entity**: Specific entity identifier (jew, sop, electronics, etc.)
+- **___**: Triple underscore separator (R019 requirement)
+- **stage_descriptor**: ETL stage identifier
+
+## Stage-by-Stage Naming Examples
+
+### Example: Amazon product Profiles ETL Pipeline
+
+#### Stage 0: Import (Raw Data)
+```sql
+-- Raw data tables (no stage descriptor)
+df_product_property_jew          -- Jewelry product properties
+df_product_property_sop          -- SOP product properties  
+df_product_property_electronics  -- Electronics product properties
+```
+
+#### Stage 1: Staging
+```sql
+-- Staged tables (basic validation and cleaning)
+df_product_property_jew___staged
+df_product_property_sop___staged
+df_product_property_electronics___staged
+```
+
+#### Stage 2: Transform
+```sql
+-- Transformed tables (schema mapping and standardization)
+df_product_property_jew___transformed
+df_product_property_sop___transformed
+df_product_property_electronics___transformed
+```
+
+#### Stage 3: Cleanse
+```sql
+-- Cleansed tables (quality assurance and deduplication)
+df_product_property_jew___cleansed
+df_product_property_sop___cleansed
+df_product_property_electronics___cleansed
+```
+
+#### Stage 4: Process
+```sql
+-- Processed tables (business logic applied)
+df_product_property_jew___processed
+df_product_property_sop___processed
+df_product_property_electronics___processed
+```
+
+#### Stage 5: Application
+```sql
+-- Application-ready tables (UI optimization)
+df_product_property_jew___application
+df_product_property_sop___application
+df_product_property_electronics___application
+```
+
+## Multi-Platform Naming Patterns
+
+### Platform-Specific Naming
+```sql
+-- Amazon platform
+df_amazon_sales_data___staged
+df_amazon_customer_profiles___transformed
+df_amazon_product_reviews___cleansed
+
+-- Shopee platform  
+df_shopee_sales_data___staged
+df_shopee_customer_profiles___transformed
+df_shopee_product_reviews___cleansed
+
+-- Multi-platform aggregation (no platform prefix)
+df_consolidated_sales___processed
+df_unified_customers___application
+```
+
+### Purpose-Specific Categories
+```sql
+-- product/Product data
+df_product_property_*___[stage]
+df_product_catalog_*___[stage]
+df_product_reviews_*___[stage]
+
+-- Sales/Transaction data
+df_sales_data_*___[stage]
+df_order_details_*___[stage]
+df_payment_records_*___[stage]
+
+-- Customer data
+df_customer_profiles_*___[stage]
+df_customer_behavior_*___[stage]
+df_customer_segments_*___[stage]
+```
+
+## Script Naming Alignment
+
+### ETL Script to Table Mapping
+
+| Script | Input Tables | Output Tables |
+|--------|--------------|---------------|
+| `amz_ETL03_0IM_00.R` | External files | `df_product_property_*` |
+| `amz_ETL03_1ST_00.R` | `df_product_property_*` | `df_product_property_*___staged` |
+| `amz_ETL03_2TR_00.R` | `df_product_property_*___staged` | `df_product_property_*___transformed` |
+| `amz_ETL03_3CL_00.R` | `df_product_property_*___transformed` | `df_product_property_*___cleansed` |
+| `amz_ETL03_4PR_00.R` | `df_product_property_*___cleansed` | `df_product_property_*___processed` |
+| `amz_ETL03_5AP_00.R` | `df_product_property_*___processed` | `df_product_property_*___application` |
+
+### Pattern Recognition in Code
+
+```r
+# Stage 1: Staging (1ST)
+# Input pattern matching
+raw_tables[grepl("^df_product_property_", raw_tables)]
+# Output naming
+staged_table_name <- paste0(table_name, "___staged")
+
+# Stage 2: Transform (2TR)  
+# Input pattern matching
+staged_tables[grepl("^df_product_property_.*___staged$", staged_tables)]
+# Output naming
+transformed_table_name <- gsub("___staged$", "___transformed", table_name)
+
+# Stage 3: Cleanse (3CL)
+# Input pattern matching
+transformed_tables[grepl("^df_product_property_.*___transformed$", transformed_tables)]
+# Output naming
+cleansed_table_name <- gsub("___transformed$", "___cleansed", table_name)
+```
+
+## Database Organization Strategy
+
+### Database-Specific Table Storage
+
+```mermaid
+graph TD
+    A[External Sources] --> B[raw_data.duckdb]
+    B --> C[staged_data.duckdb]
+    C --> D[transformed_data.duckdb]
+    D --> E[cleansed_data.duckdb]
+    E --> F[processed_data.duckdb]
+    F --> G[app_data.duckdb]
+    
+    B -.-> B1["df_product_property_*<br/>(no suffix)"]
+    C -.-> C1["df_product_property_*___staged"]
+    D -.-> D1["df_product_property_*___transformed"]
+    E -.-> E1["df_product_property_*___cleansed"]
+    F -.-> F1["df_product_property_*___processed"]
+    G -.-> G1["df_product_property_*___application"]
+```
+
+### Cross-Database Queries
+
+```sql
+-- Query data across ETL stages (using ATTACH DATABASE)
+ATTACH DATABASE 'staged_data.duckdb' AS staged;
+ATTACH DATABASE 'transformed_data.duckdb' AS transformed;
+
+SELECT 
+  s.product_id as original_id,
+  t.product_id as standardized_id,
+  s.etl_staging_timestamp,
+  t.etl_transform_timestamp
+FROM staged.df_product_property_jew___staged s
+JOIN transformed.df_product_property_jew___transformed t
+  ON s.asin = t.product_id;
+```
+
+## Validation and Quality Assurance
+
+### Naming Validation Functions
+
+```r
+#' Validate ETL table naming convention
+#' @param table_name Character string of table name
+#' @param expected_stage Character string of expected stage descriptor
+#' @return Logical indicating if name is valid
+validate_etl_table_name <- function(table_name, expected_stage = NULL) {
+  
+  # Check basic df_ prefix
+  if (!grepl("^df_", table_name)) {
+    warning("Table name must start with 'df_': ", table_name)
+    return(FALSE)
+  }
+  
+  # Check for stage descriptor
+  if (grepl("___", table_name)) {
+    stage_part <- sub(".*___", "", table_name)
+    valid_stages <- c("staged", "transformed", "cleansed", "processed", "application")
+    
+    if (!stage_part %in% valid_stages) {
+      warning("Invalid stage descriptor '", stage_part, "' in: ", table_name)
+      return(FALSE)
+    }
+    
+    # Check specific expected stage
+    if (!is.null(expected_stage) && stage_part != expected_stage) {
+      warning("Expected stage '", expected_stage, "' but found '", stage_part, "' in: ", table_name)
+      return(FALSE)
+    }
+  }
+  
+  return(TRUE)
+}
+
+#' Generate next stage table name
+#' @param current_table_name Current table name
+#' @param target_stage Target stage descriptor
+#' @return New table name for target stage
+generate_next_stage_name <- function(current_table_name, target_stage) {
+  
+  # Extract base name (before triple underscore)
+  base_name <- sub("___.*$", "", current_table_name)
+  
+  # Add new stage descriptor
+  new_name <- paste0(base_name, "___", target_stage)
+  
+  return(new_name)
+}
+```
+
+### Usage Examples
+
+```r
+# Validation examples
+validate_etl_table_name("df_product_property_jew___staged", "staged")  # TRUE
+validate_etl_table_name("df_product_property_jew___invalid", "staged") # FALSE
+
+# Name generation examples
+generate_next_stage_name("df_product_property_jew___staged", "transformed")
+# Returns: "df_product_property_jew___transformed"
+
+generate_next_stage_name("df_product_property_jew", "staged")
+# Returns: "df_product_property_jew___staged"
+```
+
+## Metadata and Documentation
+
+### ETL Stage Metadata
+
+Each ETL stage should include standardized metadata columns:
+
+```r
+# Standard ETL metadata columns
+etl_metadata_columns <- list(
+  staging = c(
+    "etl_staging_timestamp",
+    "etl_validation_status", 
+    "etl_phase"
+  ),
+  transformed = c(
+    "etl_transform_timestamp",
+    "etl_phase",
+    "schema_version"
+  ),
+  cleansed = c(
+    "etl_cleansing_timestamp",
+    "etl_phase",
+    "quality_score"
+  ),
+  processed = c(
+    "etl_processing_timestamp", 
+    "etl_phase",
+    "business_rules_applied"
+  ),
+  application = c(
+    "etl_application_timestamp",
+    "etl_phase", 
+    "ui_optimization_level"
+  )
+)
+```
+
+### Table Documentation Standards
+
+```r
+# Table documentation template
+document_etl_table <- function(table_name, stage, description) {
+  
+  stage_info <- switch(stage,
+    "staged" = "Basic validation and encoding standardization",
+    "transformed" = "Schema mapping and data type conversion", 
+    "cleansed" = "Data quality assurance and deduplication",
+    "processed" = "Business logic application and aggregation",
+    "application" = "UI optimization and performance tuning"
+  )
+  
+  cat("## Table:", table_name, "\n")
+  cat("**Stage**:", stage, "\n")
+  cat("**Purpose**:", stage_info, "\n") 
+  cat("**Description**:", description, "\n")
+  cat("**Created**:", Sys.time(), "\n\n")
+}
+```
+
+## Integration with Application Code
+
+### Universal Data Access Pattern
+
+```r
+# Get table at specific ETL stage
+get_etl_table <- function(base_name, stage = "application", db_connection = NULL) {
+  
+  # Generate full table name
+  if (stage == "raw") {
+    table_name <- base_name  # No suffix for raw data
+  } else {
+    table_name <- paste0(base_name, "___", stage)
+  }
+  
+  # Validate naming
+  if (!validate_etl_table_name(table_name, stage)) {
+    stop("Invalid table naming: ", table_name)
+  }
+  
+  # Load data using appropriate connection
+  if (is.null(db_connection)) {
+    db_connection <- get_db_connection_for_stage(stage)
+  }
+  
+  return(dbGetQuery(db_connection, paste("SELECT * FROM", table_name)))
+}
+
+# Helper function to get appropriate database connection
+get_db_connection_for_stage <- function(stage) {
+  switch(stage,
+    "raw" = dbConnectDuckdb(db_path_list$raw_data, read_only = TRUE),
+    "staged" = dbConnectDuckdb(db_path_list$staged_data, read_only = TRUE),
+    "transformed" = dbConnectDuckdb(db_path_list$transformed_data, read_only = TRUE),
+    "cleansed" = dbConnectDuckdb(db_path_list$cleansed_data, read_only = TRUE),
+    "processed" = dbConnectDuckdb(db_path_list$processed_data, read_only = TRUE),
+    "application" = dbConnectDuckdb(db_path_list$app_data, read_only = TRUE)
+  )
+}
+```
+
+## Benefits and Advantages
+
+### 1. **Systematic Organization**
+- Clear identification of data transformation stage
+- Consistent pattern across all ETL pipelines
+- Easy tracking of data lineage
+
+### 2. **Automated Processing**
+- Pattern-based table discovery
+- Automated stage progression
+- Programmatic validation
+
+### 3. **Maintainability**  
+- Self-documenting table names
+- Standardized troubleshooting approach
+- Clear separation of concerns
+
+### 4. **Scalability**
+- Easy addition of new platforms
+- Consistent multi-entity processing
+- Reusable naming patterns
+
+### 5. **Integration Ready**
+- Compatible with R019/R023 principles
+- Works with existing global script architecture
+- Supports automated documentation generation
+
+## Conclusion
+
+ETL05 Naming Conventions provide a comprehensive framework for systematically naming database tables throughout the ETL pipeline. By following the triple underscore convention from R019 and implementing stage-specific descriptors, this system ensures consistent, discoverable, and maintainable data transformation workflows.
+
+The naming conventions support automated processing, enable clear data lineage tracking, and integrate seamlessly with the existing global script architecture, making ETL pipeline development more efficient and reliable across all platforms and data types.

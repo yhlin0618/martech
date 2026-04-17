@@ -1,0 +1,272 @@
+---
+title: "M01: Database Summarization Module"
+subtitle: "Automated database structure documentation and reporting system"
+chapter: "CH09"
+category: "module"
+number: "M01"
+date-created: "2025-04-15"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "module"
+law: "Modules & Tools Framework"
+article-number: "Module 1"
+related_to:
+  - "MP043_database_documentation"
+  - "MP007_documentation_organization"
+  - "MP010_information_flow_transparency"
+  - "MP044_functor_module_correspondence"
+  - "R021_one_function_one_file"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Module 1: Database Summarization System {#overview}
+
+This module implements automated database documentation functionality as described in MP43 (Database Documentation Principle). It provides tools for generating comprehensive documentation of database structures and content in Markdown format.
+
+## Section 1: Module Purpose {#purpose}
+
+### Subsection 1: Problem Statement {#problem}
+
+Database structures often lack proper documentation, making it difficult for developers to:
+- Understand table relationships
+- Identify available data columns
+- View sample data for testing
+- Track schema changes over time
+
+Manual database documentation is tedious and quickly becomes outdated.
+
+### Subsection 2: Solution Overview {#solution}
+
+The database summarization module provides:
+- Automated extraction of database schema information
+- Generation of comprehensive Markdown documentation
+- Sample data inclusion for better understanding
+- Support for multiple database types (DuckDB, SQLite)
+- Batch documentation of multiple databases
+
+## Section 2: Functor Description {#functor}
+
+This module implements the `summarize database` functor, which maps database structures to documentation artifacts:
+
+- **Source Category**: Database structures (tables, columns, relationships)
+- **Target Category**: Markdown documentation
+- **Structure Preservation**: The documentation preserves the hierarchical structure of the database
+- **Natural Transformations**: Documentation style can be parameterized (sample rows, format options)
+
+## Section 3: Core Functions {#functions}
+
+### Subsection 1: Function Locations {#locations}
+
+All functions have been properly organized:
+- **Main Functions**: Located in `global_scripts/04_utils/`
+  - `fn_summarize_database.R` - Core documentation functions
+- **Executable Scripts**: Located in `global_scripts/25_scripts/admin/`
+  - `sc_document_database.R` - Main execution script
+
+### Subsection 2: Main Documentation Function {#main-function}
+
+```r
+#' Generate a comprehensive database summary in Markdown format
+#'
+#' @param db_connection A DBI connection object, or path to a database file
+#' @param output_file The path to the output Markdown file
+#' @param include_samples Whether to include data samples (default: TRUE)
+#' @param sample_rows Number of sample rows to include (default: 5)
+#' @param connection_type Type of database connection ("duckdb", "sqlite", etc.)
+#' @return Invisibly returns the generated markdown text
+#'
+summarize_database <- function(db_connection, 
+                              output_file, 
+                              include_samples = TRUE, 
+                              sample_rows = 5,
+                              connection_type = "duckdb") {
+  # Implementation details:
+  # 1. Connect to database (or use existing connection)
+  # 2. List all tables
+  # 3. For each table:
+  #    - Get row count
+  #    - Extract column names and types
+  #    - Optionally include sample data
+  # 4. Generate formatted Markdown
+  # 5. Write to output file
+}
+```
+
+### Subsection 3: Convenience Functions {#convenience-functions}
+
+```r
+#' Convenience function to summarize the app database
+summarize_app_database <- function(db_path = "app_data.duckdb", 
+                                  output_dir = "docs/database") {
+  output_file <- file.path(output_dir, "app_data_structure.md")
+  summarize_database(
+    db_connection = db_path,
+    output_file = output_file,
+    include_samples = TRUE,
+    sample_rows = 5,
+    connection_type = "duckdb"
+  )
+}
+
+#' Document all project databases
+document_all_databases <- function(app_db_path = "app_data.duckdb",
+                                 raw_db_path = "data/raw_data.duckdb",
+                                 output_dir = "docs/database") {
+  # Document both app and raw databases
+  # Create comprehensive documentation set
+}
+```
+
+## Section 4: Usage Workflow {#workflow}
+
+### Subsection 1: Single Database Documentation {#single-database}
+
+```r
+# Source the function
+source("global_scripts/04_utils/fn_summarize_database.R")
+
+# Document a specific database
+summarize_database(
+  db_connection = "path/to/database.duckdb",
+  output_file = "docs/database_structure.md",
+  include_samples = TRUE,
+  sample_rows = 10
+)
+```
+
+### Subsection 2: Project-Wide Documentation {#project-documentation}
+
+```r
+# Source the function
+source("global_scripts/04_utils/fn_summarize_database.R")
+
+# Document all project databases
+document_all_databases(
+  app_db_path = "app_data.duckdb",
+  raw_db_path = "data/raw_data.duckdb",
+  output_dir = "docs/database"
+)
+```
+
+### Subsection 3: Using the Execution Script {#execution-script}
+
+```bash
+# Run from project root
+Rscript global_scripts/25_scripts/admin/sc_document_database.R
+```
+
+## Section 5: Output Format {#output}
+
+### Subsection 1: Markdown Structure {#markdown-structure}
+
+The generated documentation follows this structure:
+
+```markdown
+# Database Structure Summary
+
+*Generated on:* YYYY-MM-DD HH:MM:SS
+
+## Overview
+**Database Type:** DuckDB/SQLite version
+
+This database contains N tables:
+
+| Table Name | Row Count |
+|------------|-----------|
+| table1     | 1,234     |
+| table2     | 5,678     |
+
+## Table Details
+
+### Table: table1
+- **Row count:** 1,234
+
+#### Columns
+| Column Name | Data Type |
+|------------|-----------|
+| id         | integer   |
+| name       | character |
+
+#### Sample Data
+| id | name |
+|----|------|
+| 1  | John |
+| 2  | Jane |
+```
+
+### Subsection 2: Information Included {#information-included}
+
+Each table documentation includes:
+1. **Table name and row count**
+2. **Column specifications**:
+   - Column names
+   - Data types
+3. **Sample data** (optional):
+   - First N rows of actual data
+   - NULL values clearly marked
+   - Long text truncated for readability
+
+## Section 6: SNSQL Commands {#snsql}
+
+This module provides the following SNSQL commands:
+
+```sql
+-- Basic database summarization
+summarize database "app_data.duckdb"
+
+-- Summarize with custom output location
+summarize database "app_data.duckdb" to "docs/database/app_structure.md" 
+  with sample_rows=10
+
+-- Document all project databases
+document all databases in "docs/database"
+```
+
+## Section 7: Integration Points {#integration}
+
+### Subsection 1: Related Modules {#related-modules}
+
+This module integrates with:
+- **SNSQL Language (MP27)**: Provides commands through SNSQL extensions
+- **Documentation Organization (MP07)**: Follows documentation organization principles
+- **Information Flow Transparency (MP10)**: Makes database structures explicit
+
+### Subsection 2: Dependencies {#dependencies}
+
+Required R packages:
+- `DBI`: Database interface
+- `duckdb`: DuckDB connectivity (optional)
+- `RSQLite`: SQLite connectivity (optional)
+
+## Section 8: Best Practices {#best-practices}
+
+### Subsection 1: Documentation Maintenance {#maintenance}
+
+1. **Regular Updates**: Re-generate documentation after schema changes
+2. **Version Control**: Commit documentation files to track schema evolution
+3. **CI/CD Integration**: Automate documentation generation in build pipelines
+4. **Review Process**: Include documentation updates in code reviews
+
+### Subsection 2: Security Considerations {#security}
+
+1. **Sensitive Data**: Be cautious when including sample data
+2. **Production Databases**: Consider using read-only connections
+3. **Output Location**: Ensure documentation directory has appropriate permissions
+4. **Data Masking**: Consider masking sensitive values in samples
+
+### Subsection 3: Performance Tips {#performance}
+
+1. **Large Databases**: Limit sample rows for large tables
+2. **Connection Reuse**: Pass existing connections when documenting multiple databases
+3. **Selective Documentation**: Document only relevant tables if needed
+4. **Async Processing**: Consider parallel processing for multiple databases
+
+---
+
+*This module ensures comprehensive database documentation following MP43 (Database Documentation Principle), making database structures transparent and accessible to all team members.*

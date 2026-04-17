@@ -1,0 +1,195 @@
+---
+title: "UI_R027: Column/Field Display Name Format"
+subtitle: "Standard format for displaying column names and field labels with abbreviations in zh_TW UI"
+chapter: "CH04"
+category: "rule"
+number: "UI_R027"
+date-created: "2026-03-10"
+date-modified: "2026-03-10"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article-number:
+  number: 27
+  title: "Column/Field Display Name Format"
+related_to:
+  - "UI_R025: Taiwan Traditional Chinese Terminology"
+  - "UI_R022: UI Text Translation Pattern"
+  - "DEV_R052: English Keys in Business Logic"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 27: Column/Field Display Name Format {#overview}
+
+**UI Components Law Article 27 (Column/Field Display Name Format)**
+
+This rule defines the standard display format for column names, field labels, KPI titles, and any data labels shown to users in the zh_TW locale. It resolves ambiguity when items have both a Chinese full name and an English abbreviation or code.
+
+:::{.callout-important}
+## Core Rule
+When a data item has a recognized English abbreviation or code, the display format is:
+
+**`中文全稱（英文縮寫）`**
+
+Chinese full name first, abbreviation in parentheses. This applies uniformly to all abbreviations including metric codes (CLV, RFM), status codes (E0, S1), and classification codes.
+:::
+
+# Section 1: Display Format Standard {#display-format}
+
+## Subsection 1: Items with Abbreviations {#with-abbreviations}
+
+**Format: `中文全稱（英文縮寫）`**
+
+The Chinese full name comes first (because zh_TW is the primary UI language), followed by the English abbreviation in full-width parentheses `（）`.
+
+**Examples:**
+
+| English Key | zh_TW Display | Category |
+|-------------|---------------|----------|
+| CLV | 顧客終生價值（CLV） | Metric |
+| RFM | 顧客價值分數（RFM） | Metric |
+| NES | 新舊客狀態（NES） | Metric |
+| CAI | 客戶活躍指數（CAI） | Metric |
+| PCV | 預測客戶價值（PCV） | Metric |
+| CRI | 客戶風險指數（CRI） | Metric |
+| IPT | 平均購買間隔（IPT） | Metric |
+| P(alive) | 存活機率（P(alive)） | Metric |
+| E0 | 主力客（E0） | NES Status |
+| S1 | 瞌睡客（S1） | NES Status |
+| S2 | 半睡客（S2） | NES Status |
+| S3 | 沈睡客（S3） | NES Status |
+| N | 新客（N） | NES Status |
+| RSV | RSV 分類（RSV） | Classification |
+| MoM | 月增率（MoM） | Growth Rate |
+| YoY | 年增率（YoY） | Growth Rate |
+
+## Subsection 2: Items without Standard Abbreviations {#without-abbreviations}
+
+**Format: Pure Chinese**
+
+Items that do not have a recognized English abbreviation display in pure Chinese without parenthetical additions.
+
+**Examples:**
+
+| English Key | zh_TW Display |
+|-------------|---------------|
+| Average Churn Probability | 平均流失機率 |
+| Total Revenue | 總營收 |
+| Order Count | 訂單數 |
+| Customer Count | 顧客數 |
+| Average Order Value | 平均訂單金額 |
+
+## Subsection 3: ID-Type Fields {#id-fields}
+
+**Exception: ID-type fields may remain in English or use abbreviated format.**
+
+| English Key | zh_TW Display | Reason |
+|-------------|---------------|--------|
+| Customer ID | 顧客 ID | ID is universally understood |
+| Order ID | 訂單 ID | ID is universally understood |
+
+# Section 2: Implementation {#implementation}
+
+## Subsection 1: Translation Dictionary {#dictionary}
+
+The `中文全稱（英文縮寫）` format is stored in `ui_terminology.csv`, not constructed at runtime.
+
+**CSV entries:**
+
+```csv
+en_us,zh_tw
+CLV,顧客終生價值（CLV）
+RFM,顧客價值分數（RFM）
+NES Status - E0,主力客（E0）
+NES Status - S1,瞌睡客（S1）
+```
+
+## Subsection 2: Code Pattern {#code-pattern}
+
+**Business logic remains in English (per DEV_R052). The format is applied only via `translate()` at the UI layer.**
+
+```r
+# Business logic: English keys (unchanged)
+df$nes_status <- "E0"  # English code in data
+
+# UI display: translate() returns formatted string
+# translate("NES Status - E0") → "主力客（E0）"
+tags$span(translate(paste0("NES Status - ", df$nes_status)))
+
+# Table column names
+colnames_display <- sapply(names(show_df), translate)
+# translate("CLV") → "顧客終生價值（CLV）"
+```
+
+## Subsection 3: Why Chinese First {#rationale}
+
+1. **Primary language**: The UI is in zh_TW; Chinese should lead
+2. **Readability**: Users read the Chinese meaning first, then see the abbreviation for reference
+3. **Consistency**: One uniform format eliminates ambiguity about display order
+4. **Abbreviation aids comprehension**: Codes like E0/S1/S2/S3 convey ordering (0→3 = severity), and codes like CLV/RFM are widely used in marketing — omitting them loses information
+
+# Section 3: Scope {#scope}
+
+## Subsection 1: Where This Rule Applies {#applies-to}
+
+- DT::datatable column names (via `sapply(names(df), translate)`)
+- KPI card titles
+- Chart axis labels and legends
+- Sidebar filter labels
+- Any user-visible field name or metric label
+
+## Subsection 2: Where This Rule Does NOT Apply {#does-not-apply}
+
+- Internal variable names (always English, per DEV_R052)
+- Log messages and debug output
+- API responses and CSV exports (always English)
+- Code comments
+
+# Section 4: Violations and Compliance {#violations}
+
+**Violations:**
+
+```r
+# VIOLATION: Abbreviation only, no Chinese
+colnames(show_df) <- c("CLV", "RFM", "NES")
+
+# VIOLATION: Chinese only, missing abbreviation for items that have one
+# translate("CLV") → "顧客終生價值"  (missing CLV in parens)
+
+# VIOLATION: English first
+# translate("CLV") → "CLV 顧客終生價值"  (wrong order)
+
+# VIOLATION: NES status without code
+# translate("NES Status - E0") → "主力客"  (missing E0 code)
+```
+
+**Compliant:**
+
+```r
+# COMPLIANT: Chinese first, abbreviation in parentheses
+# translate("CLV") → "顧客終生價值（CLV）"
+# translate("NES Status - E0") → "主力客（E0）"
+
+# COMPLIANT: No abbreviation for items without standard codes
+# translate("Total Revenue") → "總營收"
+```
+
+# Section 5: Principle Relationships {#relationships}
+
+This rule:
+
+1. **Extends UI_R025 (Taiwan Traditional Chinese Terminology)** — defines the display format for translated terms
+2. **Works with UI_R022 (UI Text Translation Pattern)** — the format is stored in the translation dictionary
+3. **Complements DEV_R052 (English Keys in Business Logic)** — business logic stays English; this rule governs the display layer only
+4. **Resolves Issue #288** — clarifies the ambiguity about whether abbreviations like CLV should appear in English
+
+---
+
+*Based on: UI Components Law Article 27*
+*Origin: Customer suggestion document 技詮儀表板問題_20260308.docx, Issue #288*

@@ -1,0 +1,677 @@
+---
+title: "MP114: Input Validation and Sanitization"
+subtitle: "Comprehensive input validation and injection attack prevention"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP114"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-meta-principle"
+law: "Input Security and Validation Law"
+article-number: 
+  number: 114
+  title: "Input Validation and Sanitization Framework"
+influences:
+  - "MP009: Default Deny"
+  - "MP056: Null Special Treatment"
+  - "MP110: Security Credentials Management"
+  - "MP111: Data Privacy Protection"
+extends:
+  - "MP009: Default Deny Principle"
+criticality: "CRITICAL"
+enforcement: "MANDATORY"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+---
+
+## Core Statement
+
+All input from users, APIs, files, databases, and external systems MUST be validated, sanitized, and properly encoded before processing or storage, implementing defense-in-depth against SQL injection, XSS, command injection, and all other injection attacks.
+
+## Input Validation Framework
+
+### Validation Layers
+
+```r
+# Multi-layer validation approach
+validate_input <- function(input, context) {
+  # Layer 1: Type validation
+  if (!validate_type(input, context$expected_type)) {
+    log_validation_failure("TYPE", input, context)
+    stop("Invalid input type")
+  }
+  
+  # Layer 2: Format validation
+  if (!validate_format(input, context$format_pattern)) {
+    log_validation_failure("FORMAT", input, context)
+    stop("Invalid input format")
+  }
+  
+  # Layer 3: Range/Length validation
+  if (!validate_constraints(input, context$constraints)) {
+    log_validation_failure("CONSTRAINTS", input, context)
+    stop("Input constraints violated")
+  }
+  
+  # Layer 4: Business logic validation
+  if (!validate_business_rules(input, context$business_rules)) {
+    log_validation_failure("BUSINESS", input, context)
+    stop("Business rule validation failed")
+  }
+  
+  # Layer 5: Security validation
+  sanitized <- sanitize_input(input, context$sanitization_rules)
+  
+  return(sanitized)
+}
+```
+
+## SQL Injection Prevention
+
+### Parameterized Queries (Primary Defense)
+
+```r
+# CORRECT - Always use parameterized queries
+safe_query <- function(con, user_id, status) {
+  # Using DBI parameterized queries
+  result <- dbGetQuery(con, 
+    "SELECT * FROM users WHERE user_id = ? AND status = ?",
+    params = list(user_id, status)
+  )
+  return(result)
+}
+
+# CORRECT - Using dbplyr for safe query building
+safe_dplyr_query <- function(con, user_input) {
+  # dbplyr automatically parameterizes
+  result <- tbl(con, "users") %>%
+    filter(user_id == !!user_input) %>%
+    collect()
+  return(result)
+}
+
+# VIOLATION - NEVER concatenate user input
+unsafe_query <- function(con, user_input) {
+  # CRITICAL SECURITY VIOLATION - SQL Injection vulnerability
+  query <- paste0("SELECT * FROM users WHERE id = ", user_input)
+  dbGetQuery(con, query)  # NEVER DO THIS
+}
+```
+
+### Input Sanitization for SQL
+
+```r
+# SQL-specific sanitization
+sanitize_sql_input <- function(input) {
+  # Remove/escape dangerous characters
+  sanitized <- input %>%
+    # Remove SQL comments
+    gsub("--.*", "", .) %>%
+    gsub("/\\*.*?\\*/", "", .) %>%
+    # Escape quotes
+    gsub("'", "''", .) %>%
+    # Remove semicolons (prevent multiple statements)
+    gsub(";", "", .) %>%
+    # Remove dangerous keywords
+    gsub("(?i)(DROP|DELETE|TRUNCATE|ALTER|CREATE|REPLACE)", "", .)
+  
+  # Validate against whitelist
+  if (!validate_sql_whitelist(sanitized)) {
+    log_security_event("SQL_INJECTION_ATTEMPT", input)
+    stop("Potential SQL injection detected")
+  }
+  
+  return(sanitized)
+}
+
+# Whitelist validation
+validate_sql_whitelist <- function(input) {
+  # Define allowed patterns
+  allowed_patterns <- list(
+    alphanumeric = "^[a-zA-Z0-9]+$",
+    alphanumeric_space = "^[a-zA-Z0-9 ]+$",
+    email = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+    numeric = "^[0-9]+$"
+  )
+  
+  # Check against patterns
+  return(any(sapply(allowed_patterns, function(pattern) grepl(pattern, input))))
+}
+```
+
+### Stored Procedure Security
+
+```r
+# Secure stored procedure calls
+call_stored_procedure <- function(con, proc_name, params) {
+  # Validate procedure name against whitelist
+  allowed_procedures <- c("get_user_data", "update_user_status", "calculate_metrics")
+  
+  if (!(proc_name %in% allowed_procedures)) {
+    log_security_event("INVALID_PROCEDURE", proc_name)
+    stop("Unauthorized procedure call")
+  }
+  
+  # Validate parameters
+  validated_params <- lapply(params, validate_proc_param)
+  
+  # Call procedure with parameterized query
+  query <- sprintf("CALL %s(%s)", 
+                   proc_name, 
+                   paste(rep("?", length(validated_params)), collapse = ", "))
+  
+  result <- dbGetQuery(con, query, params = validated_params)
+  return(result)
+}
+```
+
+## XSS (Cross-Site Scripting) Prevention
+
+### Output Encoding
+
+```r
+# HTML encoding for display
+encode_html <- function(text) {
+  if (is.null(text)) return("")
+  
+  text %>%
+    gsub("&", "&amp;", .) %>%
+    gsub("<", "&lt;", .) %>%
+    gsub(">", "&gt;", .) %>%
+    gsub('"', "&quot;", .) %>%
+    gsub("'", "&#x27;", .) %>%
+    gsub("/", "&#x2F;", .)
+}
+
+# JavaScript encoding
+encode_javascript <- function(text) {
+  if (is.null(text)) return("")
+  
+  text %>%
+    gsub("\\\\", "\\\\\\\\", .) %>%
+    gsub('"', '\\\\"', .) %>%
+    gsub("'", "\\\\'", .) %>%
+    gsub("\n", "\\\\n", .) %>%
+    gsub("\r", "\\\\r", .) %>%
+    gsub("\t", "\\\\t", .) %>%
+    gsub("<", "\\\\x3C", .) %>%
+    gsub(">", "\\\\x3E", .)
+}
+
+# URL encoding
+encode_url <- function(text) {
+  URLencode(text, reserved = TRUE)
+}
+
+# CSS encoding
+encode_css <- function(text) {
+  if (is.null(text)) return("")
+  
+  # Encode non-alphanumeric characters
+  gsub("([^a-zA-Z0-9])", function(m) {
+    sprintf("\\%06X", utf8ToInt(m))
+  }, text)
+}
+```
+
+### Content Security Policy
+
+```r
+# Implement CSP headers
+set_csp_headers <- function() {
+  csp_policy <- paste(
+    "default-src 'self';",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net;",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
+    "img-src 'self' data: https:;",
+    "font-src 'self' https://fonts.gstatic.com;",
+    "connect-src 'self';",
+    "frame-ancestors 'none';",
+    "base-uri 'self';",
+    "form-action 'self';"
+  )
+  
+  shiny::addResourcePath("csp", list(
+    `Content-Security-Policy` = csp_policy,
+    `X-Content-Type-Options` = "nosniff",
+    `X-Frame-Options` = "DENY",
+    `X-XSS-Protection` = "1; mode=block"
+  ))
+}
+```
+
+### DOM-based XSS Prevention
+
+```r
+# Safe DOM manipulation in Shiny
+ui <- fluidPage(
+  tags$head(
+    tags$script(HTML("
+      // Safe element creation
+      function safeCreateElement(tagName, content, attributes) {
+        var elem = document.createElement(tagName);
+        elem.textContent = content; // Use textContent, not innerHTML
+        
+        // Safely set attributes
+        if (attributes) {
+          Object.keys(attributes).forEach(function(key) {
+            if (key.toLowerCase() !== 'onclick' && 
+                key.toLowerCase() !== 'onload' &&
+                !key.toLowerCase().startsWith('on')) {
+              elem.setAttribute(key, attributes[key]);
+            }
+          });
+        }
+        
+        return elem;
+      }
+      
+      // Prevent dangerous Shiny.setInputValue
+      Shiny.addCustomMessageHandler('safeSetValue', function(message) {
+        // Validate message before setting
+        if (typeof message.id === 'string' && 
+            message.id.match(/^[a-zA-Z0-9_]+$/)) {
+          Shiny.setInputValue(message.id, message.value);
+        }
+      });
+    "))
+  ),
+  
+  # Use htmltools::htmlEscape for dynamic content
+  uiOutput("safe_output")
+)
+
+server <- function(input, output, session) {
+  output$safe_output <- renderUI({
+    user_content <- input$user_text
+    
+    # Always escape user content
+    tags$div(
+      class = "user-content",
+      htmltools::htmlEscape(user_content)
+    )
+  })
+}
+```
+
+## Command Injection Prevention
+
+```r
+# System command execution safety
+execute_safe_command <- function(command, args = NULL) {
+  # Whitelist allowed commands
+  allowed_commands <- c("ls", "cat", "grep", "wc", "date")
+  
+  if (!(command %in% allowed_commands)) {
+    log_security_event("COMMAND_INJECTION_ATTEMPT", command)
+    stop("Unauthorized command")
+  }
+  
+  # Validate and sanitize arguments
+  if (!is.null(args)) {
+    args <- sanitize_command_args(args)
+  }
+  
+  # Use system2 with separated arguments (safer than system)
+  result <- system2(
+    command = command,
+    args = args,
+    stdout = TRUE,
+    stderr = TRUE,
+    env = c("PATH=/usr/bin:/bin")  # Restricted PATH
+  )
+  
+  return(result)
+}
+
+# Argument sanitization
+sanitize_command_args <- function(args) {
+  # Remove dangerous characters
+  sanitized <- gsub("[;&|`$()<>]", "", args)
+  
+  # Validate against patterns
+  if (grepl("\\.\\.|\\/etc|\\/root", sanitized)) {
+    log_security_event("PATH_TRAVERSAL_ATTEMPT", args)
+    stop("Invalid path in arguments")
+  }
+  
+  return(sanitized)
+}
+
+# NEVER use system() with user input
+dangerous_command <- function(user_input) {
+  # CRITICAL VIOLATION - Command injection vulnerability
+  system(paste("ls", user_input))  # NEVER DO THIS
+}
+```
+
+## Path Traversal Prevention
+
+```r
+# Safe file path handling
+validate_file_path <- function(user_path, base_dir) {
+  # Normalize the path
+  normalized_path <- normalizePath(
+    file.path(base_dir, user_path),
+    mustWork = FALSE
+  )
+  
+  # Ensure path is within base directory
+  if (!startsWith(normalized_path, normalizePath(base_dir))) {
+    log_security_event("PATH_TRAVERSAL_ATTEMPT", user_path)
+    stop("Invalid file path")
+  }
+  
+  # Check for dangerous patterns
+  dangerous_patterns <- c(
+    "\\.\\.",           # Parent directory
+    "~",                # Home directory
+    "\\.git",           # Git directory
+    "\\.env",           # Environment files
+    "/etc/",            # System files
+    "/proc/",           # Process information
+    "passwd",           # Password file
+    "shadow"            # Shadow password file
+  )
+  
+  if (any(sapply(dangerous_patterns, function(p) grepl(p, user_path)))) {
+    log_security_event("DANGEROUS_PATH_PATTERN", user_path)
+    stop("Dangerous path pattern detected")
+  }
+  
+  return(normalized_path)
+}
+
+# Safe file operations
+safe_read_file <- function(filename, base_dir = "data") {
+  safe_path <- validate_file_path(filename, base_dir)
+  
+  # Additional file type validation
+  allowed_extensions <- c("csv", "txt", "json", "rds")
+  file_ext <- tools::file_ext(safe_path)
+  
+  if (!(file_ext %in% allowed_extensions)) {
+    stop("File type not allowed")
+  }
+  
+  # Read file with size limit
+  file_size <- file.info(safe_path)$size
+  max_size <- 100 * 1024 * 1024  # 100MB limit
+  
+  if (file_size > max_size) {
+    stop("File too large")
+  }
+  
+  return(readLines(safe_path))
+}
+```
+
+## LDAP Injection Prevention
+
+```r
+# Safe LDAP queries
+safe_ldap_search <- function(username) {
+  # Escape special LDAP characters
+  escaped_username <- username %>%
+    gsub("\\\\", "\\\\5c", .) %>%
+    gsub("\\*", "\\\\2a", .) %>%
+    gsub("\\(", "\\\\28", .) %>%
+    gsub("\\)", "\\\\29", .) %>%
+    gsub("\0", "\\\\00", .) %>%
+    gsub("/", "\\\\2f", .)
+  
+  # Build safe LDAP filter
+  filter <- sprintf("(&(objectClass=user)(sAMAccountName=%s))", escaped_username)
+  
+  # Validate filter structure
+  if (!validate_ldap_filter(filter)) {
+    stop("Invalid LDAP filter")
+  }
+  
+  return(filter)
+}
+```
+
+## XML/XXE Prevention
+
+```r
+# Safe XML parsing
+parse_xml_safely <- function(xml_content) {
+  # Disable external entity processing
+  options <- xml2::xml_parse_options(
+    "NOENT",     # Don't substitute entities
+    "NONET",     # No network access
+    "NOINCLUDE", # Don't process XInclude
+    "NOXINCNODE" # Don't generate XInclude nodes
+  )
+  
+  tryCatch({
+    doc <- xml2::read_xml(xml_content, options = options)
+    
+    # Additional validation
+    if (grepl("<!ENTITY", xml_content, ignore.case = TRUE)) {
+      stop("External entities not allowed")
+    }
+    
+    return(doc)
+  }, error = function(e) {
+    log_security_event("XML_PARSE_ERROR", e$message)
+    stop("Invalid XML content")
+  })
+}
+```
+
+## File Upload Security
+
+```r
+# Secure file upload handling
+handle_file_upload <- function(file_input) {
+  # Validate file size
+  max_size <- 10 * 1024 * 1024  # 10MB
+  if (file_input$size > max_size) {
+    stop("File too large")
+  }
+  
+  # Validate file type by magic number
+  file_type <- validate_file_type(file_input$datapath)
+  allowed_types <- c("image/jpeg", "image/png", "application/pdf", "text/csv")
+  
+  if (!(file_type %in% allowed_types)) {
+    log_security_event("INVALID_FILE_TYPE", file_type)
+    stop("File type not allowed")
+  }
+  
+  # Generate safe filename
+  safe_filename <- generate_safe_filename(file_input$name)
+  
+  # Scan for malware (if available)
+  if (exists("scan_for_malware")) {
+    if (!scan_for_malware(file_input$datapath)) {
+      stop("File failed security scan")
+    }
+  }
+  
+  # Move to quarantine first
+  quarantine_path <- file.path("uploads/quarantine", safe_filename)
+  file.copy(file_input$datapath, quarantine_path)
+  
+  # Process in sandbox
+  process_uploaded_file(quarantine_path)
+  
+  # Move to final location
+  final_path <- file.path("uploads/processed", safe_filename)
+  file.rename(quarantine_path, final_path)
+  
+  return(final_path)
+}
+
+# Validate file type by magic number
+validate_file_type <- function(filepath) {
+  # Read first bytes
+  bytes <- readBin(filepath, "raw", n = 8)
+  
+  # Check magic numbers
+  if (identical(bytes[1:2], as.raw(c(0xFF, 0xD8)))) {
+    return("image/jpeg")
+  } else if (identical(bytes[1:4], as.raw(c(0x89, 0x50, 0x4E, 0x47)))) {
+    return("image/png")
+  } else if (identical(bytes[1:4], as.raw(c(0x25, 0x50, 0x44, 0x46)))) {
+    return("application/pdf")
+  } else {
+    # Check if text file
+    if (all(bytes < 128)) {
+      return("text/plain")
+    }
+  }
+  
+  return("unknown")
+}
+
+# Generate safe filename
+generate_safe_filename <- function(original_name) {
+  # Extract extension
+  ext <- tools::file_ext(original_name)
+  
+  # Generate unique name
+  safe_name <- paste0(
+    format(Sys.time(), "%Y%m%d_%H%M%S"),
+    "_",
+    digest::digest(original_name, algo = "md5"),
+    ".",
+    gsub("[^a-zA-Z0-9]", "", ext)
+  )
+  
+  return(safe_name)
+}
+```
+
+## Input Rate Limiting
+
+```r
+# Implement rate limiting
+rate_limiter <- function() {
+  requests <- new.env()
+  
+  check_rate_limit <- function(client_id, max_requests = 100, window_seconds = 60) {
+    current_time <- as.numeric(Sys.time())
+    
+    if (!exists(client_id, envir = requests)) {
+      requests[[client_id]] <- list(
+        timestamps = current_time,
+        count = 1
+      )
+      return(TRUE)
+    }
+    
+    client_data <- requests[[client_id]]
+    
+    # Remove old timestamps
+    valid_timestamps <- client_data$timestamps[
+      client_data$timestamps > (current_time - window_seconds)
+    ]
+    
+    if (length(valid_timestamps) >= max_requests) {
+      log_security_event("RATE_LIMIT_EXCEEDED", client_id)
+      return(FALSE)
+    }
+    
+    # Update timestamps
+    requests[[client_id]] <- list(
+      timestamps = c(valid_timestamps, current_time),
+      count = length(valid_timestamps) + 1
+    )
+    
+    return(TRUE)
+  }
+  
+  return(check_rate_limit)
+}
+
+# Use rate limiter
+rate_limit_check <- rate_limiter()
+
+handle_request <- function(request) {
+  client_id <- request$REMOTE_ADDR
+  
+  if (!rate_limit_check(client_id)) {
+    return(httpResponse(
+      status = 429,
+      headers = list(`Retry-After` = "60"),
+      content = "Too Many Requests"
+    ))
+  }
+  
+  # Process request
+  process_request(request)
+}
+```
+
+## Monitoring and Logging
+
+```r
+# Comprehensive input validation logging
+log_validation_failure <- function(type, input, context) {
+  log_entry <- list(
+    timestamp = Sys.time(),
+    type = type,
+    input_sample = substr(as.character(input), 1, 100),  # Truncate for safety
+    context = context,
+    client_ip = get_client_ip(),
+    user_agent = get_user_agent(),
+    stack_trace = capture_stack_trace()
+  )
+  
+  # Write to security log
+  write_security_log(log_entry)
+  
+  # Alert on potential attacks
+  if (type %in% c("SQL_INJECTION", "XSS", "COMMAND_INJECTION")) {
+    alert_security_team(log_entry)
+  }
+}
+```
+
+## Related Rules and Principles
+
+### Security Implementation Rules
+- **R240**: Input validation standards
+- **R241**: SQL injection prevention
+- **R242**: XSS prevention techniques
+- **R243**: Command injection prevention
+- **R244**: File upload security
+
+### Integration with Other MPs
+- **MP009**: Default Deny Principle
+- **MP110**: Security Credentials Management
+- **MP111**: Data Privacy Protection
+- **MP115**: Audit Logging and Monitoring
+
+## Compliance Requirements
+
+- **OWASP Top 10**: A03:2021 – Injection
+- **CWE-20**: Improper Input Validation
+- **CWE-79**: Cross-site Scripting
+- **CWE-89**: SQL Injection
+- **PCI DSS**: Requirement 6.5
+
+## Validation Checklist
+
+- [ ] All user inputs validated
+- [ ] SQL queries parameterized
+- [ ] XSS protection implemented
+- [ ] Command injection prevented
+- [ ] Path traversal blocked
+- [ ] File uploads secured
+- [ ] Rate limiting active
+- [ ] Input logging comprehensive
+- [ ] Error messages sanitized
+- [ ] Security headers configured
+
+---
+
+**Never trust user input**: Validate everything, sanitize all data, encode all output. Defense in depth is the only defense that works.

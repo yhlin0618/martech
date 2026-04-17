@@ -1,0 +1,165 @@
+---
+title: "DEV_R012: Verify Existing Functions Before Implementation"
+subtitle: "Establishes critical guidelines for working with functions in the codebase, ensuring consistency, avoiding duplication, and maintaining expected behavior across the system"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R012"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article-number: 
+  number: 12
+  title: "Function Verification Rules"
+related_to:
+  - "MP016: Modularity"
+  - "DEV_P003: Similar Functionality Management"
+  - "DEV_R002: Functional Encapsulation"
+  - "SO_R007: One Function One File"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 12: Function Verification Rules {#overview}
+
+**Development Methodology Law Article 12 (Function Verification Rules)**
+
+This rule establishes critical guidelines for working with functions in the codebase, ensuring consistency, avoiding duplication, and maintaining expected behavior across the system.
+
+:::{.callout-important}
+## Core Rule
+Always verify if a function already exists before implementing new functionality with the same or similar name.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Harms of Function Duplication {#duplication-harms}
+
+Duplicating functions with the same or similar names can lead to:
+
+1. **Inconsistent behavior**: Between different parts of the application
+2. **Maintenance difficulty**: Maintaining multiple implementations
+3. **Unexpected side effects**: When only one implementation is updated
+4. **Developer confusion**: About which implementation to use
+5. **Increased bugs**: When implementations diverge
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Function Existence Check {#existence-check}
+
+Before implementing any utility or helper function:
+
+- Use grep/search tools to find existing function definitions
+- Check utility modules and common libraries
+- Look for similarly named functions that might serve the same purpose
+- Examine import statements to identify potential external sources
+
+```r
+# CORRECT APPROACH - Check if function exists first
+if(!exists("connect_to_database")) {
+  # Only define if it doesn't already exist
+  connect_to_database <- function(...) {
+    # Implementation here
+  }
+}
+```
+
+## Subsection 2: Function Analysis {#function-analysis}
+
+If a similar function exists:
+
+- Examine its parameters, return values, and behavior
+- Note any environment-specific logic or assumptions
+- Check for dependencies and edge cases being handled
+- Understand the existing error handling mechanisms
+
+## Subsection 3: Implementation Decision {#implementation-decision}
+
+Based on your analysis:
+
+- **Reuse the existing function** if it meets requirements (preferred)
+- **Extend the existing function** if minor modifications are needed
+- **Create a new function with a distinct name** if fundamentally different behavior is required
+- **Create a compatibility layer** if you must maintain backward compatibility
+
+## Subsection 4: Documentation {#documentation}
+
+When working with existing functions:
+
+- Document your decision process
+- Update comments if extending functionality
+- Cross-reference related functions
+- Note any compatibility concerns
+
+# Section 3: Implementation Examples {#examples}
+
+## Subsection 1: Incorrect Approach {#incorrect-approach}
+
+```r
+# BAD: Creating a duplicate function without checking
+dbConnect_from_list <- function(db_name) {
+  # New implementation that might conflict with existing one
+  # ...
+}
+```
+
+## Subsection 2: Correct Approach {#correct-approach}
+
+```r
+# GOOD: Check and provide a fallback implementation only if needed
+if(!exists("dbConnect_from_list")) {
+  # Create a warning log
+  message("WARNING: Using fallback dbConnect_from_list implementation")
+  
+  # Fallback implementation
+  dbConnect_from_list <- function(db_name, read_only = TRUE, verbose = FALSE) {
+    warning("Using provisional implementation of dbConnect_from_list")
+    # Basic implementation that matches the interface
+    # ...
+  }
+}
+```
+
+# Section 4: Function Modification Guidelines {#modification-guidelines}
+
+## Subsection 1: Steps for Modifying Existing Functions {#modification-steps}
+
+If you need to modify an existing function:
+
+1. **Document the original behavior** before changes
+2. **Maintain the same parameter interface** when possible
+3. **Consider backward compatibility** impacts
+4. **Add tests** to verify both old and new use cases
+5. **Update all relevant documentation**
+
+# Section 5: Compliance Verification {#compliance-verification}
+
+## Subsection 1: Code Review Checklist {#review-checklist}
+
+Regular code reviews should check for:
+
+1. **Duplicate function implementations**: Check for duplicate function implementations
+2. **Proper reuse of existing utility functions**: Ensure proper reuse of existing utility functions
+3. **Consistent error handling**: Across similar functions
+4. **Clear documentation**: Of function behavior
+
+# Section 6: Benefits {#benefits}
+
+By adhering to this principle, we maintain:
+
+1. **More consistent codebase**: Reduced duplication and conflicts
+2. **More maintainable system**: Centralized function implementations
+3. **More reliable behavior**: Clear expectations throughout the system
+4. **Better developer experience**: Clear knowledge of which function to use
+5. **Fewer bugs**: Avoiding bugs caused by implementation divergence
+
+---
+
+*Based on: Development Methodology Law Article 12*  
+*Related to: [MP016 Modularity](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [DEV_P003 Similar Functionality Management](../principles/DEV_P003_similar_functionality_management.qmd)*

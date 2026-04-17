@@ -1,0 +1,430 @@
+---
+title: "UI_R001: UI-Server-Defaults N-tuple Rule"
+subtitle: "Every Shiny component must implement coordinated UI, Server, Defaults, and optional Filter/Test functions"
+chapter: "CH04"
+category: "rule"
+number: "UI_R001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法施行細則 (UI Components Law Implementation Rules)"
+article-number: "第1條"
+implements:
+  - "CH01.SO_P003: App Construction Principles"
+  - "CH00.MP017: Separation of Concerns Principle"
+derives_from:
+  - "CH00.MP016: Modularity Principle"
+  - "CH00.MP018: Don't Repeat Yourself Principle"
+related_to:
+  - "CH01.SO_P004: App Bottom-Up Construction"
+  - "CH01.SO_R004: App YAML Configuration"
+  - "CH01.SO_R012: Package Consistency Naming Rule"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**UI組件法施行細則第1條（UI-Server-Defaults N-元組規則）**
+
+本條規定系統中的每個 Shiny 組件都必須實作為協調的功能組合（N-元組），可以組織為：
+1. **核心三元組**：UI、Server、Defaults 函數（必需）
+2. **擴展元素**：FilterUI、Test、Documentation 等（選用）
+3. **組織方式**：單一檔案或多檔案結構
+
+此結構創建具有清晰關注點分離的韌性組件，並確保無論資料可用性如何，介面都保持穩定。
+
+:::{.callout-important}
+## 核心要求
+每個 Shiny 組件必須實作核心三元組（UI、Server、Defaults）並可根據需要擴展為 N-元組，包含 FilterUI、Test 等額外功能。
+:::
+
+# 第一項：檔案結構和命名 {#file-structure}
+
+## 第一款：N-元組單檔案組織（現行標準） {#single-file}
+
+組件應實作在單一檔案中，包含所有相關函數，以 `####` 分隔：
+
+```r
+# componentName.R
+
+####componentNameDefaults####
+componentNameDefaults <- function() { ... }
+
+####componentNameFilterUI####  # 選用
+componentNameFilterUI <- function(id) { ... }
+
+####componentNameUI####
+componentNameUI <- function(id) { ... }
+
+####componentNameServer####
+componentNameServer <- function(id, data_connection) { ... }
+```
+
+其中：
+- **[section]**：主要應用程式區段（例如 "micro"、"macro"、"target"）
+- **[componentName]**：特定組件名稱（例如 "microCustomer"、"macroOverview"）
+
+範例：
+```
+10_rshinyapp_components/micro/microCustomer/
+├── microCustomerUI.R
+├── microCustomerServer.R
+└── microCustomerDefaults.R
+```
+
+:::{.callout-note}
+## 資料夾組織的優點
+- 改善組件封裝
+- 使三元組檔案之間的關係明確
+- 減少目錄雜亂
+- 簡化相關檔案的管理
+- 啟用組件特定資產的添加（文檔、測試等）
+- 透過將檔案名稱與匯出的函數名稱相符來遵循套件一致性
+:::
+
+## 第二款：多檔案組織（傳統） {#multi-file}
+
+為了與現有實作相容，也支援分離檔案的結構：
+
+```
+10_rshinyapp_components/[section]/[componentName]/
+├── [componentName]UI.R         # UI 定義
+├── [componentName]Server.R     # 伺服器邏輯
+├── [componentName]Defaults.R   # 預設值
+├── [componentName]FilterUI.R   # 篩選器 UI（選用）
+└── [componentName]_test.R      # 測試檔案（選用）
+```
+
+新組件應優先使用 N-元組單檔案組織。
+
+# 第二項：UI 組件要求 {#ui-requirements}
+
+## 第一款：UI 組件規範 {#ui-specs}
+
+UI 組件檔案必須：
+
+1. **定義所有視覺元素**：包含使用者將看到的所有 UI 元素
+2. **聲明所有輸出**：明確創建將顯示動態內容的所有輸出元素
+3. **使用命名空間**：使用 `NS(id)` 函數適當地為所有輸入和輸出 ID 命名空間
+4. **記錄介面**：包含指定使用方法和要求的函數文檔
+5. **參考伺服器配對**：包含參考相應伺服器組件的註解
+6. **避免業務邏輯**：不包含資料處理或業務邏輯
+
+範例 UI 組件：
+
+```r
+#' Micro Customer UI Component
+#'
+#' 此組件提供顯示詳細客戶分析的 UI 元素。
+#' 重要：根據 UI-Server-Defaults 三元組規則，此 UI 組件
+#' 必須與其相應的伺服器組件 microCustomerServer() 一起使用。
+#'
+#' @param id 模組 ID
+#' @return UI 組件
+#' @export
+microCustomerUI <- function(id) {
+  ns <- NS(id)
+  
+  card(
+    card_header("Customer Profile"),
+    card_body(
+      selectInput(ns("customer_id"), "Select Customer", choices = NULL),
+      valueBox(
+        title = "Loyalty Score",
+        value = textOutput(ns("loyalty_score"))
+      ),
+      valueBox(
+        title = "Customer Value",
+        value = textOutput(ns("customer_value"))
+      )
+    )
+  )
+}
+```
+
+# 第三項：伺服器組件要求 {#server-requirements}
+
+## 第一款：伺服器組件規範 {#server-specs}
+
+伺服器組件檔案必須：
+
+1. **履行所有輸出**：為 UI 中定義的每個輸出提供渲染函數
+2. **優雅處理 NULL 資料**：即使沒有提供資料也能正確運作
+3. **使用預設值**：當資料不可用或無效時納入預設值
+4. **驗證輸入資料**：包含所有傳入資料的驗證檢查
+5. **記錄資料要求**：清楚指定預期的資料結構和格式
+6. **參考 UI 配對**：包含參考相應 UI 組件的註解
+
+範例伺服器組件：
+
+```r
+#' Micro Customer Server Component
+#'
+#' 此組件為客戶檔案組件提供伺服器端邏輯。
+#' 重要：此伺服器組件履行 microCustomerUI() 中定義的所有輸出
+#' 並在資料不可用時使用 microCustomerDefaults() 的值。
+#'
+#' @param id 模組 ID
+#' @param data_source 資料來源規範
+#' @return 無（具有副作用的伺服器組件）
+#' @export
+microCustomerServer <- function(id, data_source = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 載入預設值
+    defaults <- microCustomerDefaults()
+    
+    # 處理資料來源
+    customer_data <- reactive({
+      if (is.null(data_source)) return(NULL)
+      # 處理資料來源...
+      return(processed_data)
+    })
+    
+    # 更新客戶選擇選項
+    observe({
+      customers <- customer_data()
+      if (!is.null(customers) && nrow(customers) > 0) {
+        updateSelectInput(session, "customer_id", 
+                         choices = customers$customer_id)
+      }
+    })
+    
+    # 渲染忠誠度分數，備用為預設值
+    output$loyalty_score <- renderText({
+      data <- customer_data()
+      if (is.null(data) || nrow(data) == 0) {
+        return(defaults$loyalty_score)
+      }
+      # 處理並返回實際分數...
+    })
+    
+    # 渲染客戶價值，備用為預設值
+    output$customer_value <- renderText({
+      data <- customer_data()
+      if (is.null(data) || nrow(data) == 0) {
+        return(defaults$customer_value)
+      }
+      # 處理並返回實際值...
+    })
+  })
+}
+```
+
+# 第四項：預設值組件要求 {#defaults-requirements}
+
+## 第一款：預設值組件規範 {#defaults-specs}
+
+預設值組件檔案必須：
+
+1. **定義所有輸出**：為 UI 中定義的每個輸出提供預設值
+2. **使用有意義的佔位符**：預設值應是合理的表示
+3. **保持格式一致性**：預設值應符合實際資料的預期格式
+4. **記錄預設邏輯**：解釋預設值選擇的理由
+5. **匯出函數**：提供返回預設值作為命名列表的函數
+
+範例預設值組件：
+
+```r
+#' Micro Customer 組件的預設值
+#'
+#' 此檔案為 micro customer 組件提供標準預設值。
+#' 這些預設值確保所有 UI 輸出都有適當的值
+#' 即使資料不可用或無效。
+#'
+#' @return 輸出 ID 及其預設值的命名列表
+#' @export
+microCustomerDefaults <- function() {
+  list(
+    loyalty_score = "N/A",
+    customer_value = "$0.00"
+    # 為 UI 中定義的所有其他輸出添加預設值
+  )
+}
+```
+
+# 第五項：使用模式 {#usage-patterns}
+
+## 第一款：基本使用模式 {#basic-usage}
+
+實作 N-元組規則的標準模式：
+
+```r
+# 在 app.R 或其他組件檔案中：
+
+# 1. 包含 UI 組件
+ui <- fluidPage(
+  microCustomerUI("customer_module")
+)
+
+# 2. 使用資料來源初始化伺服器組件
+server <- function(input, output, session) {
+  microCustomerServer("customer_module", data_source = customer_data)
+}
+```
+
+## 第二款：僅預設值使用模式 {#default-only}
+
+當沒有真實資料可用時（用於測試或預覽）：
+
+```r
+# 1. 包含 UI 組件
+ui <- fluidPage(
+  microCustomerUI("customer_module")
+)
+
+# 2. 不帶資料來源初始化伺服器組件
+server <- function(input, output, session) {
+  # 沒有資料來源 - 將使用預設值
+  microCustomerServer("customer_module")
+}
+```
+
+## 第三款：套件一致性命名模式 {#package-consistency}
+
+遵循 MP019（套件一致性原則），函數名稱必須遵循套件慣例：
+
+:::{.panel-tabset}
+
+### Shiny 模組函數
+
+```r
+# UI 組件 - 駝峰式命名加 UI 後綴
+microCustomerUI <- function(id) {
+  ns <- NS(id)
+  # UI 定義...
+}
+
+# 伺服器組件 - 駝峰式命名加 Server 後綴
+microCustomerServer <- function(id, data_source = NULL) {
+  moduleServer(id, function(input, output, session) {
+    # 伺服器邏輯...
+  })
+}
+
+# 預設值組件 - 駝峰式命名加 Defaults 後綴
+microCustomerDefaults <- function() {
+  list(
+    # 預設值...
+  )
+}
+```
+
+### 資料庫介面函數
+
+```r
+# 資料庫函數使用 db 前綴
+dbQueryCustomers <- function(conn = NULL, filters = NULL) {
+  # 資料庫查詢實作...
+}
+
+# 錯誤處理包裝器
+dbSafeExecute <- function(query, conn = default_conn) {
+  # 帶錯誤處理的安全執行...
+}
+```
+
+:::
+
+在兩種情況下，檔案名稱都應與函數名稱相符以保持套件一致性。
+
+# 第六項：常見錯誤和解決方案 {#common-errors}
+
+## 第一款：缺少預設值檔案 {#missing-defaults}
+
+**問題**：UI 和伺服器組件存在，但沒有提供預設值檔案，導致資料不可用時顯示破損。
+
+**解決方案**：始終創建與 UI 和伺服器組件具有相同基本名稱的預設值檔案，為所有輸出提供預設值。
+
+## 第二款：不完整的輸出覆蓋 {#incomplete-coverage}
+
+**問題**：UI 定義的輸出在伺服器組件中未渲染或沒有預設值，導致空的或破損的 UI 元素。
+
+**解決方案**：使用系統化方法確保所有輸出都被覆蓋：
+1. 列出 UI 中定義的所有輸出 ID
+2. 確保每個在伺服器中都有渲染函數
+3. 確保每個在預設值檔案中都有預設值
+
+## 第三款：不安全的資料存取 {#unsafe-access}
+
+**問題**：伺服器組件存取資料而不檢查 NULL 或無效值，當資料不可用時導致錯誤。
+
+**解決方案**：使用防禦性程式設計與適當的驗證：
+
+```r
+# 不良做法 - 不安全存取
+output$metric <- renderText({
+  data()$value  # 如果 data() 為 NULL 或沒有 'value' 欄位將出錯
+})
+
+# 良好做法 - 帶預設備用的安全存取
+output$metric <- renderText({
+  data <- data()
+  if (is.null(data) || !"value" %in% names(data) || nrow(data) == 0) {
+    return(defaults$metric)
+  }
+  return(data$value)
+})
+```
+
+# 第七項：效益 {#benefits}
+
+## 第一款：一般 N-元組規則效益 {#general-benefits}
+
+:::{.callout-note}
+## N-元組規則的效益
+1. **UI 穩定性**：即使資料不可用，介面仍保持可用
+2. **錯誤韌性**：儘管有資料問題，應用程式仍繼續運作
+3. **清晰架構**：UI、邏輯和預設值之間清晰的關注點分離
+4. **改善測試**：組件可以使用預設值獨立測試
+5. **更好的可維護性**：對一個方面的更改不需要更改其他方面
+6. **預覽能力**：可以使用預設值預覽 UI 而無需真實資料
+7. **一致的 UX**：使用者看到合理的佔位符而非錯誤或空白
+:::
+
+## 第二款：N-元組額外效益 {#ntuple-benefits}
+
+N-元組結構提供額外優勢：
+
+1. **組件封裝**：所有相關函數在一個檔案中，維護更方便
+2. **減少檔案數量**：單一檔案結構減少了需要管理的檔案數量
+3. **彈性擴展**：可以輕易增加 FilterUI、Test 等函數而不創建新檔案
+4. **快速定位**：所有函數在一個檔案中，使用 `####` 分隔器快速導航
+5. **清晰相依性**：組件內部的相依性在一個檔案中明確可見
+6. **簡化載入**：只需 source 一個檔案就能載入所有函數
+7. **一致的架構**：所有組件都遵循相同的 N-元組結構模式
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## N-元組檢查清單
+
+實作 Shiny 組件時，確認：
+
+- [ ] 創建核心三元組函數（UI、Server、Defaults）
+- [ ] 使用 N-元組單檔案結構（現行標準）
+- [ ] UI 組件定義所有視覺元素
+- [ ] UI 組件使用適當的命名空間
+- [ ] 伺服器組件履行所有輸出
+- [ ] 伺服器組件優雅處理 NULL 資料
+- [ ] 預設值組件提供所有輸出的預設值
+- [ ] 檔案名稱與函數名稱相符
+- [ ] 包含適當的文檔
+- [ ] 使用防禦性程式設計處理資料存取
+:::
+
+# 結論 {#conclusion}
+
+UI-Server-Defaults N-元組規則透過彈性的結構確保 Shiny 組件穩健、可維護且可擴展。透過支援核心三元組（UI、Server、Defaults）並允許擴展為 N-元組（增加 FilterUI、Test 等），此規則提供了架構的一致性和開發的彈性。每個組件都必須遵循此模式以確保一致且可靠的應用程式架構。
+
+---
+
+*依據：UI組件法施行細則第1條*  
+*實作：[SO_P003 應用程式建構原則](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd)、[MP017 關注點分離](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*  
+*衍生自：[MP016 模組化](../../CH00_fundamental_principles/MP016_modularity.qmd)、[MP018 不要重複自己](../../CH00_fundamental_principles/MP018_dont_repeat_yourself.qmd)*

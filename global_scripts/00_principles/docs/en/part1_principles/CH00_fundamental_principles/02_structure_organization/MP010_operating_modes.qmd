@@ -1,0 +1,313 @@
+---
+title: "MP003: Operating Modes"
+subtitle: "System execution contexts with different access controls and behaviors"
+chapter: "CH00"
+category: "MP"
+number: "003"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP000: Axiomatization System"
+  - "MP001: Primitive Terms and Definitions"
+influences:
+  - "MP004: Mode Hierarchy"
+  - "MP006: Data Source Hierarchy"
+  - "P008: Deployment Patterns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Core Concept {#core-concept}
+
+The precision marketing system operates under different modes that control access to data sources, feature availability, and operational behavior. These modes create clear boundaries for different types of operations and enhance security by restricting access based on operational context.
+
+:::{.callout-important}
+## Three Operating Modes
+The system defines three distinct operating modes, each with specific purposes and access controls.
+:::
+
+# Mode Definitions {#mode-definitions}
+
+## APP_MODE (Application Mode) {#app-mode}
+
+:::{.callout-note icon="false"}
+## 🎯 Purpose
+Run Shiny applications in production-like environments
+
+### Features
+- **Read-only access** to app_data and Data.duckdb
+- **No access** to raw_data, cleansed_data, or processed_data
+- Loads **limited subset** of global_scripts
+- Minimal dependencies
+- Security-first approach
+:::
+
+## UPDATE_MODE (Update Mode) {#update-mode}
+
+:::{.callout-note icon="false"}
+## 🔄 Purpose
+Process data, update application data sources, and develop application components
+
+### Features
+- **Read-write access** to app_data and Data.duckdb
+- **Read-write access** to raw_data, cleansed_data, and processed_data
+- **Full access** to directories 01_db through 14_sql_utils
+- Loads broader set of utilities
+- Focused on data processing capabilities
+:::
+
+## GLOBAL_MODE (Global Mode) {#global-mode}
+
+:::{.callout-note icon="false"}
+## 🌐 Purpose
+Manage global resources and cross-project utilities
+
+### Features
+- **Full access** to all data sources
+- Administrative capabilities for global resources
+- Access to 30_global_data directory for cross-project data
+- Loads extended development utilities
+- Used for system maintenance
+:::
+
+# Mode Selection {#mode-selection}
+
+The operating mode is controlled by the `OPERATION_MODE` environment variable and should be set at the beginning of execution:
+
+```r
+# Explicitly set operation mode
+OPERATION_MODE <- "APP_MODE"  # or "UPDATE_MODE" or "GLOBAL_MODE"
+
+# Load appropriate initialization script
+source(file.path("update_scripts", "global_scripts", "00_principles", 
+                 "sc_initialization_app_mode.R"))
+```
+
+:::{.callout-tip}
+## Initialization Script Mapping
+Each mode has a corresponding initialization script:
+
+1. `sc_initialization_app_mode.R` → APP_MODE
+2. `sc_initialization_update_mode.R` → UPDATE_MODE
+3. `sc_initialization_global_mode.R` → GLOBAL_MODE
+:::
+
+# Mode-Specific Initialization {#mode-initialization}
+
+Each initialization script loads a specific set of dependencies:
+
+:::{.panel-tabset}
+
+## APP_MODE Initialization
+
+```r
+# sc_initialization_app_mode.R (simplified)
+OPERATION_MODE <- "APP_MODE"
+
+# Load only what Shiny app needs
+source_directory(file.path("update_scripts", "global_scripts", "02_db_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "04_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "03_config"))
+source_directory(file.path("update_scripts", "global_scripts", "10_rshinyapp_components"))
+source_directory(file.path("update_scripts", "global_scripts", "11_rshinyapp_utils"))
+
+# Enforce read-only access
+read_only_db_access <- TRUE
+
+# Restrict data directory access
+allow_raw_data_access <- FALSE
+allow_processed_data_access <- FALSE
+```
+
+## UPDATE_MODE Initialization
+
+```r
+# sc_initialization_update_mode.R (simplified)
+OPERATION_MODE <- "UPDATE_MODE"
+
+# Load all data processing utilities
+source_directory(file.path("update_scripts", "global_scripts", "01_db"))
+source_directory(file.path("update_scripts", "global_scripts", "02_db_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "03_config"))
+source_directory(file.path("update_scripts", "global_scripts", "04_utils"))
+source_directory(file.path("update_scripts", "global_scripts", "05_import"))
+# ... additional directories
+
+# Allow data modification
+read_only_db_access <- FALSE
+
+# Allow access to processing data
+allow_raw_data_access <- TRUE
+allow_processed_data_access <- TRUE
+```
+
+## GLOBAL_MODE Initialization
+
+```r
+# sc_initialization_global_mode.R (simplified)
+OPERATION_MODE <- "GLOBAL_MODE"
+
+# Load everything including global resource utilities
+source_directory(file.path("update_scripts", "global_scripts", "01_db"))
+source_directory(file.path("update_scripts", "global_scripts", "02_db_utils"))
+# ... all directories
+source_directory(file.path("update_scripts", "global_scripts", "99_development"))
+
+# Full access
+read_only_db_access <- FALSE
+allow_raw_data_access <- TRUE
+allow_processed_data_access <- TRUE
+allow_global_data_modification <- TRUE
+```
+
+:::
+
+# Mode-Based Security Controls {#security-controls}
+
+Operating modes enforce security controls:
+
+## Database Access Controls {#database-controls}
+
+```r
+# Example from dbConnect_from_list.R
+dbConnect_from_list <- function(db_name, read_only = NULL) {
+  # Default to mode-specific setting if not specified
+  if (is.null(read_only)) {
+    read_only <- read_only_db_access
+  }
+  
+  # APP_MODE forces app_data to be read-only
+  if (OPERATION_MODE == "APP_MODE" && db_name == "app_data") {
+    read_only <- TRUE
+  }
+  
+  # Prevent raw data access in APP_MODE
+  if (OPERATION_MODE == "APP_MODE" && 
+      db_name %in% c("raw_data", "cleansed_data", "processed_data")) {
+    stop("Access to ", db_name, " is not allowed in APP_MODE")
+  }
+  
+  # Connect with appropriate permissions
+  duckdb::dbConnect(duckdb::duckdb(), db_path, read_only = read_only)
+}
+```
+
+## File System Controls {#filesystem-controls}
+
+```r
+# Example file access check
+check_file_access <- function(file_path) {
+  # Prevent raw data access in APP_MODE
+  if (OPERATION_MODE == "APP_MODE" && 
+      grepl("raw_data|cleansed_data|processed_data", file_path)) {
+    stop("Access to ", file_path, " is not allowed in APP_MODE")
+  }
+  
+  # Restrict global data modification
+  if (OPERATION_MODE != "GLOBAL_MODE" && 
+      grepl("30_global_data", file_path) && 
+      file.access(file_path, 2) == 0) {  # Check write permission
+    stop("Modification of global data is only allowed in GLOBAL_MODE")
+  }
+  
+  # Allow access if checks pass
+  return(TRUE)
+}
+```
+
+# Best Practices {#best-practices}
+
+## Explicit Mode Declaration {#explicit-declaration}
+
+Always explicitly set and verify the operation mode:
+
+```r
+# At the beginning of each script
+OPERATION_MODE <- "UPDATE_MODE"  # Choose appropriate mode
+
+# Verify initialization is complete
+if (!exists("INITIALIZATION_COMPLETED") || !INITIALIZATION_COMPLETED) {
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   paste0("sc_initialization_", tolower(OPERATION_MODE), ".R")))
+}
+```
+
+## Mode-Appropriate Operations {#mode-appropriate}
+
+Respect mode boundaries and only perform operations suitable for the current mode:
+
+```r
+# Good practice - check mode before operations
+if (OPERATION_MODE == "APP_MODE") {
+  # Read-only operations
+  display_data(read_app_data())
+} else if (OPERATION_MODE %in% c("UPDATE_MODE", "GLOBAL_MODE")) {
+  # Data modification operations
+  update_app_data()
+}
+```
+
+## Mode Testing {#mode-testing}
+
+Test components in all relevant modes:
+
+```r
+# Function to test across modes
+test_component_in_all_modes <- function(component_name) {
+  # Save current mode
+  original_mode <- OPERATION_MODE
+  
+  # Test in APP_MODE
+  OPERATION_MODE <- "APP_MODE"
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+  test_result_app <- test_component(component_name)
+  
+  # Test in UPDATE_MODE
+  OPERATION_MODE <- "UPDATE_MODE"
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_update_mode.R"))
+  test_result_update <- test_component(component_name)
+  
+  # Restore original mode
+  OPERATION_MODE <- original_mode
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   paste0("sc_initialization_", tolower(OPERATION_MODE), ".R")))
+  
+  # Return test results
+  list(app_mode = test_result_app, update_mode = test_result_update)
+}
+```
+
+# Mode Comparison Table {#mode-comparison}
+
+:::{.callout-tip}
+## Quick Reference
+:::
+
+| Feature | APP_MODE | UPDATE_MODE | GLOBAL_MODE |
+|---------|----------|-------------|-------------|
+| **Purpose** | Run applications | Process data | System maintenance |
+| **app_data Access** | Read-only | Read-write | Read-write |
+| **raw_data Access** | ❌ None | ✅ Read-write | ✅ Read-write |
+| **processed_data Access** | ❌ None | ✅ Read-write | ✅ Read-write |
+| **30_global_data Access** | ❌ None | Read-only | ✅ Read-write |
+| **Scripts Loaded** | Minimal set | Data processing set | Complete set |
+| **Security Level** | Highest | Medium | Lowest |
+| **Typical Users** | End users | Data analysts | System administrators |
+
+# Conclusion {#conclusion}
+
+The Operating Modes principle establishes clear separation between different execution contexts, enhancing security, maintainability, and functionality of the precision marketing system. By respecting mode boundaries, we ensure applications run with appropriate access controls and dependencies optimized for their specific purpose.
+
+:::{.callout-warning}
+## Important Reminder
+Always select the appropriate operating mode based on task requirements and ensure code respects mode boundaries to maintain system security and integrity.
+:::

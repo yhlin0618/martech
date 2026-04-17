@@ -1,0 +1,288 @@
+---
+title: "DM_R035: Script Placement Rule"
+subtitle: "Placement of ETL and Derivation scripts in the directory structure"
+chapter: "CH02"
+category: "rule"
+number: "DM_R035"
+date-created: "2025-08-27"
+date-modified: "2025-08-27"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article:
+  number: 35
+  title: "Script Placement Rule"
+implements:
+  - "MP064: ETL-Derivation Separation Principle"
+  - "MP093: Script Separation Principle"
+related_to:
+  - "SO_R001: Directory Structure"
+  - "DEV_R032: Update Script Structure Rule"
+  - "DM_R008: Platform ID Reference"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 35: Script Placement Rule {#overview}
+
+**Data Management Law Article 35 (Script Placement Rule)**
+
+All ETL and Derivation scripts MUST be placed in the `update_scripts/` directory following platform-specific naming conventions. These executable scripts consume functions from `global_scripts/` but are never placed within the global_scripts directory themselves.
+
+:::{.callout-important}
+## Core Rule
+- ETL scripts: `update_scripts/platform_ETL##_*.R`
+- Derivation scripts: `update_scripts/platform_D##_*.R`
+- System change scripts: `update_scripts/sc_*.R`
+- Reusable functions: `global_scripts/##_category/fn_*.R`
+:::
+
+# Section 1: Script Categories and Placement {#categories}
+
+## Subsection 1: Executable Scripts (update_scripts/) {#executable}
+
+All scripts that perform actual operations MUST be in `update_scripts/`:
+
+```
+update_scripts/
+├── cbz_ETL01_0IM.R      # Cabbage ETL01 Import phase
+├── cbz_ETL01_1ST.R      # Cabbage ETL01 Staging phase
+├── cbz_ETL01_2TR.R      # Cabbage ETL01 Transform phase
+├── cbz_D01_dna_analysis.R  # Cabbage Derivation 01
+├── eby_ETL01_0IM.R      # Ebay ETL01 Import phase
+├── eby_ETL01_1ST.R      # Ebay ETL01 Staging phase
+├── eby_ETL01_2TR.R      # Ebay ETL01 Transform phase
+├── eby_D01_dna_analysis.R  # Ebay Derivation 01
+├── amz_ETL02_0IM.R      # Amazon ETL02 Import phase
+├── sc_create_tables.R    # System change: create tables
+└── sc_update_schema.R    # System change: update schema
+```
+
+## Subsection 2: Reusable Functions (global_scripts/) {#reusable}
+
+All reusable functions and utilities MUST be in `global_scripts/`:
+
+```
+scripts/global_scripts/
+├── 01_db/
+│   └── dbConnect.R              # Database connection utilities
+├── 02_db_utils/
+│   └── fn_query_builder.R       # Query building functions
+├── 04_utils/
+│   ├── fn_data_validation.R    # Data validation utilities
+│   └── fn_transformation.R     # Common transformations
+├── 05_data_processing/
+│   ├── fn_etl_common.R         # Common ETL functions
+│   └── fn_derivation_common.R  # Common derivation functions
+└── 06_queries/
+    └── fn_standard_queries.R   # Standard query templates
+```
+
+# Section 2: Naming Conventions {#naming}
+
+## Subsection 1: ETL Script Naming {#etl-naming}
+
+ETL scripts follow this pattern:
+```
+platform_ETL##_phase.R
+```
+
+Components:
+- `platform`: Platform ID (cbz, eby, amz, etc.) from MP092
+- `ETL##`: ETL pipeline number (ETL01, ETL02, etc.)
+- `phase`: Processing phase (0IM, 1ST, 2TR) from MP064
+
+Examples:
+```r
+cbz_ETL01_0IM.R    # Cabbage platform, ETL pipeline 01, Import phase
+eby_ETL03_2TR.R    # Ebay platform, ETL pipeline 03, Transform phase
+amz_ETL02_1ST.R    # Amazon platform, ETL pipeline 02, Staging phase
+```
+
+## Subsection 2: Derivation Script Naming {#derivation-naming}
+
+Derivation scripts follow this pattern:
+```
+platform_D##_description.R
+```
+
+Components:
+- `platform`: Platform ID (cbz, eby, amz, etc.)
+- `D##`: Derivation number (D01, D02, etc.)
+- `description`: Brief description of the derivation
+
+Examples:
+```r
+cbz_D01_dna_analysis.R      # DNA analysis for Cabbage
+eby_D02_customer_segments.R # Customer segmentation for Ebay
+amz_D03_product_position.R  # Product positioning for Amazon
+```
+
+## Subsection 3: System Change Script Naming {#system-naming}
+
+System change scripts follow this pattern:
+```
+sc_description.R
+```
+
+Examples:
+```r
+sc_create_customer_tables.R
+sc_update_product_schema.R
+sc_initialize_database.R
+```
+
+# Section 3: Dependency Rules {#dependencies}
+
+## Subsection 1: Allowed Dependencies {#allowed-deps}
+
+```r
+# ✅ CORRECT: update_scripts sourcing from global_scripts
+# In update_scripts/cbz_ETL01_0IM.R
+
+source("scripts/global_scripts/01_db/dbConnect.R")
+source("scripts/global_scripts/04_utils/fn_data_validation.R")
+source("scripts/global_scripts/05_data_processing/fn_etl_common.R")
+
+# Use the sourced functions
+conn <- dbConnect_universal()
+validated_data <- fn_validate_input(raw_data)
+```
+
+## Subsection 2: Forbidden Dependencies {#forbidden-deps}
+
+```r
+# ❌ WRONG: global_scripts should never source update_scripts
+# Never do this in global_scripts/
+
+source("../../update_scripts/cbz_ETL01_0IM.R")  # FORBIDDEN
+
+# ❌ WRONG: ETL/Derivation logic in global_scripts
+# Never place executable scripts in global_scripts/
+
+# This should NOT be in global_scripts/05_data_processing/etl01.R
+etl01_main <- function() {
+  # Full ETL pipeline logic - this belongs in update_scripts/
+}
+```
+
+# Section 4: Implementation Examples {#examples}
+
+## Example 1: ETL Pipeline Implementation {#etl-example}
+
+```r
+# update_scripts/cbz_ETL01_0IM.R
+# Platform: Cabbage (cbz)
+# Pipeline: ETL01 - Sales Data
+# Phase: 0IM (Import)
+
+# 1. INITIALIZE
+source("scripts/global_scripts/00_principles/sc_initialization_update_mode.R")
+source("scripts/global_scripts/01_db/dbConnect.R")
+source("scripts/global_scripts/05_data_processing/fn_etl_common.R")
+
+# 2. MAIN
+tryCatch({
+  conn <- dbConnect_universal()
+  
+  # Import raw sales data
+  raw_data <- fn_import_csv("data/raw/cbz_sales.csv")
+  
+  # Write to import layer
+  fn_write_to_layer(conn, raw_data, "etl01_0im", "import")
+  
+  message("ETL01 Import phase completed successfully")
+}, error = function(e) {
+  message("Error in ETL01 Import: ", e$message)
+  error_occurred <- TRUE
+})
+
+# 3. TEST
+# ... verification code ...
+
+# 4. DEINITIALIZE  
+# ... cleanup code ...
+```
+
+## Example 2: Derivation Implementation {#derivation-example}
+
+```r
+# update_scripts/cbz_D01_dna_analysis.R
+# Platform: Cabbage (cbz)
+# Derivation: D01 - Customer DNA Analysis
+
+# 1. INITIALIZE
+source("scripts/global_scripts/00_principles/sc_initialization_update_mode.R")
+source("scripts/global_scripts/01_db/dbConnect.R")
+source("scripts/global_scripts/05_data_processing/fn_derivation_common.R")
+
+# 2. MAIN
+tryCatch({
+  conn <- dbConnect_universal()
+  
+  # Read ETL-prepared data
+  sales_data <- fn_read_from_etl(conn, "etl01_transformed")
+  review_data <- fn_read_from_etl(conn, "etl06_transformed")
+  
+  # Apply DNA analysis logic
+  customer_dna <- fn_calculate_customer_dna(sales_data, review_data)
+  
+  # Write results
+  fn_write_derivation(conn, customer_dna, "d01_customer_dna")
+  
+  message("D01 DNA Analysis completed successfully")
+}, error = function(e) {
+  message("Error in D01 Analysis: ", e$message)
+  error_occurred <- TRUE
+})
+
+# 3. TEST
+# ... verification code ...
+
+# 4. DEINITIALIZE
+# ... cleanup code ...
+```
+
+# Section 5: Migration Checklist {#migration}
+
+When organizing existing scripts:
+
+- [ ] Identify all ETL logic currently in global_scripts
+- [ ] Move ETL scripts to update_scripts/ with proper naming
+- [ ] Identify all Derivation logic currently mixed with ETL
+- [ ] Separate Derivation logic into distinct D## scripts
+- [ ] Extract reusable functions to appropriate global_scripts directories
+- [ ] Update all source() statements to reflect new locations
+- [ ] Verify no global_scripts are sourcing update_scripts
+- [ ] Test all scripts still function after reorganization
+
+# Section 6: Enforcement {#enforcement}
+
+## Code Review Requirements
+
+All code reviews MUST verify:
+
+1. **No executable scripts in global_scripts/**
+2. **All ETL scripts follow platform_ETL##_phase.R naming**
+3. **All Derivation scripts follow platform_D##_description.R naming**
+4. **System changes use sc_ prefix**
+5. **Dependencies flow only from update_scripts → global_scripts**
+6. **Each script follows DEV_R032 four-part structure**
+
+## Violations
+
+Scripts placed incorrectly will be:
+1. Flagged in code review
+2. Required to be moved before merge
+3. Documented as technical debt if grandfathered
+
+---
+
+*Based on: Data Management Law Article 35*  
+*Implements: [MP064 ETL-Derivation Separation](../../CH00_fundamental_principles/04_data_management/MP064_etl_derivation_separation.qmd), [MP093 Script Separation Principle](../../CH00_fundamental_principles/02_structure_organization/MP093_script_separation_principle.qmd)*  
+*Related: [SO_R001 Directory Structure](../../CH01_structure_organization/rules/SO_R001_directory_structure.qmd), [DEV_R032 Update Script Structure](../../CH03_development_methodology/rules/DEV_R032_update_script_structure.qmd)*

@@ -1,0 +1,127 @@
+---
+title: "DEV_R029: Function Deployment Rule"
+subtitle: "Functions must be correctly implemented with appropriate scope considerations, properly initialized early in the application lifecycle, and explicitly passed to components when needed"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R029"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article: 
+  number: 29
+  title: "Function Deployment Rule"
+related_to:
+  - "R102: Shiny Reactive Observation Rule"
+  - "MP31: Initialization First"
+  - "R95: Import Requirements Rule"
+  - "R21: One Function One File"
+  - "R67: Functional Encapsulation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 29: Function Deployment Rule {#overview}
+
+**Development Methodology Law Article 29 (Function Deployment Rule)**
+
+This rule establishes the proper implementation patterns for deploying functions in Shiny applications, ensuring they are properly scoped, initialized at the right time, and explicitly passed to components when needed.
+
+:::{.callout-important}
+## Rule Definition
+Functions must be correctly implemented with appropriate scope considerations, properly initialized early in the application lifecycle, and explicitly passed to components that require them.
+:::
+
+# Section 1: Requirements {#requirements}
+
+1. **Early Definition**: Define critical functions early in the initialization process, before any UI components or server logic attempts to use them.
+
+2. **Proper Global Assignment**: For functions requiring global scope, use explicit assignment to `.GlobalEnv` instead of relying on implicit scoping rules.
+
+3. **Explicit Function Passing**: Pass functions explicitly to components as parameters rather than relying on their global availability.
+
+4. **Fallback Mechanisms**: Include fallback mechanisms for critical functions to prevent application failure if the function isn't available in the expected scope.
+
+5. **Scope Awareness**: Be mindful of scope boundaries, especially in reactive contexts where function availability may change.
+
+# Section 2: Implementation Patterns {#implementation-patterns}
+
+## Subsection 1: Global Function Assignment {#global-function-assignment}
+
+```r
+# Early in your initialization code:
+my_function <- function(args) {
+  # Function logic here
+  return(result)
+}
+
+# Ensure global availability when needed
+assign("my_function", my_function, envir = .GlobalEnv)
+```
+
+## Subsection 2: Function Existence Checking {#function-existence-checking}
+
+```r
+# Check for function existence in component initialization
+if (!exists("required_function") || !is.function(required_function)) {
+  warning("Required function not found. Using fallback.")
+  required_function <- function(...) {
+    # Default implementation
+    warning("Using fallback implementation")
+    return(NULL)
+  }
+}
+```
+
+## Subsection 3: Explicit Function Passing {#explicit-function-passing}
+
+```r
+# Pass explicitly to components
+my_component <- createComponent(
+  id = "component_id",
+  data_connection = some_connection,
+  processor_function = my_function  # Pass the function explicitly
+)
+```
+
+# Section 3: Common Issues to Avoid {#common-issues}
+
+1. **Late Definition**: Defining functions after code that depends on them has already executed.
+
+2. **Incorrect Assignment**: Using `<<-` which is the non-local assignment operator but not reliable for creating truly global variables in Shiny contexts.
+
+3. **Scope Confusion**: Not understanding R's lexical scoping rules, causing functions to be inaccessible where needed.
+
+4. **Missing Fallbacks**: Not providing fallback mechanisms for critical functions.
+
+5. **Implicit Dependency**: Assuming functions will be available without explicit passing.
+
+# Section 4: Related Principles {#related-principles}
+
+- R102: Shiny Reactive Observation Rule
+- MP31: Initialization First
+- R95: Import Requirements Rule
+- R21: One Function One File
+- R67: Functional Encapsulation
+
+# Section 5: Notes {#notes}
+
+When developing complex Shiny applications with multiple components, proper function deployment is critical. Common issues include:
+
+1. Functions being defined too late in the application lifecycle
+2. Functions not being properly assigned to the appropriate environment
+3. Relying on implicit scoping rather than explicit function passing
+4. Lack of fallback mechanisms for critical functionality
+
+By following this rule, you ensure consistent function availability throughout your application regardless of the execution context.
+
+---
+
+*Based on: Development Methodology Law Article 29*  
+*Related to: [R102 Shiny Reactive Observation Rule](DEV_R026_shiny_reactive_observation.qmd), [MP31 Initialization First](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd)*

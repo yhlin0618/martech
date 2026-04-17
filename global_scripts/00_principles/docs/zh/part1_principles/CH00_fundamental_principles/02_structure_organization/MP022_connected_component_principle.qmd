@@ -1,0 +1,500 @@
+---
+title: "MP056: 連通組件原則"
+subtitle: "應用模組應設計為圖論意義上的連通組件——透過資料流或事件路徑相互連接的內聚單元"
+author: "開發團隊"
+date: "2025-04-10"
+date-modified: "2025-08-16"
+categories: [元原則, 圖論, 模組化, 組件設計]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心聲明
+
+應用模組應設計為圖論意義上的連通組件——內部所有元素通過資料流或事件路徑相互連接的內聚單元，具有明確定義的邊界節點作為與外部組件的唯一介面。
+
+## 原理說明
+
+將模組設計為連通組件可創建清晰的邊界、提高可維護性、增強可重用性，並能精確推理應用程式行為。這種方法：
+
+1. **強制封裝**：確保內部實作保持隱藏
+2. **釐清依賴關係**：使系統各部分之間的關係明確
+3. **降低耦合**：將通訊限制在明確定義的介面
+4. **實現推理**：允許對組件屬性進行形式化分析
+5. **簡化測試**：為測試隔離提供清晰的邊界
+
+## 圖論基礎
+
+該原則將圖論概念應用於軟體架構：
+
+### 1. 圖元素 {#graph-elements}
+- **頂點（節點）**：組件中的個別元素（UI元素、函數、資料結構）
+- **邊**：元素之間的連接（資料流、事件處理程序、依賴關係）
+- **連通組件**：任意兩個頂點都由路徑連接的子圖
+- **邊界節點**：與組件外部元素介接的頂點
+- **割集**：移除後會斷開組件與外部系統連接的最小邊集
+
+### 2. 圖屬性 {#graph-properties}
+- **內聚性**：組件內頂點的連接強度
+- **耦合性**：與外部組件的連接數量和強度
+- **可達性**：一個頂點是否可以通過某條路徑影響另一個頂點
+- **依賴方向**：頂點之間資料或控制流的方向
+
+## 實作框架
+
+### 1. 組件識別 {#component-identification}
+
+通過分析以下內容識別連通組件：
+
+- **功能內聚**：共同實現單一功能的元素
+- **資料內聚**：操作相同資料結構的元素
+- **流程內聚**：通過資料或事件流連接的元素
+- **時間內聚**：在相同時間或生命週期階段運作的元素
+- **介面隔離**：能夠與外部系統定義清晰邊界
+
+### 2. 組件邊界 {#component-boundaries}
+
+通過以下方式建立清晰的邊界：
+
+- **最小化割集**：減少與外部系統的連接數量
+- **定義邊界節點**：為外部通訊創建明確的介面元素
+- **包含狀態**：將狀態變數保持在組件邊界內
+- **隔離效果**：確保副作用保持在組件內
+- **控制事件傳播**：管理事件如何進入和離開組件
+
+### 3. 內部結構 {#internal-structure}
+
+通過以下方式設計健壯的內部結構：
+
+- **確保連通性**：每個元素都應該可以從其他元素到達
+- **避免孤立點**：不要在組件中包含斷開的元素
+- **平衡內聚**：元素應該有適當的互連程度
+- **優化路徑**：考慮資料和事件流的效率
+- **管理複雜性**：限制頂點和邊的數量以保持清晰度
+
+### 4. 外部介面 {#external-interface}
+
+通過以下方式創建明確定義的介面：
+
+- **輸入邊界節點**：定義外部事件進入的特定點
+- **輸出邊界節點**：定義資料或事件退出的特定點
+- **參數傳遞**：使用明確的參數而不是共享狀態
+- **契約定義**：文件化預期的輸入和輸出
+- **不變性保持**：無論輸入如何都保持內部一致性
+
+## 實作模式
+
+### 1. UI-Server 連通組件模式 {#ui-server-pattern}
+
+```r
+# 定義 UI-Server 連通組件
+myComponentModule <- function(id) {
+  # 創建命名空間
+  ns <- NS(id)
+  
+  # 返回組件部分
+  list(
+    # UI 邊界節點（輸入/輸出介面）
+    ui = function() {
+      div(
+        # 輸入邊（外部事件進入處）
+        textInput(ns("input_text"), "輸入值"),
+        selectInput(ns("input_option"), "選擇選項", choices = c("A", "B", "C")),
+        
+        # 輸出邊（資訊離開處）
+        plotOutput(ns("result_plot")),
+        textOutput(ns("summary_text"))
+      )
+    },
+    
+    # Server 邏輯（內部頂點和邊）
+    server = function(input, output, session) {
+      # 內部狀態頂點
+      current_data <- reactiveVal(NULL)
+      processing_status <- reactiveVal("idle")
+      
+      # 內部計算頂點
+      processed_result <- reactive({
+        req(current_data())
+        # 內部處理
+        process_data(current_data(), input$input_option)
+      })
+      
+      # 事件處理邊
+      observeEvent(input$input_text, {
+        # 狀態轉換
+        processing_status("processing")
+        
+        # 更新內部狀態
+        current_data(parse_input(input$input_text))
+        
+        # 標記處理完成
+        processing_status("complete")
+      })
+      
+      # 輸出生成邊
+      output$result_plot <- renderPlot({
+        req(processed_result())
+        create_visualization(processed_result())
+      })
+      
+      output$summary_text <- renderText({
+        req(processed_result())
+        summarize_result(processed_result())
+      })
+      
+      # 返回反應值以供測試或組合
+      list(
+        result = processed_result,
+        status = processing_status
+      )
+    }
+  )
+}
+```
+
+### 2. 狀態機組件模式 {#state-machine-pattern}
+
+```r
+# 創建實現狀態機的組件
+createStateMachineComponent <- function(id, initial_state = "idle") {
+  ns <- NS(id)
+  
+  list(
+    ui = function() {
+      div(
+        # 狀態轉換輸入
+        actionButton(ns("event_a"), "觸發事件 A"),
+        actionButton(ns("event_b"), "觸發事件 B"),
+        actionButton(ns("reset"), "重置"),
+        
+        # 狀態視覺化
+        div(
+          textOutput(ns("current_state")),
+          uiOutput(ns("state_content"))
+        )
+      )
+    },
+    
+    server = function(input, output, session) {
+      # 中央狀態頂點
+      state <- reactiveVal(initial_state)
+      
+      # 轉換函數 - 內部頂點
+      transition <- function(current, event) {
+        # 狀態轉換邏輯
+        if (current == "idle" && event == "a") return("state_a")
+        if (current == "idle" && event == "b") return("state_b")
+        if (current == "state_a" && event == "b") return("state_ab")
+        if (current == "state_b" && event == "a") return("state_ba")
+        if (event == "reset") return("idle")
+        return(current)  # 無轉換
+      }
+      
+      # 事件處理邊
+      observeEvent(input$event_a, {
+        state(transition(state(), "a"))
+      })
+      
+      observeEvent(input$event_b, {
+        state(transition(state(), "b"))
+      })
+      
+      observeEvent(input$reset, {
+        state(transition(state(), "reset"))
+      })
+      
+      # 輸出生成邊
+      output$current_state <- renderText({
+        paste("當前狀態:", state())
+      })
+      
+      output$state_content <- renderUI({
+        # 根據狀態渲染不同內容
+        switch(state(),
+               "idle" = div("系統閒置。觸發一個事件。"),
+               "state_a" = div("在狀態 A", style = "color: blue"),
+               "state_b" = div("在狀態 B", style = "color: green"),
+               "state_ab" = div("在狀態 A→B", style = "color: purple"),
+               "state_ba" = div("在狀態 B→A", style = "color: orange"),
+               div("未知狀態", style = "color: red")
+        )
+      })
+      
+      # 返回狀態以供組合
+      return(list(
+        current_state = state
+      ))
+    }
+  )
+}
+```
+
+### 3. 資料流組件模式 {#data-flow-pattern}
+
+```r
+# 創建專注於資料流轉換的組件
+createDataFlowComponent <- function(id) {
+  ns <- NS(id)
+  
+  list(
+    ui = function() {
+      div(
+        # 輸入邊界節點
+        fileInput(ns("data_input"), "上傳資料"),
+        
+        # 處理選項
+        selectInput(ns("transform_type"), "轉換",
+                   choices = c("篩選", "聚合", "標準化")),
+        
+        # 參數輸入
+        conditionalPanel(
+          condition = sprintf("input['%s'] == '篩選'", ns("transform_type")),
+          textInput(ns("filter_expr"), "篩選表達式")
+        ),
+        
+        conditionalPanel(
+          condition = sprintf("input['%s'] == '聚合'", ns("aggregate_type")),
+          selectInput(ns("aggregate_func"), "聚合函數",
+                     choices = c("sum", "mean", "median", "count"))
+        ),
+        
+        # 輸出邊界節點
+        plotOutput(ns("result_viz")),
+        downloadButton(ns("download_data"), "下載結果")
+      )
+    },
+    
+    server = function(input, output, session) {
+      # 輸入資料頂點
+      raw_data <- reactive({
+        req(input$data_input)
+        read_csv(input$data_input$datapath)
+      })
+      
+      # 處理頂點
+      filtered_data <- reactive({
+        req(raw_data())
+        
+        if (input$transform_type == "篩選" && nzchar(input$filter_expr)) {
+          filter_expr <- rlang::parse_expr(input$filter_expr)
+          return(filter(raw_data(), !!filter_expr))
+        }
+        return(raw_data())
+      })
+      
+      transformed_data <- reactive({
+        req(filtered_data())
+        
+        if (input$transform_type == "聚合" && !is.null(input$aggregate_func)) {
+          # 應用聚合
+          group_by(filtered_data(), across(where(is.factor))) %>%
+            summarize(across(where(is.numeric), input$aggregate_func))
+        } else if (input$transform_type == "標準化") {
+          # 應用標準化
+          mutate(filtered_data(), 
+                 across(where(is.numeric), 
+                        ~scale(.x)))
+        } else {
+          filtered_data()
+        }
+      })
+      
+      # 輸出生成邊
+      output$result_viz <- renderPlot({
+        req(transformed_data())
+        
+        if (ncol(transformed_data()) >= 2) {
+          ggplot(transformed_data()) +
+            geom_point(aes(x = .data[[names(transformed_data())[1]]], 
+                           y = .data[[names(transformed_data())[2]]]))
+        } else {
+          ggplot(transformed_data()) +
+            geom_histogram(aes(x = .data[[names(transformed_data())[1]]]))
+        }
+      })
+      
+      output$download_data <- downloadHandler(
+        filename = function() {
+          paste0("transformed_data_", Sys.Date(), ".csv")
+        },
+        content = function(file) {
+          write_csv(transformed_data(), file)
+        }
+      )
+      
+      # 返回轉換後的資料以供組合
+      return(list(
+        data = transformed_data
+      ))
+    }
+  )
+}
+```
+
+## 跨組件類型的應用
+
+### 1. UI 組件 {#ui-components}
+
+- **頂點**：UI元素、事件處理器、狀態變數
+- **邊**：事件傳播、狀態更新、渲染流程
+- **邊界節點**：輸入控制項、輸出顯示
+- **屬性**：視覺內聚、互動流程、狀態一致性
+
+### 2. 資料處理組件 {#data-processing-components}
+
+- **頂點**：資料結構、轉換函數、驗證規則
+- **邊**：資料流、轉換序列、依賴關係
+- **邊界節點**：資料輸入、處理輸出、錯誤通道
+- **屬性**：資料完整性、處理效率、轉換正確性
+
+### 3. 狀態管理組件 {#state-management-components}
+
+- **頂點**：狀態變數、轉換函數、驗證器
+- **邊**：狀態轉換、事件處理器、副作用
+- **邊界節點**：事件輸入、狀態輸出、通知通道
+- **屬性**：狀態一致性、轉換有效性、不變性保持
+
+## 驗證方法
+
+### 1. 圖分析 {#graph-analysis}
+
+通過以下方式驗證連通組件屬性：
+
+- **可達性分析**：確保所有頂點都可以從入口點到達
+- **割集識別**：識別並最小化外部連接點
+- **環檢測**：識別並管理循環依賴
+- **路徑分析**：驗證資料和控制流路徑
+
+### 2. 組件測試 {#component-testing}
+
+通過以下方式測試連通組件：
+
+- **邊界節點測試**：驗證介面邊界的輸入和輸出
+- **狀態轉換測試**：驗證內部狀態轉換
+- **隔離測試**：測試組件的隔離行為
+- **整合測試**：驗證與外部組件的正確互動
+
+## 與其他原則的關係
+
+此元原則建立在以下基礎上：
+
+- **MP0016（模組化）**：提供模組邊界的形式化標準
+- **MP0017（關注點分離）**：澄清哪些關注點屬於一起
+- **MP0052（單向資料流）**：形式化資料流方向性
+
+並需要實作：
+
+- **MP0044（函子模組對應）**：確保組件可以適當地組合
+
+## 優點
+
+1. **增強模組化**：系統各部分之間的清晰邊界
+2. **提高可重用性**：組件可以在不同上下文中使用
+3. **簡化測試**：組件可以隔離測試
+4. **更好的推理**：可以驗證形式化屬性
+5. **降低耦合**：組件通過最小介面互動
+6. **更清晰的依賴關係**：組件之間的關係是明確的
+
+## 實作檢查清單
+
+將此元原則應用於您的應用程式：
+
+1. [ ] 識別功能的邏輯內聚單元
+2. [ ] 映射每個單元內的頂點（元素）和邊（連接）
+3. [ ] 驗證連通性（所有元素都可以相互影響）
+4. [ ] 識別邊界節點（與外部系統的介面點）
+5. [ ] 最小化割集（減少外部連接點）
+6. [ ] 為邊界節點互動定義清晰的契約
+7. [ ] 確保內部狀態保持封裝
+8. [ ] 文件化組件圖結構
+
+## 範例
+
+### DNA 分布組件範例
+
+KitchenMAMA 應用程式的 DNA 分布視覺化組件展示了此原則：
+
+1. **組件圖結構**：
+   ```
+                          ┌─────────────┐
+                          │  DNA 資料   │
+                          └──────┬──────┘
+                                 │
+                                 ▼
+      ┌─────────┐       ┌───────────────┐       ┌──────────────┐
+      │ M_ecdf  │ ─────►│ M ECDF        │       │              │
+      │ 按鈕    │       │ 觀察器        │       │              │
+      └─────────┘       └───────┬───────┘       │              │
+                                 │               │              │
+      ┌─────────┐       ┌───────────────┐       │              │
+      │ R_ecdf  │ ─────►│ R ECDF        │       │              │
+      │ 按鈕    │       │ 觀察器        │       │              │
+      └─────────┘       └───────┬───────┘       │              │
+                                 │               │              │
+      ┌─────────┐       ┌───────────────┐       │  DNA_Macro   │
+      │ F_ecdf  │ ─────►│ F ECDF        │ ─────►│  _plot       │
+      │ 按鈕    │       │ 觀察器        │       │  輸出        │
+      └─────────┘       └───────┬───────┘       │              │
+                                 │               │              │
+      ┌─────────┐       ┌───────────────┐       │              │
+      │ IPT_ecdf│ ─────►│ IPT ECDF      │       │              │
+      │ 按鈕    │       │ 觀察器        │       │              │
+      └─────────┘       └───────┬───────┘       │              │
+                                 │               │              │
+      ┌─────────┐       ┌───────────────┐       │              │
+      │F_barplot│ ─────►│ F 長條圖      │ ─────►│              │
+      │ 按鈕    │       │ 觀察器        │       │              │
+      └─────────┘       └───────┬───────┘       └──────────────┘
+                                 │
+      ┌─────────┐       ┌───────────────┐
+      │NES_bar  │ ─────►│ NES 長條圖    │
+      │ 按鈕    │       │ 觀察器        │
+      └─────────┘       └───────────────┘
+   ```
+
+2. **連通屬性**：
+   - **頂點**：動作按鈕、觀察器、圖表輸出
+   - **邊**：事件流、資料轉換
+   - **邊界節點**：輸入按鈕、圖表輸出
+   - **割集**：資料輸入和圖表輸出介面
+
+3. **作為連通組件的實作**：
+   ```r
+   # UI 邊界節點
+   actionButton(inputId = "M_ecdf", label = "購買金額(M)"),
+   actionButton(inputId = "R_ecdf", label = "最近購買日(R)"),
+   actionButton(inputId = "F_ecdf", label = "購買頻率(F)"),
+   # ... 其他按鈕
+   
+   # 輸出邊界節點
+   plotlyOutput(outputId = "DNA_Macro_plot")
+   
+   # 組件內部 - 事件處理
+   observeEvent(input$M_ecdf, {
+     # 內部狀態更新
+     current_visualization("M_ecdf")
+     
+     # 內部轉換
+     ecdf_data <- calculate_ecdf(dna_data$m_value)
+     
+     # 輸出生成
+     output$DNA_Macro_plot <- renderPlotly({
+       create_ecdf_plot(ecdf_data, "購買金額(M)")
+     })
+   })
+   ```
+
+此組件展示了：
+- 內部實作與外部介面之間的清晰邊界
+- 組件內的狀態封裝
+- 單一職責（視覺化 DNA 分布）
+- 最小介面（按鈕輸入，視覺化輸出）
+
+通過將其視為連通組件，此視覺化模組變得可重用、可維護，並且可以作為一個內聚單元進行推理。

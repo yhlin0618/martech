@@ -1,0 +1,157 @@
+---
+title: "DEV_R022: 模組資料連接規則"
+subtitle: "伺服器模組必須接收資料來源連接而非預先過濾的資料"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R022"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 22
+  title: "模組資料連接規則"
+implements:
+  - "MP017: 關注分離"
+  - "R009: UI-Server-Defaults 三元組"
+  - "P073: Server-to-UI 資料流"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十二條：模組資料連接規則 {#overview}
+
+**開發方法法第二十二條（模組資料連接規則）**
+
+此規則建立了伺服器模組必須接收資料來源連接而非預先過濾資料的標準。
+
+:::{.callout-important}
+## 核心規則
+伺服器模組必須接收資料來源連接而非預先過濾的資料。
+:::
+
+# 第一項：描述 {#description}
+
+此規則建立了 Shiny 模組應遵循的自包含資料存取模式，其中模組本身負責從中央資料來源連接中選擇、過濾和處理其所需的資料。
+
+# 第二項：理由 {#rationale}
+
+## 第一款：關注分離 {#separation-of-concerns}
+
+模組應在內部處理自己的資料存取邏輯。
+
+## 第二款：可測試性 {#testability}
+
+模組可以使用不同的資料來源進行測試，而無需更改其內部邏輯。
+
+## 第三款：一致性 {#consistency}
+
+為所有模組創建統一的模式可供遵循。
+
+## 第四款：可維護性 {#maintainability}
+
+資料選擇邏輯的變更包含在模組內，減少跨模組依賴關係。
+
+## 第五款：性能 {#performance}
+
+允許模組實施針對其需求優化的資料查詢。
+
+# 第三項：實施指南 {#implementation-guide}
+
+## 第一款：模組伺服器函數簽名 {#module-server-signature}
+
+```r
+moduleNameServer <- function(id, app_data_connection) {
+  moduleServer(id, function(input, output, session) {
+    # 從 app_data_connection 查詢必要的資料
+    # 根據需要過濾記錄
+    # 實施模組邏輯
+  })
+}
+```
+
+## 第二款：連接類型 {#connection-types}
+
+`app_data_connection` 參數可以是以下之一：
+
+1. 資料庫連接物件
+2. 連接配置（如連接參數列表）
+3. 提供多個資料集存取的反應式資料來源
+4. 使用適當參數呼叫時返回資料的函數
+
+## 第三款：資料選擇 {#data-selection}
+
+資料選擇和過濾必須在模組內部進行：
+
+```r
+# 正確實施
+data <- reactive({
+  req(app_data_connection)
+  
+  # 從連接查詢或存取資料
+  df <- app_data_connection$get_data("table_name")
+  
+  # 應用模組特定的過濾
+  df %>% filter(some_condition == TRUE)
+})
+```
+
+## 第四款：反模式 {#anti-patterns}
+
+```r
+# 錯誤：模組接收預先過濾的資料
+moduleNameServer <- function(id, filtered_data) {
+  moduleServer(id, function(input, output, session) {
+    # 使用已經過濾的資料
+  })
+}
+```
+
+# 第四項：範例 {#examples}
+
+## 第一款：正確實施 {#correct-implementation}
+
+```r
+# 模組接收連接，而非資料
+customerModuleServer <- function(id, app_data) {
+  moduleServer(id, function(input, output, session) {
+    # 模組在內部處理資料選擇
+    customer_data <- reactive({
+      req(app_data)
+      app_data$get_customers() %>%
+        filter(status == "active")
+    })
+    
+    # ...模組實施的其餘部分...
+  })
+}
+```
+
+## 第二款：使用方式 {#usage}
+
+```r
+# 在 app.R 中的使用
+app_data <- setup_data_connection()
+customerModuleServer("customer_module", app_data)
+```
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **提高模組獨立性**：每個模組控制自己的資料存取
+2. **簡化測試**：可以輕鬆替換測試資料來源
+3. **減少耦合**：模組之間的依賴關係最小化
+4. **提高性能**：允許針對特定需求的優化查詢
+5. **增強可維護性**：資料邏輯變更只影響單個模組
+
+---
+
+*基於：開發方法法第二十二條*  
+*相關連結：[MP017 關注分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [R009 UI-Server-Defaults 三元組](../DEV_R002_ui_server_defaults_triple.qmd)*

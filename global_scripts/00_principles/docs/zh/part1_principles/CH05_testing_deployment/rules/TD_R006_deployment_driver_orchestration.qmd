@@ -1,0 +1,97 @@
+---
+title: "TD_R006: 部署驅動腳本編排規則"
+subtitle: "當部署依賴資料同步時，必須使用明確的部署驅動腳本來串接流程，確保順序、可重現與可追蹤"
+chapter: "CH05"
+category: "rule"
+number: "TD_R006"
+date-created: "2026-01-25"
+date-modified: "2026-01-25"
+author: "Claude"
+type: "rule"
+law: "測試部署法"
+article-number:
+  number: 6
+  title: "部署驅動腳本編排規則"
+related_to:
+  - "MP064: ETL-Derivation Separation"
+  - "DM_R056: Posit Connect Deployment Assets"
+  - "MP140: Pipeline Orchestration"
+  - "SO_R007: One Function One File"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第六條：部署驅動腳本編排規則 {#overview}
+
+**測試部署法第六條（部署驅動腳本編排規則）**
+
+當部署流程依賴資料同步（例如 DuckDB → Supabase）時，必須使用明確的部署驅動腳本（deployment driver）串接步驟，確保順序清晰、流程可重現，並避免手動遺漏關鍵步驟。
+
+:::{.callout-important}
+## 核心需求
+部署必須由一個明確的 driver 腳本負責編排：**資料同步 → 部署資產更新 → 版本控制與部署**。
+:::
+
+# 第一項：定義與範圍 {#definition}
+
+部署驅動腳本是**部署流程的操作層**，不屬於 DRV 衍生層（derivation layer）：
+
+- **DRV 衍生層**：負責資料衍生與 `df_*` 產出，受 MP140/DM_R042 規範。
+- **部署驅動腳本**：負責部署流程編排與資產更新，不應進入 DRV pipeline。
+
+因此部署驅動腳本**不得使用 `drv_` 命名**，也**不得放在 `update_scripts/DRV/` 目錄**，避免被誤判為衍生腳本。
+
+# 第二項：標準流程順序 {#standard-sequence}
+
+部署驅動腳本必須採用以下順序：
+
+1. **資料同步**：例如 DuckDB → Supabase 上傳
+2. **部署資產更新**：更新 `manifest.json`、檢查必要檔案
+3. **版本控制與部署**：提示 git add/commit/push 或觸發 CI/CD
+
+任何步驟失敗必須立即停止後續部署流程。
+
+# 第三項：實施規範 {#implementation}
+
+## 第一款：命名與位置 {#naming-location}
+
+- 檔名必須明確表達「部署驅動」用途，例如：
+  - `deploy_app_driver.R`
+  - `deploy_supabase_driver.R`
+- 建議放置於：`scripts/global_scripts/23_deployment/03_deploy/`
+
+## 第二款：可控執行模式 {#controllable-execution}
+
+部署驅動腳本必須提供可控執行選項，例如：
+
+- `--skip-upload`：跳過資料同步
+- `--skip-manifest`：跳過 manifest 更新
+
+範例：
+
+```bash
+Rscript scripts/global_scripts/23_deployment/03_deploy/deploy_app_driver.R
+Rscript scripts/global_scripts/23_deployment/03_deploy/deploy_app_driver.R --skip-upload
+```
+
+## 第三款：必要環境變數檢查 {#env-check}
+
+若部署依賴外部服務（如 Supabase），driver 必須在執行前檢查必要環境變數，缺失即停止。
+
+# 第四項：與現有原則關係 {#alignment}
+
+- **MP064**：先資料同步，再部署應用，維持 ETL/部署責任分離。
+- **DM_R056**：driver 保證部署資產（manifest）在部署前更新。
+- **MP140**：部署流程是 orchestration，但**不屬於 DRV pipeline**，兩者需明確區分。
+
+# 第五項：優點 {#benefits}
+
+1. **順序清晰**：避免漏掉資料同步或 manifest 更新
+2. **可重現性**：統一入口，減少手動差異
+3. **可追蹤性**：流程具備明確的日誌與中止點
+4. **安全性**：必要條件未滿足即阻止部署

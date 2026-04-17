@@ -1,0 +1,332 @@
+---
+title: "DM_R025: Type Conversion Between R and DuckDB"
+subtitle: "Establish explicit type mappings and conversion rules between R and DuckDB data types to ensure data integrity during transfer"
+chapter: "CH02"
+category: "rule"
+number: "DM_R025"
+date-created: "2025-08-27"
+date-modified: "2025-08-27"
+author: "Claude (Principle Revisor)"
+type: "rule"
+law: "Data Management Law"
+article:
+  number: 25
+  title: "R-DuckDB Type Conversion Rules"
+related_to:
+  - "DM_R024: List Column Handling Rule"
+  - "DM_R023: Universal DBI Approach"
+  - "MP063: Data Processing Trinity"
+  - "DM_R001: Data Frame Creation Strategy"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 25: R-DuckDB Type Conversion Rules {#overview}
+
+**Data Management Law Article 25 (Type Conversion Rules)**
+
+This rule establishes the canonical type mappings between R and DuckDB, ensuring consistent and predictable data transfer.
+
+:::{.callout-important}
+## Core Rule
+All data transfers between R and DuckDB MUST follow the established type mapping table. Complex types require explicit conversion before transfer.
+:::
+
+# Section 1: Type Mapping Table {#type-mapping}
+
+## Subsection 1: Basic Type Mappings {#basic-types}
+
+| R Type | DuckDB Type | Notes | Conversion Required |
+|--------|-------------|-------|---------------------|
+| `logical` | `BOOLEAN` | Direct mapping | No |
+| `integer` | `INTEGER` | 32-bit signed | No |
+| `numeric`/`double` | `DOUBLE` | 64-bit float | No |
+| `character` | `VARCHAR` | Variable-length string | No |
+| `Date` | `DATE` | Calendar date | No |
+| `POSIXct` | `TIMESTAMP` | Date + time | No |
+| `POSIXlt` | `TIMESTAMP` | Requires conversion | Yes - convert to POSIXct |
+| `factor` | `VARCHAR` | Loses factor levels | Yes - as.character() |
+| `raw` | `BLOB` | Binary data | No |
+
+## Subsection 2: Complex Type Mappings {#complex-types}
+
+| R Type | DuckDB Type | Conversion Strategy | Notes |
+|--------|-------------|---------------------|--------|
+| `list` | Not supported | Convert to JSON VARCHAR | See DM_R024 |
+| `data.frame` | Not supported | Flatten or nest as JSON | Depends on use case |
+| `matrix` | Multiple columns | Separate columns per dimension | Reshape first |
+| `array` | Not supported | Flatten or serialize | Context-dependent |
+| `S3/S4 objects` | Not supported | Extract data slots | Custom conversion |
+| `NULL` | `NULL` | Direct mapping | No conversion |
+| `NA` (logical) | `NULL` | Direct mapping | No conversion |
+| `NA_integer_` | `NULL` | Direct mapping | No conversion |
+| `NA_real_` | `NULL` | Direct mapping | No conversion |
+| `NA_character_` | `NULL` | Direct mapping | No conversion |
+
+# Section 2: Conversion Functions {#conversion-functions}
+
+## Subsection 1: Pre-Write Conversion {#pre-write}
+
+Standard function to prepare R data for DuckDB:
+
+```r
+#' Convert R data frame for DuckDB compatibility
+#' @param df Data frame to convert
+#' @return Data frame with DuckDB-compatible types
+convert_r_to_duckdb <- function(df) {
+  df_converted <- df
+  
+  for (col in names(df_converted)) {
+    col_data <- df_converted[[col]]
+    
+    # Handle factors
+    if (is.factor(col_data)) {
+      df_converted[[col]] <- as.character(col_data)
+      message(sprintf("Converted factor column '%s' to character", col))
+    }
+    
+    # Handle POSIXlt
+    else if (inherits(col_data, "POSIXlt")) {
+      df_converted[[col]] <- as.POSIXct(col_data)
+      message(sprintf("Converted POSIXlt column '%s' to POSIXct", col))
+    }
+    
+    # Handle lists (see DM_R024)
+    else if (is.list(col_data) && !is.data.frame(col_data)) {
+      df_converted[[paste0(col, "_json")]] <- sapply(col_data, 
+                                                      jsonlite::toJSON, 
+                                                      auto_unbox = TRUE)
+      df_converted[[col]] <- NULL
+      message(sprintf("Converted list column '%s' to JSON", col))
+    }
+    
+    # Handle matrices
+    else if (is.matrix(col_data)) {
+      # Flatten matrix to separate columns
+      for (i in 1:ncol(col_data)) {
+        df_converted[[paste0(col, "_", i)]] <- col_data[, i]
+      }
+      df_converted[[col]] <- NULL
+      message(sprintf("Flattened matrix column '%s' to %d columns", 
+                      col, ncol(col_data)))
+    }
+  }
+  
+  return(df_converted)
+}
+```
+
+## Subsection 2: Post-Read Conversion {#post-read}
+
+Convert DuckDB results back to expected R types:
+
+```r
+#' Convert DuckDB query results to R types
+#' @param df Data frame from DuckDB query
+#' @param schema Optional schema specification
+#' @return Data frame with appropriate R types
+convert_duckdb_to_r <- function(df, schema = NULL) {
+  if (!is.null(schema)) {
+    for (col in names(schema)) {
+      if (col %in% names(df)) {
+        target_type <- schema[[col]]
+        
+        # Restore factors
+        if (target_type == "factor" && is.character(df[[col]])) {
+          df[[col]] <- as.factor(df[[col]])
+        }
+        
+        # Parse JSON columns back to lists
+        else if (target_type == "list" && is.character(df[[col]])) {
+          df[[col]] <- lapply(df[[col]], jsonlite::fromJSON)
+        }
+      }
+    }
+  }
+  
+  return(df)
+}
+```
+
+# Section 3: Special Cases {#special-cases}
+
+## Subsection 1: Integer vs Numeric {#integer-numeric}
+
+DuckDB distinguishes between INTEGER and DOUBLE, while R often promotes to numeric:
+
+```r
+# R may silently promote integers
+df$count <- 1:10          # Creates integer
+df$count <- df$count + 0.5  # Promotes to numeric
+
+# Explicit control for DuckDB
+df$count <- as.integer(df$count)  # Ensure INTEGER type
+```
+
+## Subsection 2: Large Numbers {#large-numbers}
+
+DuckDB supports BIGINT and HUGEINT, R has limitations:
+
+```r
+# R's integer maximum: 2^31 - 1 = 2,147,483,647
+# Values larger than this become numeric (double)
+
+# For large IDs, use numeric in R, BIGINT in DuckDB
+df$large_id <- as.numeric("9223372036854775807")  # Max BIGINT
+
+# Check for integer overflow
+check_integer_overflow <- function(x) {
+  if (is.numeric(x)) {
+    max_val <- max(x, na.rm = TRUE)
+    if (max_val > .Machine$integer.max) {
+      warning("Values exceed R integer range, using numeric")
+      return(TRUE)
+    }
+  }
+  return(FALSE)
+}
+```
+
+## Subsection 3: Time Zones {#timezones}
+
+Handle timezone-aware timestamps carefully:
+
+```r
+# DuckDB TIMESTAMP vs TIMESTAMPTZ
+# R POSIXct can have timezone attributes
+
+# Ensure consistent timezone handling
+df$timestamp <- as.POSIXct(df$timestamp, tz = "UTC")
+
+# For TIMESTAMPTZ in DuckDB
+df$timestamp_tz <- format(df$timestamp, "%Y-%m-%d %H:%M:%S %Z")
+```
+
+# Section 4: Validation Functions {#validation}
+
+## Subsection 1: Type Compatibility Check {#compatibility-check}
+
+```r
+#' Check if data frame is DuckDB-compatible
+#' @param df Data frame to check
+#' @return List with compatibility status and issues
+check_duckdb_compatibility <- function(df) {
+  issues <- list()
+  
+  for (col in names(df)) {
+    col_class <- class(df[[col]])[1]
+    
+    # Check for problematic types
+    if (col_class == "list") {
+      issues[[length(issues) + 1]] <- sprintf(
+        "Column '%s' is a list - needs JSON conversion", col)
+    }
+    else if (col_class == "factor") {
+      issues[[length(issues) + 1]] <- sprintf(
+        "Column '%s' is a factor - will be converted to character", col)
+    }
+    else if (col_class == "POSIXlt") {
+      issues[[length(issues) + 1]] <- sprintf(
+        "Column '%s' is POSIXlt - needs conversion to POSIXct", col)
+    }
+    else if (col_class %in% c("matrix", "array")) {
+      issues[[length(issues) + 1]] <- sprintf(
+        "Column '%s' is %s - needs flattening", col, col_class)
+    }
+  }
+  
+  return(list(
+    compatible = length(issues) == 0,
+    issues = issues
+  ))
+}
+```
+
+## Subsection 2: Automatic Type Fixing {#auto-fix}
+
+```r
+#' Automatically fix type compatibility issues
+#' @param df Data frame to fix
+#' @param verbose Print conversion messages
+#' @return Fixed data frame
+fix_for_duckdb <- function(df, verbose = TRUE) {
+  check_result <- check_duckdb_compatibility(df)
+  
+  if (check_result$compatible) {
+    if (verbose) message("Data frame is already DuckDB-compatible")
+    return(df)
+  }
+  
+  if (verbose) {
+    message("Fixing compatibility issues:")
+    for (issue in check_result$issues) {
+      message("  - ", issue)
+    }
+  }
+  
+  return(convert_r_to_duckdb(df))
+}
+```
+
+# Section 5: Performance Implications {#performance}
+
+## Subsection 1: Type Conversion Overhead {#conversion-overhead}
+
+Different conversions have different costs:
+
+| Conversion | Performance Impact | Recommendation |
+|------------|-------------------|----------------|
+| factor → character | Low | Always safe |
+| POSIXlt → POSIXct | Low | Always convert |
+| list → JSON | Medium-High | Consider alternatives |
+| matrix → columns | Medium | Depends on size |
+| Large numeric → BIGINT | Low | Automatic |
+
+## Subsection 2: Memory Considerations {#memory}
+
+```r
+# Memory usage comparison
+compare_memory_usage <- function(df) {
+  original_size <- object.size(df)
+  converted_df <- convert_r_to_duckdb(df)
+  converted_size <- object.size(converted_df)
+  
+  list(
+    original = format(original_size, units = "MB"),
+    converted = format(converted_size, units = "MB"),
+    ratio = as.numeric(converted_size) / as.numeric(original_size)
+  )
+}
+```
+
+# Section 6: Integration with Existing Rules {#integration}
+
+This rule complements:
+
+- **DM_R024**: Specific handling for list columns
+- **DM_R023**: Universal DBI approach
+- **DM_R001**: Data frame creation strategy
+
+Use in conjunction with these rules for complete data management.
+
+# Section 7: Implementation Checklist {#checklist}
+
+When transferring data between R and DuckDB:
+
+1. ☐ Run `check_duckdb_compatibility()` on data frame
+2. ☐ Apply `fix_for_duckdb()` if issues found
+3. ☐ Document any JSON columns created
+4. ☐ Verify numeric precision requirements
+5. ☐ Check date/time timezone handling
+6. ☐ Test with sample data before full transfer
+7. ☐ Monitor performance for large datasets
+
+---
+
+*Based on: DuckDB R client documentation and empirical testing*
+*Essential for: All R-DuckDB data transfers, ETL pipelines, data persistence*

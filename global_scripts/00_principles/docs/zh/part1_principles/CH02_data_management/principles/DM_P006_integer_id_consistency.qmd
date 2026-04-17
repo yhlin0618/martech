@@ -1,0 +1,506 @@
+---
+title: "DM_P006: 整數ID一致性原則"
+subtitle: "系統識別符應實施為整數以建立資料關係，在所有應用程式層級之間保持一致的類型處理"
+chapter: "CH02"
+category: "principle"
+number: "DM_P006"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "資料管理法"
+article-number: 
+  number: 6
+  title: "整數ID一致性原則"
+related_to:
+  - "MP052: 單向資料流"
+  - "DM_R002: 通用資料存取規則"
+  - "UI_R002: Shiny模組ID處理"
+  - "DM_R003: 資料庫存取tbl規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第六條：整數ID一致性原則 {#overview}
+
+**資料管理法第六條（整數ID一致性原則）**
+
+系統識別符應實施為整數以建立資料關係，在所有應用程式層級之間保持一致的類型處理。
+
+:::{.callout-important}
+## 核心原則
+在整個資料管道中實施整數作為主要識別符，從資料庫儲存到伺服器處理到UI呈現，確保最佳性能、一致性和兼容性。
+:::
+
+# 第一項：實施原理 {#implementation-rationale}
+
+## 第一款：性能優勢 {#performance-advantages}
+
+**整數ID的性能效益：**
+
+1. **儲存效率**：整數ID提供最佳的儲存和比較性能
+2. **查詢速度**：整數比較和索引操作更快
+3. **記憶體使用**：整數佔用較少記憶體空間
+4. **處理效率**：數值運算比字串處理更有效率
+
+**實施標準：**
+```sql
+-- 資料庫結構設計
+CREATE TABLE customers (
+  customer_id INTEGER PRIMARY KEY,
+  name VARCHAR(255),
+  email VARCHAR(255)
+);
+
+CREATE TABLE transactions (
+  transaction_id INTEGER PRIMARY KEY,
+  customer_id INTEGER,
+  amount DECIMAL(10,2),
+  FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+```
+
+## 第二款：一致性保證 {#consistency-guarantees}
+
+**類型一致性策略：**
+
+1. **單一資料類型**：為ID使用單一資料類型避免類型轉換問題
+2. **明確關係**：使資料實體間的關係明確且無歧義
+3. **可靠性**：防止過濾和聯接操作中的字串比較錯誤
+4. **兼容性**：確保不同系統組件間的一致行為
+
+# 第二項：資料存取層實施 {#data-access-layer}
+
+## 第一款：資料查詢標準 {#data-query-standards}
+
+**資料存取函數實施：**
+```r
+get_customer_by_id <- function(id) {
+  # 確保id被視為整數
+  id <- as.integer(id)
+  
+  # 驗證ID有效性
+  if (is.na(id) || id <= 0) {
+    stop("Invalid customer ID: ", id)
+  }
+  
+  # 查詢客戶資料
+  query <- sprintf("SELECT * FROM customers WHERE customer_id = %d", id)
+  result <- dbGetQuery(conn, query)
+  
+  if (nrow(result) == 0) {
+    warning("No customer found with ID: ", id)
+    return(NULL)
+  }
+  
+  return(result)
+}
+
+# 批次資料查詢
+get_customers_by_ids <- function(ids) {
+  # 確保所有ID都是整數
+  ids <- as.integer(ids)
+  
+  # 移除無效ID
+  valid_ids <- ids[!is.na(ids) & ids > 0]
+  
+  if (length(valid_ids) == 0) {
+    return(data.frame())
+  }
+  
+  # 建立IN查詢
+  ids_string <- paste(valid_ids, collapse = ", ")
+  query <- sprintf("SELECT * FROM customers WHERE customer_id IN (%s)", ids_string)
+  result <- dbGetQuery(conn, query)
+  
+  return(result)
+}
+```
+
+## 第二款：伺服器處理標準 {#server-processing-standards}
+
+**資料過濾實施：**
+```r
+# 按客戶ID過濾資料的R程式碼
+filter_customer_data <- function(data, customer_id) {
+  # 確保一致的類型處理
+  customer_id <- as.integer(customer_id)
+  
+  # 驗證輸入
+  if (is.na(customer_id)) {
+    warning("Invalid customer_id provided for filtering")
+    return(data.frame())
+  }
+  
+  # 過濾資料
+  filtered_data <- data %>%
+    filter(customer_id == !!customer_id)
+  
+  return(filtered_data)
+}
+
+# 多重ID過濾
+filter_customer_data_multiple <- function(data, customer_ids) {
+  # 確保一致的類型處理
+  customer_ids <- as.integer(customer_ids)
+  
+  # 移除無效ID
+  valid_ids <- customer_ids[!is.na(customer_ids)]
+  
+  if (length(valid_ids) == 0) {
+    return(data.frame())
+  }
+  
+  # 過濾資料
+  filtered_data <- data %>%
+    filter(customer_id %in% valid_ids)
+  
+  return(filtered_data)
+}
+```
+
+# 第三項：用戶介面實施 {#user-interface-implementation}
+
+## 第一款：UI選擇元件 {#ui-choice-components}
+
+**下拉選單實施：**
+```r
+# 在下拉選單中渲染客戶選擇時
+create_customer_choices <- function(customers) {
+  # 轉換為字元以供UI顯示
+  customer_choices <- setNames(
+    as.character(customers$customer_id),  
+    paste0(customers$name, " (ID: ", customers$customer_id, ")")
+  )
+  
+  return(customer_choices)
+}
+
+# 處理UI選擇
+observeEvent(input$customer_select, {
+  # 轉換回整數以進行資料操作
+  selected_id <- as.integer(input$customer_select)
+  
+  # 驗證轉換結果
+  if (is.na(selected_id)) {
+    showNotification("Invalid customer selection", type = "error")
+    return()
+  }
+  
+  # 處理選擇...
+  customer_data <- get_customer_by_id(selected_id)
+  
+  # 更新UI
+  if (!is.null(customer_data)) {
+    output$customer_details <- renderUI({
+      div(
+        h4(customer_data$name),
+        p("Email: ", customer_data$email),
+        p("Customer ID: ", customer_data$customer_id)
+      )
+    })
+  }
+})
+```
+
+## 第二款：ID輸入驗證 {#id-input-validation}
+
+**輸入驗證實施：**
+```r
+# ID輸入驗證函數
+validate_id_input <- function(input_value) {
+  # 處理空值或空字串
+  if (is.null(input_value) || input_value == "") {
+    return(list(valid = FALSE, message = "ID不能為空"))
+  }
+  
+  # 嘗試轉換為整數
+  id <- suppressWarnings(as.integer(input_value))
+  
+  # 檢查轉換是否成功
+  if (is.na(id)) {
+    return(list(valid = FALSE, message = "ID必須是有效的整數"))
+  }
+  
+  # 檢查正值
+  if (id <= 0) {
+    return(list(valid = FALSE, message = "ID必須是正整數"))
+  }
+  
+  return(list(valid = TRUE, id = id, message = NULL))
+}
+
+# 在UI中使用驗證
+observeEvent(input$customer_id_input, {
+  validation <- validate_id_input(input$customer_id_input)
+  
+  if (!validation$valid) {
+    # 顯示錯誤訊息
+    output$id_validation_message <- renderUI({
+      div(class = "text-danger", validation$message)
+    })
+    
+    # 停用提交按鈕
+    shinyjs::disable("submit_button")
+  } else {
+    # 清除錯誤訊息
+    output$id_validation_message <- renderUI(NULL)
+    
+    # 啟用提交按鈕
+    shinyjs::enable("submit_button")
+    
+    # 儲存驗證的ID
+    customer_id_validated(validation$id)
+  }
+})
+```
+
+# 第四項：實用工具函數 {#utility-functions}
+
+## 第一款：ID類型轉換工具 {#id-conversion-utilities}
+
+**標準化ID處理工具：**
+```r
+# 確保整數ID的實用函數
+ensure_integer_id <- function(id, allow_null = FALSE) {
+  if (is.null(id)) {
+    if (allow_null) return(NULL)
+    stop("ID不能為NULL")
+  }
+  
+  # 處理向量情況
+  if (length(id) > 1) {
+    return(sapply(id, ensure_integer_id, allow_null = allow_null))
+  }
+  
+  # 將各種輸入格式轉換為整數
+  if (is.character(id)) {
+    # 移除任何非數字字元
+    id <- gsub("[^0-9]", "", id)
+    if (id == "") {
+      if (allow_null) return(NULL)
+      stop("ID不包含數字字元")
+    }
+  }
+  
+  # 轉換為整數
+  result <- suppressWarnings(as.integer(id))
+  
+  if (is.na(result)) {
+    if (allow_null) return(NULL)
+    stop("無法將ID轉換為整數: ", id)
+  }
+  
+  return(result)
+}
+
+# ID清理和標準化
+clean_id_vector <- function(ids) {
+  # 移除NULL和NA值
+  cleaned <- ids[!is.null(ids) & !is.na(ids)]
+  
+  # 轉換為整數
+  int_ids <- suppressWarnings(as.integer(cleaned))
+  
+  # 移除轉換失敗的值
+  valid_ids <- int_ids[!is.na(int_ids) & int_ids > 0]
+  
+  return(unique(valid_ids))
+}
+```
+
+## 第二款：ID關係驗證 {#id-relationship-validation}
+
+**關係驗證工具：**
+```r
+# 驗證ID關係的函數
+validate_id_relationship <- function(parent_id, child_ids, relationship_table) {
+  # 確保ID類型一致
+  parent_id <- ensure_integer_id(parent_id)
+  child_ids <- ensure_integer_id(child_ids)
+  
+  # 查詢有效關係
+  valid_relationships <- dbGetQuery(conn, sprintf(
+    "SELECT child_id FROM %s WHERE parent_id = %d AND child_id IN (%s)",
+    relationship_table,
+    parent_id,
+    paste(child_ids, collapse = ", ")
+  ))
+  
+  valid_child_ids <- valid_relationships$child_id
+  invalid_child_ids <- setdiff(child_ids, valid_child_ids)
+  
+  return(list(
+    valid = valid_child_ids,
+    invalid = invalid_child_ids,
+    all_valid = length(invalid_child_ids) == 0
+  ))
+}
+
+# 外鍵存在性檢查
+check_foreign_key_exists <- function(foreign_key_id, reference_table, reference_column) {
+  foreign_key_id <- ensure_integer_id(foreign_key_id)
+  
+  query <- sprintf(
+    "SELECT COUNT(*) as count FROM %s WHERE %s = %d",
+    reference_table,
+    reference_column,
+    foreign_key_id
+  )
+  
+  result <- dbGetQuery(conn, query)
+  return(result$count > 0)
+}
+```
+
+# 第五項：完整模組範例 {#complete-module-example}
+
+## 第一款：客戶模組實施 {#customer-module-implementation}
+
+**帶適當ID處理的客戶模組：**
+```r
+# 具備適當ID處理的客戶模組
+customerModuleUI <- function(id) {
+  ns <- NS(id)
+  
+  fluidPage(
+    fluidRow(
+      column(4,
+        selectizeInput(
+          ns("customer_select"),
+          "選擇客戶:",
+          choices = NULL,
+          options = list(placeholder = "請選擇客戶...")
+        ),
+        uiOutput(ns("validation_message"))
+      ),
+      column(8,
+        uiOutput(ns("customer_details"))
+      )
+    )
+  )
+}
+
+customerModuleServer <- function(id, data_source) {
+  moduleServer(id, function(input, output, session) {
+    # 載入客戶選擇
+    observe({
+      customers <- data_source$get_customers()
+      
+      if (!is.null(customers) && nrow(customers) > 0) {
+        choices <- create_customer_choices(customers)
+        updateSelectizeInput(
+          session,
+          "customer_select",
+          choices = choices
+        )
+      }
+    })
+    
+    # 當用戶選擇客戶時
+    observeEvent(input$customer_select, {
+      # 適當的ID類型處理
+      tryCatch({
+        selected_id <- ensure_integer_id(input$customer_select)
+        
+        # 使用整數ID取得客戶資料
+        customer_data <- data_source$get_customer(selected_id)
+        
+        # 更新UI
+        if (!is.null(customer_data)) {
+          output$customer_details <- renderUI({
+            div(
+              h4(customer_data$name),
+              p("Email: ", customer_data$email),
+              p("Customer ID: ", customer_data$customer_id)
+            )
+          })
+          
+          # 清除任何驗證訊息
+          output$validation_message <- renderUI(NULL)
+        }
+        
+      }, error = function(e) {
+        # 顯示錯誤訊息
+        output$validation_message <- renderUI({
+          div(class = "text-danger", 
+              "錯誤: ", e$message)
+        })
+        
+        # 清除客戶詳情
+        output$customer_details <- renderUI(NULL)
+      })
+    })
+    
+    # 回傳選擇的客戶ID
+    return(reactive({
+      if (!is.null(input$customer_select)) {
+        tryCatch({
+          ensure_integer_id(input$customer_select)
+        }, error = function(e) {
+          NULL
+        })
+      } else {
+        NULL
+      }
+    }))
+  })
+}
+```
+
+# 第六項：常見反模式 {#common-anti-patterns}
+
+## 第一款：不一致類型處理 {#inconsistent-type-handling}
+
+**問題**：不一致的類型處理可能導致過濾不匹配
+```r
+# 錯誤：不一致的類型處理可能導致過濾不匹配
+customers %>% filter(customer_id == input$customer_select)  # 字串vs整數比較！
+
+# 正確：確保類型一致性
+customers %>% filter(customer_id == as.integer(input$customer_select))
+```
+
+## 第二款：基於字串的ID {#string-based-ids}
+
+**問題**：使用基於字串的ID
+```r
+# 錯誤：使用基於字串的ID
+customer_data$id <- paste0("CUST_", seq_len(nrow(customer_data)))
+
+# 正確：使用整數ID，如需要可使用獨立類型欄位
+customer_data$id <- seq_len(nrow(customer_data))
+customer_data$type <- "CUST"
+```
+
+## 第三款：混合ID類型 {#mixed-id-types}
+
+**問題**：在聯接資料中混合ID類型
+```r
+# 錯誤：在聯接資料中混合ID類型
+left_join(customers, transactions, by = c("customer_id" = "cust_id"))  # 可能不同類型
+
+# 正確：標準化ID欄位名稱和類型
+left_join(customers, transactions, by = "customer_id")  # 相同命名欄位，相同類型
+```
+
+# 第七項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **支援 MP052（單向資料流）**：透過確保ID類型在資料流中的一致性
+2. **補充 DM_R002（通用資料存取規則）**：提供ID處理的特定指導
+3. **增強 UI_R002（Shiny模組ID處理）**：定義模組間ID傳遞的標準
+4. **配合 DM_R003（資料庫存取tbl規則）**：確保資料庫查詢中的類型一致性
+
+---
+
+*基於：資料管理法第六條*  
+*相關連結：[MP052 單向資料流](../../CH00_fundamental_principles/meta_principles/MP052_unidirectional_data_flow.qmd), [DM_R002 通用資料存取規則](../rules/DM_R002_universal_data_access.qmd)*

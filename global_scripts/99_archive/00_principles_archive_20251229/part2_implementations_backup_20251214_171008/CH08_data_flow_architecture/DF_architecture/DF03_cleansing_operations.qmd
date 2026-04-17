@@ -1,0 +1,817 @@
+---
+id: "DF003"
+title: "Cleansing Operations"
+type: "data-flow"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "DF002": "Transformation Operations"
+  - "MP0052": "Unidirectional Data Flow"
+influences:
+  - "DF004": "Processing Operations"
+relates_to:
+  - "MP0035": "Null Special Treatment"
+  - "MP0058": "Database Table Creation Strategy"
+  - "R116": "Enhanced Data Access"
+---
+
+# DF03: Cleansing Operations
+
+## Core Principle
+
+Cleansing operations perform **data quality assurance**, ensuring transformed data meets business standards for completeness, consistency, and validity without implementing business logic or aggregation rules.
+
+## Purpose and Scope
+
+### What Cleansing Does
+- **Deduplication**: Remove duplicate records based on business keys
+- **Missing value handling**: Impute, flag, or remove missing data
+- **Outlier detection**: Identify and handle statistical outliers
+- **Format validation**: Ensure data matches expected patterns
+- **Business rule validation**: Apply data integrity constraints
+- **Consistency checks**: Verify cross-field and cross-table relationships
+
+### What Cleansing Does NOT Do
+- **Business metrics**: No KPI calculations or performance indicators
+- **Aggregation**: No grouping, summarization, or rollup operations
+- **Segmentation**: No customer classification or behavioral analysis
+- **Schema changes**: No structural modifications (handled in DF02)
+- **Complex derivations**: No multi-step business logic calculations
+
+## Layer Position in Pipeline
+
+```mermaid
+graph LR
+    A[raw_data] --> B[staged_data]
+    B --> C[transformed_data]
+    C --> D[cleansed_data]
+    D --> E[processed_data]
+    E --> F[app_data]
+    
+    D -.-> D1["Cleansing Layer<br/>• Data quality assurance<br/>• Deduplication<br/>• Missing value handling<br/>• Validation"]
+    
+    style D fill:#e8f5e8
+    style D1 fill:#e8f5e8
+```
+
+**Input**: `transformed_data.duckdb` (Layer 3)  
+**Output**: `cleansed_data.duckdb` (Layer 4)  
+**Directory**: `30_cleansed/`
+
+## Data Quality Dimensions
+
+### 1. Completeness
+Ensuring required data is present and usable:
+
+```r
+#' Assess and handle completeness issues
+#' 
+#' Identifies missing values and applies appropriate handling strategies
+#'
+handle_completeness <- function(df, completeness_rules) {
+  
+  completeness_summary <- data.frame(
+    column = names(df),
+    missing_count = sapply(df, function(x) sum(is.na(x))),
+    missing_percent = sapply(df, function(x) round(100 * sum(is.na(x)) / length(x), 2)),
+    stringsAsFactors = FALSE
+  )
+  
+  # Apply handling rules for each column
+  for (col_name in names(completeness_rules)) {
+    if (col_name %in% names(df)) {
+      
+      rule <- completeness_rules[[col_name]]
+      missing_mask <- is.na(df[[col_name]])
+      
+      if (sum(missing_mask) > 0) {
+        
+        df[[col_name]] <- switch(rule$strategy,
+          
+          "remove_rows" = {
+            # Mark rows for removal (handled at table level)
+            df$.remove_missing_flag <- df$.remove_missing_flag | missing_mask
+            df[[col_name]]
+          },
+          
+          "impute_mean" = {
+            # For numeric columns only
+            if (is.numeric(df[[col_name]])) {
+              mean_val <- mean(df[[col_name]], na.rm = TRUE)
+              df[[col_name]][missing_mask] <- mean_val
+              df[[paste0(col_name, "_imputed_flag")]] <- missing_mask
+            }
+            df[[col_name]]
+          },
+          
+          "impute_median" = {
+            # For numeric columns only
+            if (is.numeric(df[[col_name]])) {
+              median_val <- median(df[[col_name]], na.rm = TRUE)
+              df[[col_name]][missing_mask] <- median_val
+              df[[paste0(col_name, "_imputed_flag")]] <- missing_mask
+            }
+            df[[col_name]]
+          },
+          
+          "impute_mode" = {
+            # Most frequent value (for categorical data)
+            mode_val <- names(sort(table(df[[col_name]]), decreasing = TRUE))[1]
+            df[[col_name]][missing_mask] <- mode_val
+            df[[paste0(col_name, "_imputed_flag")]] <- missing_mask
+            df[[col_name]]
+          },
+          
+          "impute_constant" = {
+            # Use provided constant value
+            df[[col_name]][missing_mask] <- rule$value
+            df[[paste0(col_name, "_imputed_flag")]] <- missing_mask
+            df[[col_name]]
+          },
+          
+          "flag_only" = {
+            # Just create flag, leave missing as NA
+            df[[paste0(col_name, "_missing_flag")]] <- missing_mask
+            df[[col_name]]
+          }
+        )
+        
+        message("Applied ", rule$strategy, " to ", sum(missing_mask), 
+                " missing values in ", col_name)
+      }
+    }
+  }
+  
+  # Remove rows marked for removal
+  if (".remove_missing_flag" %in% names(df)) {
+    rows_to_remove <- sum(df$.remove_missing_flag, na.rm = TRUE)
+    if (rows_to_remove > 0) {
+      df <- df[!df$.remove_missing_flag, ]
+      message("Removed ", rows_to_remove, " rows due to missing critical values")
+    }
+    df$.remove_missing_flag <- NULL
+  }
+  
+  return(list(
+    data = df,
+    completeness_summary = completeness_summary
+  ))
+}
+
+# Example completeness rules configuration
+customer_completeness_rules <- list(
+  customer_profile_email = list(strategy = "remove_rows"),  # Email required
+  customer_profile_first_name = list(strategy = "impute_constant", value = "Unknown"),
+  customer_behavior_total_spent = list(strategy = "impute_constant", value = 0),
+  customer_behavior_last_order_date = list(strategy = "flag_only"),
+  customer_profile_registration_date = list(strategy = "remove_rows")  # Required
+)
+```
+
+### 2. Uniqueness (Deduplication)
+
+Remove duplicate records while preserving data integrity:
+
+```r
+#' Comprehensive deduplication with conflict resolution
+#' 
+#' Removes duplicates based on business keys with configurable conflict resolution
+#'
+deduplicate_records <- function(df, dedup_config) {
+  
+  business_keys <- dedup_config$business_keys
+  resolution_rules <- dedup_config$resolution_rules
+  
+  # Identify duplicates
+  duplicate_mask <- duplicated(df[business_keys]) | 
+                   duplicated(df[business_keys], fromLast = TRUE)
+  
+  if (sum(duplicate_mask) == 0) {
+    message("No duplicates found based on business keys: ", paste(business_keys, collapse = ", "))
+    return(list(
+      data = df,
+      dedup_summary = data.frame(
+        original_rows = nrow(df),
+        duplicate_rows = 0,
+        final_rows = nrow(df),
+        dedup_method = "none_needed"
+      )
+    ))
+  }
+  
+  message("Found ", sum(duplicate_mask), " rows involved in duplicates")
+  
+  # Group duplicates for resolution
+  df$row_id <- seq_len(nrow(df))
+  duplicate_groups <- df[duplicate_mask, ] %>%
+    dplyr::group_by(across(all_of(business_keys))) %>%
+    dplyr::group_split()
+  
+  resolved_rows <- list()
+  
+  for (group in duplicate_groups) {
+    resolved_row <- resolve_duplicate_group(group, resolution_rules)
+    resolved_rows <- append(resolved_rows, list(resolved_row))
+  }
+  
+  # Combine resolved duplicates with non-duplicates
+  resolved_df <- do.call(rbind, resolved_rows)
+  non_duplicate_df <- df[!duplicate_mask, ]
+  
+  final_df <- rbind(non_duplicate_df, resolved_df)
+  final_df$row_id <- NULL  # Remove temporary ID
+  
+  dedup_summary <- data.frame(
+    original_rows = nrow(df),
+    duplicate_rows = sum(duplicate_mask),
+    final_rows = nrow(final_df),
+    dedup_method = "business_key_resolution"
+  )
+  
+  message("Deduplication complete: ", nrow(df), " → ", nrow(final_df), " rows")
+  
+  return(list(
+    data = final_df,
+    dedup_summary = dedup_summary
+  ))
+}
+
+#' Resolve conflicts within a duplicate group
+resolve_duplicate_group <- function(group, resolution_rules) {
+  
+  if (nrow(group) == 1) return(group)
+  
+  resolved_row <- group[1, ]  # Start with first row as base
+  
+  # Apply resolution rules for each column
+  for (col_name in names(group)) {
+    if (col_name %in% names(resolution_rules)) {
+      
+      rule <- resolution_rules[[col_name]]
+      values <- group[[col_name]]
+      
+      resolved_value <- switch(rule$strategy,
+        
+        "take_first" = values[1],
+        
+        "take_last" = values[length(values)],
+        
+        "take_max" = {
+          if (is.numeric(values)) max(values, na.rm = TRUE) else values[1]
+        },
+        
+        "take_min" = {
+          if (is.numeric(values)) min(values, na.rm = TRUE) else values[1]
+        },
+        
+        "take_most_recent" = {
+          # Requires a timestamp column specified in rule$timestamp_col
+          timestamp_col <- rule$timestamp_col
+          if (timestamp_col %in% names(group)) {
+            most_recent_idx <- which.max(group[[timestamp_col]])
+            values[most_recent_idx]
+          } else {
+            values[1]  # Fallback to first
+          }
+        },
+        
+        "concatenate" = {
+          # Combine unique non-missing values
+          unique_vals <- unique(values[!is.na(values)])
+          paste(unique_vals, collapse = rule$separator %||% "; ")
+        },
+        
+        "prefer_non_missing" = {
+          # Take first non-missing value
+          non_missing_vals <- values[!is.na(values)]
+          if (length(non_missing_vals) > 0) non_missing_vals[1] else NA
+        }
+      )
+      
+      resolved_row[[col_name]] <- resolved_value
+    }
+  }
+  
+  # Add deduplication metadata
+  resolved_row$dedup_source_count <- nrow(group)
+  resolved_row$dedup_timestamp <- Sys.time()
+  
+  return(resolved_row)
+}
+
+# Example deduplication configuration
+customer_dedup_config <- list(
+  business_keys = c("customer_profile_email"),
+  
+  resolution_rules = list(
+    customer_profile_first_name = list(strategy = "prefer_non_missing"),
+    customer_profile_last_name = list(strategy = "prefer_non_missing"),
+    customer_behavior_total_spent = list(strategy = "take_max"),
+    customer_behavior_last_order_date = list(strategy = "take_most_recent"),
+    customer_profile_registration_date = list(strategy = "take_min"),  # Earliest registration
+    customer_address_country = list(strategy = "take_most_recent", 
+                                  timestamp_col = "customer_behavior_last_order_date")
+  )
+)
+```
+
+### 3. Validity (Format and Business Rule Validation)
+
+Ensure data conforms to expected formats and business constraints:
+
+```r
+#' Comprehensive data validation framework
+#' 
+#' Validates data against format rules and business constraints
+#'
+validate_data_quality <- function(df, validation_rules) {
+  
+  validation_results <- list()
+  df$validation_errors <- ""
+  df$validation_flags <- 0
+  
+  for (rule_name in names(validation_rules)) {
+    rule <- validation_rules[[rule_name]]
+    
+    validation_result <- switch(rule$type,
+      
+      "email_format" = validate_email_format(df, rule),
+      "date_range" = validate_date_range(df, rule),
+      "numeric_range" = validate_numeric_range(df, rule),
+      "categorical_values" = validate_categorical_values(df, rule),
+      "pattern_match" = validate_pattern_match(df, rule),
+      "cross_field_consistency" = validate_cross_field_consistency(df, rule),
+      "business_constraint" = validate_business_constraint(df, rule)
+    )
+    
+    validation_results[[rule_name]] <- validation_result
+    
+    # Update error tracking
+    if (validation_result$failed_count > 0) {
+      error_mask <- validation_result$failed_mask
+      df$validation_errors[error_mask] <- paste(
+        df$validation_errors[error_mask],
+        rule_name,
+        sep = if (nchar(df$validation_errors[error_mask]) > 0) "; " else ""
+      )
+      df$validation_flags[error_mask] <- df$validation_flags[error_mask] + 1
+    }
+  }
+  
+  return(list(
+    data = df,
+    validation_results = validation_results
+  ))
+}
+
+# Individual validation functions
+validate_email_format <- function(df, rule) {
+  col_name <- rule$column
+  if (!col_name %in% names(df)) return(list(failed_count = 0, failed_mask = logical(0)))
+  
+  email_pattern <- "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+  failed_mask <- !grepl(email_pattern, df[[col_name]]) & !is.na(df[[col_name]])
+  
+  list(
+    rule_name = "email_format",
+    column = col_name,
+    failed_count = sum(failed_mask),
+    failed_mask = failed_mask,
+    sample_failures = head(df[[col_name]][failed_mask], 5)
+  )
+}
+
+validate_date_range <- function(df, rule) {
+  col_name <- rule$column
+  if (!col_name %in% names(df)) return(list(failed_count = 0, failed_mask = logical(0)))
+  
+  min_date <- as.Date(rule$min_date)
+  max_date <- as.Date(rule$max_date %||% Sys.Date())
+  
+  failed_mask <- (df[[col_name]] < min_date | df[[col_name]] > max_date) & 
+                 !is.na(df[[col_name]])
+  
+  list(
+    rule_name = "date_range",
+    column = col_name,
+    failed_count = sum(failed_mask),
+    failed_mask = failed_mask,
+    valid_range = paste(min_date, "to", max_date)
+  )
+}
+
+validate_numeric_range <- function(df, rule) {
+  col_name <- rule$column
+  if (!col_name %in% names(df)) return(list(failed_count = 0, failed_mask = logical(0)))
+  
+  min_val <- rule$min_value %||% -Inf
+  max_val <- rule$max_value %||% Inf
+  
+  failed_mask <- (df[[col_name]] < min_val | df[[col_name]] > max_val) & 
+                 !is.na(df[[col_name]])
+  
+  list(
+    rule_name = "numeric_range", 
+    column = col_name,
+    failed_count = sum(failed_mask),
+    failed_mask = failed_mask,
+    valid_range = paste(min_val, "to", max_val)
+  )
+}
+
+validate_categorical_values <- function(df, rule) {
+  col_name <- rule$column
+  if (!col_name %in% names(df)) return(list(failed_count = 0, failed_mask = logical(0)))
+  
+  valid_values <- rule$valid_values
+  failed_mask <- !df[[col_name]] %in% valid_values & !is.na(df[[col_name]])
+  
+  list(
+    rule_name = "categorical_values",
+    column = col_name,
+    failed_count = sum(failed_mask),
+    failed_mask = failed_mask,
+    valid_values = valid_values,
+    invalid_values = unique(df[[col_name]][failed_mask])
+  )
+}
+
+validate_cross_field_consistency <- function(df, rule) {
+  # Example: registration_date should be <= last_order_date
+  col1 <- rule$column1
+  col2 <- rule$column2
+  operator <- rule$operator  # "<=", ">=", "==", "!="
+  
+  if (!all(c(col1, col2) %in% names(df))) {
+    return(list(failed_count = 0, failed_mask = logical(0)))
+  }
+  
+  failed_mask <- switch(operator,
+    "<=" = df[[col1]] > df[[col2]],
+    ">=" = df[[col1]] < df[[col2]],
+    "==" = df[[col1]] != df[[col2]],
+    "!=" = df[[col1]] == df[[col2]]
+  ) & !is.na(df[[col1]]) & !is.na(df[[col2]])
+  
+  list(
+    rule_name = "cross_field_consistency",
+    columns = c(col1, col2),
+    operator = operator,
+    failed_count = sum(failed_mask),
+    failed_mask = failed_mask
+  )
+}
+
+# Example validation rules configuration
+customer_validation_rules <- list(
+  email_format_check = list(
+    type = "email_format",
+    column = "customer_profile_email"
+  ),
+  
+  registration_date_range = list(
+    type = "date_range",
+    column = "customer_profile_registration_date",
+    min_date = "2010-01-01",
+    max_date = Sys.Date()
+  ),
+  
+  total_spent_range = list(
+    type = "numeric_range", 
+    column = "customer_behavior_total_spent",
+    min_value = 0,
+    max_value = 1000000
+  ),
+  
+  country_values = list(
+    type = "categorical_values",
+    column = "customer_address_country_iso",
+    valid_values = c("US", "CA", "GB", "AU", "DE", "FR", "JP")
+  ),
+  
+  date_consistency = list(
+    type = "cross_field_consistency",
+    column1 = "customer_profile_registration_date",
+    column2 = "customer_behavior_last_order_date", 
+    operator = "<="
+  )
+)
+```
+
+## Outlier Detection and Treatment
+
+### Statistical Outlier Detection
+
+```r
+#' Detect and handle statistical outliers
+#' 
+#' Uses multiple methods to identify outliers and applies appropriate treatments
+#'
+handle_outliers <- function(df, outlier_config) {
+  
+  outlier_results <- list()
+  
+  for (col_name in names(outlier_config)) {
+    if (col_name %in% names(df) && is.numeric(df[[col_name]])) {
+      
+      config <- outlier_config[[col_name]]
+      method <- config$method
+      treatment <- config$treatment
+      
+      # Detect outliers using specified method
+      outlier_mask <- switch(method,
+        
+        "iqr" = {
+          # Interquartile Range method
+          Q1 <- quantile(df[[col_name]], 0.25, na.rm = TRUE)
+          Q3 <- quantile(df[[col_name]], 0.75, na.rm = TRUE)
+          IQR <- Q3 - Q1
+          multiplier <- config$multiplier %||% 1.5
+          
+          lower_bound <- Q1 - multiplier * IQR
+          upper_bound <- Q3 + multiplier * IQR
+          
+          (df[[col_name]] < lower_bound | df[[col_name]] > upper_bound) & 
+          !is.na(df[[col_name]])
+        },
+        
+        "zscore" = {
+          # Z-score method
+          z_scores <- abs(scale(df[[col_name]]))
+          threshold <- config$threshold %||% 3
+          
+          z_scores > threshold & !is.na(df[[col_name]])
+        },
+        
+        "percentile" = {
+          # Percentile method
+          lower_pct <- config$lower_percentile %||% 0.01
+          upper_pct <- config$upper_percentile %||% 0.99
+          
+          lower_bound <- quantile(df[[col_name]], lower_pct, na.rm = TRUE)
+          upper_bound <- quantile(df[[col_name]], upper_pct, na.rm = TRUE)
+          
+          (df[[col_name]] < lower_bound | df[[col_name]] > upper_bound) & 
+          !is.na(df[[col_name]])
+        }
+      )
+      
+      # Apply treatment
+      if (sum(outlier_mask) > 0) {
+        
+        original_values <- df[[col_name]][outlier_mask]
+        
+        df[[col_name]][outlier_mask] <- switch(treatment,
+          
+          "remove" = {
+            # Mark for removal (handled at table level)
+            df$.remove_outlier_flag <- df$.remove_outlier_flag | outlier_mask
+            df[[col_name]][outlier_mask]
+          },
+          
+          "cap" = {
+            # Cap at percentile boundaries
+            lower_bound <- quantile(df[[col_name]], 0.05, na.rm = TRUE)
+            upper_bound <- quantile(df[[col_name]], 0.95, na.rm = TRUE)
+            
+            pmax(pmin(df[[col_name]][outlier_mask], upper_bound), lower_bound)
+          },
+          
+          "winsorize" = {
+            # Replace with boundary values
+            Q1 <- quantile(df[[col_name]], 0.25, na.rm = TRUE)
+            Q3 <- quantile(df[[col_name]], 0.75, na.rm = TRUE)
+            IQR <- Q3 - Q1
+            
+            lower_bound <- Q1 - 1.5 * IQR
+            upper_bound <- Q3 + 1.5 * IQR
+            
+            ifelse(df[[col_name]][outlier_mask] < lower_bound, lower_bound,
+                   ifelse(df[[col_name]][outlier_mask] > upper_bound, upper_bound,
+                          df[[col_name]][outlier_mask]))
+          },
+          
+          "flag" = {
+            # Just flag, don't change values
+            df[[paste0(col_name, "_outlier_flag")]] <- outlier_mask
+            df[[col_name]][outlier_mask]
+          }
+        )
+        
+        # Create outlier metadata
+        if (treatment != "flag") {
+          df[[paste0(col_name, "_outlier_treated")]] <- outlier_mask
+        }
+        
+        outlier_results[[col_name]] <- list(
+          method = method,
+          treatment = treatment,
+          outlier_count = sum(outlier_mask),
+          outlier_percentage = round(100 * sum(outlier_mask) / length(outlier_mask), 2),
+          original_range = range(original_values),
+          treated_range = range(df[[col_name]][outlier_mask])
+        )
+        
+        message("Treated ", sum(outlier_mask), " outliers in ", col_name, 
+                " using ", method, " method and ", treatment, " treatment")
+      }
+    }
+  }
+  
+  # Remove rows marked for outlier removal
+  if (".remove_outlier_flag" %in% names(df)) {
+    rows_to_remove <- sum(df$.remove_outlier_flag, na.rm = TRUE)
+    if (rows_to_remove > 0) {
+      df <- df[!df$.remove_outlier_flag, ]
+      message("Removed ", rows_to_remove, " rows due to outliers")
+    }
+    df$.remove_outlier_flag <- NULL
+  }
+  
+  return(list(
+    data = df,
+    outlier_results = outlier_results
+  ))
+}
+
+# Example outlier configuration
+customer_outlier_config <- list(
+  customer_behavior_total_spent = list(
+    method = "iqr",
+    multiplier = 2.0,
+    treatment = "cap"
+  ),
+  
+  customer_behavior_order_count = list(
+    method = "percentile",
+    lower_percentile = 0.005,
+    upper_percentile = 0.995,
+    treatment = "winsorize"
+  )
+)
+```
+
+## Complete Cleansing Workflow
+
+### Integrated Cleansing Function
+
+```r
+#' Complete data cleansing workflow
+#' 
+#' Applies all cleansing operations in proper sequence
+#'
+cleanse_table <- function(table_name, 
+                         transformed_conn,
+                         cleansed_conn,
+                         cleansing_config) {
+  
+  message("Starting cleansing for table: ", table_name)
+  
+  # Read transformed data
+  transformed_data <- tbl2(transformed_conn, table_name) %>%
+    dplyr::collect()
+  
+  original_rows <- nrow(transformed_data)
+  cleansing_log <- list()
+  
+  # Step 1: Handle completeness
+  if (!is.null(cleansing_config$completeness_rules)) {
+    completeness_result <- handle_completeness(
+      transformed_data, 
+      cleansing_config$completeness_rules
+    )
+    transformed_data <- completeness_result$data
+    cleansing_log$completeness <- completeness_result$completeness_summary
+    
+    message("  Completeness: ", original_rows, " → ", nrow(transformed_data), " rows")
+  }
+  
+  # Step 2: Deduplication
+  if (!is.null(cleansing_config$dedup_config)) {
+    dedup_result <- deduplicate_records(
+      transformed_data,
+      cleansing_config$dedup_config
+    )
+    transformed_data <- dedup_result$data
+    cleansing_log$deduplication <- dedup_result$dedup_summary
+    
+    message("  Deduplication: ", nrow(transformed_data), " final rows")
+  }
+  
+  # Step 3: Validation
+  if (!is.null(cleansing_config$validation_rules)) {
+    validation_result <- validate_data_quality(
+      transformed_data,
+      cleansing_config$validation_rules
+    )
+    transformed_data <- validation_result$data
+    cleansing_log$validation <- validation_result$validation_results
+    
+    total_validation_errors <- sum(transformed_data$validation_flags > 0)
+    message("  Validation: ", total_validation_errors, " rows with errors flagged")
+  }
+  
+  # Step 4: Outlier handling
+  if (!is.null(cleansing_config$outlier_config)) {
+    outlier_result <- handle_outliers(
+      transformed_data,
+      cleansing_config$outlier_config  
+    )
+    transformed_data <- outlier_result$data
+    cleansing_log$outliers <- outlier_result$outlier_results
+    
+    message("  Outliers: ", nrow(transformed_data), " rows after outlier treatment")
+  }
+  
+  # Add cleansing metadata
+  transformed_data$cleanse_timestamp <- Sys.time()
+  transformed_data$cleanse_version <- "DF03_v1.0"
+  transformed_data$source_layer <- "transformed_data"
+  
+  # Write to cleansed database
+  write_cleansed_table(
+    transformed_data,
+    table_name,
+    cleansed_conn,
+    cleansing_config$schema_definition
+  )
+  
+  # Save cleansing log
+  save_cleansing_log(table_name, cleansing_log)
+  
+  final_rows <- nrow(transformed_data)
+  message("Cleansing complete: ", original_rows, " → ", final_rows, " rows (", 
+          round(100 * final_rows / original_rows, 1), "% retained)")
+  
+  return(final_rows)
+}
+
+#' Write cleansed data with appropriate schema
+write_cleansed_table <- function(data, table_name, conn, schema_def) {
+  
+  # Drop existing table
+  if (DBI::dbExistsTable(conn, table_name)) {
+    DBI::dbRemoveTable(conn, table_name)
+  }
+  
+  # Create with explicit schema (following MP058)
+  DBI::dbCreateTable(conn, table_name, data)
+  DBI::dbAppendTable(conn, table_name, data)
+  
+  # Create quality indexes
+  quality_indexes <- c(
+    "validation_flags",
+    "cleanse_timestamp"
+  )
+  
+  for (index_col in quality_indexes) {
+    if (index_col %in% names(data)) {
+      tryCatch({
+        index_sql <- sprintf(
+          "CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s)",
+          table_name, index_col, table_name, index_col
+        )
+        DBI::dbExecute(conn, index_sql)
+      }, error = function(e) {
+        # Index creation not critical
+      })
+    }
+  }
+  
+  message("Wrote cleansed table: ", table_name, " (", nrow(data), " rows)")
+}
+
+#' Save cleansing log for audit trail
+save_cleansing_log <- function(table_name, cleansing_log) {
+  
+  log_entry <- list(
+    table_name = table_name,
+    cleanse_timestamp = Sys.time(),
+    cleanse_version = "DF03_v1.0",
+    log_data = cleansing_log
+  )
+  
+  log_path <- file.path("30_cleansed", "cleansing_log.jsonl")
+  jsonlite::write_json(log_entry, log_path, append = TRUE, auto_unbox = TRUE)
+}
+```
+
+## Integration with DF04 (Processing)
+
+Cleansing operations prepare quality-assured data for business processing by ensuring:
+
+1. **Data integrity**: All records meet quality standards
+2. **Completeness**: Missing values are appropriately handled
+3. **Uniqueness**: Duplicates are resolved with business logic
+4. **Validity**: Data conforms to expected formats and constraints
+5. **Consistency**: Cross-field relationships are validated
+
+The processing layer ([@DF004]) can then focus on business logic and metrics without worrying about data quality issues.
+
+## Conclusion
+
+Cleansing operations provide the quality assurance foundation that enables reliable business analysis and reporting. By systematically addressing completeness, uniqueness, validity, and consistency concerns, the cleansing layer ensures downstream processes operate on trustworthy, business-ready data.
+
+The cleansed_data layer serves as a quality-guaranteed foundation for all subsequent business logic and analytical processing steps.

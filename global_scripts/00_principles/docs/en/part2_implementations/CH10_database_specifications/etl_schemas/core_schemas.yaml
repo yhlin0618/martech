@@ -1,0 +1,519 @@
+# Core ETL Output Schemas
+# Following MP102: ETL Output Standardization Principle
+# 
+# This file defines the standardized core schema fields that must be present
+# in all platform ETL outputs for each data type.
+#
+# Version: 1.0
+# Last Updated: 2025-08-28
+# Author: Claude (MAMBA Architecture Implementation)
+
+# =============================================================================
+# SALES DATA TYPE
+# =============================================================================
+sales:
+  description: "Standardized sales transaction data across all platforms"
+  table_pattern: "df_{platform}_sales___raw"
+  version: "1.0"
+  
+  required_fields:
+    # Transaction Identifiers
+    order_id:
+      type: VARCHAR
+      required: true
+      description: "Unique order identifier from platform"
+      constraints: 
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    customer_id:
+      type: VARCHAR
+      required: true
+      description: "Customer identifier (can be email, username, or platform-specific ID)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    product_id:
+      type: VARCHAR
+      required: true
+      description: "Product identifier (SKU, ASIN, or platform-specific ID)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    # Transaction Data
+    order_date:
+      type: VARCHAR
+      required: true
+      description: "Order date as string (to be parsed in staging)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    quantity:
+      type: INTEGER
+      required: true
+      description: "Quantity of items sold"
+      constraints:
+        - "NOT NULL"
+        - ">= 1"
+    
+    unit_price:
+      type: NUMERIC
+      required: true
+      description: "Price per unit"
+      constraints:
+        - "NOT NULL"
+        - ">= 0"
+    
+    total_amount:
+      type: NUMERIC
+      required: true
+      description: "Total transaction amount"
+      constraints:
+        - "NOT NULL"
+        - ">= 0"
+    
+    # ETL Metadata
+    platform_id:
+      type: VARCHAR
+      required: true
+      description: "Three-letter platform_id (cbz, eby, amz, etc.)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH = 3"
+        - "LOWER(platform_id) = platform_id"  # Must be lowercase
+    
+    import_timestamp:
+      type: TIMESTAMP
+      required: true
+      description: "When data was imported to raw_data"
+      constraints:
+        - "NOT NULL"
+    
+    import_source:
+      type: VARCHAR
+      required: true
+      description: "Source of import (API, CSV, etc.)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+
+# =============================================================================
+# CUSTOMERS DATA TYPE
+# =============================================================================
+customers:
+  description: "Standardized customer profile data across all platforms"
+  table_pattern: "df_{platform}_customers___raw"
+  version: "1.0"
+  
+  required_fields:
+    # Customer Identifiers
+    customer_id:
+      type: VARCHAR
+      required: true
+      description: "Primary customer identifier"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    customer_email:
+      type: VARCHAR
+      required: false  # Some platforms might not have email
+      description: "Customer email address"
+      constraints:
+        - "LENGTH >= 0"
+    
+    customer_name:
+      type: VARCHAR
+      required: false  # Some platforms might not have names
+      description: "Customer display name or full name"
+      constraints:
+        - "LENGTH >= 0"
+    
+    # Customer Data
+    registration_date:
+      type: VARCHAR
+      required: false
+      description: "Customer registration date as string"
+      constraints:
+        - "LENGTH >= 0"
+    
+    # ETL Metadata
+    platform_id:
+      type: VARCHAR
+      required: true
+      description: "Three-letter platform_id"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH = 3"
+        - "LOWER(platform_id) = platform_id"
+    
+    import_timestamp:
+      type: TIMESTAMP
+      required: true
+      description: "When data was imported to raw_data"
+      constraints:
+        - "NOT NULL"
+    
+    import_source:
+      type: VARCHAR
+      required: true
+      description: "Source of import (API, CSV, etc.)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+
+# =============================================================================
+# ORDERS DATA TYPE
+# =============================================================================
+orders:
+  description: "Standardized order header data across all platforms"
+  table_pattern: "df_{platform}_orders___raw"
+  version: "1.0"
+  
+  required_fields:
+    # Order Identifiers
+    order_id:
+      type: VARCHAR
+      required: true
+      description: "Unique order identifier"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    customer_id:
+      type: VARCHAR
+      required: true
+      description: "Customer who placed the order"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    # Order Data
+    order_date:
+      type: VARCHAR
+      required: true
+      description: "Order date as string"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    order_status:
+      type: VARCHAR
+      required: true
+      description: "Current status of the order"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    total_amount:
+      type: NUMERIC
+      required: true
+      description: "Total order amount"
+      constraints:
+        - "NOT NULL"
+        - ">= 0"
+    
+    shipping_amount:
+      type: NUMERIC
+      required: false
+      description: "Shipping cost"
+      constraints:
+        - ">= 0"
+    
+    tax_amount:
+      type: NUMERIC
+      required: false
+      description: "Tax amount"
+      constraints:
+        - ">= 0"
+    
+    payment_method:
+      type: VARCHAR
+      required: false
+      description: "Payment method used"
+      constraints:
+        - "LENGTH >= 0"
+    
+    # ETL Metadata
+    platform_id:
+      type: VARCHAR
+      required: true
+      description: "Three-letter platform_id"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH = 3"
+        - "LOWER(platform_id) = platform_id"
+    
+    import_timestamp:
+      type: TIMESTAMP
+      required: true
+      description: "When data was imported to raw_data"
+      constraints:
+        - "NOT NULL"
+    
+    import_source:
+      type: VARCHAR
+      required: true
+      description: "Source of import (API, CSV, etc.)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+
+# =============================================================================
+# PRODUCTS DATA TYPE
+# =============================================================================
+products:
+  description: "Standardized product catalog data across all platforms"
+  table_pattern: "df_{platform}_products___raw"
+  version: "1.0"
+  
+  required_fields:
+    # Product Identifiers
+    product_id:
+      type: VARCHAR
+      required: true
+      description: "Primary product identifier"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    product_name:
+      type: VARCHAR
+      required: true
+      description: "Product name or title"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    sku:
+      type: VARCHAR
+      required: false
+      description: "Stock keeping unit"
+      constraints:
+        - "LENGTH >= 0"
+    
+    # Product Data
+    category:
+      type: VARCHAR
+      required: false
+      description: "Primary product category"
+      constraints:
+        - "LENGTH >= 0"
+    
+    subcategory:
+      type: VARCHAR
+      required: false
+      description: "Product subcategory"
+      constraints:
+        - "LENGTH >= 0"
+    
+    brand:
+      type: VARCHAR
+      required: false
+      description: "Product brand"
+      constraints:
+        - "LENGTH >= 0"
+    
+    price:
+      type: NUMERIC
+      required: false
+      description: "Current product price"
+      constraints:
+        - ">= 0"
+    
+    description:
+      type: TEXT
+      required: false
+      description: "Product description"
+      constraints:
+        - "LENGTH >= 0"
+    
+    is_active:
+      type: BOOLEAN
+      required: false
+      description: "Whether product is currently active/available"
+    
+    # ETL Metadata
+    platform_id:
+      type: VARCHAR
+      required: true
+      description: "Three-letter platform_id"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH = 3"
+        - "LOWER(platform_id) = platform_id"
+    
+    import_timestamp:
+      type: TIMESTAMP
+      required: true
+      description: "When data was imported to raw_data"
+      constraints:
+        - "NOT NULL"
+    
+    import_source:
+      type: VARCHAR
+      required: true
+      description: "Source of import (API, CSV, etc.)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+
+# =============================================================================
+# REVIEWS DATA TYPE (OPTIONAL)
+# =============================================================================
+reviews:
+  description: "Standardized product review data across all platforms"
+  table_pattern: "df_{platform}_reviews___raw"
+  version: "1.0"
+  
+  required_fields:
+    # Review Identifiers
+    review_id:
+      type: VARCHAR
+      required: true
+      description: "Unique review identifier"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    product_id:
+      type: VARCHAR
+      required: true
+      description: "Product being reviewed"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    customer_id:
+      type: VARCHAR
+      required: true
+      description: "Customer who wrote the review"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    # Review Data
+    rating:
+      type: NUMERIC
+      required: true
+      description: "Numeric rating score"
+      constraints:
+        - "NOT NULL"
+        - ">= 0"
+    
+    review_date:
+      type: VARCHAR
+      required: true
+      description: "Review date as string"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+    
+    review_text:
+      type: TEXT
+      required: false
+      description: "Review text content"
+      constraints:
+        - "LENGTH >= 0"
+    
+    # ETL Metadata
+    platform_id:
+      type: VARCHAR
+      required: true
+      description: "Three-letter platform_id"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH = 3"
+        - "LOWER(platform_id) = platform_id"
+    
+    import_timestamp:
+      type: TIMESTAMP
+      required: true
+      description: "When data was imported to raw_data"
+      constraints:
+        - "NOT NULL"
+    
+    import_source:
+      type: VARCHAR
+      required: true
+      description: "Source of import (API, CSV, etc.)"
+      constraints:
+        - "NOT NULL"
+        - "LENGTH > 0"
+
+# =============================================================================
+# SCHEMA VALIDATION RULES
+# =============================================================================
+validation_rules:
+  platform_id_validation:
+    description: "Platform IDs must be exactly 3 lowercase letters"
+    valid_codes: ["cbz", "eby", "amz", "shp", "woo", "mgn", "big"]
+    pattern: "^[a-z]{3}$"
+  
+  timestamp_validation:
+    description: "Import timestamps must be recent (within 24 hours of current time)"
+    max_age_hours: 24
+  
+  field_completeness:
+    description: "Required fields must have non-null, non-empty values"
+    empty_string_equals_null: true
+  
+  referential_integrity:
+    description: "Foreign key relationships that should be validated"
+    relationships:
+      - from_table: "sales"
+        from_field: "customer_id"
+        to_table: "customers"
+        to_field: "customer_id"
+        validation: "optional"  # Not all platforms have customer data
+      
+      - from_table: "sales"
+        from_field: "product_id" 
+        to_table: "products"
+        to_field: "product_id"
+        validation: "optional"  # Not all platforms have product data
+      
+      - from_table: "reviews"
+        from_field: "product_id"
+        to_table: "products"
+        to_field: "product_id"
+        validation: "optional"
+
+# =============================================================================
+# TYPE MAPPING
+# =============================================================================
+type_mapping:
+  description: "Mapping between schema types and R/DuckDB types"
+  
+  VARCHAR:
+    r_types: ["character", "factor"]
+    duckdb_type: "VARCHAR"
+    notes: "String data, factors converted to character"
+  
+  INTEGER:
+    r_types: ["integer", "numeric"]
+    duckdb_type: "INTEGER" 
+    notes: "Whole numbers, numeric coerced if no decimals"
+  
+  NUMERIC:
+    r_types: ["numeric", "double", "integer"]
+    duckdb_type: "DOUBLE"
+    notes: "Decimal numbers, integers allowed"
+  
+  BOOLEAN:
+    r_types: ["logical"]
+    duckdb_type: "BOOLEAN"
+    notes: "TRUE/FALSE values"
+  
+  TIMESTAMP:
+    r_types: ["POSIXct", "POSIXlt", "Date"]
+    duckdb_type: "TIMESTAMP"
+    notes: "Date/time values, Date coerced to timestamp"
+  
+  TEXT:
+    r_types: ["character"]
+    duckdb_type: "VARCHAR"
+    notes: "Long text content, same as VARCHAR in DuckDB"

@@ -1,0 +1,90 @@
+---
+title: "TD_R001: Shiny 測試資料規則"
+subtitle: "為 Shiny 元件建立一致且可重現的測試資料結構"
+chapter: "CH05"
+category: "rule"
+number: "TD_R001"
+date-created: "2025-04-12"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "測試部署法實施規則"
+article-number:
+  number: 1
+  title: "Shiny 測試資料規則"
+implements:
+  - "CH00.MP051: Test Data Design"
+  - "CH00.MP029: No Fake Data"
+influences:
+  - "CH03.DEV_P002: Authentic Context Testing"
+  - "CH01.SO_P016: Component Testing"
+  - "CH04.UI_R071: Enhanced Input Components"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第一條：Shiny 測試資料規則 {#overview}
+
+**測試部署法實施規則第一條（Shiny 測試資料規則）**
+
+規範 Shiny 元件測試資料的標準結構與行為，確保資料一致性與可重現性。
+
+:::{.callout-important}
+## 核心規則
+測試資料必須區分：**靜態輸入、反應式狀態、預期輸出**，並反映生產資料的關係與邊界情境。
+:::
+
+# 第一項：標準結構 {#standard-structure}
+
+測試資料建議使用以下結構：
+
+```r
+component_test_data <- list(
+  input_data = list(
+    df_main = data.frame(...),
+    df_ref = data.frame(...)
+  ),
+  expected_output = list(...),
+  metadata = list(
+    description = "元件測試資料",
+    covers_cases = c("normal", "empty", "missing")
+  )
+)
+```
+
+# 第二項：反應式測試 {#reactive-data}
+
+反應式測試需區分初始狀態與更新情境：
+
+```r
+reactive_cases <- list(
+  initial = list(selected_id = 1),
+  updates = list(
+    list(input = "selected_id", value = 2, expected = "details")
+  )
+)
+```
+
+# 第三項：場景覆蓋 {#coverage}
+
+至少包含以下場景：
+
+- 正常資料（完整）
+- 空資料（0 筆）
+- 缺欄位或缺值
+- 極端值
+- 錯誤輸入
+
+# 第四項：UI 與 Server 測試資料 {#ui-server}
+
+- UI：需可正確顯示所有狀態
+- Server：需驗證輸入、輸出、錯誤處理
+
+# 結語 {#conclusion}
+
+一致的測試資料結構能提升元件可測性，並降低測試與維護成本。

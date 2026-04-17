@@ -1,0 +1,368 @@
+## position_analysis_modules.R
+# Shiny modules for PCA, Ideal analysis, Strategy analysis, and UI display
+
+library(shiny)
+library(dplyr)
+library(plotly)
+library(DT)
+library(DBI)
+library(duckdb)
+
+# connect and load raw data
+db <- dbConnect(duckdb(), dbdir = "D:/新增資料夾/Dropbox/Precision Marketing_KitchenMAMA/precision_marketing_app/app_data.duckdb", read_only = TRUE)
+position_dta <- tbl(db, "position_dta") %>%
+  collect() %>%
+  filter(product_line_id == "001") %>% select(-product_line_id) %>% select(-c("rating","sales")) %>% select_if(~sum(!is.na(.)) > 0)
+#position_dta <- position_dta %>% select(-brand)    
+# 1. PCA Module --------------------------------------------------------------
+pcaModuleUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    uiOutput(ns("hint")),       # 顯示提示
+    plotlyOutput(ns("pca_plot"))
+  )
+}
+
+pcaModuleServer <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    pca_res <- reactive({
+      nums <- data()
+      prcomp(nums, center = TRUE, scale. = TRUE, rank. = 3)
+    })
+    
+    output$hint <- renderUI({
+      df <- data()
+      if (ncol(df) < 2) {
+        tags$div(style="color:#888", "請先從左側選好「分類／品牌／ASIN」，並且該組資料至少有兩個數值欄，才能看到 PCA 結果。")
+      }
+    })
+    
+    output$pca_plot <- renderPlotly({
+      nums <- data()
+      req(ncol(nums) >= 2)     # 只有夠欄才繪圖
+      pc <- pca_res()
+      scores   <- as.data.frame(pc$x)
+      loadings <- as.data.frame(pc$rotation) * 5
+      load_long <- bind_rows(
+        loadings %>% rownames_to_column("var") %>% mutate(PC1=0,PC2=0,PC3=0),
+        loadings %>% rownames_to_column("var")
+      )
+      plot_ly() %>%
+        add_markers(data = scores, x=~PC1, y=~PC2, z=~PC3, color=I("gray")) %>%
+        add_lines  (data = load_long, x=~PC1, y=~PC2, z=~PC3, color=~var) %>%
+        layout(scene = list(
+          xaxis=list(title="PC1"),
+          yaxis=list(title="PC2"),
+          zaxis=list(title="PC3")
+        ))
+    })
+  })
+}
+
+
+
+
+# 2. Ideal Analysis Module --------------------------------------------------
+idealModuleUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    textOutput(ns("key_factors")),
+    DTOutput(ns("ideal_rank"))
+  )
+  
+  
+  
+}
+idealModuleServer <- function(id, data, raw,indicator,key_vars) {
+  moduleServer(id, function(input, output, session) {
+    # ... 保留 ideal_row, indicator, key_fac 定義 ...
+    
+    
+    # 1. 抓出「理想點」那一 row，只取數值欄
+    ideal_row <- reactive({
+      df <- data()
+      req("Ideal" %in% df$asin)
+      df %>%
+        filter(asin == "Ideal") %>%
+        select(where(~ is.numeric(.x) && !any(is.na(.x))))
+    })
+    
+    
+    #  print(key_vars())
+    output$key_factors <- renderText({
+      paste("關鍵因素：", paste(key_vars(), collapse = ", "))
+    })
+    
+    output$ideal_rank <- renderDT({
+      ind <- indicator()
+      df  <- raw() %>% select(asin, brand)
+      # 計算 Score
+      #ind %>% select(-c("asin","sales","rating")) %>%  rowSums() %>% print()
+      df$Score <-   ind %>% select(-any_of(c("asin","sales","rating"))) %>%  rowSums()
+      df <- df %>% filter(asin != "Ideal") %>% arrange(desc(Score))
+      # 用 DT::datatable 才會出現 Score 欄
+      DT::datatable(df,
+                    rownames = FALSE,
+                    options = list(pageLength = 10, searching = TRUE))
+    })
+    output$debug_keys <- renderPrint({
+      key_vars()  # 看看挑出来的关键字段名
+    })
+    # output$debug_ideal <- renderPrint({
+    #   indicator()  # 看看 reactive 里到底拿到的那一列数值
+    # })
+    
+  })
+  
+  
+  
+  
+}
+
+
+# 3. Strategy Analysis Module ------------------------------------------------
+strategyModuleUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    selectInput(ns("select_asin"), "選擇ASIN", choices = NULL),
+    plotlyOutput(ns("strategy_plot"), height = "800px")
+  )
+}
+strategyModuleServer <- function(id, data, key_vars) {
+  moduleServer(id, function(input, output, session) {
+    
+    observe({
+      df <- data()
+      req(df)
+      updateSelectInput(session, "select_asin", choices = df$asin)
+    })
+    
+    output$strategy_plot <- renderPlotly({
+      req(input$select_asin)
+      
+      # 取出當前 ASIN 的 indicator row
+      ind       <- data() %>% filter(asin == input$select_asin)
+      key       <- key_vars()
+      feats_key <- key
+      feats_non <- setdiff(names(ind), c(key, "asin"))
+      
+      sums_key <- colSums(ind[feats_key])
+      sums_non <- colSums(ind[feats_non])
+      
+      # 分象限
+      quad_feats <- list(
+        訴求 = feats_key[sums_key >  mean(sums_key)],
+        改變 = feats_key[sums_key <= mean(sums_key)],
+        改善 = feats_non[sums_non >  mean(sums_non)],
+        劣勢 = feats_non[sums_non <= mean(sums_non)]
+      )
+      
+      # 通用：把一組特征拆成多列，每列最多6行
+      make_multi_col <- function(feats, x_center, y_title, y_step = -1.5) {
+        n <- length(feats)
+        if (n == 0) return(NULL)
+        cols <- ceiling(n / 6)      # 需要的列数
+        # split 会产生一个列表
+        cols_list <- split(feats, rep(1:cols, each=6, length.out=n))
+        # 对每个子列表分别生成数据框
+        dfs <- lapply(seq_along(cols_list), function(ci) {
+          col_feats <- cols_list[[ci]]
+          rows      <- length(col_feats)
+          data.frame(
+            text = col_feats,
+            x    = x_center + (ci - (cols+1)/2) * 3,
+            y    = y_title + seq(1, by=y_step, length.out=rows)
+          )
+        })
+        # dfs 本身就是一个 list，直接传给 do.call
+        do.call(rbind, dfs)
+      }
+      
+
+      
+      specs <- list(
+        訴求 = list(x= +5, y=  10),
+        改變 = list(x= +5, y=  -1),
+        改善 = list(x= -5, y=  10),
+        劣勢 = list(x= -5, y=  -1)
+      )
+      
+      # 基础空白坐标系
+      p <- plot_ly() %>%
+        layout(
+          shapes = list(
+            list(type='line', x0=0, x1=0, y0=-11, y1=11, line=list(width=2)),
+            list(type='line', x0=-11, x1=11, y0=0, y1=0, line=list(width=2))
+          ),
+          xaxis=list(showgrid=FALSE, zeroline=FALSE, showticklabels=FALSE, range=c(-12,12)),
+          yaxis=list(showgrid=FALSE, zeroline=FALSE, showticklabels=FALSE, range=c(-12,12)),
+          showlegend=FALSE
+        )
+      
+      # 象限標題
+      titles_list <- lapply(names(specs), function(nm) {
+        sp <- specs[[nm]]
+        data.frame(text = nm, x = sp$x, y = sp$y)
+      })
+      titles_df <- do.call(rbind, titles_list)
+      p <- p %>% add_trace(
+        data = titles_df, type='scatter', mode='text',
+        x = ~x, y = ~y, text = ~text,
+        textfont = list(size=15, color="black")
+      )
+      
+      # 加入每個象限的特征文字
+      for (nm in names(quad_feats)) {
+        sp    <- specs[[nm]]
+        df_c  <- make_multi_col(quad_feats[[nm]], sp$x, sp$y - 2)
+        if (!is.null(df_c)) {
+          p <- p %>% add_trace(
+            data = df_c, type='scatter', mode='text',
+            x = ~x, y = ~y, text = ~text,
+            textfont = list(size=14, color="blue")
+          )
+        }
+      }
+      
+      p %>% layout(
+        margin = list(l=60, r=60, t=60, b=60), 
+        font = list(size = 8)  # 全局字体设为 10
+      )
+    })
+  })
+}
+
+
+
+## 5. Brand DNA Module -------------------------------------------------------
+dnaModuleUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    plotlyOutput(ns("dna_plot"), height = "600px")
+  )
+}
+
+dnaModuleServer <- function(id, data_full) {
+  moduleServer(id, function(input, output, session) {
+    output$dna_plot <- renderPlotly({
+
+      position_dta
+      # pivot 成长表
+      dta_brand_log <- position_dta %>% 
+        pivot_longer(
+          cols = -c("asin"),
+          names_to = "attribute",
+          values_to = "score"
+        ) %>%
+        arrange(asin, attribute)
+      
+      # # 保持属性顺序
+      # dta_brand_log$attribute <- factor(
+      #   dta_brand_log$attribute,
+      #   levels = unique(dta_brand_log$attribute)
+      # )
+      # 
+      asin_groups <- split(dta_brand_log, dta_brand_log$asin)
+      dta_brand_log$attribute <- as.factor(dta_brand_log$attribute)
+      fac_lis <-  dta_brand_log$attribute
+      
+      p <- plot_ly()
+      
+      # 为每个brand添加一条线
+      for (asin_data in asin_groups) {
+        
+        asin <- unique(asin_data$asin)
+        p <- add_trace(p,data=asin_data, x = ~levels(fac_lis), y = ~score, 
+                       color=~asin, type = 'scatter', mode = 'lines+markers', name = asin,
+                       text = ~asin, hoverinfo = 'text',
+                       marker = list(size = 10),  # 设置点的大小
+                       line = list(width = 2),     # 设置线的宽度
+                       visible = "legendonly"  # 默认隐藏所有内容
+        )
+      }
+      p <- layout(p,
+                  #title = "brand DNA",
+                  xaxis = list(
+                    title = list(
+                      text = "Attribute",
+                      font = list(size = 20)  # 设置x轴标题字体大小
+                    ),
+                    tickangle = -45  # 旋转x轴文本
+                  ),
+                  yaxis = list(
+                    title = "Score",font = list(size = 20)
+                  )
+                  #           legend = list(
+                  #   itemclick = 'toggleothers', # 点击图例时，切换其他图例
+                  #   traceorder = 'normal'       # 图例的显示顺序
+                  # )
+      )
+      p
+    })
+  })
+}
+
+
+
+
+
+
+# 4. Main App UI & Server ----------------------------------------------------
+ui <- fluidPage(
+  titlePanel("Position Analysis"),
+  tabsetPanel(
+    tabPanel("PCA", pcaModuleUI("pca1")),
+    tabPanel("Ideal", idealModuleUI("ideal1")),
+    tabPanel("Strategy", strategyModuleUI("strat1")),
+    tabPanel("品牌DNA", dnaModuleUI("dna1"))
+  )
+)
+
+server <- function(input, output, session) {
+  # raw data once
+  raw       <- reactive({ position_dta })
+  with_na   <- reactive({ raw() %>% select(where(~ !all(is.na(.)))) })
+  no_na     <- reactive({ with_na() %>% select(where(~ !any(is.na(.)))) })
+  
+  # PCA data: numeric only
+  pcaData   <- reactive({ no_na() %>% select(where(is.numeric)) })
+  
+  # Ideal data
+  idealFull <- reactive({ with_na() })
+  idealRaw  <- reactive({ idealFull() %>% filter(asin != "Ideal") })
+  
+  # Indicator for Strategy
+  indicator <- reactive({
+    # 抓理想点数值
+    ideal_vals <- idealFull() %>%
+      filter(asin == "Ideal") %>%
+      select(where(is.numeric))
+    # 抓其它 ASIN 的数值
+    df_vals <- idealRaw() %>%
+      select(where(is.numeric))
+    # 只保留非 sales/rating 的特征
+    feature_names <- setdiff(names(df_vals), c("sales", "rating"))
+    df_vals <- df_vals[ , feature_names]
+    ideal_cmp <- unlist(ideal_vals[1, feature_names])
+    mat <- sweep(df_vals, 2, ideal_cmp, FUN = ">") * 1
+    ind <- as.data.frame(mat)
+    ind$asin <- idealRaw()$asin
+    ind
+  })
+  
+  
+  # key factors for Ideal & Strategy
+  keyVars <- reactive({
+    ideal_vals <- idealFull() %>% filter(asin == "Ideal") %>% select(where(is.numeric))
+    clean_vals <- ideal_vals %>% select(where(~ !any(is.na(.))))
+    names(clean_vals)[ which(unlist(clean_vals[1,]) > mean(unlist(clean_vals[1,]))) ]
+  })
+  
+  # Launch modules, pass indicator and keyVars to both if needed
+  pcaModuleServer("pca1",   pcaData)
+  idealModuleServer("ideal1", idealFull, idealRaw,indicator = indicator, key_vars = keyVars)
+  strategyModuleServer("strat1", indicator, key_vars = keyVars)
+  dnaModuleServer("dna1", raw)
+}
+
+shinyApp(ui, server)

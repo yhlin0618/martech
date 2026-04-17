@@ -1,0 +1,306 @@
+---
+title: "UX_P002: Fast Query Rendering Principle"
+subtitle: "Every user-facing query must render within 3 seconds; use tiered caching to achieve this"
+chapter: "CH07"
+category: "principle"
+number: "UX_P002"
+date-created: "2026-03-02"
+date-modified: "2026-03-02"
+author: "Claude"
+type: "principle"
+law: "User Experience Law"
+article-number: "Article 2"
+derives_from:
+  - "CH00.MP064: ETL-Derivation Separation"
+influences:
+  - "CH03.DEV_P014: Performance Optimization"
+  - "CH03.DEV_P021: Performance Acceleration"
+related_to:
+  - "CH07.UX_P001: Lazy Initialization"
+  - "CH04.UI_R019: AI Process Notification"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Overview {#overview}
+
+**User Experience Law Article 2 (Fast Query Rendering Principle)**
+
+This article establishes the principle that all user-facing data queries must render within an acceptable time threshold. When raw queries exceed this threshold, tiered caching strategies must be applied to bring response time within limits.
+
+:::{.callout-important}
+## Core Concept
+"Pre-compute First, No Silent Fallback" — The primary strategy is to pre-compute and store results at DRV pipeline time so that render-time reads are near-instant. Each data access function implements exactly ONE tier — no fallback chains. If a pre-computed table is expected but missing, the system must fail loudly, not silently degrade to a slower path.
+:::
+
+# Background {#background}
+
+## Problem Statement {#problem-statement}
+
+Several Shiny components query large tables (e.g., `df_dna_by_customer` with 100k+ rows) using raw `DBI::dbGetQuery()` at render time. This causes 10-15 second delays when users switch to data-heavy tabs like RSV Matrix, degrading the user experience significantly.
+
+## Performance Budget {#performance-budget}
+
+| Response Time | User Perception | Acceptable For |
+|---------------|-----------------|----------------|
+| < 100ms | Instant | Cached/pre-computed data |
+| < 1s | Fast | SQL aggregation, small queries |
+| < 3s | Acceptable | Complex queries with caching |
+| 3-10s | Slow (needs spinner) | Background tasks only |
+| > 10s | Unacceptable | Must be optimized |
+
+# Article 1: Pre-compute First Strategy {#precompute-first}
+
+## Section 1: Core Rule — Pre-compute and Store {#core-rule}
+
+The default approach for all dashboard data is **pre-computation at DRV pipeline time**. The App's render-time job is to READ pre-computed results, not to COMPUTE them.
+
+:::{.callout-warning}
+## No Silent Fallback
+Each data access function implements exactly ONE tier. If a function is designed to read a pre-computed table and that table does not exist, it must **raise an error**, not silently fall back to a slower computation path. Silent fallback masks deployment errors and makes performance problems invisible.
+:::
+
+**Why No Fallback?**
+
+| Silent Fallback | No Fallback |
+|-----------------|-------------|
+| App "works" but takes 10s | App fails with: "Run `make run` first" |
+| Nobody knows it's on the slow path | Problem is visible immediately |
+| Three code paths to maintain per function | One code path per function |
+| Violates MP029 (assumes table might not exist) | Follows MP029 (verifies precondition) |
+
+## Section 2: The Four Tiers {#four-tiers}
+
+Each data access function implements exactly ONE of these tiers. Tier selection is an **architectural decision** made when designing the component, not a runtime if/else inside the function.
+
+### Tier 1: Pre-computed DRV Tables (~50ms) — THE DEFAULT
+
+Heavy aggregations and data transformations are computed at DRV pipeline time and stored as ready-to-read tables.
+
+```r
+# DRV script (runs offline via make run)
+# Produces: df_rsv_classified, df_dna_plot_data, etc.
+source("scripts/update_scripts/DRV/all_D01_07.R")
+
+# Component server — just reads, no computation
+load_rsv_classified <- function(conn, platform_id) {
+  sql <- "SELECT * FROM df_rsv_classified WHERE platform_id = ?"
+  result <- DBI::dbGetQuery(conn, sql, params = list(platform_id))
+  if (nrow(result) == 0) {
+    stop("[rsvMatrix] df_rsv_classified is empty for platform '", platform_id,
+         "'. Run: make run PLATFORM=", platform_id)
+  }
+  result
+}
+# ~50ms — just a table read
+```
+
+**This is the primary and preferred method.** If data can be pre-computed, it MUST be pre-computed. Do not defer computation to render time when the pipeline can handle it.
+
+### Tier 2: SQL-Level Aggregation (~500ms)
+
+Push computation to DuckDB. Use ONLY when results depend on runtime user inputs that cannot be enumerated at pipeline time.
+
+```r
+# Dedicated function — does SQL aggregation only, no fallback
+load_category_counts_sql <- function(conn, platform_id, category_field) {
+  sql <- sprintf(
+    "SELECT %s AS category, COUNT(*) AS n FROM df_dna_by_customer WHERE platform_id = ? GROUP BY %s",
+    DBI::dbQuoteIdentifier(conn, category_field),
+    DBI::dbQuoteIdentifier(conn, category_field)
+  )
+  DBI::dbGetQuery(conn, sql, params = list(platform_id))
+}
+```
+
+### Tier 3: Memoised Queries (~50ms on cache hit)
+
+Wrap a Tier 2 function with `memoise` for disk-based caching. This is an **add-on layer**, not a separate function with different logic inside.
+
+```r
+# The memoise wrapper is a SEPARATE object, not built into the base function
+load_category_counts_sql_cached <- memoise::memoise(
+  load_category_counts_sql,
+  cache = .app_cache  # 6-hour disk cache
+)
+```
+
+Or use Shiny's `bindCache()` on reactive outputs (see Article 2).
+
+### Tier 4: Direct Read (small tables only)
+
+Direct `DBI::dbGetQuery()` without caching. Only acceptable for configuration tables or reference tables under 1000 rows.
+
+```r
+df <- DBI::dbGetQuery(con, "SELECT * FROM df_config")
+```
+
+## Section 3: Tier Selection Decision Tree {#tier-selection}
+
+```
+New component needs data?
+  |
+  ├── Data changes only at pipeline time? (most dashboard data)
+  |   └── YES → Tier 1: Pre-compute in DRV, store as table
+  |
+  ├── Depends on unpredictable runtime user input?
+  |   └── YES → Tier 2: SQL aggregation (+ Tier 3 memoise if repeated)
+  |
+  └── Small reference/config table (< 1000 rows)?
+      └── YES → Tier 4: Direct read
+      └── NO  → Go back and design a Tier 1 solution
+```
+
+## Section 4: Startup Verification {#startup-verification}
+
+At App initialization, verify that all required pre-computed tables exist:
+
+```r
+# In initialization or union file
+required_tables <- c("df_rsv_classified", "df_dna_plot_data",
+                     "df_dna_category_counts", "df_dna_summary_stats")
+missing <- required_tables[!sapply(required_tables, function(t) DBI::dbExistsTable(con, t))]
+if (length(missing) > 0) {
+  stop("[UX_P002] Missing pre-computed tables: ", paste(missing, collapse = ", "),
+       "\nRun: make run")
+}
+```
+
+This ensures problems are caught at startup, not when a user clicks a tab 5 minutes later.
+
+# Article 2: Shiny-Specific Patterns {#shiny-patterns}
+
+## Section 1: bindCache() for Reactive Outputs {#bindcache}
+
+Shiny's built-in `bindCache()` caches reactive expressions and render outputs by input keys:
+
+```r
+# Cache a reactive expression by input values
+filtered_data <- reactive({
+  df <- load_heavy_query(con, input$platform, input$date_range)
+  process_data(df)
+}) %>% bindCache(input$platform, input$date_range)
+
+# Cache a render output
+output$plot <- renderPlotly({
+  plot_ly(filtered_data(), x = ~x, y = ~y)
+}) %>% bindCache(input$platform, input$date_range)
+```
+
+**Advantages over manual memoise**:
+
+- Integrated with Shiny's reactivity system
+- Automatic cache invalidation when inputs change
+- Can use `cache = "session"` (per-user) or `cache = "app"` (shared across users)
+
+## Section 2: Async Loading with ExtendedTask {#async-loading}
+
+For queries that genuinely take > 3s, use Shiny's `ExtendedTask` (R >= 4.0, Shiny >= 1.8.1):
+
+```r
+# Define async task
+heavy_query_task <- ExtendedTask$new(function(platform_id) {
+  future::future({
+    con <- dbConnectDuckdb(db_path_list$app_data)
+    on.exit(DBI::dbDisconnect(con))
+    DBI::dbGetQuery(con, "SELECT ... FROM large_table WHERE platform_id = ?",
+                    params = list(platform_id))
+  })
+})
+
+# In server: invoke and show spinner
+observeEvent(input$go, {
+  heavy_query_task$invoke(input$platform)
+})
+
+output$result <- renderDT({
+  heavy_query_task$result()  # Non-blocking; shows spinner until ready
+})
+```
+
+## Section 3: Loading Indicators {#loading-indicators}
+
+When a query takes > 1 second, the user MUST see a loading indicator:
+
+```r
+# Using shinycssloaders
+shinycssloaders::withSpinner(
+  plotlyOutput("heavy_plot"),
+  type = 6, color = "#3c8dbc"
+)
+
+# Using shinybusy
+shinybusy::add_busy_spinner(spin = "fading-circle", position = "top-right")
+```
+
+# Article 3: Existing Infrastructure {#existing-infrastructure}
+
+## Section 1: fn_cached_data_access.R {#cached-access}
+
+The file `global_scripts/04_utils/fn_cached_data_access.R` provides cached data access functions:
+
+| Function | Tier | Description |
+|----------|------|-------------|
+| `load_precomputed_ecdf()` | 1 | Read pre-computed ECDF from df_dna_plot_data |
+| `load_precomputed_category_counts()` | 1 | Read pre-computed counts from df_dna_category_counts |
+| `load_precomputed_summary_stats()` | 1 | Read pre-computed stats from df_dna_summary_stats |
+| `load_ecdf_from_sql()` | 2 | SQL-level CUME_DIST computation |
+| `load_dna_summary_stats()` | 2 | SQL-level aggregation |
+| `load_dna_distribution_summary_cached()` | 3 | Memoised version of Tier 2 |
+| `load_ecdf_from_sql_cached()` | 3 | Memoised version of Tier 2 |
+
+:::{.callout-warning}
+## Legacy Fallback Patterns
+Some functions in `fn_cached_data_access.R` currently contain fallback chains (e.g., Tier 1 → Tier 2 → R-level computation). This violates the No Silent Fallback rule established in Article 1. These functions should be refactored so that each implements exactly ONE tier, with missing pre-computed tables causing an explicit error.
+:::
+
+**All components that access DNA/customer data MUST use these cached functions instead of raw `dbGetQuery()`.**
+
+## Section 2: D01_07 Pre-computed Tables {#precomputed-tables}
+
+The DRV script `all_D01_07.R` produces:
+
+| Table | Content | Rows (typical) |
+|-------|---------|-----------------|
+| `df_dna_plot_data` | Pre-computed ECDF curves per metric/platform | ~2000 |
+| `df_dna_category_counts` | Category distribution counts | ~50 |
+| `df_dna_summary_stats` | Summary statistics per metric | ~20 |
+
+These tables exist in `app_data.duckdb` and are refreshed each pipeline run.
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Fast Query Rendering Checklist
+
+When building or reviewing a Shiny component with data queries:
+
+- [ ] Identify all `dbGetQuery()` calls in the component
+- [ ] For each query, determine the appropriate caching tier (ONE tier per function)
+- [ ] Default to Tier 1 (pre-computed DRV tables) — only use lower tiers when pre-computation is impossible
+- [ ] Ensure NO fallback chains — each function reads OR computes, never both
+- [ ] Use SQL-level aggregation instead of pulling raw data to R
+- [ ] Wrap repeated queries with `memoise()` or `bindCache()`
+- [ ] Add loading spinners for any query that might take > 1 second
+- [ ] Verify render time < 3 seconds with typical data volume
+- [ ] Add required pre-computed tables to startup verification list
+- [ ] Check `fn_cached_data_access.R` for existing cached functions before writing new ones
+:::
+
+# Related Principles {#related}
+
+- **UX_P001**: Lazy Initialization — Optimizes startup time; UX_P002 optimizes runtime query time
+- **MP064**: ETL-Derivation Separation — Pre-computation happens in DRV phase, not at render time
+- **DEV_P014**: Performance Optimization — General performance guidelines
+- **DEV_P021**: Performance Acceleration — Runtime optimization techniques
+
+---
+
+*Authority: User Experience Law Article 2*
+*Derived from: [MP064 ETL-Derivation Separation](../../CH00_fundamental_principles/MP064_etl_derivation_separation.qmd)*
+*Complements: [UX_P001 Lazy Initialization](UX_P001_lazy_initialization.qmd)*

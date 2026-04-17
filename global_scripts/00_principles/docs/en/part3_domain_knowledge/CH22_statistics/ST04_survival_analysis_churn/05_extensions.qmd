@@ -1,0 +1,70 @@
+---
+title: "Section 5: Beyond Parametric BTYD"
+parent: "ST04"
+---
+
+# Beyond Parametric BTYD — Limitations and Extensions {#extensions}
+
+## 5.1 The Parametric Limitation
+
+BTYD is an elegant framework, but it is fundamentally **parametric**:
+
+- **Purchase process**: Poisson (memoryless inter-arrival times)
+- **Dropout process**: Geometric (BG/NBD) or Exponential (Pareto/NBD)
+- **Heterogeneity**: Gamma and Beta mixing distributions
+
+These assumptions imply:
+
+1. **Poisson purchases**: No regularity or burstiness in timing. A customer who buys every 30 days $\pm$ 2 is modeled the same as one who buys randomly. Pareto/GGG partially addresses this with the Gamma inter-arrival extension.
+
+2. **Memoryless dropout**: The probability of churning doesn't depend on how long you've been a customer. A 5-year loyal customer has the same per-period churn probability as a 1-month customer (given the same $\mu_j$). This may not hold if loyalty builds over time.
+
+3. **Independence**: Purchase and dropout processes are independent conditional on $(\lambda_j, \mu_j)$. But in reality, dissatisfaction (low $\lambda$) may cause churn (high $\mu$) — these could be correlated.
+
+4. **Gamma/Beta heterogeneity**: These are convenience choices for conjugacy (closed-form likelihood). The true population distribution of $\lambda$ and $\mu$ may be multimodal or have heavier tails.
+
+## 5.2 Potential Extensions
+
+### Semi-parametric BTYD
+
+Replace the parametric mixing distributions with flexible alternatives:
+
+- **Dirichlet Process Mixtures** for $(\lambda, \mu)$ — non-parametric heterogeneity
+- **Neural network encoders** for individual parameters — $(\hat{\lambda}_j, \hat{\mu}_j) = f_\theta(\mathbf{X}_j)$
+- **Bayesian Nonparametric extensions** (Abe, 2009)
+
+### Time-varying parameters
+
+Allow purchase rate and churn probability to evolve:
+
+$$
+\lambda_j(t) = \lambda_{j,0} \cdot g(t; \boldsymbol{\phi}_j)
+$$
+
+Where $g(\cdot)$ captures seasonality, lifecycle effects, or trend.
+
+### Covariate-enriched BTYD
+
+Incorporate customer features into the BTYD parameters:
+
+$$
+\log(\lambda_j) = \mathbf{X}_j' \boldsymbol{\beta}_\lambda, \quad \text{logit}(p_j) = \mathbf{X}_j' \boldsymbol{\beta}_p
+$$
+
+The `CLVTools` R package supports this via extended Pareto/NBD and BG/NBD models.
+
+### Deep Learning approaches
+
+- **RNN/Transformer-based** models that learn the purchase process non-parametrically from raw transaction sequences
+- Trade-off: better fit but lose interpretability and closed-form P(alive)
+
+## 5.3 Recommended Progression
+
+| Phase | Model | Complexity | When |
+|-------|-------|-----------|------|
+| Phase 1 | **BG/NBD** (standard) | Low | Immediate — replace nrec_prob |
+| Phase 2 | **Pareto/GGG** (regularity) | Medium | When Phase 1 validated, to capture CAI-like information |
+| Phase 3 | **Covariate-enriched Pareto/NBD** | Medium-High | When customer features improve predictions |
+| Phase 4 | **Semi-parametric / Deep** | High | Research/experiment only — after parametric ceiling established |
+
+Phase 1 alone already resolves all five problems identified in Section 1. Subsequent phases improve fit at the cost of complexity, and should be motivated by empirical evidence of parametric misfit.

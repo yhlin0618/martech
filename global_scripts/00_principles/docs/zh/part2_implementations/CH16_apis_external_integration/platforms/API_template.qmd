@@ -1,0 +1,476 @@
+---
+title: "[Platform Name] API Complete Specification"
+subtitle: "Platform ID: [XXX]"
+author: "MAMBA Architecture Team"
+date: "[Date]"
+version: "1.0.0"
+---
+
+# [Platform Name] API Documentation
+
+## Overview
+
+[Brief description of the platform and its primary use cases in e-commerce]
+
+## API Information
+
+### Base URLs
+
+```
+Production: https://api.[platform].com
+Staging: https://api-staging.[platform].com
+Sandbox: https://sandbox-api.[platform].com
+```
+
+### Authentication
+
+[Describe authentication method: OAuth2, API Key, JWT, etc.]
+
+```r
+# Environment Variables Required
+[XXX]_API_BASE_URL=https://api.[platform].com
+[XXX]_API_KEY=your_api_key
+[XXX]_API_SECRET=your_api_secret
+# Add other required variables
+```
+
+### Rate Limits
+
+- **Requests per second**: [number]
+- **Requests per minute**: [number]
+- **Requests per hour**: [number]
+- **Requests per day**: [number]
+- **Concurrent requests**: [number]
+- **Max payload size**: [size]MB
+- **Burst capacity**: [number] (if applicable)
+
+### API Versions
+
+| Version | Status | End of Life | Notes |
+|---------|--------|-------------|-------|
+| v1 | Current | - | Latest stable version |
+| v0 | Deprecated | 2025-12-31 | Legacy support only |
+
+### API Scopes/Permissions
+
+| Scope | Description | Permissions |
+|-------|-------------|-------------|
+| `read_[resource]` | Read [resource] data | View [specific permissions] |
+| `write_[resource]` | Write [resource] data | Create, update [specific permissions] |
+| [Add all available scopes] | | |
+
+## API Endpoints
+
+### [Resource Category] API (e.g., Customers API)
+
+#### List [Resources]
+
+```http
+GET /v1/[resources]
+```
+
+**Parameters:**
+- `page` (integer): Page number (default: 1)
+- `per_page` (integer): Items per page (default: 50, max: [max])
+- `[filter_param]` ([type]): [Description]
+- [Add all available parameters]
+
+**Response:**
+```json
+{
+  "[resources]": [
+    {
+      "id": "[resource]_123456",
+      "[field]": "[value]",
+      // Add all response fields with example values
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 50,
+    "total_pages": 10,
+    "total_count": 500
+  }
+}
+```
+
+**Response Codes:**
+- `200 OK`: Success
+- `400 Bad Request`: Invalid parameters
+- `401 Unauthorized`: Authentication failed
+- `403 Forbidden`: Insufficient permissions
+- `404 Not Found`: Resource not found
+- `429 Too Many Requests`: Rate limit exceeded
+- `500 Internal Server Error`: Server error
+
+#### Get Single [Resource]
+
+```http
+GET /v1/[resources]/{[resource]_id}
+```
+
+**Parameters:**
+- `[resource]_id` (string, required): The [resource] identifier
+
+**Response:**
+```json
+{
+  "id": "[resource]_123456",
+  "[field]": "[value]",
+  // Complete resource object
+}
+```
+
+#### Create [Resource]
+
+```http
+POST /v1/[resources]
+```
+
+**Request Body:**
+```json
+{
+  "[resource]": {
+    "[required_field]": "[value]",
+    "[optional_field]": "[value]"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "id": "[resource]_789",
+  // Created resource object
+}
+```
+
+#### Update [Resource]
+
+```http
+PUT /v1/[resources]/{[resource]_id}
+PATCH /v1/[resources]/{[resource]_id}
+```
+
+**Request Body:**
+```json
+{
+  "[resource]": {
+    "[field_to_update]": "[new_value]"
+  }
+}
+```
+
+#### Delete [Resource]
+
+```http
+DELETE /v1/[resources]/{[resource]_id}
+```
+
+**Response:**
+- `204 No Content`: Successfully deleted
+- `404 Not Found`: Resource not found
+
+### [Add more resource categories following the same pattern]
+
+## Webhooks
+
+### Available Webhook Events
+
+| Event | Description | Payload |
+|-------|-------------|---------|
+| `[resource].[action]` | [When this event fires] | [Link to payload schema] |
+| [Add all webhook events] | | |
+
+### Webhook Registration
+
+```http
+POST /v1/webhooks
+```
+
+**Request Body:**
+```json
+{
+  "webhook": {
+    "topic": "[resource].[action]",
+    "address": "https://your-app.com/webhooks/[platform]",
+    "format": "json",
+    "headers": {
+      "X-Custom-Header": "value"
+    }
+  }
+}
+```
+
+### Webhook Security
+
+[Describe how to verify webhook authenticity: signatures, tokens, etc.]
+
+```r
+verify_webhook_signature <- function(payload, signature, secret) {
+  # Implementation specific to platform
+  expected_signature <- hmac(secret, payload, "sha256")
+  return(signature == expected_signature)
+}
+```
+
+### Webhook Payload Example
+
+```json
+{
+  "id": "webhook_123",
+  "topic": "[resource].[action]",
+  "created_at": "2024-12-01T10:00:00Z",
+  "data": {
+    "[resource]": {
+      // Resource data
+    }
+  }
+}
+```
+
+## Error Handling
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "code": "[ERROR_CODE]",
+    "message": "Human readable error message",
+    "details": {
+      "field": "[field_name]",
+      "reason": "[validation_error]"
+    },
+    "request_id": "req_123456",
+    "documentation_url": "https://docs.[platform].com/errors/[ERROR_CODE]"
+  }
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP Status | Description | Recovery Action |
+|------|-------------|-------------|-----------------|
+| `[ERROR_CODE]` | [Status] | [Description] | [What to do] |
+| [Add all platform-specific error codes] | | | |
+
+## Implementation Examples
+
+### Authentication Example
+
+```r
+# Platform-specific authentication implementation
+library(httr)
+library(jsonlite)
+
+authenticate_[platform] <- function() {
+  # Implementation specific to platform
+}
+
+make_[platform]_request <- function(endpoint, method = "GET", body = NULL) {
+  # Implementation of authenticated request
+}
+```
+
+### Pagination Example
+
+```r
+fetch_all_[resources] <- function() {
+  all_items <- list()
+  page <- 1
+  has_more <- TRUE
+  
+  while (has_more) {
+    result <- make_[platform]_request(
+      sprintf("/v1/[resources]?page=%d", page)
+    )
+    
+    all_items <- c(all_items, result$[resources])
+    
+    # Platform-specific pagination logic
+    has_more <- [pagination_check]
+    page <- page + 1
+    
+    # Rate limiting
+    Sys.sleep([appropriate_delay])
+  }
+  
+  return(all_items)
+}
+```
+
+### Error Handling Example
+
+```r
+safe_api_call <- function(fn, ...) {
+  tryCatch({
+    result <- fn(...)
+    return(result)
+  }, error = function(e) {
+    # Platform-specific error handling
+    if (grepl("[specific_error_pattern]", e$message)) {
+      # Handle specific error
+    }
+    stop(e)
+  })
+}
+```
+
+## Data Models
+
+### [Resource] Object
+
+| Field | Type | Description | Required | Example |
+|-------|------|-------------|----------|---------|
+| `id` | string | Unique identifier | Yes | "[resource]_123" |
+| [Add all fields] | | | | |
+
+### [Add more data model definitions]
+
+## Batch Operations
+
+[If platform supports batch operations, document them here]
+
+### Batch Create
+
+```http
+POST /v1/batch/[resources]
+```
+
+**Request Body:**
+```json
+{
+  "[resources]": [
+    { /* resource 1 */ },
+    { /* resource 2 */ }
+  ]
+}
+```
+
+## Search and Filtering
+
+### Search Syntax
+
+[Document any special search or query syntax]
+
+```http
+GET /v1/[resources]/search?q=[search_query]
+```
+
+### Advanced Filtering
+
+```http
+GET /v1/[resources]?filter[field][operator]=[value]
+```
+
+**Supported Operators:**
+- `eq`: Equals
+- `ne`: Not equals
+- `gt`: Greater than
+- `lt`: Less than
+- `in`: In array
+- `contains`: Contains substring
+
+## Performance Optimization
+
+### Best Practices
+
+1. **Use field selection** to reduce payload size
+   ```http
+   GET /v1/[resources]?fields=[field1,field2]
+   ```
+
+2. **Implement caching** for stable data
+   ```r
+   # Check ETags or Last-Modified headers
+   ```
+
+3. **Use batch operations** when available
+
+4. **Implement request queuing** for rate limits
+
+5. **Monitor API usage** and optimize queries
+
+## Migration Guide
+
+### Migrating from [Previous Version/Platform]
+
+1. **Authentication Changes**: [What changed]
+2. **Endpoint Changes**: [Mapping table]
+3. **Data Model Changes**: [Field mappings]
+4. **Deprecation Timeline**: [Important dates]
+
+## Testing
+
+### Sandbox Environment
+
+- **Base URL**: https://sandbox-api.[platform].com
+- **Test Credentials**: [How to obtain]
+- **Limitations**: [Any sandbox limitations]
+- **Data Reset**: [Reset schedule if applicable]
+
+### Testing Checklist
+
+- [ ] Authentication works
+- [ ] Basic CRUD operations
+- [ ] Error handling
+- [ ] Rate limiting behavior
+- [ ] Webhook reception
+- [ ] Pagination
+- [ ] Search and filtering
+
+## SDK and Libraries
+
+### Official SDKs
+
+- **Node.js**: `npm install [platform]-sdk`
+- **Python**: `pip install [platform]-api`
+- **Ruby**: `gem install [platform]`
+- **PHP**: `composer require [platform]/sdk`
+
+### Community Libraries
+
+[List community-maintained libraries]
+
+## Changelog
+
+### Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | [Date] | Initial release |
+| [Add version history] | | |
+
+## Support and Resources
+
+- **Official Documentation**: https://docs.[platform].com
+- **API Reference**: https://api.[platform].com/reference
+- **Status Page**: https://status.[platform].com
+- **Support Portal**: https://support.[platform].com
+- **Developer Forum**: https://forum.[platform].com
+- **GitHub**: https://github.com/[platform]
+- **Postman Collection**: [Link to collection]
+
+## Compliance and Security
+
+### Data Protection
+
+- **GDPR Compliance**: [Status and features]
+- **PCI DSS**: [If applicable]
+- **Data Retention**: [Policies]
+- **Data Export**: [How to export data]
+
+### Security Features
+
+- **TLS Version**: Minimum TLS 1.2
+- **IP Whitelisting**: [If available]
+- **Audit Logs**: [How to access]
+
+## Related Documentation
+
+- [API Architecture Overview](../API00_architecture_overview.qmd)
+- [Authentication Patterns](../API01_authentication_patterns.qmd)
+- [Rate Limiting](../API02_rate_limiting.qmd)
+- [Error Handling](../API03_error_handling.qmd)
+- [Other Platform APIs](./)

@@ -1,0 +1,214 @@
+---
+title: "IC_R002: 可用語言環境規則"
+subtitle: "應用程式必須系統地管理和記錄可用的語言環境以確保整個系統的一致語言支援。語言環境可用性必須集中定義、易於驗證並在所有組件中適當實施"
+chapter: "CH06"
+category: "rule"
+number: "IC_R002"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "整合協作法"
+article: 
+  number: 2
+  title: "可用語言環境規則"
+related_to:
+  - "MP023: 語言偏好元原則"
+  - "UI_R007: UI 文字標準化規則"
+  - "MP075: 語言標準遵守規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二條：可用語言環境規則 {#overview}
+
+**整合協作法第二條（可用語言環境規則）**
+
+應用程式必須系統地管理和記錄可用的語言環境以確保整個系統的一致語言支援。語言環境可用性必須集中定義、易於驗證並在所有組件中適當實施。
+
+:::{.callout-important}
+## 核心要求
+透過定義語言環境確定、配置、實施和選擇的要求，此規則建立了多語言支援的強健框架。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：語言環境可用性確定 {#locale-availability-determination}
+
+在類 Unix 系統上，POSIX shell 命令 `locale -a` 列出「可用的公共」語言環境。可用語言環境的含義取決於平台：
+
+- 在最近的 Linux 系統上，這可能表示「可以安裝」的語言環境（在基於 RPM 的系統上，語言環境資料在單獨的 RPM 中）
+- 在 Debian/Ubuntu 上，可用語言環境由作業系統特定設施（如 `locale-gen`）管理，`locale -a` 列出當前啟用的語言環境
+
+## 第二款：語言環境配置管理 {#locale-configuration-management}
+
+1. **集中定義**：所有支援的語言環境必須在 UI 術語字典配置中集中定義
+2. **驗證機制**：應用程式必須包含在執行時驗證可用語言環境的機制
+3. **後備策略**：當請求的語言環境不可用時，必須實施清晰的後備策略
+
+## 第三款：語言環境實施要求 {#locale-implementation-requirements}
+
+1. **字典完整性**：UI 術語字典必須包含所有支援語言環境的條目（特別是「en_US.UTF-8」和「zh_TW.UTF-8」）
+2. **驗證過程**：定期驗證必須確保所有 UI 文字都有所有支援語言環境的翻譯
+3. **缺失翻譯處理**：系統必須使用適當的後備優雅地處理缺失的翻譯
+
+## 第四款：語言環境選擇機制 {#locale-selection-mechanism}
+
+1. **使用者偏好**：應用程式必須提供使用者選擇其偏好語言環境的機制
+2. **配置覆蓋**：系統管理員必須能夠配置預設和可用的語言環境
+3. **執行時驗證**：應用程式必須在執行時驗證語言環境可用性並記錄任何差異
+
+# 第二項：實施範例 {#implementation-examples}
+
+## 第一款：語言環境可用性檢查 {#locale-availability-check}
+
+```r
+check_locale_availability <- function() {
+  # 取得系統語言環境
+  system_locales <- system("locale -a", intern = TRUE)
+  
+  # 從字典取得配置的語言環境
+  configured_locales <- colnames(ui_terminology_dictionary)[-1]  # 排除「en_US.UTF-8」欄位
+  
+  # 檢查不匹配
+  missing_locales <- configured_locales[!configured_locales %in% system_locales]
+  
+  if (length(missing_locales) > 0) {
+    warning("系統上未提供配置的語言環境：", paste(missing_locales, collapse = ", "))
+    log_event("locale_mismatch", list(missing_locales = missing_locales))
+  }
+  
+  # 返回也被配置的可用語言環境
+  available_locales <- configured_locales[configured_locales %in% system_locales]
+  return(available_locales)
+}
+```
+
+## 第二款：app_config.yaml 中的語言環境配置 {#locale-configuration-yaml}
+
+```yaml
+localization:
+  default_locale: "en_US.UTF-8"
+  supported_locales:
+    - "en_US.UTF-8"
+    - "zh_TW.UTF-8"
+  fallback_locale: "en_US.UTF-8"
+  dictionary_path: "app_data/parameters/ui_terminology_dictionary.xlsx"
+```
+
+## 第三款：語言環境選擇 UI 組件 {#locale-selection-ui}
+
+```r
+localeSelectionUI <- function(id) {
+  ns <- NS(id)
+  
+  # 取得可用語言環境
+  available_locales <- check_locale_availability()
+  
+  # 創建用於顯示的人類可讀名稱
+  locale_display_names <- c(
+    "en_US.UTF-8" = "English (US)",
+    "zh_TW.UTF-8" = "中文 (繁體)"
+  )
+  
+  selectInput(
+    inputId = ns("locale"),
+    label = translate("Display Language"),
+    choices = setNames(available_locales, locale_display_names[available_locales]),
+    selected = get_current_locale()
+  )
+}
+
+localeSelectionServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    observe({
+      new_locale <- input$locale
+      if (!is.null(new_locale) && new_locale != get_current_locale()) {
+        set_locale(new_locale)
+        session$reload()
+      }
+    })
+  })
+}
+```
+
+# 第三項：常見錯誤和解決方案 {#common-errors-and-solutions}
+
+## 第一款：缺失系統語言環境 {#missing-system-locales}
+
+**問題**：應用程式配置了系統上不可用的語言環境。
+
+**解決方案**：
+- 實施語言環境可用性的執行時驗證
+- 在部署文檔中記錄系統語言環境要求
+- 提供安裝缺失語言環境套件的說明
+- 實施自動後備到可用語言環境
+
+## 第二款：不完整的字典翻譯 {#incomplete-dictionary-translations}
+
+**問題**：UI 術語字典缺少某些支援語言環境的條目。
+
+**解決方案**：
+- 實施字典完整性的驗證檢查
+- 生成缺失翻譯的報告
+- 在部署前強制執行完整的翻譯集
+- 為翻譯提供清晰的內容貢獻工作流程
+
+## 第三款：不一致的語言環境命名 {#inconsistent-locale-naming}
+
+**問題**：系統語言環境和應用程式配置之間的命名約定不一致。
+
+**解決方案**：
+- 標準化語言環境命名約定
+- 實施系統和應用程式語言環境格式之間的映射
+- 根據系統可用性驗證語言環境名稱
+- 在程式碼庫中記錄命名約定
+
+# 第四項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與 UI 文字標準化規則的關聯（UI_R007）{#relation-to-ui-text-standardization}
+
+此規則透過以下方式擴展 UI_R007：
+1. **語言環境管理**：添加語言環境管理和可用性的要求
+2. **系統整合**：處理系統級語言環境整合
+3. **執行時驗證**：添加語言環境的執行時驗證要求
+
+## 第二款：與語言標準遵守的關聯（MP075）{#relation-to-language-standard-adherence}
+
+此規則透過以下方式補充 MP075：
+1. **平台特性**：處理平台特定的語言環境要求
+2. **技術實施**：專注於語言標準的技術實施
+3. **執行時考慮**：處理語言標準遵守的執行時方面
+
+## 第三款：實施語言偏好元原則（MP023）{#implements-language-preferences}
+
+此規則透過以下方式實施 MP023：
+1. **實際應用**：提供實際的實施要求
+2. **系統整合**：處理語言偏好的系統級整合
+3. **使用者體驗**：專注於語言選擇的使用者體驗方面
+
+# 第五項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **一致性**：確保整個應用程式的一致語言體驗
+2. **可靠性**：減少與缺失語言環境相關的執行時錯誤
+3. **透明度**：使語言環境可用性明確可驗證
+4. **靈活性**：支援跨不同環境的部署
+
+## 第二款：使用者體驗優點 {#user-experience-benefits}
+
+1. **清晰性**：為語言環境管理提供清晰的指導
+2. **可維護性**：集中化語言環境配置以便於維護
+3. **使用者體驗**：透過可靠的語言支援改善使用者體驗
+4. **國際化**：增強應用程式的國際化能力
+
+---
+
+*基於：整合協作法第二條*  
+*相關連結：[MP023 語言偏好元原則](../../CH00_fundamental_principles/meta_principles/MP023_language_preferences.qmd), [UI_R007 UI 文字標準化規則](../../CH04_ui_components/rules/UI_R007_ui_text_standardization.qmd)*

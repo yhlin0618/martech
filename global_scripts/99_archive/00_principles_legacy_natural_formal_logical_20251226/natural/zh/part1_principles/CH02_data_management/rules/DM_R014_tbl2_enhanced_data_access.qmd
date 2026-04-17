@@ -1,0 +1,240 @@
+---
+title: "DM_R014: 使用 tbl2 的增強資料存取"
+subtitle: "整個應用程式中的所有資料存取應使用增強的 tbl2() 函數，該函數擴展了 dplyr::tbl() 功能以處理額外的資料類型，同時保持與 dplyr 生態系統和管道運算子的完全相容性"
+chapter: "CH02"
+category: "rule"
+number: "DM_R014"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article: 
+  number: 14
+  title: "使用 tbl2 的增強資料存取"
+related_to:
+  - "MP16: 模組化"
+  - "MP17: 關注點分離"
+  - "MP81: 明確參數規範"
+  - "R91: 通用資料存取模式"
+  - "R101: 統一 tbl 型資料存取模式"
+  - "R92: 通用 DBI 方法"
+  - "R114: 標準模擬資料庫規則"
+  - "P77: 性能優化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十四條：使用 tbl2 的增強資料存取 {#overview}
+
+**資料管理法第十四條（使用 tbl2 的增強資料存取）**
+
+整個應用程式中的所有資料存取應使用增強的 `tbl2()` 函數，該函數擴展了 `dplyr::tbl()` 功能以處理額外的資料類型，同時保持與 dplyr 生態系統和管道運算子的完全相容性。
+
+:::{.callout-important}
+## 核心需求
+整個應用程式中的所有資料存取應使用增強的 `tbl2()` 函數，該函數擴展了 `dplyr::tbl()` 功能以處理額外的資料類型，同時保持與 dplyr 生態系統和管道運算子的完全相容性。
+:::
+
+# 第一項：模式描述 {#pattern-description}
+
+此規則通過指定使用 `tbl2()` 作為所有資料操作的主要介面，無論來源類型如何，擴展了通用資料存取模式（R91）和統一 tbl 型資料存取模式（R101）。
+
+## 第一款：使用 tbl2 的增強存取模式 {#enhanced-access-pattern}
+
+`tbl2()` 函數為處理所有資料來源提供一致的介面：
+
+```r
+# 任何資料來源的標準模式
+data_ref <- tbl2(connection, "data_name")
+result <- data_ref %>%
+  filter(condition) %>%
+  select(columns) %>%
+  collect()
+```
+
+## 第二款：擴展的資料類型支援 {#extended-data-type-support}
+
+`tbl2()` 函數處理擴展的資料來源集：
+
+1. **DBI 資料庫連接**：無縫支援 SQL 資料庫
+2. **列表和嵌套結構**：智能存取列表中的資料
+3. **基於函數的資料**：支援返回資料框的函數
+4. **檔案和外部來源**：直接存取 CSV、Excel 和其他格式
+5. **向量和簡單物件**：自動轉換為資料框
+6. **反應式表達式**：支援 Shiny 反應值和表達式
+
+## 第三款：與通用資料存取器整合 {#integration-with-universal-accessor}
+
+`universal_data_accessor()` 函數應在內部使用 `tbl2()` 作為其主要資料參考機制：
+
+```r
+universal_data_accessor <- function(data_conn, data_name, ...) {
+  # 對所有資料參考使用 tbl2
+  df_ref <- tbl2(data_conn, data_name)
+  
+  # 應用操作並收集
+  result <- df_ref %>% collect()
+  return(result)
+}
+```
+
+## 第四款：向後相容性 {#backward-compatibility}
+
+`tbl2()` 函數與 `dplyr::tbl()` 完全向後相容，但添加了增強功能：
+
+```r
+# 對於資料庫連接，就像 dplyr::tbl 一樣工作
+db_conn <- DBI::dbConnect(...)
+customer_data <- tbl2(db_conn, "customers")
+
+# 但也適用於其他資料類型
+excel_data <- tbl2("data/sales.xlsx", "Q1_2023")
+json_data <- tbl2(json_string)
+```
+
+# 第二項：實施 {#implementation}
+
+## 第一款：函數結構 {#function-structure}
+
+`tbl2()` 函數實施為 S3 泛型，對不同資料類型有方法：
+
+```r
+tbl2 <- function(src, ...) {
+  UseMethod("tbl2")
+}
+
+# 資料庫連接的方法
+tbl2.DBIConnection <- function(src, from, ...) {
+  dplyr::tbl(src, from, ...)
+}
+
+# 列表的方法
+tbl2.list <- function(src, from = NULL, ...) {
+  # 處理列表資料來源
+}
+
+# 字元（檔案路徑等）的方法
+tbl2.character <- function(src, ...) {
+  # 處理檔案、JSON 等
+}
+
+# 其他類型的額外方法...
+```
+
+## 第二款：與模擬資料庫的使用 {#usage-with-mock-database}
+
+為了與 R114（標準模擬資料庫規則）保持一致，使用 `tbl2` 存取模擬資料庫：
+
+```r
+# 連接到模擬資料庫
+mock_db_path <- file.path(find_project_root(), "update_scripts", 
+                         "global_scripts", "30_global_data", "mock_data.duckdb")
+conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = mock_db_path, read_only = TRUE)
+
+# 使用 tbl2 存取資料
+customers <- tbl2(conn, "customer_profile") %>%
+  filter(signup_date > as.Date("2021-06-01")) %>%
+  collect()
+```
+
+## 第三款：在資料管道代碼中的應用 {#application-in-data-pipeline}
+
+所有新的資料管道應使用 `tbl2` 以保持一致性：
+
+```r
+# 從不同來源連接資料
+results <- tbl2(db_conn, "customers") %>%
+  left_join(
+    tbl2(db_conn, "orders") %>%
+      group_by(customer_id) %>%
+      summarize(total_orders = n(), total_spent = sum(amount)),
+    by = c("id" = "customer_id")
+  ) %>%
+  collect()
+```
+
+# 第三項：優點 {#benefits}
+
+1. **一致性**：跨所有資料類型的統一資料存取模式
+2. **可擴展性**：易於添加對新資料來源的支援
+3. **管道相容性**：與 dplyr 操作無縫整合
+4. **減少代碼重複**：所有資料存取的標準模式
+5. **改進的性能**：針對不同資料來源優化
+6. **更好的錯誤處理**：一致的錯誤模式和恢復
+7. **增強的可測試性**：簡化模擬和測試
+
+# 第四項：與其他規則和原則的關係 {#relationship-to-other-rules}
+
+此規則：
+
+- **實施 MP16（模組化）**：通過標準化資料存取介面
+- **實施 MP17（關注點分離）**：通過將資料來源處理與業務邏輯分離
+- **實施 MP81（明確參數規範）**：通過提供清晰的參數介面
+
+- **衍生自 R91（通用資料存取模式）**：擴展通用存取器方法
+- **衍生自 R101（統一 tbl 型資料存取）**：提供統一模式的具體實施
+- **衍生自 R92（通用 DBI 方法）**：將 DBI 方法擴展到所有資料類型
+- **衍生自 R114（標準模擬資料庫規則）**：與模擬資料庫存取整合
+
+# 第五項：完整範例 {#complete-example}
+
+```r
+# 來源 tbl2 函數
+source("global_scripts/02_db_utils/fn_tbl2.R")
+
+# 存取資料庫
+db_conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = "app_data.duckdb")
+
+# 典型的資料管道
+analysis_results <- tbl2(db_conn, "customer_profile") %>%
+  filter(signup_date > as.Date("2022-01-01")) %>%
+  left_join(
+    tbl2(db_conn, "orders") %>%
+      group_by(customer_id) %>%
+      summarize(
+        order_count = n(),
+        total_spent = sum(amount),
+        avg_order = mean(amount)
+      ),
+    by = c("id" = "customer_id")
+  ) %>%
+  collect() %>%
+  mutate(
+    value_segment = case_when(
+      total_spent > 1000 ~ "高",
+      total_spent > 500 ~ "中",
+      TRUE ~ "低"
+    )
+  )
+
+# 存取外部檔案
+external_data <- tbl2("external_data.xlsx", sheet = "Competitors") %>%
+  select(competitor_id, name, market_share) %>%
+  collect()
+
+# 綜合分析
+final_report <- analysis_results %>%
+  left_join(external_data, by = c("competitor_reference" = "competitor_id"))
+```
+
+# 第六項：遷移指南 {#migration-guidelines}
+
+1. 將所有直接調用 `dplyr::tbl()` 替換為 `tbl2()`
+2. 更新 `universal_data_accessor()` 實施以使用 `tbl2()`
+3. 在所有新代碼中使用 `tbl2` 模式以保持一致的存取模式
+4. 逐步重構現有代碼以使用新模式
+
+# 第七項：結論 {#conclusion}
+
+通過對所有資料存取標準化使用增強的 `tbl2()` 函數，我們在整個應用程式中實現了更大的一致性、靈活性和可維護性。這種方法建立在現有資料存取模式的基礎上，同時擴展它們的能力以統一的方式處理更廣泛的資料來源。
+
+---
+
+*基於：資料管理法第十四條*  
+*相關連結：[R91 通用資料存取模式](DM_R002_universal_data_access.qmd), [R101 統一 tbl 型資料存取模式](DM_R011_unified_tbl_data_access.qmd)*

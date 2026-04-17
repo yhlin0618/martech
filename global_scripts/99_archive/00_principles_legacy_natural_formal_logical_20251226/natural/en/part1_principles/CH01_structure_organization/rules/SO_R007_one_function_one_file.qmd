@@ -1,0 +1,293 @@
+---
+title: "SO_R007: One Main Function, One File Rule"
+subtitle: "Each main function in the precision marketing system should be defined in its own dedicated file, with the filename matching the function name. Auxiliary functions that support the main function may be defined in the same file. Collection modules may use a main file to source all related function files and provide a unified interface"
+chapter: "CH01"
+category: "rule"
+number: "SO_R007"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article: 
+  number: 7
+  title: "One Main Function, One File Rule"
+related_to:
+  - "MP017: Separation of Concerns"
+  - "MP018: Don't Repeat Yourself"
+  - "SO_P002: Script Separation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 7: One Main Function, One File Rule {#overview}
+
+**Structure & Organization Law Article 7 (One Main Function, One File Rule)**
+
+Each main function in the precision marketing system should be defined in its own dedicated file, with the filename matching the function name. Auxiliary functions that support the main function may be defined in the same file. Collection modules may use a main file to source all related function files and provide a unified interface.
+
+:::{.callout-important}
+## Core Requirement
+By giving each function its dedicated space, this rule creates a clear, organized code structure that enhances maintainability, testability, and collaboration.
+:::
+
+# Section 1: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: File Naming and Structure {#file-naming-structure}
+
+**For main functions:**
+- The file should be named exactly after the main function it contains
+- Example: Main function `get_sales_data()` should be in file `get_sales_data.R`
+- Auxiliary functions that support this main function may be defined in the same file
+
+**For utility collections:**
+- Create a directory for the collection (e.g., `object_id`)
+- Place a main file at the root of the directory (e.g., `object_identification.R`)
+- Create a `functions` subdirectory containing individual function files
+- The main file should source all individual function files
+
+## Subsection 2: Function Organization Patterns {#function-organization-patterns}
+
+**Two primary organization patterns are supported for structuring function files:**
+
+### Top-Down Organization (Main Function First) {#top-down-organization}
+
+This organization starts with the main function followed by auxiliary functions. It provides a clear entry point at the beginning of the file:
+
+```r
+#' Main Function Description
+#'
+#' Detailed description of what the main function does.
+#'
+#' @param param1 Description of first parameter
+#' @param param2 Description of second parameter
+#' @return Description of return value
+#' @examples
+#' example_usage()
+#'
+main_function_name <- function(param1, param2) {
+  # Implementation that calls auxiliary functions
+  result <- auxiliary_function_name(param1)
+  return(process_result(result, param2))
+}
+
+#' Auxiliary Function Description
+#'
+#' Description of what this auxiliary function does.
+#' Auxiliary functions should only be used by the main function
+#' or other auxiliary functions in this file.
+#'
+#' @param param1 Description of first parameter
+#' @return Description of return value
+#'
+auxiliary_function_name <- function(param1) {
+  # Implementation of auxiliary functionality
+}
+```
+
+### Bottom-Up Organization (Auxiliary Functions First) {#bottom-up-organization}
+
+This organization defines auxiliary functions before the main function, following the "initialization first" pattern common in functional programming:
+
+```r
+#' Auxiliary Function Description
+#'
+#' Description of what this auxiliary function does.
+#' Auxiliary functions should only be used by the main function
+#' or other auxiliary functions in this file.
+#'
+#' @param param1 Description of first parameter
+#' @return Description of return value
+#'
+auxiliary_function_name <- function(param1) {
+  # Implementation of auxiliary functionality
+}
+
+#' Main Function Description
+#'
+#' Detailed description of what the main function does.
+#' By placing it last, all its dependencies are already defined.
+#'
+#' @param param1 Description of first parameter
+#' @param param2 Description of second parameter
+#' @return Description of return value
+#' @examples
+#' example_usage()
+#'
+main_function_name <- function(param1, param2) {
+  # Implementation that calls auxiliary functions
+  result <- auxiliary_function_name(param1)
+  return(process_result(result, param2))
+}
+```
+
+Either organization pattern is acceptable, but should be used consistently within a project.
+
+## Subsection 3: Required Structure for Collection Main Files {#collection-main-files}
+
+Main files for collections should follow this structure:
+
+```r
+#' Collection Name - Main Module
+#'
+#' This file serves as the main entry point for the collection.
+#' It sources all individual function files to make them available.
+#'
+#' @author Author Name
+#' @date Date
+
+# Source all function files
+function_dir <- "functions"
+function_files <- list.files(function_dir, pattern = "\\.R$", full.names = TRUE)
+
+for (file in function_files) {
+  source(file)
+}
+```
+
+## Subsection 4: Documentation Requirements {#documentation-requirements}
+
+Each function file must include:
+- Function description
+- Parameter descriptions
+- Return value description
+- At least one usage example
+- Any other relevant documentation (dependencies, side effects, etc.)
+
+# Section 2: Guidelines for Main and Auxiliary Functions {#main-auxiliary-guidelines}
+
+## Subsection 1: Main Functions {#main-functions}
+
+A **main function** is one that:
+1. Provides the primary capability of the file
+2. Is intended to be called from external code
+3. Serves as the primary entry point for the file's functionality
+4. Is typically exported or made available in the public API
+5. Has its name matching the file name
+
+## Subsection 2: Auxiliary Functions {#auxiliary-functions}
+
+An **auxiliary function** is one that:
+1. Supports the operation of a main function
+2. Is typically only called by the main function or other auxiliary functions within the same file
+3. Implements a sub-task of the main function
+4. Is usually not exported or exposed as part of the public API
+5. Should be well-documented within the file
+
+# Section 3: Exceptions {#exceptions}
+
+## Subsection 1: Permitted Exceptions {#permitted-exceptions}
+
+The following exceptions to the one-main-function-one-file rule are permitted:
+
+1. **Sibling Functions**: A set of closely related functions that form a coherent API but don't have a clear "main" function may be defined in a single file with a descriptive name.
+
+2. **Generated Functions**: Functions generated programmatically (e.g., by metaprogramming) are exempt.
+
+3. **Legacy Code**: Existing legacy code may be gradually refactored to comply with this rule over time.
+
+4. **Test Functions**: Test functions for a main function may be placed in a separate test file.
+
+# Section 4: Implementation Examples {#implementation-examples}
+
+## Subsection 1: Single Function File {#single-function-file}
+
+File: `calculate_revenue.R`
+```r
+#' Calculate Revenue
+#'
+#' Calculates total revenue from sales data.
+#'
+#' @param sales_data Data frame containing sales records
+#' @param include_tax Boolean indicating whether to include tax in calculation
+#' @return Numeric value representing total revenue
+#' @examples
+#' calculate_revenue(sales_df, include_tax = TRUE)
+#'
+calculate_revenue <- function(sales_data, include_tax = FALSE) {
+  if (include_tax) {
+    return(sum(sales_data$amount * (1 + sales_data$tax_rate), na.rm = TRUE))
+  } else {
+    return(sum(sales_data$amount, na.rm = TRUE))
+  }
+}
+```
+
+## Subsection 2: Collection Structure {#collection-structure}
+
+Directory: `object_id/`
+- `object_identification.R` (main file)
+- `functions/`
+  - `get_rigid_id.R`
+  - `get_descriptors.R`
+  - `load_latest.R`
+  - `load_version.R`
+  - `list_versions.R`
+  - `save_version.R`
+
+Main file: `object_identification.R`
+```r
+#' Object Identification Utilities - Main Module
+#'
+#' This file serves as the main entry point for the object identification utilities.
+#' It sources all individual function files to make them available.
+#'
+#' @author Developer Name
+#' @date 2025-04-04
+
+# Source all function files
+function_dir <- "functions"
+function_files <- list.files(function_dir, pattern = "\\.R$", full.names = TRUE)
+
+for (file in function_files) {
+  source(file)
+}
+```
+
+# Section 5: Implementation Strategy {#implementation-strategy}
+
+## Subsection 1: Implementation Steps {#implementation-steps}
+
+1. **New Functions**: All new functions should immediately follow this rule
+2. **Existing Code**: Gradually refactor existing code as it is modified
+3. **Documentation**: Update documentation to reflect this organization pattern
+4. **Testing**: Ensure each function file has corresponding tests
+
+# Section 6: Relationship to Other Principles {#relationship-to-other-principles}
+
+## Subsection 1: Implements Principles {#implements-principles}
+
+This rule implements:
+1. **MP017 (Separation of Concerns)**: By isolating each function, concerns are naturally separated
+2. **MP018 (Don't Repeat Yourself)**: Functions in individual files are easier to reuse without duplication
+
+## Subsection 2: Relates to Principles {#relates-to-principles}
+
+This rule relates to:
+1. **SO_P002 (Script Separation)**: Extends the concept of separation to the function level
+
+# Section 7: Benefits {#benefits}
+
+## Subsection 1: Development Benefits {#development-benefits}
+
+1. **Improved Maintainability**: Each function can be maintained independently
+2. **Better Version Control**: Changes to functions are clearly tracked
+3. **Easier Testing**: Functions can be tested in isolation
+4. **Better Organization**: Project structure clearly reflects functionality
+
+## Subsection 2: Collaboration Benefits {#collaboration-benefits}
+
+1. **Enhanced Reusability**: Single-purpose files are easier to reuse
+2. **Reduced Merge Conflicts**: Developers are less likely to conflict when editing different functions
+3. **Focused Code Reviews**: Reviews can focus on specific functionality
+4. **Better Knowledge Transfer**: New developers can more easily understand isolated functions
+
+---
+
+*Based on: Structure & Organization Law Article 7*  
+*Related to: [MP017 Separation of Concerns](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [SO_P002 Script Separation](../principles/SO_P002_script_separation.qmd)*

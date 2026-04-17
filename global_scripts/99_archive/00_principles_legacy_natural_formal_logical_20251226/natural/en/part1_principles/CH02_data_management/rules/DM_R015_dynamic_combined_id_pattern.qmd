@@ -1,0 +1,250 @@
+---
+title: "DM_R015: Dynamic Combined ID Pattern"
+subtitle: "When working with multiple ID components (like platform_id and customer_id), generate combined identifiers dynamically at query time rather than storing them as separate fields in the database"
+chapter: "CH02"
+category: "rule"
+number: "DM_R015"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 15
+  title: "Dynamic Combined ID Pattern"
+related_to:
+  - "P15: Dual ID Format Principle"
+  - "MP17: Separation of Concerns"
+  - "P80: Integer ID Consistency"
+  - "R89: Integer ID Type Conversion"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 15: Dynamic Combined ID Pattern {#overview}
+
+**Data Management Law Article 15 (Dynamic Combined ID Pattern)**
+
+When working with multiple ID components (like platform_id and customer_id), generate combined identifiers dynamically at query time rather than storing them as separate fields in the database.
+
+:::{.callout-important}
+## Core Rule
+When working with multiple ID components (like platform_id and customer_id), generate combined identifiers dynamically at query time rather than storing them as separate fields in the database.
+:::
+
+# Section 1: Rationale {#rationale}
+
+This rule optimizes database storage, query performance, and flexibility:
+
+- Avoids data duplication in the database
+- Preserves the integrity of individual ID components
+- Maintains flexibility for different display formats
+- Supports efficient filtering on component IDs
+- Eliminates synchronization issues between stored combined IDs and component IDs
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Dynamic Generation Approaches {#dynamic-generation-approaches}
+
+When combining IDs for querying or display, use these approaches based on your needs:
+
+### Separator-Based Approach (Recommended) {#separator-based-approach}
+
+```r
+# Use a clear separator between components
+combined_id <- paste(platform_id, customer_id, sep = "_")
+# Example: "1_12345"
+
+# Easy to split back into components
+parts <- strsplit(combined_id, "_")[[1]]
+platform_id <- as.integer(parts[1])
+customer_id <- as.integer(parts[2])
+```
+
+### Fixed-Width Format {#fixed-width-format}
+
+```r
+# Use fixed width for each component
+combined_id <- sprintf("%02d%07d", platform_id, customer_id)
+# Example: "0112345"
+
+# Requires knowledge of format for decomposition
+platform_id <- as.integer(substr(combined_id, 1, 2))
+customer_id <- as.integer(substr(combined_id, 3, 9))
+```
+
+## Subsection 2: Database Implementation {#database-implementation}
+
+For database operations:
+
+```r
+# In R with dplyr
+results <- df %>%
+  # Generate combined ID on-the-fly
+  mutate(combined_id = paste(platform_id, customer_id, sep = "_")) %>%
+  # Filter using the generated ID
+  filter(combined_id == "1_12345")
+
+# Using direct component filtering is more efficient
+results <- df %>%
+  filter(platform_id == 1, customer_id == 12345)
+
+# In SQL directly
+sql_query <- "
+SELECT *, 
+       platform_id || '_' || customer_id AS combined_id 
+FROM customers 
+WHERE platform_id = 1 AND customer_id = 12345;
+"
+```
+
+## Subsection 3: Creating Reusable Functions {#creating-reusable-functions}
+
+Package combined ID logic in functions:
+
+```r
+make_combined_id <- function(platform_id, customer_id, 
+                            format = c("separator", "fixed")) {
+  format <- match.arg(format)
+  
+  if (format == "separator") {
+    return(paste(platform_id, customer_id, sep = "_"))
+  } else {
+    return(sprintf("%02d%07d", platform_id, customer_id))
+  }
+}
+
+parse_combined_id <- function(combined_id, 
+                             format = c("separator", "fixed")) {
+  format <- match.arg(format)
+  
+  if (format == "separator") {
+    parts <- strsplit(combined_id, "_")[[1]]
+    return(list(
+      platform_id = as.integer(parts[1]), 
+      customer_id = as.integer(parts[2])
+    ))
+  } else {
+    return(list(
+      platform_id = as.integer(substr(combined_id, 1, 2)),
+      customer_id = as.integer(substr(combined_id, 3, 9))
+    ))
+  }
+}
+```
+
+## Subsection 4: Best Practices for Display {#best-practices-for-display}
+
+For user interface display:
+
+```r
+# For data table display
+display_data <- df %>%
+  mutate(combined_id = paste(platform_id, customer_id, sep = "_"))
+
+# Add type prefixes for more clarity
+display_data <- df %>%
+  mutate(combined_id = paste0("PC", platform_id, "_", customer_id))
+
+# For formatted display with fixed width
+display_data <- df %>%
+  mutate(combined_id = sprintf("PC%02d-%07d", platform_id, customer_id))
+```
+
+# Section 3: Creating Database Views {#creating-database-views}
+
+When frequently using combined IDs, consider creating a view:
+
+```sql
+CREATE VIEW customers_with_combined_id AS
+SELECT *, 
+       platform_id || '_' || customer_id AS combined_id 
+FROM customers;
+```
+
+# Section 4: Benefits {#benefits}
+
+1. **Storage Efficiency**: No redundant data stored
+2. **Maintainability**: No risk of combined_id becoming out of sync with component IDs
+3. **Flexibility**: Can adjust formatting without database changes
+4. **Performance**: Component IDs can use efficient numeric indexes
+5. **Adaptability**: Handles variable-length IDs without padding issues
+
+# Section 5: Common Pitfalls {#common-pitfalls}
+
+| Pitfall | Solution |
+|---------|----------|
+| Storing combined IDs in database | Generate dynamically when needed |
+| Using string operations for numeric filtering | Filter on component IDs directly |
+| Inconsistent separator usage | Standardize on one approach |
+| Performance issues with large datasets | Create indexed views or computed columns |
+| Parsing errors with complex formats | Use simple separators when possible |
+
+# Section 6: Integration with Other Principles {#integration-with-other-principles}
+
+This rule implements:
+
+- **P15 (Dual ID Format Principle)**: Maintains separation between storage and display formats
+- **P80 (Integer ID Consistency)**: Preserves integer type for component IDs
+- **MP17 (Separation of Concerns)**: Separates storage from presentation concerns
+
+# Section 7: Examples {#examples}
+
+## Subsection 1: Database Schema with Component IDs {#database-schema}
+
+```sql
+CREATE TABLE customer_sales (
+  platform_id INTEGER NOT NULL,
+  customer_id INTEGER NOT NULL,
+  sale_date DATE NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  PRIMARY KEY (platform_id, customer_id, sale_date)
+);
+```
+
+## Subsection 2: Creating a Search Function {#search-function}
+
+```r
+search_customer_by_combined_id <- function(conn, combined_id, format = "separator") {
+  # Parse the combined ID
+  components <- parse_combined_id(combined_id, format)
+  
+  # Query using component IDs
+  result <- tbl(conn, "customers") %>%
+    filter(
+      platform_id == components$platform_id,
+      customer_id == components$customer_id
+    ) %>%
+    collect()
+    
+  return(result)
+}
+```
+
+## Subsection 3: UI Implementation {#ui-implementation}
+
+```r
+output$customer_table <- renderDataTable({
+  # Get data with dynamically generated combined IDs
+  display_data <- customer_data %>%
+    mutate(combined_id = make_combined_id(platform_id, customer_id))
+    
+  # Display in a datatable with the combined ID
+  datatable(
+    display_data[, c("combined_id", "name", "email", "last_purchase")],
+    options = list(pageLength = 25)
+  )
+})
+```
+
+By following this pattern, you maintain the computational advantages of integer component IDs while providing the flexibility of combined identifiers when needed for display or cross-reference purposes.
+
+---
+
+*Based on: Data Management Law Article 15*  
+*Related to: [P15 Dual ID Format Principle](../../CH02_data_management/principles/DM_P002_dual_id_format.qmd), [P80 Integer ID Consistency](../../CH02_data_management/principles/DM_P008_integer_id_consistency.qmd)*

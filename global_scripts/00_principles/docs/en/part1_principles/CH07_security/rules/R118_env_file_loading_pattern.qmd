@@ -1,0 +1,645 @@
+---
+title: "R118: .env File Loading Pattern"
+subtitle: "Standardized environment variable loading with fallback mechanism"
+chapter: "CH07"
+category: "rule"
+number: "R118"
+date-created: "2025-10-03"
+date-modified: "2025-10-03" # Deployment pattern added
+author: "Claude Code (principle-revisor)"
+type: "rule"
+parent-principle: "MP110"
+enforcement: "REQUIRED"
+severity: "HIGH"
+related_to:
+  - "MP011_discrepancy_principle"
+  - "R092_universal_dbi"
+  - "MP020_dry"
+  - "SEC_R001_no_hardcoded_credentials"
+  - "SEC_R002_environment_variable_standards"
+  - "ISSUE_118"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+## Rule Statement
+
+All projects MUST load environment variables from `.env` files using the standardized pattern with dotenv-first approach and readRenviron fallback, with mandatory verification of critical variables.
+
+## Problem Solved
+
+### Before R118 (Inconsistent Patterns)
+
+Projects had multiple inconsistent approaches to loading .env files:
+
+```r
+# Pattern 1: Direct dotenv call (no fallback)
+dotenv::load_dot_env()  # ❌ Fails if package not installed
+
+# Pattern 2: readRenviron only (less flexible)
+readRenviron(".env")  # ❌ Limited parsing capabilities
+
+# Pattern 3: No verification
+load_dot_env()  # ❌ No check if critical vars loaded
+
+# Pattern 4: Unclear file location
+load_dot_env(file = "somewhere/.env")  # ❌ Inconsistent paths
+```
+
+**Issues:**
+- No fallback mechanism when dotenv unavailable
+- No verification of critical environment variables
+- Inconsistent .env file locations
+- Silent failures during loading
+- No clear status messages
+
+### After R118 (Standardized Pattern)
+
+Unified approach across all projects:
+
+```r
+# Method 1: Using utility function (RECOMMENDED)
+source("global_scripts/04_utils/fn_load_env_file.R")
+load_env_file(
+  app_dir = getwd(),
+  required_vars = c("OPENAI_API_KEY", "PGHOST", "PGPASSWORD")
+)
+
+# Method 2: Inline pattern (when function unavailable)
+env_file <- file.path(getwd(), ".env")
+if (file.exists(env_file)) {
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    dotenv::load_dot_env(file = env_file)
+    message("✅ Environment variables loaded using dotenv")
+  } else {
+    readRenviron(env_file)
+    message("✅ Environment variables loaded using readRenviron")
+  }
+
+  # Verify critical variables
+  for (var in c("OPENAI_API_KEY", "PGHOST")) {
+    if (!nzchar(Sys.getenv(var))) {
+      warning("⚠️  Required variable ", var, " not set")
+    }
+  }
+}
+```
+
+## Standard Implementation
+
+### Utility Function: fn_load_env_file.R
+
+**Location**: `global_scripts/04_utils/fn_load_env_file.R`
+
+```r
+#' Load Environment Variables from .env File
+#'
+#' @description
+#' Loads environment variables from .env file with fallback mechanism.
+#' Follows MAMBA standard pattern with dotenv package preference.
+#'
+#' @param app_dir Character. Project root directory. Default: getwd()
+#' @param env_filename Character. Name of .env file. Default: ".env"
+#' @param required_vars Character vector. Variables to verify. Default: c("OPENAI_API_KEY")
+#' @param silent Logical. Suppress messages. Default: FALSE
+#'
+#' @return Invisible list with status and loaded variables
+#'
+#' @examples
+#' # Basic usage
+#' load_env_file()
+#'
+#' # Custom location
+#' load_env_file(app_dir = "/path/to/project")
+#'
+#' # Verify multiple variables
+#' load_env_file(required_vars = c("OPENAI_API_KEY", "PGHOST", "PGPASSWORD"))
+#'
+#' @export
+load_env_file <- function(app_dir = getwd(),
+                          env_filename = ".env",
+                          required_vars = c("OPENAI_API_KEY"),
+                          silent = FALSE) {
+
+  env_file <- file.path(app_dir, env_filename)
+  result <- list(success = FALSE, method = NULL, loaded_vars = character(0))
+
+  # Check if .env file exists
+  if (!file.exists(env_file)) {
+    if (!silent) message("ℹ️  No .env file found in ", app_dir)
+    return(invisible(result))
+  }
+
+  # Try dotenv first, fallback to readRenviron
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    tryCatch({
+      dotenv::load_dot_env(file = env_file)
+      result$method <- "dotenv"
+      result$success <- TRUE
+      if (!silent) message("✅ Environment variables loaded from .env using dotenv package")
+    }, error = function(e) {
+      if (!silent) warning("⚠️  Failed to load .env with dotenv: ", e$message)
+    })
+  }
+
+  # Fallback to readRenviron if dotenv failed or unavailable
+  if (!result$success) {
+    tryCatch({
+      readRenviron(env_file)
+      result$method <- "readRenviron"
+      result$success <- TRUE
+      if (!silent) message("✅ Environment variables loaded from .env using readRenviron")
+    }, error = function(e) {
+      if (!silent) warning("⚠️  Failed to load .env with readRenviron: ", e$message)
+      return(invisible(result))
+    })
+  }
+
+  # Verify required variables
+  if (result$success && length(required_vars) > 0) {
+    for (var in required_vars) {
+      value <- Sys.getenv(var)
+      if (nzchar(value)) {
+        result$loaded_vars <- c(result$loaded_vars, var)
+        if (!silent) message("  ✓ ", var, " is set")
+      } else {
+        if (!silent) warning("  ⚠️  ", var, " is not set")
+      }
+    }
+  }
+
+  return(invisible(result))
+}
+```
+
+## Usage Patterns
+
+### Pattern 1: Local Development (with .env file)
+
+```r
+# In app.R or initialization script
+source("global_scripts/04_utils/fn_load_env_file.R")
+
+# Load with verification
+load_env_file(
+  required_vars = c(
+    "OPENAI_API_KEY",
+    "PGHOST",
+    "PGPORT",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGDATABASE"
+  )
+)
+```
+
+### Pattern 1.5: Deployment Environment (without .env file)
+
+**Critical Deployment Pattern**: When deploying to platforms like Posit Connect, environment variables are set directly in the deployment platform. The code MUST check for environment variables FIRST, before requiring .env file:
+
+```r
+# Step 1: Try loading from .env file (for local development)
+env_file <- file.path(getwd(), ".env")
+if (file.exists(env_file)) {
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    dotenv::load_dot_env(file = env_file)
+    message("✅ Environment variables loaded from .env using dotenv package")
+  } else {
+    readRenviron(env_file)
+    message("✅ Environment variables loaded from .env using readRenviron")
+  }
+} else {
+  # No .env file - assume deployment environment (Posit Connect, etc.)
+  message("ℹ️ No .env file found - using environment variables from deployment platform")
+}
+
+# Step 2: Verify required variables (from .env OR deployment environment)
+required_vars <- c("OPENAI_API_KEY", "PGHOST", "PGPASSWORD")
+missing <- required_vars[!nzchar(Sys.getenv(required_vars))]
+
+if (length(missing) > 0) {
+  stop(sprintf(
+    paste0(
+      "❌ Missing required environment variables:\n  - %s\n\n",
+      "For local development:\n",
+      "1. Copy .env.template to .env\n",
+      "2. Fill in all credentials\n",
+      "3. Ensure .env is in .gitignore\n\n",
+      "For deployment:\n",
+      "1. Set environment variables in deployment platform (e.g., Posit Connect)\n",
+      "2. Ensure all required variables are configured"
+    ),
+    paste(missing, collapse = "\n  - ")
+  ))
+}
+```
+
+**Key Deployment Principle**:
+- ✅ `.env` file is OPTIONAL (only required for local development)
+- ✅ Environment variables are REQUIRED (from either .env OR deployment platform)
+- ✅ Code checks variables AFTER attempting .env load
+- ✅ Clear error messages guide both local dev and deployment setup
+
+### Pattern 2: Development Scripts
+
+```r
+# In analysis or test scripts
+source("global_scripts/04_utils/fn_load_env_file.R")
+
+# Load with minimal requirements
+load_env_file(
+  required_vars = c("OPENAI_API_KEY")
+)
+```
+
+### Pattern 3: Silent Loading (Background Jobs)
+
+```r
+# In scheduled tasks or background processes
+result <- load_env_file(
+  required_vars = c("OPENAI_API_KEY", "PGHOST"),
+  silent = TRUE
+)
+
+if (!result$success) {
+  stop("Failed to load environment variables")
+}
+```
+
+### Pattern 4: Custom .env Location
+
+```r
+# For projects with non-standard structure
+load_env_file(
+  app_dir = "/path/to/project/root",
+  env_filename = ".env.production"
+)
+```
+
+## Key Requirements
+
+### 1. ✅ Fallback Mechanism
+
+**MUST** try dotenv first, fall back to readRenviron:
+
+```r
+if (requireNamespace("dotenv", quietly = TRUE)) {
+  dotenv::load_dot_env(file = env_file)
+} else {
+  readRenviron(env_file)
+}
+```
+
+**Rationale**: dotenv provides better parsing but may not be installed in all environments.
+
+### 2. ✅ File Location Consistency
+
+**.env MUST be in project root directory**:
+
+```r
+# ✅ CORRECT
+env_file <- file.path(getwd(), ".env")
+env_file <- file.path(app_dir, ".env")
+
+# ❌ INCORRECT
+env_file <- ".env"  # Relative path unclear
+env_file <- "config/.env"  # Non-standard location
+```
+
+### 3. ✅ Variable Verification
+
+**MUST verify critical environment variables after loading**:
+
+```r
+# Verify each required variable
+for (var in required_vars) {
+  value <- Sys.getenv(var)
+  if (!nzchar(value)) {
+    warning("⚠️  Required variable ", var, " not set")
+  }
+}
+```
+
+### 4. ✅ Clear Status Messages
+
+**MUST provide informative feedback**:
+
+```r
+message("✅ Environment variables loaded using dotenv")
+message("  ✓ OPENAI_API_KEY is set")
+warning("  ⚠️  PGHOST is not set")
+```
+
+### 5. ✅ Security Compliance
+
+**.env MUST NEVER be committed to version control**:
+
+```bash
+# .gitignore (REQUIRED)
+.env
+.env.*
+!.env.example
+```
+
+## File Structure Standards
+
+### .env Template (.env.example)
+
+**Safe to commit** - provides structure without secrets:
+
+```bash
+# .env.example
+# Copy to .env and fill in actual values
+
+# Database Configuration
+PGHOST=your-database-host.com
+PGPORT=5432
+PGUSER=your-username
+PGPASSWORD=your-secure-password
+PGDATABASE=your-database-name
+PGSSLMODE=require
+
+# API Keys
+OPENAI_API_KEY=sk-proj-your-key-here
+
+# Application Settings
+APP_ENV=development
+LOG_LEVEL=INFO
+```
+
+### Actual .env File
+
+**NEVER commit** - contains real credentials:
+
+```bash
+# .env
+# This file is in .gitignore - DO NOT COMMIT
+
+PGHOST=prod-db.company.com
+PGPORT=5432
+PGUSER=app_user
+PGPASSWORD=actual_secure_password_here
+PGDATABASE=production_db
+PGSSLMODE=require
+
+OPENAI_API_KEY=sk-proj-actual-key-here
+
+APP_ENV=production
+LOG_LEVEL=WARN
+```
+
+## Integration with Other Principles
+
+### MP011: Discrepancy Principle
+
+Ensures .env is loaded before any code tries to access environment variables:
+
+```r
+# CORRECT: Load .env first, then check environment
+load_env_file(required_vars = c("OPENAI_API_KEY"))
+api_key <- Sys.getenv("OPENAI_API_KEY")
+if (!nzchar(api_key)) {
+  stop("OPENAI_API_KEY not available")  # MP011 compliance
+}
+```
+
+### R092: Universal DBI Approach
+
+Database connections use environment variables loaded by this pattern:
+
+```r
+# Load .env following R118
+load_env_file(required_vars = c("PGHOST", "PGUSER", "PGPASSWORD"))
+
+# Connect using R092
+con <- dbConnect(
+  RPostgres::Postgres(),
+  host = Sys.getenv("PGHOST"),
+  port = Sys.getenv("PGPORT"),
+  user = Sys.getenv("PGUSER"),
+  password = Sys.getenv("PGPASSWORD"),
+  dbname = Sys.getenv("PGDATABASE")
+)
+```
+
+### MP020: DRY (Don't Repeat Yourself)
+
+Use `load_env_file()` function instead of repeating the pattern:
+
+```r
+# ✅ CORRECT: DRY compliance
+source("global_scripts/04_utils/fn_load_env_file.R")
+load_env_file(required_vars = c("OPENAI_API_KEY"))
+
+# ❌ INCORRECT: Repeating the pattern
+env_file <- file.path(getwd(), ".env")
+if (file.exists(env_file)) {
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    dotenv::load_dot_env(file = env_file)
+  } else {
+    readRenviron(env_file)
+  }
+}
+# (Repeated in multiple files)
+```
+
+### SEC_R001: No Hardcoded Credentials
+
+R118 is the standard mechanism for loading credentials:
+
+```r
+# ✅ CORRECT: Credentials from .env (R118 + SEC_R001)
+load_env_file(required_vars = c("API_KEY"))
+api_key <- Sys.getenv("API_KEY")
+
+# ❌ INCORRECT: Hardcoded credentials (SEC_R001 violation)
+api_key <- "sk-proj-hardcoded-key"
+```
+
+## Error Handling
+
+### Common Issues and Solutions
+
+#### Issue 1: .env File Not Found
+
+```r
+# Error message
+ℹ️  No .env file found in /path/to/project
+
+# Solution: Create .env file in project root
+cat("OPENAI_API_KEY=your-key\n", file = ".env")
+```
+
+#### Issue 2: Variable Not Set After Loading
+
+```r
+# Warning message
+⚠️  Required variable PGHOST is not set
+
+# Solution: Check .env file format
+# Ensure no spaces around = sign
+# PGHOST=localhost  ✅ CORRECT
+# PGHOST = localhost  ❌ MAY FAIL
+```
+
+#### Issue 3: dotenv Package Not Available
+
+```r
+# Function automatically falls back to readRenviron
+✅ Environment variables loaded from .env using readRenviron
+
+# No action needed - fallback handles this
+```
+
+#### Issue 4: Permission Denied
+
+```r
+# Error: cannot open file '.env': Permission denied
+
+# Solution: Fix file permissions
+# chmod 600 .env
+```
+
+## Testing and Validation
+
+### Unit Test Pattern
+
+```r
+# Test .env loading
+test_that("load_env_file works correctly", {
+  # Create temp .env
+  temp_dir <- tempdir()
+  temp_env <- file.path(temp_dir, ".env")
+  writeLines("TEST_VAR=test_value", temp_env)
+
+  # Load and verify
+  result <- load_env_file(
+    app_dir = temp_dir,
+    required_vars = "TEST_VAR",
+    silent = TRUE
+  )
+
+  expect_true(result$success)
+  expect_equal(Sys.getenv("TEST_VAR"), "test_value")
+  expect_true("TEST_VAR" %in% result$loaded_vars)
+
+  # Cleanup
+  unlink(temp_env)
+})
+```
+
+### Integration Test Pattern
+
+```r
+# Test full initialization flow
+test_that("initialization loads .env correctly", {
+  # Setup
+  source("global_scripts/04_utils/fn_load_env_file.R")
+
+  # Execute
+  result <- load_env_file(required_vars = c("OPENAI_API_KEY"))
+
+  # Verify
+  expect_true(result$success)
+  expect_true(nzchar(Sys.getenv("OPENAI_API_KEY")))
+})
+```
+
+## Compliance Checklist
+
+Every project initialization script must:
+
+- [ ] Source `fn_load_env_file.R` from `global_scripts/04_utils/`
+- [ ] Call `load_env_file()` with appropriate `required_vars`
+- [ ] Place `.env` file in project root directory
+- [ ] Include `.env` in `.gitignore`
+- [ ] Provide `.env.example` template in repository
+- [ ] Verify critical variables after loading
+- [ ] Handle both dotenv and readRenviron cases
+- [ ] Provide clear status messages
+- [ ] Return structured result for programmatic checks
+
+## Migration Guide
+
+### Migrating Existing Projects
+
+**Step 1**: Add utility function
+
+```bash
+# Ensure fn_load_env_file.R is available
+ls global_scripts/04_utils/fn_load_env_file.R
+```
+
+**Step 2**: Replace existing .env loading code
+
+```r
+# OLD CODE (remove)
+# dotenv::load_dot_env()
+
+# NEW CODE (add)
+source("global_scripts/04_utils/fn_load_env_file.R")
+load_env_file(required_vars = c("OPENAI_API_KEY", "PGHOST"))
+```
+
+**Step 3**: Move .env to project root if needed
+
+```bash
+# Check current location
+find . -name ".env"
+
+# Move to root if not there
+mv config/.env ./.env
+```
+
+**Step 4**: Update .gitignore
+
+```bash
+# Add to .gitignore if not present
+echo ".env" >> .gitignore
+echo ".env.*" >> .gitignore
+echo "!.env.example" >> .gitignore
+```
+
+**Step 5**: Create .env.example
+
+```bash
+# Copy current .env and remove values
+cp .env .env.example
+# Edit .env.example to replace actual values with placeholders
+```
+
+## Related Documentation
+
+- **ISSUE-118**: Initial implementation and standardization
+- **MP110**: Security Credentials Management (parent principle)
+- **SEC_R001**: No Hardcoded Credentials
+- **SEC_R002**: Environment Variable Standards
+- **R092**: Universal DBI Approach
+- **MP011**: Discrepancy Principle
+
+## Enforcement
+
+**This rule is REQUIRED and enforced through:**
+
+1. Code review - All PRs must use standardized pattern
+2. CI/CD checks - Automated verification of .env handling
+3. Security audits - Regular scans for non-compliant code
+4. Principle compliance - Tracked in principle adherence metrics
+
+**Non-compliance remediation:**
+
+1. Immediate: Update to use `load_env_file()` function
+2. Within 24h: Verify all required variables are checked
+3. Within 1 week: Add comprehensive tests for .env loading
+
+---
+
+**Version**: 1.0
+**Status**: Active
+**Implementation**: ISSUE-118 (2025-10-03)
+**Next Review**: 2025-11-03

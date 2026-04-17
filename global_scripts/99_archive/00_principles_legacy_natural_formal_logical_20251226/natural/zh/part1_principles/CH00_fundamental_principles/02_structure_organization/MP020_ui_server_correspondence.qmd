@@ -1,0 +1,344 @@
+---
+title: "MP054: UI-伺服器對應元原則 (UI-Server Correspondence)"
+subtitle: "每個用戶介面元素必須對應到響應、處理或受該元素影響的伺服器端功能"
+author: "Claude"
+date: "2025-04-09"
+date-modified: "2025-08-16"
+categories: [meta-principle, ui-architecture, server-architecture, system-design]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+每個用戶介面元素必須對應到響應、處理或受該元素影響的伺服器端功能。相反地，所有重要的伺服器端狀態變化必須反映在用戶介面中。
+
+## 概念框架
+
+UI-伺服器對應元原則建立了用戶看到和交互的內容與系統響應所做的事情之間的基本關係。它防止創建沒有功能目的的「死 UI」元素，並確保用戶能夠看到系統狀態。
+
+### 1. 雙向對應 {#bidirectional-correspondence}
+
+此原則建立了兩個基本對應：
+
+1. **UI→伺服器**：每個交互式 UI 元素必須觸發或影響伺服器端過程
+2. **伺服器→UI**：每個重要的伺服器端狀態變化必須反映在 UI 中
+
+雖然這些對應遵循 MP0052 中建立的單向數據流，但它們確保了交互和反饋的完整電路。
+
+### 2. 對應類型 {#correspondence-types}
+
+不同的 UI 元素建立不同類型的對應：
+
+1. **直接映射**：UI 元素直接映射到伺服器端數據（例如，表單欄位）
+2. **動作觸發**：UI 元素觸發伺服器端過程（例如，按鈕）
+3. **狀態反映**：UI 元素反映伺服器端狀態（例如，狀態指示器）
+4. **數據視覺化**：UI 元素渲染伺服器端數據（例如，圖表、表格）
+
+每個 UI 元素必須實施至少一種這些對應類型。
+
+### 3. 反對應模式 {#anti-correspondence}
+
+此原則禁止幾種反模式：
+
+1. **裝飾性 UI**：純粹為外觀而存在，沒有功能的 UI 元素
+2. **隱藏功能**：沒有 UI 暴露或訪問的伺服器功能
+3. **死胡同**：觸發操作但不提供反饋的 UI
+4. **幻影數據**：顯示不來自或不連接到伺服器狀態的數據的 UI
+
+## 實施指南
+
+### 1. UI 元素開發 {#ui-element-development}
+
+開發 UI 元素時：
+
+1. **目的定義**：在實施前為每個 UI 元素定義伺服器端目的
+2. **輸入-輸出配對**：為每個輸入元素定義相應的輸出元素
+3. **動作-反饋配對**：為每個動作元素定義相應的反饋元素
+4. **狀態視覺化**：為每個重要的伺服器狀態定義相應的 UI 表示
+
+```r
+# 每個 UI 元素必須有與伺服器功能相關的目的
+ui <- fluidPage(
+  # 具有相應伺服器處理的輸入
+  textInput("query", "搜尋查詢"),
+  
+  # 具有相應伺服器處理程序和反饋的動作
+  actionButton("search", "搜尋"),
+  
+  # 反映伺服器處理結果的輸出
+  tableOutput("results"),
+  
+  # 反映伺服器狀態的狀態指示器
+  textOutput("status")
+)
+
+server <- function(input, output, session) {
+  # 查詢輸入的處理程序
+  query <- reactive({
+    req(input$query)
+    normalize_query(input$query)
+  })
+  
+  # 搜尋動作的處理程序
+  observeEvent(input$search, {
+    # 處理動作
+    output$status <- renderText("搜尋中...")
+    search_results <- perform_search(query())
+    
+    # 用結果更新 UI
+    output$results <- renderTable(search_results)
+    output$status <- renderText("搜尋完成")
+  })
+}
+```
+
+### 2. UI-伺服器映射文檔 {#mapping-documentation}
+
+記錄 UI 和伺服器元素之間的對應：
+
+1. **元素清單**：創建具有伺服器對應物的 UI 元素清單
+2. **狀態-UI 映射**：記錄哪些 UI 元素反映哪些伺服器狀態
+3. **功能-觸發映射**：記錄哪些伺服器功能由哪些 UI 元素觸發
+
+```
+| UI 元素 ID | 類型 | 伺服器功能 | 伺服器數據 | 目的 |
+|------------|------|------------|-----------|------|
+| query | 輸入 | normalize_query() | search_params | 查詢輸入 |
+| search | 動作 | perform_search() | N/A | 觸發搜尋 |
+| results | 輸出 | N/A | search_results | 顯示結果 |
+| status | 指示器 | N/A | search_status | 顯示過程狀態 |
+```
+
+### 3. 測試方法 {#testing-approach}
+
+測試正確的 UI-伺服器對應：
+
+1. **覆蓋測試**：驗證每個 UI 元素都有相應的伺服器代碼
+2. **效果測試**：驗證 UI 元素產生預期的伺服器端效果
+3. **顯示測試**：驗證伺服器狀態變化正確反映在 UI 中
+4. **死元素檢測**：識別並刪除沒有伺服器對應的 UI 元素
+
+```r
+# 測試 UI 元素影響伺服器狀態
+test_that("查詢輸入影響伺服器狀態", {
+  # 設置測試伺服器
+  testServer(app, {
+    # 模擬用戶輸入
+    session$setInputs(query = "測試查詢")
+    
+    # 驗證伺服器狀態受到影響
+    expect_equal(session$getReactiveValue(query), "測試查詢")
+  })
+})
+
+# 測試伺服器狀態影響 UI
+test_that("搜尋結果出現在 UI 中", {
+  # 設置測試應用程式
+  testApp(app, {
+    # 模擬用戶動作
+    session$setInputs(query = "測試查詢")
+    session$click("search")
+    
+    # 驗證 UI 反映伺服器狀態
+    expect_true(!is.null(output$results))
+    expect_equal(output$status, "搜尋完成")
+  })
+})
+```
+
+## 特定應用
+
+### 1. 表單輸入對應 {#form-input}
+
+對於表單輸入：
+
+1. **驗證反饋**：每個輸入應接收驗證反饋
+2. **數據綁定**：每個輸入應更新伺服器端數據模型
+3. **上下文適應性**：輸入應對伺服器端上下文變化做出反應
+
+```r
+# 具有相應驗證和反饋的輸入
+textInput("email", "電子郵件地址")
+
+# 伺服器端對應
+observe({
+  email <- input$email
+  if (email != "" && !is.valid.email(email)) {
+    # 驗證反饋
+    updateTextInput(session, "email", 
+      value = email,
+      label = "電子郵件地址（格式無效）"
+    )
+  } else {
+    # 更新伺服器端用戶數據模型
+    user_data$email <- email
+  }
+})
+```
+
+### 2. 動作-響應對應 {#action-response}
+
+對於動作元素：
+
+1. **處理指示**：顯示動作正在處理
+2. **結果通信**：傳達動作的結果
+3. **狀態更新可見性**：顯示由於動作導致的系統狀態變化
+
+```r
+# 具有相應伺服器處理程序和反饋循環的動作按鈕
+actionButton("save", "儲存個人資料", 
+  icon = icon("save"),
+  class = "btn-primary"
+)
+
+# 伺服器端對應
+observeEvent(input$save, {
+  # 1. 處理指示
+  output$save_status <- renderUI({
+    div(class = "processing", 
+      icon("spinner"), "儲存個人資料中..."
+    )
+  })
+  
+  # 2. 執行動作
+  result <- tryCatch({
+    save_user_profile(user_data())
+    list(success = TRUE)
+  }, error = function(e) {
+    list(success = FALSE, error = e$message)
+  })
+  
+  # 3. 結果通信
+  if (result$success) {
+    output$save_status <- renderUI({
+      div(class = "success", 
+        icon("check"), "個人資料儲存成功"
+      )
+    })
+  } else {
+    output$save_status <- renderUI({
+      div(class = "error", 
+        icon("exclamation-triangle"), 
+        "儲存個人資料時出錯：", result$error
+      )
+    })
+  }
+  
+  # 4. 更新最後儲存指示器（狀態更新可見性）
+  output$last_saved <- renderText({
+    if (result$success) {
+      paste("最後儲存：", format(Sys.time(), "%H:%M:%S"))
+    } else {
+      "未儲存"
+    }
+  })
+})
+```
+
+### 3. 狀態表示對應 {#state-representation}
+
+對於狀態表示：
+
+1. **完整狀態覆蓋**：所有相關狀態應有 UI 表示
+2. **漸進細節**：為每個狀態提供適當的細節層級
+3. **狀態轉換**：顯示狀態之間的轉換
+
+```r
+# 伺服器端狀態
+data_states <- reactiveValues(
+  loading = FALSE,
+  error = NULL,
+  empty = TRUE,
+  filtered = FALSE,
+  record_count = 0
+)
+
+# 所有狀態的 UI 表示
+output$data_status <- renderUI({
+  if (data_states$loading) {
+    div(class = "status loading",
+      icon("spinner"), "載入數據中..."
+    )
+  } else if (!is.null(data_states$error)) {
+    div(class = "status error",
+      icon("exclamation-circle"), 
+      "載入數據時出錯：", data_states$error
+    )
+  } else if (data_states$empty) {
+    div(class = "status empty",
+      icon("info-circle"), 
+      "沒有可用數據"
+    )
+  } else {
+    div(class = "status loaded",
+      icon("table"), 
+      paste("顯示", data_states$record_count, "條記錄"),
+      if (data_states$filtered) tags$span("（已篩選）") else NULL
+    )
+  }
+})
+```
+
+## 常見反模式
+
+### 1. 裝飾性 UI 元素 {#decorative-ui}
+
+**問題**：純粹為視覺吸引力添加的 UI 元素，沒有伺服器交互。
+
+**解決方案**：每個 UI 元素應提供輸入給伺服器、顯示來自伺服器的輸出，或觸發伺服器過程。
+
+### 2. 靜默處理 {#silent-processing}
+
+**問題**：伺服器端過程發生而沒有 UI 通知。
+
+**解決方案**：所有重要的伺服器過程應有相應的 UI 狀態指示器。
+
+### 3. 幽靈功能 {#ghost-functions}
+
+**問題**：伺服器功能存在但無法通過 UI 訪問。
+
+**解決方案**：所有預期的伺服器功能應通過適當的 UI 元素暴露。
+
+### 4. 過時的 UI {#stale-ui}
+
+**問題**：UI 元素顯示過時的伺服器狀態。
+
+**解決方案**：實施反應式更新以確保 UI 準確反映當前伺服器狀態。
+
+### 5. 延遲反饋 {#delayed-feedback}
+
+**問題**：伺服器響應 UI 輸入但在更新 UI 時有顯著延遲。
+
+**解決方案**：提供輸入接收的即時確認，然後是過程狀態更新。
+
+## 好處
+
+1. **功能清晰**：用戶清楚地理解系統能做什麼
+2. **系統透明度**：用戶可以看到系統的狀態
+3. **減少認知負擔**：用戶不需要猜測正在發生什麼
+4. **改進的可測試性**：清晰的對應實現系統測試
+5. **防止未使用的代碼**：強制刪除沒有 UI 訪問的伺服器代碼
+6. **通過 UI 文檔化**：UI 作為系統功能的視覺地圖
+7. **增強用戶信心**：用戶看到他們的操作有效果的證據
+
+## 與其他原則的關係
+
+此元原則：
+
+1. **建立在 MP0052（單向數據流）之上**：確保流完成完整電路
+2. **補充 MP0053（反饋循環）**：專注於 UI 和伺服器之間的開發時關係
+3. **支持 MP0017（關注點分離）**：在確保正確連接的同時維持分離
+4. **強化 R09（UI-伺服器-預設三元組）**：為三元組模式提供概念基礎
+
+## 結論
+
+UI-伺服器對應元原則確立了每個 UI 元素必須有伺服器端目的，每個重要的伺服器端功能或狀態必須在 UI 中表示。這確保應用程式是有目的的、透明的和可用的，消除了「死 UI」和「隱藏功能」。
+
+通過強制執行這種對應，應用程式變得更直觀、可測試和可維護。用戶在看到他們的操作與系統響應之間的清晰關係時獲得了對系統的信心，而開發人員則受益於防止斷開組件的更清晰結構。

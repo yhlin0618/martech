@@ -1,0 +1,324 @@
+---
+title: "MP004: Mode Hierarchy Principle"
+subtitle: "模式層級原則"
+chapter: "CH00"
+category: "MP"
+number: "004"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP003: Operating Modes"
+  - "MP000: Axiomatization System"
+influences:
+  - "MP006: Data Source Hierarchy"
+  - "P008: Deployment Patterns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 核心概念 {#core-concept}
+
+模式層級原則建立了系統操作模式之間的正式關係，創建了能力和存取權限的巢狀層級。此層級確保較高層級的模式包含所有較低層級模式的能力，允許跨模式轉換的一致行為。
+
+:::{.callout-important}
+## 關鍵原則
+每個較高的模式包含其下所有模式的能力，形成嚴格的層級結構。
+:::
+
+# 模式層級結構 {#hierarchy-structure}
+
+模式組織在嚴格的層級中，每個較高模式包含其下所有模式的能力：
+
+```{mermaid}
+%%| fig-cap: "模式層級關係圖"
+%%| fig-align: "center"
+
+graph TD
+    G[GLOBAL_MODE<br/>全域模式] 
+    U[UPDATE_MODE<br/>更新模式]
+    A[APP_MODE<br/>應用模式]
+    
+    G --> U
+    U --> A
+    
+    style G fill:#f9f,stroke:#333,stroke-width:4px
+    style U fill:#bbf,stroke:#333,stroke-width:2px
+    style A fill:#bfb,stroke:#333,stroke-width:2px
+```
+
+:::{.callout-note}
+## 層級含義
+1. **GLOBAL_MODE** 可以做 UPDATE_MODE 能做的一切，加上全域資源管理
+2. **UPDATE_MODE** 可以做 APP_MODE 能做的一切，加上資料處理和更新
+3. **APP_MODE** 具有最受限制的能力集
+:::
+
+# 層級存取模式 {#access-pattern}
+
+層級關係確保跨模式的一致能力：
+
+| 能力 | APP_MODE | UPDATE_MODE | GLOBAL_MODE |
+|------|:--------:|:-----------:|:-----------:|
+| 運行 Shiny 應用程式 | ✅ | ✅ | ✅ |
+| 讀取應用資料 | ✅ (唯讀) | ✅ (讀寫) | ✅ (讀寫) |
+| 處理原始資料 | ❌ | ✅ | ✅ |
+| 更新應用資料 | ❌ | ✅ | ✅ |
+| 管理全域資源 | ❌ | ❌ | ✅ |
+| 跨專案操作 | ❌ | ❌ | ✅ |
+
+# 實作 {#implementation}
+
+## 巢狀函數可用性 {#nested-functions}
+
+較低模式中可用的函數必須在所有較高模式中也可用：
+
+```r
+# 基於模式的函數載入範例
+load_mode_functions <- function(mode) {
+  # 所有模式都需要的基本函數
+  source_directory("update_scripts/global_scripts/02_db_utils")
+  source_directory("update_scripts/global_scripts/04_utils")
+  
+  # UPDATE_MODE 及以上的函數
+  if (mode %in% c("UPDATE_MODE", "GLOBAL_MODE")) {
+    source_directory("update_scripts/global_scripts/05_import")
+    source_directory("update_scripts/global_scripts/06_process")
+  }
+  
+  # 僅 GLOBAL_MODE 的函數
+  if (mode == "GLOBAL_MODE") {
+    source_directory("update_scripts/global_scripts/15_global_utils")
+  }
+}
+```
+
+## 一致的功能檢測 {#feature-detection}
+
+較高模式必須識別並使用較低模式的功能：
+
+```r
+# 模式感知的功能檢測
+is_feature_available <- function(feature_name) {
+  feature_modes <- list(
+    "read_app_data" = c("APP_MODE", "UPDATE_MODE", "GLOBAL_MODE"),
+    "update_app_data" = c("UPDATE_MODE", "GLOBAL_MODE"),
+    "manage_global_resources" = c("GLOBAL_MODE")
+  )
+  
+  current_mode <- OPERATION_MODE
+  return(current_mode %in% feature_modes[[feature_name]])
+}
+```
+
+## 漸進式存取控制 {#progressive-access}
+
+存取控制遵循層級，在較高層級具有漸進式權限：
+
+```r
+# 漸進式存取控制
+get_access_level <- function(resource_type) {
+  access_matrix <- list(
+    "app_data" = list(
+      "APP_MODE" = "read",
+      "UPDATE_MODE" = "write",
+      "GLOBAL_MODE" = "admin"
+    ),
+    "raw_data" = list(
+      "APP_MODE" = "none",
+      "UPDATE_MODE" = "write",
+      "GLOBAL_MODE" = "admin"
+    ),
+    "30_global_data" = list(
+      "APP_MODE" = "read",
+      "UPDATE_MODE" = "read",
+      "GLOBAL_MODE" = "admin"
+    )
+  )
+  
+  return(access_matrix[[resource_type]][[OPERATION_MODE]])
+}
+```
+
+# 模式轉換規則 {#transition-rules}
+
+由於模式形成層級，模式之間的轉換必須遵循特定規則：
+
+:::{.panel-tabset}
+
+## 上升轉換（到較高模式）
+
+當轉換到較高模式時，操作必須：
+- 以適當權限關閉並重新開啟資源
+- 初始化額外能力
+- 維護現有資料一致性
+
+```r
+# 上升模式轉換範例
+transition_to_higher_mode <- function(target_mode) {
+  # 驗證轉換方向
+  mode_levels <- c("APP_MODE" = 1, "UPDATE_MODE" = 2, "GLOBAL_MODE" = 3)
+  current_level <- mode_levels[OPERATION_MODE]
+  target_level <- mode_levels[target_mode]
+  
+  if (target_level <= current_level) {
+    stop("Cannot transition to same or lower mode using this function")
+  }
+  
+  # 以當前權限關閉現有連接
+  dbDisconnect_all()
+  
+  # 設定新模式
+  OPERATION_MODE <- target_mode
+  
+  # 以擴展能力初始化
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   paste0("sc_initialization_", tolower(target_mode), ".R")))
+  
+  # 以新權限重新開啟連接
+  # 新模式特定的額外初始化
+}
+```
+
+## 下降轉換（到較低模式）
+
+當轉換到較低模式時，操作必須：
+- 驗證沒有待處理的寫入操作
+- 關閉在較低模式中不可存取的所有資源
+- 以受限能力重新初始化
+
+```r
+# 下降模式轉換範例
+transition_to_lower_mode <- function(target_mode) {
+  # 驗證轉換方向
+  mode_levels <- c("APP_MODE" = 1, "UPDATE_MODE" = 2, "GLOBAL_MODE" = 3)
+  current_level <- mode_levels[OPERATION_MODE]
+  target_level <- mode_levels[target_mode]
+  
+  if (target_level >= current_level) {
+    stop("Cannot transition to same or higher mode using this function")
+  }
+  
+  # 檢查待處理的寫入操作
+  if (has_pending_writes()) {
+    stop("Cannot transition to lower mode with pending write operations")
+  }
+  
+  # 關閉所有連接
+  dbDisconnect_all()
+  
+  # 設定新模式
+  OPERATION_MODE <- target_mode
+  
+  # 以受限能力初始化
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   paste0("sc_initialization_", tolower(target_mode), ".R")))
+}
+```
+
+:::
+
+# 模式驗證 {#mode-verification}
+
+所有操作都應驗證它們在適當的模式中運行：
+
+```r
+# 驗證操作在當前模式中被允許
+require_mode <- function(required_modes) {
+  if (!(OPERATION_MODE %in% required_modes)) {
+    stop("This operation requires one of these modes: ", 
+         paste(required_modes, collapse = ", "), 
+         ". Current mode: ", OPERATION_MODE)
+  }
+  return(TRUE)
+}
+
+# 使用範例
+update_global_reference_data <- function() {
+  require_mode("GLOBAL_MODE")
+  # 繼續更新...
+}
+```
+
+# 開發含義 {#development-implications}
+
+模式層級原則對開發實務有特定含義：
+
+:::{.callout-tip}
+## 開發準則
+1. **功能測試**：所有功能必須在其應該可用的每個模式中測試
+2. **函數設計**：函數應在執行前檢查適當的模式
+3. **資源管理**：資源應以模式適當的權限開啟
+4. **文檔**：函數文檔應指定所需的模式
+5. **錯誤處理**：錯誤訊息應清楚指示與模式相關的問題
+:::
+
+# 例外處理 {#exception-handling}
+
+當操作違反模式層級約束時，應提供清晰的錯誤訊息：
+
+```r
+# 模式約束錯誤處理範例
+tryCatch({
+  if (OPERATION_MODE == "APP_MODE") {
+    update_app_data()  # 在 APP_MODE 中不允許
+  }
+}, error = function(e) {
+  message("Operation failed due to mode constraint: ", e$message)
+  message("Current mode: ", OPERATION_MODE)
+  message("Required mode: UPDATE_MODE or GLOBAL_MODE")
+  message("Use transition_to_higher_mode() to change modes if needed.")
+})
+```
+
+# 視覺化模式能力 {#visual-capabilities}
+
+:::{.callout-note}
+## 模式能力金字塔
+:::
+
+```{mermaid}
+%%| fig-cap: "模式能力金字塔"
+%%| fig-align: "center"
+
+graph BT
+    subgraph "APP_MODE"
+        A1[讀取應用資料]
+        A2[運行 Shiny App]
+        A3[顯示視覺化]
+    end
+    
+    subgraph "UPDATE_MODE"
+        U1[處理原始資料]
+        U2[更新應用資料]
+        U3[執行 ETL]
+    end
+    
+    subgraph "GLOBAL_MODE"
+        G1[管理全域資源]
+        G2[跨專案操作]
+        G3[系統維護]
+    end
+    
+    APP_MODE --> UPDATE_MODE
+    UPDATE_MODE --> GLOBAL_MODE
+    
+    style APP_MODE fill:#e6ffe6
+    style UPDATE_MODE fill:#e6f3ff
+    style GLOBAL_MODE fill:#ffe6f3
+```
+
+# 結論 {#conclusion}
+
+模式層級原則通過建立模式之間的清晰關係，確保不同操作上下文中的一致、可預測行為。這種層級方法簡化了對能力、權限和操作約束的推理，導致更可維護和安全的程式碼。
+
+:::{.callout-warning}
+## 重要提醒
+實作新功能或修改現有功能時，開發者應始終考慮這些功能如何與模式層級互動，確保它們尊重每個模式的約束和能力。
+:::

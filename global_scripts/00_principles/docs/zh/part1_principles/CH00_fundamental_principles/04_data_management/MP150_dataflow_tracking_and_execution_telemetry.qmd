@@ -1,0 +1,169 @@
+---
+id: "MP150"
+title: "MP150: 資料流追蹤與執行可觀測性"
+type: "meta-principle"
+category: "data_management"
+date_created: "2026-02-13"
+date_modified: "2026-02-13"
+author: "Codex"
+status: "active"
+version: "1.0"
+weight: 150
+priority: "HIGH"
+related_to:
+  - "MP149": "資料交易完整性"
+  - "MP141": "排程執行模式"
+  - "MP142": "配置驅動管線"
+  - "MP104": "ETL 資料流分離"
+  - "DM_R054": "全域資料存放規範"
+implements:
+  - "RUN_TELEMETRY": "每個 ETL/DRV 單元必須輸出不可變更的執行事件"
+  - "DATAFLOW_LINKAGE": "可追溯來源與目標間的關係"
+  - "MISSING_DATA_RECORDING": "缺資料需轉成明確中繼資料，不可靜默"
+---
+
+# MP150: 資料流追蹤與執行可觀測性
+
+## 核心聲明
+
+**所有 ETL 與 DRV 執行都必須可被端到端追蹤：從來源發現、執行狀態到輸出影響都要以機器可讀中繼資料保留，讓下游模組能驗證「發生了什麼」，而不是只看 console 訊息。**
+
+本原則適用於資料流圖中的**每一個執行節點**（ETL、DRV）。一次成功的執行，不只代表有輸出結果，還要有可驗證的執行紀錄。
+
+## 為何必要
+
+沒有標準化追蹤，會出現「看起來有跑完但實際跳過檔案、空資料或重複改版」的情況。這會讓除錯變成猜測，且回補作業通常遲到。
+
+MP150 要求：資料流可觀測性是執行合約的一部分，而不是可選的日誌項目。
+
+## 套用範圍
+
+MP150 套用於以下情境：
+
+- 探測輸入來源（資料夾、檔案、工作表、API 分頁）
+- ETL / DRV 讀取與轉換
+- 產生被後續階段使用的衍生資料
+- 具條件邏輯的分支（skip、空資料、可恢復警告）
+
+涵蓋腳本層級執行（`*_ETL_*.R`, `*_DRV_*.R`）與跨階段依賴。
+
+## 強制執行事件合約
+
+每一次 pipeline run 必須輸出至少以下欄位。
+
+### 必要的 Run Header
+
+- `run_id`（字串）：跨步驟穩定的執行識別碼
+- `run_type`（字串）：`etl` 或 `drv`
+- `platform_id`（字串）：`cbz`、`amz`、`eby`、`all` 等
+- `pipeline_id`（字串）：邏輯資料流（如 `sales`、`reviews`、`competitor_sales`）
+- `phase`（字串）：`0IM`、`1ST`、`2TR`、`3PR`、`4CL`、`5NM`
+- `sequence`（字串）：腳本序號（如 `D03_10`）
+- `step_name`（字串）：腳本名稱
+- `status`（字串）：`STARTED`、`SKIPPED`、`PASSED`、`FAILED`、`ABORTED`
+- `started_at`（時間戳）、`ended_at`（時間戳）
+- `duration_ms`（整數）：耗時（毫秒）
+
+### 必要資料影響欄位
+
+- `rows_input`（整數，可為空）：操作前可用列數
+- `rows_output`（整數，可為空）：輸出/寫入列數
+- `rows_written_delta`（整數，可為空）：實際寫入差異
+- `file_count_discovered`（整數）：發現到的輸入單位數
+- `file_count_loaded`（整數）：成功載入數
+- `file_count_skipped`（整數）：刻意 skip 的數
+- `file_count_empty`（整數）：發現但空資料的數
+- `missing_critical_inputs`（陣列/字串）：缺失的關鍵輸入與原因
+- `error_code`（字串，可為空）：失敗/中止時的錯誤碼
+- `notes`（字串，可為空）：摘要說明
+
+### 必要稽核欄位
+
+- `actor`（字串，可為空）：執行上下文
+- `configuration_id`（字串，可為空）：使用的設定版本或雜湊
+- `environment_profile`（字串，可為空）：環境指紋（重現用）
+- `source_ledger`（字串，可為空）：若拆分日誌時的來源清單位置
+- `output_ledger`（字串，可為空）：輸出稽核位置（table/file）
+
+## 非阻斷與阻斷邏輯
+
+MP150 不要求所有缺失都直接 fail。
+
+- 在關鍵步驟中，**缺失關鍵輸入**必須為 `FAILED`，並完整持久化失敗中繼資料。
+- 在明確標示為可選的步驟中，空資料或缺失應以 `SKIPPED`/`EMPTY` 紀錄，並在有設定時繼續。
+- 未定義狀態不得默默略過，必須明確對應成 `FAILED` 或 `SKIPPED`。
+
+## 追蹤可回溯規則
+
+對每個非平凡轉換，至少保留一筆來源-目標關係：
+
+- `source_object`
+- `target_object`
+- `transform_signature`（hash 或函式參考）
+- `dependency_path`
+
+能回答：
+
+- 哪個檔案/資料夾生成了這張表？
+- 我們是因為可選、空資料還是缺失而跳過？
+- 使用的是哪個版本 run 的輸入？
+
+## 持久化要求
+
+執行可觀測性需要落在 `app_data` 的 metadata 層，且是持久化紀錄：
+
+1. **主儲存**：可追加的事件表（例如 `app_data.drv_run_events` 或同義表）
+2. **備援儲存**：可選的文字檔/JSON，供作業人員閱讀
+3. **保留策略**：保留期限必須有文件化政策，不得以臨時狀態而刪除
+
+至少可用 `run_id` + 平台 + phase 查詢每一次執行。
+
+## 最小 SQL 結構（範例）
+
+```sql
+CREATE TABLE IF NOT EXISTS app_data.drv_run_events (
+  run_id TEXT NOT NULL,
+  run_type TEXT NOT NULL,
+  platform_id TEXT NOT NULL,
+  pipeline_id TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  sequence TEXT,
+  step_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TIMESTAMP,
+  ended_at TIMESTAMP,
+  duration_ms INTEGER,
+  rows_input BIGINT,
+  rows_output BIGINT,
+  rows_written_delta BIGINT,
+  file_count_discovered INTEGER,
+  file_count_loaded INTEGER,
+  file_count_skipped INTEGER,
+  file_count_empty INTEGER,
+  missing_critical_inputs TEXT,
+  error_code TEXT,
+  notes TEXT,
+  actor TEXT,
+  configuration_id TEXT,
+  environment_profile TEXT,
+  source_ledger TEXT,
+  output_ledger TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## 實作檢核清單
+
+- [ ] 每個執行腳本都記錄 START/END，並使用穩定 `run_id`。
+- [ ] 探測、載入/轉換、完成階段皆有明確 `status`。
+- [ ] 缺少可選資料必須轉為明確 `SKIPPED`/`EMPTY`，不可 silent pass。
+- [ ] 中繼資料持久化保存，不能只印在 console。
+- [ ] 失敗/中止時必填 `error_code` 與機器可讀原因。
+- [ ] 可以從 `run_id` 追溯來源路徑/關係到輸出結果。
+
+## 與既有原則關係
+
+- **MP149**：MP149 保證完整性邏輯；MP150 讓這些完整性行為可被追溯。
+- **MP142**：配置層規格必須對應到執行中使用的上下文。
+- **DM_R054**：`app_data` metadata 落地要求透過 MP150 實作。
+- **MP104**：在保持資料流邊界清楚的同時，補足執行可追溯能力。

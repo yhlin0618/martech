@@ -1,0 +1,123 @@
+---
+title: "SO_R017: 函數位置規則"
+subtitle: "函數必須根據其用途放置在適當的功能目錄中，而不是放在元原則目錄中。00_principles 目錄應該只包含原則文檔（MP、P、R 文檔），不包含實現代碼"
+chapter: "CH01"
+category: "rule"
+number: "SO_R017"
+date-created: "2025-04-13"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article: 
+  number: 17
+  title: "函數位置規則"
+derives_from:
+  - "MP016: 模組化"
+  - "MP017: 關注分離"
+  - "R021: 一個函數一個檔案"
+influences:
+  - "P004: 應用程式建構原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十七條：函數位置規則 {#overview}
+
+**結構組織法第十七條（函數位置規則）**
+
+此規則規定函數檔案的正確放置位置，確保原則文檔與實現代碼的清晰分離。
+
+:::{.callout-important}
+## 核心規則
+函數必須根據其用途放置在適當的功能目錄中，而不是放在元原則目錄中。`00_principles` 目錄應該只包含原則文檔（MP、P、R 文檔），不包含實現代碼。
+:::
+
+# 第一項：實施指南 {#implementation-guidelines}
+
+## 第一款：正確位置 {#proper-location}
+
+所有函數檔案（以 `fn_` 為前綴）必須放置在與其用途相符的功能目錄中：
+
+- 資料庫工具函數 → `02_db_utils/`
+- 配置函數 → `03_config/functions/`
+- 通用工具函數 → `04_utils/`
+- 資料處理函數 → `05_data_processing/`
+- 其他功能目錄依此類推
+
+## 第二款：禁止位置 {#prohibited-location}
+
+函數不得放置在：
+
+- `00_principles/`（保留給 MP、P、R 文檔）
+- `00_principles/[子目錄]/`（模組實現目錄除外，如 M01）
+
+## 第三款：模組例外 {#module-exception}
+
+此規則的唯一例外是模組實現目錄（例如 `00_principles/M01_summarizing_database/`），根據函子-模組對應原則（MP044），可以包含實現代碼。
+
+## 第四款：重組要求 {#reorganization-required}
+
+目前位於 `00_principles/` 或其子目錄中的任何函數檔案（模組實現目錄除外）必須移動到適當的功能目錄。
+
+# 第二項：範例 {#examples}
+
+## 第一款：正確的函數放置 {#correct-placement}
+
+```
+global_scripts/
+├── 02_db_utils/
+│   ├── fn_db_connection_factory.R       # ✓ 正確
+│   ├── fn_universal_data_accessor.R     # ✓ 正確
+│   └── fn_list_to_mock_dbi.R            # ✓ 正確
+├── 03_config/
+│   └── functions/
+│       └── fn_root_path_config.R        # ✓ 正確
+└── 04_utils/
+    └── fn_clean_column_names.R          # ✓ 正確
+```
+
+## 第二款：錯誤的函數放置 {#incorrect-placement}
+
+```
+global_scripts/
+└── 00_principles/
+    ├── fn_root_path_config.R            # ✗ 錯誤
+    └── 02_db_utils/
+        ├── fn_universal_data_accessor.R # ✗ 錯誤
+        └── fn_list_to_mock_dbi.R        # ✗ 錯誤
+```
+
+# 第三項：實施注意事項 {#implementation-notes}
+
+在目錄之間移動函數時：
+
+1. 更新其他檔案中的所有來源引用
+2. 確保文檔中的檔案路徑保持準確
+3. 更新代碼中的任何直接路徑引用
+4. 移動後測試功能以確保一切正常運作
+
+# 第四項：理由 {#rationale}
+
+此規則執行：
+
+1. **清晰的組織**：維護原則文檔與實現代碼之間的清晰分離
+2. **改善可發現性**：當函數位於與其用途相符的目錄時，更容易找到
+3. **邏輯結構**：加強應用程式的結構藍圖
+4. **一致的應用**：確保所有開發人員遵循相同的組織模式
+
+# 第五項：相關規則 {#related-rules}
+
+- **R021**（一個函數一個檔案）：函數應在其自己的檔案中定義
+- **R033**（遞迴來源）：詳細說明如何從目錄來源檔案
+- **MP044**（函子-模組對應）：定義允許在原則目錄中實現代碼的模組結構
+
+---
+
+*基於：結構組織法第十七條*  
+*相關連結：[MP016 模組化](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [R021 一個函數一個檔案](../SO_R007_one_function_one_file.qmd)*

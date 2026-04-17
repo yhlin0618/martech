@@ -1,0 +1,219 @@
+---
+title: "MP037: 僅為臨時或不確定代碼添加註釋元原則 (Comment Only for Temporary or Uncertain Code)"
+subtitle: "使用註釋而非條件執行來處理臨時、實驗性或不確定的代碼"
+author: "System"
+date: "2025-04-06"
+date-modified: "2025-08-16"
+categories: [meta-principle, code-management, documentation, best-practices]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 定義
+
+當代碼不確定、暫時禁用或打算隱藏時，專門使用註釋而不是條件執行、功能標誌或結構修改。這保持代碼完整性，同時使臨時狀態明確。
+
+## 何時應用
+
+此原則應該僅應用於：
+
+1. **真正的臨時代碼**：有明確過期日期或移除/替換觸發器的代碼
+2. **實驗性功能**：正在測試但尚未準備好投入生產的功能
+3. **佔位符**：等待正確開發的空或最小實施
+4. **禁用的功能**：由於錯誤或待處理依賴項而暫時註釋掉的代碼
+5. **不確定的行為**：正確性或性能受到質疑的代碼
+
+此原則不應該應用於：
+
+1. 只是新的或正在進行中的常規功能
+2. 作為正常應用程式流程一部分的穩定代碼
+3. 按預期工作的已完成功能
+4. 解釋代碼如何工作的文檔註釋
+
+## 說明
+
+註釋提供了一種清晰、不可執行的方式來暫時排除或標記代碼，而不會通過額外的邏輯結構增加複雜性。此原則：
+
+1. 清楚地區分生產代碼和臨時/不確定代碼
+2. 防止臨時解決方案通過「被遺忘」的條件標誌變成永久性的
+3. 使實驗性或不確定的功能在代碼審查期間更容易識別
+4. 通過消除隱藏的運行時行為簡化調試
+5. 減少累積條件邏輯的技術債務
+
+## 實施指南
+
+### 1. 代碼不確定性或實驗 {#code-uncertainty}
+
+處理行為或正確性不確定的代碼時：
+
+```r
+# UNCERTAIN (2025-04-06): 此實施可能對大型數據集造成性能問題
+# 考慮在下個衝刺前使用 data.table 重構以提高效率
+sales_summary <- aggregate(amount ~ date, data = sales_data, FUN = sum)
+
+# 替代實施：
+# sales_summary <- data.table(sales_data)[, .(total = sum(amount)), by = date]
+```
+
+### 2. 臨時禁用 {#temporary-disabling}
+
+暫時禁用功能時：
+
+```r
+# TEMP-DISABLED (2025-04-06): 在後端更新之前禁用 API 驗證
+# 在新的 API 規範實施後將重新啟用（預計 2025-04-20）
+# validate_api_responses(data)
+```
+
+### 3. 功能隱藏 {#feature-hiding}
+
+暫時隱藏功能時：
+
+```r
+# HIDDEN-FEATURE (2025-04-06): 高級過濾 UI 隱藏直到 UX 測試完成
+# 在用戶測試確認方法後將啟用（計劃於 2025-04-15）
+# uiOutput("advanced_filters")
+```
+
+### 4. 調試替代方案 {#debugging-alternates}
+
+為調試提供替代實施時：
+
+```r
+process_data(input_data)
+# DEBUG-ALTERNATIVE (2025-04-06): 用於開發期間小批量測試
+# 在生產部署前移除
+# process_data(input_data[1:100, ])
+```
+
+### 5. 未來實施的佔位符 {#placeholders}
+
+提供等待實際功能的最小實施時：
+
+```r
+# TEMP-PLACEHOLDER (2025-04-06): UI 模型的靜態數據
+# 當後端準備好時將替換為數據庫查詢（預計 2025-04-30）
+user_data <- data.frame(
+  id = 1:5,
+  name = c("User A", "User B", "User C", "User D", "User E"),
+  status = sample(c("Active", "Inactive"), 5, replace = TRUE)
+)
+```
+
+## 反模式
+
+### 1. 臨時狀態的運行時條件 {#runtime-conditionals}
+
+避免：
+```r
+# 不好：使用條件邏輯進行臨時功能隱藏
+if (ENABLE_ADVANCED_FILTERS) {  # 可能被遺忘的全域標誌
+  uiOutput("advanced_filters")
+}
+```
+
+改為：
+```r
+# HIDDEN-FEATURE (2025-04-06): 高級過濾 UI 隱藏直到 UX 測試完成
+# 在用戶測試確認方法後將啟用（計劃於 2025-04-15）
+# uiOutput("advanced_filters")
+```
+
+### 2. 沒有解釋的註釋代碼 {#commented-without-explanation}
+
+避免：
+```r
+# 不好：沒有解釋為什麼代碼被註釋
+# data <- transform_data(raw_data)
+data <- raw_data
+```
+
+改為：
+```r
+# TEMP-DISABLED (2025-04-06): 由於性能問題跳過數據轉換
+# 實施優化的轉換函數後將重新啟用（2025-04-25 前）
+# data <- transform_data(raw_data)
+data <- raw_data
+```
+
+### 3. 混合註釋和條件邏輯 {#mixed-approach}
+
+避免：
+```r
+# 不好：混合方法造成混淆
+# if (DEBUG_MODE) {
+  # 僅調試數據處理
+# }
+```
+
+改為：
+```r
+# DEBUG-ONLY (2025-04-06): 調試會話的特殊處理
+# 測試階段完成後移除（2025-04-20 前）
+# debug_data <- process_debug_data(input_data)
+# log_debug_results(debug_data)
+```
+
+### 4. 缺少解決的時間框架或條件 {#missing-timeframe}
+
+避免：
+```r
+# 不好：沒有指示何時應該修復
+# TEMP-DISABLED: API 驗證不工作
+# validate_api_responses(data)
+```
+
+改為：
+```r
+# TEMP-DISABLED (2025-04-06): API 驗證在新後端版本下失敗
+# 當後端團隊解決問題 #123 時將修復（預計 2025-04-12）
+# validate_api_responses(data)
+```
+
+## 註釋格式慣例
+
+1. **前綴**：始終以標準化的全大寫前綴開始，後跟冒號：
+   - UNCERTAIN：對於行為或正確性受到質疑的代碼
+   - TEMP-DISABLED：對於暫時禁用的功能
+   - HIDDEN-FEATURE：對於有意隱藏的 UI/功能
+   - DEBUG-ONLY：對於僅在調試期間使用的代碼
+   - EXPERIMENTAL：對於實驗性實施
+   - TEMP-PLACEHOLDER：對於等待真實功能的最小實施
+
+2. **日期**：包含添加註釋的日期（YYYY-MM-DD）
+
+3. **理由**：始終解釋為什麼代碼被註釋
+
+4. **解決計劃**：說明何時或在什麼條件下應該取消註釋代碼，盡可能提供具體日期或里程碑
+
+## 好處
+
+1. **清晰度**：使變更的臨時性質顯而易見
+2. **簡單性**：避免條件邏輯的累積
+3. **可搜索性**：標準前綴使查找臨時代碼變得容易
+4. **問責制**：日期和解釋為解決創建清晰的時間線
+5. **代碼審查**：使不確定/臨時代碼在審查期間更加可見
+
+## 與 MP38 的應用
+
+遵循 MP0038（增量單功能發布）時，MP0037 註釋有助於：
+
+1. 清楚標記單功能發布的哪些部分是臨時的
+2. 記錄何時佔位符實施將被替換
+3. 創建功能哪些部分需要未來關注的可追溯歷史
+4. 區分功能的已完成部分和仍在開發中的部分
+
+## 相關原則
+
+- MP0016：模組化
+- MP0017：關注點分離
+- MP0018：不要重複自己
+- MP0030：向量化原則
+- MP0038：增量單功能發布
+- R48：Switch 優於 If-Else

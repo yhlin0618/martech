@@ -1,0 +1,1026 @@
+---
+title: "DEV_P020: 最小範例構建原則"
+subtitle: "開發應從構建展示核心功能的最小工作範例開始，然後再擴展到完整功能實施。這種方法能夠更快地驗證概念、更容易除錯，並更清晰地傳達設計模式"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P020"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article-number: 
+  number: 20
+  title: "最小範例構建原則"
+related_to:
+  - "MP017: 模組化原則"
+  - "MP031: 初始化優先原則"
+  - "DEV_P014: 性能優化原則"
+  - "UI_P010: 最小化CSS使用原則"
+  - "DEV_P018: 防禦性錯誤處理原則"
+  - "DEV_P019: 一致性組件狀態原則"
+  - "UI_R001: UI-Server-Defaults三元組規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十條：最小範例構建原則 {#overview}
+
+**開發方法法第二十條（最小範例構建原則）**
+
+開發應從構建展示核心功能的最小工作範例開始，然後再擴展到完整功能實施。這種方法能夠更快地驗證概念、更容易除錯，並更清晰地傳達設計模式。
+
+:::{.callout-important}
+## 核心原則
+透過從最簡單的實施開始，再逐步擴展到更複雜的功能，開發人員可以快速驗證核心概念、建立清晰模式，並為擴展建立堅實基礎。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：從核心功能開始 {#start-with-core}
+
+**核心功能優先標準：**
+
+- 首先實施展示主要目的的最簡單版本
+- 僅包含必要的組件、屬性和狀態管理
+- 專注於展示主要功能的關鍵路徑
+- 初期省略錯誤處理、邊界情況和可選功能
+
+**實施範例：**
+
+```r
+# 最小功能範例 - 簡單計數器
+create_minimal_counter <- function(id) {
+  # 僅必要的響應式值
+  count <- reactiveVal(0)
+  
+  # 最小UI - 僅基本要素
+  ui <- function() {
+    div(
+      h4("簡單計數器"),
+      actionButton(NS(id, "increment"), "增加"),
+      textOutput(NS(id, "display"))
+    )
+  }
+  
+  # 最小伺服器邏輯
+  server <- function(input, output, session) {
+    observeEvent(input$increment, {
+      count(count() + 1)
+    })
+    
+    output$display <- renderText({
+      paste("計數：", count())
+    })
+  }
+  
+  return(list(ui = ui, server = server, value = count))
+}
+
+# 使用範例
+if (interactive()) {
+  library(shiny)
+  
+  counter <- create_minimal_counter("counter1")
+  
+  ui <- fluidPage(
+    counter$ui()
+  )
+  
+  server <- function(input, output, session) {
+    counter$server(input, output, session)
+  }
+  
+  shinyApp(ui, server)
+}
+```
+
+## 第二款：漸進式擴展 {#incremental-expansion}
+
+**漸進式擴展標準：**
+
+- 只有在最小範例正確運作後才逐步添加功能
+- 在進入下一個功能前測試每個添加
+- 記錄擴展的每個步驟以保留開發路徑
+- 在每個重要里程碑維持工作版本
+
+**實施範例：**
+
+```r
+# 步驟1：最小實施
+create_step1_component <- function(id) {
+  value <- reactiveVal("")
+  
+  ui <- function() {
+    div(
+      textInput(NS(id, "input"), "輸入文字"),
+      textOutput(NS(id, "output"))
+    )
+  }
+  
+  server <- function(input, output, session) {
+    observe({
+      value(input$input)
+    })
+    
+    output$output <- renderText({
+      paste("你輸入了：", value())
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# 步驟2：添加驗證功能
+create_step2_component <- function(id) {
+  # 建立在步驟1的基礎上
+  base <- create_step1_component(id)
+  value <- reactiveVal("")
+  is_valid <- reactiveVal(TRUE)
+  
+  ui <- function() {
+    div(
+      base$ui(),
+      # 新增UI元素
+      uiOutput(NS(id, "validation_msg"))
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # 擴展伺服器邏輯
+    observe({
+      value(input$input)
+      # 添加驗證邏輯
+      is_valid(nchar(input$input) >= 3)
+    })
+    
+    output$output <- renderText({
+      if (is_valid()) {
+        paste("有效輸入：", value())
+      } else {
+        "輸入必須至少3個字元"
+      }
+    })
+    
+    output$validation_msg <- renderUI({
+      if (!is_valid() && nchar(value()) > 0) {
+        div(
+          class = "text-danger",
+          icon("exclamation-circle"),
+          "輸入太短"
+        )
+      }
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# 步驟3：添加持久化功能
+create_step3_component <- function(id) {
+  # 建立在步驟2的基礎上
+  base <- create_step2_component(id)
+  saved_values <- reactiveVal(list())
+  
+  ui <- function() {
+    div(
+      base$ui(),
+      # 新增儲存功能
+      actionButton(NS(id, "save"), "儲存", class = "btn-success"),
+      hr(),
+      h5("儲存的值："),
+      verbatimTextOutput(NS(id, "saved_list"))
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # 呼叫基礎伺服器
+    base$server(input, output, session)
+    
+    # 添加儲存功能
+    observeEvent(input$save, {
+      if (nchar(input$input) >= 3) {
+        current_list <- saved_values()
+        saved_values(c(current_list, input$input))
+        updateTextInput(session, "input", value = "")
+      }
+    })
+    
+    output$saved_list <- renderPrint({
+      if (length(saved_values()) > 0) {
+        saved_values()
+      } else {
+        "尚無儲存的值"
+      }
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+```
+
+# 第二項：組件隔離 {#component-isolation}
+
+## 第一款：自包含範例 {#self-contained-examples}
+
+**組件隔離標準：**
+
+- 為每個主要組件創建自包含範例
+- 在初始開發期間最小化組件間的依賴
+- 在實施複雜整合前使用佔位資料/函數
+- 在早期版本中將外部依賴保持在最低限度
+
+**實施範例：**
+
+```r
+# 獨立資料輸入組件（無外部依賴）
+create_isolated_input <- function(id) {
+  # 內部狀態管理
+  .data <- reactiveVal(NULL)
+  
+  ui <- function() {
+    div(
+      class = "isolated-component",
+      h4("資料輸入（獨立版）"),
+      textInput(NS(id, "name"), "姓名"),
+      numericInput(NS(id, "age"), "年齡", value = 25, min = 0, max = 150),
+      selectInput(NS(id, "category"), "類別",
+        choices = c("A", "B", "C"),
+        selected = "A"
+      ),
+      actionButton(NS(id, "submit"), "提交", class = "btn-primary")
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # 提交時更新內部狀態
+    observeEvent(input$submit, {
+      .data(list(
+        name = input$name,
+        age = input$age,
+        category = input$category,
+        timestamp = Sys.time()
+      ))
+      
+      # 清空表單
+      updateTextInput(session, "name", value = "")
+      updateNumericInput(session, "age", value = 25)
+      updateSelectInput(session, "category", selected = "A")
+      
+      showNotification("資料已提交", type = "success")
+    })
+    
+    # 返回資料存取器
+    return(list(
+      get_data = function() .data()
+    ))
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# 獨立資料顯示組件（具有模擬資料選項）
+create_isolated_display <- function(id) {
+  ui <- function() {
+    div(
+      class = "isolated-component",
+      h4("資料顯示（獨立版）"),
+      actionButton(NS(id, "use_mock"), "使用模擬資料", class = "btn-info"),
+      tableOutput(NS(id, "data_table")),
+      plotOutput(NS(id, "data_plot"))
+    )
+  }
+  
+  server <- function(input, output, session, data_source = NULL) {
+    # 內部模擬資料
+    mock_data <- reactive({
+      data.frame(
+        Name = c("張三", "李四", "王五"),
+        Age = c(25, 30, 35),
+        Category = c("A", "B", "C"),
+        stringsAsFactors = FALSE
+      )
+    })
+    
+    # 決定使用的資料
+    display_data <- reactive({
+      if (input$use_mock > 0 || is.null(data_source)) {
+        mock_data()
+      } else if (is.function(data_source)) {
+        data <- data_source()
+        if (!is.null(data)) {
+          data.frame(
+            Name = data$name,
+            Age = data$age,
+            Category = data$category,
+            stringsAsFactors = FALSE
+          )
+        } else {
+          mock_data()
+        }
+      } else {
+        mock_data()
+      }
+    })
+    
+    # 顯示表格
+    output$data_table <- renderTable({
+      display_data()
+    })
+    
+    # 顯示圖表
+    output$data_plot <- renderPlot({
+      data <- display_data()
+      if (nrow(data) > 0) {
+        barplot(
+          data$Age,
+          names.arg = data$Name,
+          main = "年齡分布",
+          xlab = "姓名",
+          ylab = "年齡",
+          col = rainbow(nrow(data))
+        )
+      }
+    })
+  }
+  
+  return(list(ui = ui, server = server))
+}
+```
+
+## 第二款：最小依賴測試 {#minimal-dependency-testing}
+
+**最小依賴測試實施：**
+
+```r
+# 創建可獨立測試的組件
+create_testable_component <- function(id, options = list()) {
+  # 預設選項
+  defaults <- list(
+    use_mock_data = TRUE,
+    enable_logging = FALSE,
+    auto_refresh = FALSE
+  )
+  
+  # 合併選項
+  opts <- modifyList(defaults, options)
+  
+  # 組件狀態
+  state <- reactiveValues(
+    data = NULL,
+    status = "ready",
+    error = NULL
+  )
+  
+  ui <- function() {
+    div(
+      id = NS(id, "container"),
+      conditionalPanel(
+        condition = "true",
+        ns = NS(id),
+        
+        # 狀態指示器
+        div(
+          id = NS(id, "status"),
+          class = "status-indicator",
+          textOutput(NS(id, "status_text"))
+        ),
+        
+        # 主要內容
+        div(
+          id = NS(id, "content"),
+          if (opts$use_mock_data) {
+            div(
+              class = "alert alert-info",
+              "使用模擬資料模式"
+            )
+          },
+          
+          # 控制區
+          actionButton(NS(id, "refresh"), "重新整理"),
+          if (opts$enable_logging) {
+            verbatimTextOutput(NS(id, "log"))
+          },
+          
+          # 資料顯示區
+          tableOutput(NS(id, "display"))
+        )
+      )
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # 日誌記錄
+    log_message <- function(msg) {
+      if (opts$enable_logging) {
+        message(sprintf("[%s] %s: %s", Sys.time(), id, msg))
+      }
+    }
+    
+    # 載入資料（模擬或真實）
+    load_data <- reactive({
+      log_message("載入資料")
+      
+      if (opts$use_mock_data) {
+        # 使用模擬資料進行獨立測試
+        Sys.sleep(0.5)  # 模擬延遲
+        data.frame(
+          ID = 1:5,
+          Value = rnorm(5),
+          Status = sample(c("Active", "Inactive"), 5, replace = TRUE)
+        )
+      } else {
+        # 實際資料載入邏輯
+        tryCatch({
+          # 這裡放置實際的資料載入代碼
+          NULL
+        }, error = function(e) {
+          state$error <- e$message
+          NULL
+        })
+      }
+    })
+    
+    # 重新整理處理
+    observeEvent(input$refresh, {
+      state$status <- "loading"
+      state$data <- load_data()
+      state$status <- if(is.null(state$data)) "error" else "ready"
+      log_message(paste("狀態：", state$status))
+    })
+    
+    # 自動重新整理
+    if (opts$auto_refresh) {
+      observe({
+        invalidateLater(5000)  # 每5秒
+        state$data <- load_data()
+        log_message("自動重新整理")
+      })
+    }
+    
+    # 初始載入
+    observe({
+      if (is.null(state$data)) {
+        state$data <- load_data()
+      }
+    })
+    
+    # 輸出
+    output$status_text <- renderText({
+      switch(state$status,
+        ready = "就緒",
+        loading = "載入中...",
+        error = paste("錯誤：", state$error)
+      )
+    })
+    
+    output$display <- renderTable({
+      state$data
+    })
+    
+    if (opts$enable_logging) {
+      output$log <- renderPrint({
+        paste("狀態：", state$status)
+        paste("資料行數：", nrow(state$data))
+        paste("最後更新：", Sys.time())
+      })
+    }
+    
+    # 返回公開API
+    return(list(
+      get_data = function() state$data,
+      get_status = function() state$status,
+      refresh = function() {
+        state$data <- load_data()
+      }
+    ))
+  }
+  
+  return(list(ui = ui, server = server))
+}
+
+# 測試獨立組件
+test_component <- function() {
+  # 使用模擬資料測試
+  comp1 <- create_testable_component("test1", list(
+    use_mock_data = TRUE,
+    enable_logging = TRUE
+  ))
+  
+  ui <- fluidPage(
+    h3("組件獨立測試"),
+    comp1$ui()
+  )
+  
+  server <- function(input, output, session) {
+    comp1$server(input, output, session)
+  }
+  
+  shinyApp(ui, server)
+}
+```
+
+# 第三項：透過範例文件化 {#documentation-through-example}
+
+## 第一款：文件中的最小範例 {#minimal-examples-in-docs}
+
+**文件範例標準：**
+
+- 在組件文件中包含最小範例
+- 使用最簡單的語法說明使用模式
+- 用最小範例展示基本和進階用例
+- 顯示從簡單到複雜實施的演變
+
+**文件範例：**
+
+```r
+#' 創建可折疊面板組件
+#' 
+#' @description
+#' 創建具有折疊/展開功能的面板組件
+#' 
+#' @examples
+#' # 範例1：最基本使用
+#' panel <- create_collapsible_panel("panel1")
+#' ui <- panel$ui()
+#' server <- function(input, output, session) {
+#'   panel$server(input, output, session)
+#' }
+#' 
+#' # 範例2：自訂標題和內容
+#' panel <- create_collapsible_panel("panel2")
+#' ui <- panel$ui(
+#'   title = "自訂標題",
+#'   content = div("自訂內容")
+#' )
+#' 
+#' # 範例3：程式化控制
+#' panel <- create_collapsible_panel("panel3")
+#' server <- function(input, output, session) {
+#'   api <- panel$server(input, output, session)
+#'   
+#'   # 程式化展開/折疊
+#'   observeEvent(input$external_trigger, {
+#'     api$toggle()
+#'   })
+#' }
+create_collapsible_panel <- function(id) {
+  # 最小實施
+  is_collapsed <- reactiveVal(TRUE)
+  
+  ui <- function(title = "面板標題", content = div("面板內容")) {
+    div(
+      class = "collapsible-panel",
+      
+      # 標題列
+      div(
+        class = "panel-header",
+        style = "cursor: pointer; padding: 10px; background: #f0f0f0;",
+        actionLink(
+          NS(id, "toggle"),
+          label = NULL,
+          icon = icon("chevron-right"),
+          class = "toggle-icon"
+        ),
+        span(title)
+      ),
+      
+      # 內容區
+      conditionalPanel(
+        condition = "false",  # 初始隱藏
+        ns = NS(id),
+        div(
+          id = NS(id, "content"),
+          class = "panel-content",
+          style = "padding: 10px; display: none;",
+          content
+        )
+      )
+    )
+  }
+  
+  server <- function(input, output, session) {
+    # 切換處理
+    observeEvent(input$toggle, {
+      is_collapsed(!is_collapsed())
+      
+      if (is_collapsed()) {
+        shinyjs::hide("content", anim = TRUE)
+        shinyjs::removeClass(selector = ".toggle-icon i", class = "fa-chevron-down")
+        shinyjs::addClass(selector = ".toggle-icon i", class = "fa-chevron-right")
+      } else {
+        shinyjs::show("content", anim = TRUE)
+        shinyjs::removeClass(selector = ".toggle-icon i", class = "fa-chevron-right")
+        shinyjs::addClass(selector = ".toggle-icon i", class = "fa-chevron-down")
+      }
+    })
+    
+    # 返回控制API
+    return(list(
+      toggle = function() {
+        is_collapsed(!is_collapsed())
+      },
+      expand = function() {
+        is_collapsed(FALSE)
+      },
+      collapse = function() {
+        is_collapsed(TRUE)
+      },
+      is_collapsed = function() {
+        is_collapsed()
+      }
+    ))
+  }
+  
+  return(list(ui = ui, server = server))
+}
+```
+
+## 第二款：演變路徑文件 {#evolution-path-documentation}
+
+**演變路徑展示：**
+
+```r
+# 文件：組件演變路徑
+# 
+# 版本1：最小實施（2行代碼）
+# - 基本按鈕點擊計數
+#
+# 版本2：添加重置（+3行）
+# - 添加重置按鈕
+#
+# 版本3：添加持久化（+8行）
+# - 儲存到本地儲存
+#
+# 版本4：添加歷史（+15行）
+# - 追蹤點擊歷史
+
+# 版本1：最小實施
+create_v1_counter <- function() {
+  ui <- actionButton("btn", "點擊我")
+  server <- function(input, output) {
+    observeEvent(input$btn, {
+      print(paste("點擊次數：", input$btn))
+    })
+  }
+  list(ui = ui, server = server)
+}
+
+# 版本2：添加重置功能
+create_v2_counter <- function() {
+  ui <- tagList(
+    actionButton("btn", "點擊我"),
+    actionButton("reset", "重置")  # 新增
+  )
+  server <- function(input, output, session) {
+    count <- reactiveVal(0)  # 新增
+    
+    observeEvent(input$btn, {
+      count(count() + 1)
+      print(paste("點擊次數：", count()))
+    })
+    
+    observeEvent(input$reset, {  # 新增
+      count(0)
+      print("計數已重置")
+    })
+  }
+  list(ui = ui, server = server)
+}
+
+# 版本3：添加持久化
+create_v3_counter <- function() {
+  ui <- tagList(
+    actionButton("btn", "點擊我"),
+    actionButton("reset", "重置"),
+    actionButton("save", "儲存"),  # 新增
+    actionButton("load", "載入")   # 新增
+  )
+  
+  server <- function(input, output, session) {
+    count <- reactiveVal(0)
+    
+    observeEvent(input$btn, {
+      count(count() + 1)
+    })
+    
+    observeEvent(input$reset, {
+      count(0)
+    })
+    
+    observeEvent(input$save, {  # 新增
+      saveRDS(count(), "counter_state.rds")
+      showNotification("已儲存", type = "success")
+    })
+    
+    observeEvent(input$load, {  # 新增
+      if (file.exists("counter_state.rds")) {
+        count(readRDS("counter_state.rds"))
+        showNotification("已載入", type = "info")
+      }
+    })
+  }
+  list(ui = ui, server = server)
+}
+```
+
+# 第四項：效益分析 {#benefits-analysis}
+
+## 第一款：開發效率 {#development-efficiency}
+
+**效率提升：**
+
+1. **更快的迭代週期**：早期開發期間的迭代週期更快
+2. **更容易識別問題**：在簡單實施中更容易識別和修復問題
+3. **清晰的里程碑**：為增量測試提供清晰的里程碑
+4. **減少浪費**：透過早期驗證概念減少浪費的努力
+
+## 第二款：知識轉移與維護 {#knowledge-transfer-maintenance}
+
+**知識轉移優勢：**
+
+1. **團隊溝通**：最小範例更容易向團隊成員解釋
+2. **新手友好**：新開發人員可以更快理解核心功能
+3. **自明模式**：透過簡單演示使使用模式不言自明
+4. **參考實施**：為未來開發創建可用的參考實施
+
+**維護性優勢：**
+
+1. **更清潔的基礎**：簡單的初始實施創建更清潔的基礎代碼
+2. **易於重構**：當核心功能定義明確時更容易重構
+3. **關注點分離**：從一開始就有更好的關注點分離
+4. **模組化架構**：更模組化的架構自然出現
+
+# 第五項：完整實施範例 {#complete-implementation}
+
+## 第一款：完整最小範例應用 {#complete-minimal-app}
+
+**應用程式實施：**
+
+```r
+# minimal_app.R - 完整最小範例應用程式
+library(shiny)
+library(bs4Dash)
+
+# 階段1：最小可運行應用
+create_minimal_app_v1 <- function() {
+  ui <- fluidPage(
+    titlePanel("最小應用 v1"),
+    sidebarLayout(
+      sidebarPanel(
+        sliderInput("n", "數字", 1, 100, 50)
+      ),
+      mainPanel(
+        plotOutput("plot")
+      )
+    )
+  )
+  
+  server <- function(input, output) {
+    output$plot <- renderPlot({
+      hist(rnorm(input$n))
+    })
+  }
+  
+  shinyApp(ui, server)
+}
+
+# 階段2：添加基本互動
+create_minimal_app_v2 <- function() {
+  ui <- fluidPage(
+    titlePanel("最小應用 v2"),
+    sidebarLayout(
+      sidebarPanel(
+        sliderInput("n", "數字", 1, 100, 50),
+        selectInput("color", "顏色",  # 新增
+          choices = c("藍色" = "blue", "紅色" = "red", "綠色" = "green")
+        ),
+        actionButton("update", "更新")  # 新增
+      ),
+      mainPanel(
+        plotOutput("plot"),
+        verbatimTextOutput("summary")  # 新增
+      )
+    )
+  )
+  
+  server <- function(input, output) {
+    # 使用eventReactive進行控制更新
+    data <- eventReactive(input$update, {
+      rnorm(input$n)
+    }, ignoreNULL = FALSE)
+    
+    output$plot <- renderPlot({
+      hist(data(), col = input$color, main = "直方圖")
+    })
+    
+    output$summary <- renderPrint({
+      summary(data())
+    })
+  }
+  
+  shinyApp(ui, server)
+}
+
+# 階段3：添加狀態管理和模組化
+create_minimal_app_v3 <- function() {
+  # 模組化組件
+  histogramModule <- function(id) {
+    ns <- NS(id)
+    
+    ui <- function() {
+      tagList(
+        plotOutput(ns("plot")),
+        verbatimTextOutput(ns("stats"))
+      )
+    }
+    
+    server <- function(input, output, session, data, color) {
+      output$plot <- renderPlot({
+        req(data())
+        hist(data(), col = color(), main = "模組化直方圖")
+      })
+      
+      output$stats <- renderPrint({
+        req(data())
+        list(
+          mean = mean(data()),
+          sd = sd(data()),
+          n = length(data())
+        )
+      })
+    }
+    
+    list(ui = ui, server = server)
+  }
+  
+  # 主應用
+  ui <- bs4DashPage(
+    title = "最小應用 v3",
+    
+    header = bs4DashNavbar(
+      title = "最小範例應用"
+    ),
+    
+    sidebar = bs4DashSidebar(
+      bs4SidebarMenu(
+        bs4SidebarMenuItem(
+          text = "主頁",
+          tabName = "home",
+          icon = icon("home")
+        ),
+        bs4SidebarMenuItem(
+          text = "設定",
+          tabName = "settings",
+          icon = icon("cog")
+        )
+      )
+    ),
+    
+    body = bs4DashBody(
+      bs4TabItems(
+        bs4TabItem(
+          tabName = "home",
+          fluidRow(
+            column(4,
+              bs4Card(
+                title = "控制",
+                status = "primary",
+                solidHeader = TRUE,
+                sliderInput("n", "樣本數", 10, 500, 100),
+                selectInput("dist", "分布",
+                  choices = c("常態" = "norm", "均勻" = "unif", "指數" = "exp")
+                ),
+                selectInput("color", "顏色",
+                  choices = c("藍色" = "blue", "紅色" = "red", "綠色" = "green")
+                ),
+                actionButton("generate", "生成", class = "btn-success")
+              )
+            ),
+            column(8,
+              bs4Card(
+                title = "視覺化",
+                status = "info",
+                solidHeader = TRUE,
+                histogramModule("hist")$ui()
+              )
+            )
+          )
+        ),
+        
+        bs4TabItem(
+          tabName = "settings",
+          bs4Card(
+            title = "設定",
+            status = "warning",
+            solidHeader = TRUE,
+            h4("應用設定"),
+            checkboxInput("auto_update", "自動更新", FALSE),
+            numericInput("seed", "隨機種子", value = 123),
+            actionButton("apply_settings", "套用", class = "btn-primary")
+          )
+        )
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    # 狀態管理
+    app_state <- reactiveValues(
+      data = NULL,
+      settings = list(
+        auto_update = FALSE,
+        seed = 123
+      )
+    )
+    
+    # 資料生成
+    generate_data <- reactive({
+      input$generate
+      
+      isolate({
+        set.seed(app_state$settings$seed)
+        n <- input$n
+        
+        data <- switch(input$dist,
+          norm = rnorm(n),
+          unif = runif(n),
+          exp = rexp(n)
+        )
+        
+        return(data)
+      })
+    })
+    
+    # 更新資料
+    observeEvent(input$generate, {
+      app_state$data <- generate_data()
+      showNotification("資料已生成", type = "success")
+    })
+    
+    # 自動更新
+    observe({
+      if (app_state$settings$auto_update) {
+        invalidateLater(2000)
+        app_state$data <- generate_data()
+      }
+    })
+    
+    # 套用設定
+    observeEvent(input$apply_settings, {
+      app_state$settings$auto_update <- input$auto_update
+      app_state$settings$seed <- input$seed
+      showNotification("設定已套用", type = "info")
+    })
+    
+    # 直方圖模組
+    hist_module <- histogramModule("hist")
+    callModule(
+      hist_module$server,
+      "hist",
+      data = reactive(app_state$data),
+      color = reactive(input$color)
+    )
+    
+    # 初始資料
+    app_state$data <- generate_data()
+  }
+  
+  shinyApp(ui, server)
+}
+
+# 執行不同版本
+if (interactive()) {
+  # 選擇要執行的版本
+  version <- 3  # 1, 2, 或 3
+  
+  switch(version,
+    "1" = create_minimal_app_v1(),
+    "2" = create_minimal_app_v2(),
+    "3" = create_minimal_app_v3()
+  )
+}
+```
+
+# 第六項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **實施 MP017（模組化原則）**：透過最小模組促進模組化
+2. **實施 MP031（初始化優先）**：確保組件從最簡單狀態正確初始化
+3. **建立於 DEV_P014（性能優化）**：最小實施自然優化性能
+4. **支援 UI_P010（最小化CSS使用）**：鼓勵最小化樣式方法
+5. **準備 DEV_P018（防禦性錯誤處理）**：在添加錯誤處理前建立核心功能
+6. **簡化 DEV_P019（一致性組件狀態）**：從簡單狀態模型開始
+
+---
+
+*基於：開發方法法第二十條*  
+*相關連結：[MP017 模組化原則](../../CH00_fundamental_principles/meta_principles/MP017_modularity.qmd), [MP031 初始化優先原則](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd)*

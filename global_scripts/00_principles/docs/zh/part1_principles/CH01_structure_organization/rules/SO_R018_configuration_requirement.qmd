@@ -1,0 +1,218 @@
+---
+title: "SO_R018: 配置需求規則"
+subtitle: "應用程式必須從配置檔案中載入正確配置的設定。如果配置缺失、無效或不完整，應用程式必須立即失敗並顯示清晰的錯誤訊息，而不是使用預設值繼續執行"
+chapter: "CH01"
+category: "rule"
+number: "SO_R018"
+date-created: "2025-04-10"
+date-modified: "2025-08-18"
+author: "Development Team"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 18
+  title: "配置需求規則"
+implements:
+  - "MP012: 以公司為中心的設計"
+  - "MP016: 模組化"
+related_to:
+  - "P017: 配置驅動的自訂"
+  - "R004: 應用程式 YAML 配置"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十八條：配置需求規則 {#overview}
+
+**結構組織法第十八條（配置需求規則）**
+
+此規則確保應用程式在適當配置的情況下運行，防止因缺少或無效配置而導致的靜默失敗和不正確行為。
+
+:::{.callout-important}
+## 核心需求
+應用程式必須從配置檔案中載入正確配置的設定。如果配置缺失、無效或不完整，應用程式必須立即失敗並顯示清晰的錯誤訊息，而不是使用預設值繼續執行。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+使用預設配置值繼續執行可能導致：
+
+1. **靜默失敗**：難以診斷的問題
+2. **不正確的行為**：看似有效但產生錯誤結果的操作
+3. **安全風險**：可能使用預設權限暴露敏感操作
+4. **資料不一致**：使用不正確的中繼資料或設定創建記錄
+5. **誤導性的使用者體驗**：使用者相信他們正在使用自訂設定
+
+通過強制執行配置的硬性需求，我們確保問題立即可見並在任何工作完成之前得到解決。
+
+# 第二項：實施細節 {#implementation-details}
+
+## 第一款：驗證需求 {#validation-requirements}
+
+所有配置載入代碼必須：
+
+1. **檢查存在性**：驗證配置存在並具有預期結構
+2. **驗證內容**：確保必需的鍵/值存在且格式正確
+3. **快速失敗**：如果驗證失敗，立即終止啟動
+4. **提供清晰訊息**：錯誤訊息必須精確識別缺失/無效的元素
+5. **無靜默預設值**：永不為缺失的必要配置替換預設值
+
+## 第二款：實施模式 {#implementation-pattern}
+
+```r
+# 配置驗證模式範例
+validate_config <- function(config) {
+  # 1. 檢查基本結構
+  if (is.null(config) || !is.list(config)) {
+    stop("配置缺失或格式無效")
+  }
+  
+  # 2. 檢查必需部分
+  required_sections <- c("brand", "company", "parameters")
+  missing_sections <- required_sections[!required_sections %in% names(config)]
+  if (length(missing_sections) > 0) {
+    stop("缺少必需的配置部分：", 
+         paste(missing_sections, collapse = ", "))
+  }
+  
+  # 3. 檢查必要設定
+  if (is.null(config$brand$language)) {
+    stop("必需設定缺失：brand.language")
+  }
+  
+  # 4. 成功 - 配置有效
+  return(TRUE)
+}
+
+# 在應用程式啟動中使用
+tryCatch({
+  config <- load_app_config("app_config.yaml")
+  validate_config(config)
+}, error = function(e) {
+  stop("應用程式無法啟動：", e$message)
+})
+```
+
+## 第三款：漸進式驗證 {#progressive-validation}
+
+配置驗證應在多個層級進行：
+
+1. **基本結構**：初始驗證配置存在且格式正確
+2. **必需部分**：檢查所有必需的頂層部分存在
+3. **必要設定**：驗證關鍵的個別設定
+4. **功能特定設定**：每個功能在使用前驗證其自己的必需設定
+
+## 第四款：錯誤訊息 {#error-messages}
+
+錯誤訊息必須：
+
+1. 具體說明缺失或無效的內容
+2. 包含上下文（檔案或部分）
+3. 建議尋找解決方案的位置
+4. 在日誌/控制台中立即可見
+
+# 第三項：允許的例外 {#permitted-exceptions}
+
+此規則的有限例外允許用於：
+
+1. **UI 自訂**：非關鍵視覺元素可能有備用方案
+2. **開發環境**：明確在 DEV_MODE 中執行時
+3. **文檔目的**：使用範例資料展示功能時
+4. **可選功能**：可以停用的可選功能設定
+
+所有例外必須使用註釋記錄，說明為何備用方案是可接受的。
+
+# 第四項：與其他規則和原則的關係 {#relationship-to-other-rules}
+
+此規則實施：
+- **MP012（以公司為中心的設計）**：通過確保正確載入公司特定設定
+- **MP016（模組化）**：通過啟用獨立組件的模組化配置
+
+相關規則：
+- **P017（配置驅動的自訂）**：通過確保在自訂之前存在配置
+- **R004（應用程式 YAML 配置）**：通過驗證 YAML 配置的必需結構
+
+# 第五項：實施檢查清單 {#implementation-checklist}
+
+- [ ] 在應用程式啟動前添加前置配置驗證
+- [ ] 為所有必需設定實施精確的驗證檢查
+- [ ] 將缺失配置的預設備用方案替換為硬失敗
+- [ ] 添加詳細的錯誤訊息指示缺失的內容
+- [ ] 使用明確註釋記錄任何允許的例外
+
+# 第六項：範例 {#examples}
+
+## 第一款：初始化中的配置驗證 {#config-validation-in-initialization}
+
+```r
+# 在 sc_initialization_app_mode.R 開頭
+
+# 載入配置
+config_file <- file.path(APP_DIR, "app_config.yaml")
+if (!file.exists(config_file)) {
+  stop("找不到必需的配置檔案：", config_file)
+}
+
+config <- tryCatch({
+  yaml::read_yaml(config_file)
+}, error = function(e) {
+  stop("讀取配置檔案時出錯：", e$message)
+})
+
+# 驗證配置
+if (is.null(config) || !is.list(config)) {
+  stop("無效的配置格式")
+}
+
+# 檢查品牌設定
+if (is.null(config$brand) || !is.list(config$brand)) {
+  stop("缺少品牌配置部分")
+}
+
+if (is.null(config$brand$language)) {
+  stop("必需設定缺失：brand.language")
+}
+
+# 檢查行銷管道配置
+if (is.null(config$parameters$platform) || 
+    !is.data.frame(config$parameters$platform) ||
+    !"platform_name_english" %in% colnames(config$parameters$platform)) {
+  stop("缺少或無效的行銷平台配置")
+}
+
+# 只有在所有驗證通過後才繼續
+message("配置驗證成功")
+```
+
+## 第二款：功能特定驗證 {#feature-specific-validation}
+
+```r
+initialize_reporting_module <- function(config) {
+  # 功能特定驗證
+  if (is.null(config$reporting) || !is.list(config$reporting)) {
+    stop("報告模組配置缺失")
+  }
+  
+  required_fields <- c("output_dir", "default_format", "retention_days")
+  missing_fields <- required_fields[!required_fields %in% names(config$reporting)]
+  
+  if (length(missing_fields) > 0) {
+    stop("報告配置缺少必需欄位：", 
+         paste(missing_fields, collapse = ", "))
+  }
+  
+  # 使用已驗證的配置初始化模組
+  reporting_config <- config$reporting
+  # ... 初始化的其餘部分
+}
+```
+
+---
+
+*基於：結構組織法第十八條*  
+*相關連結：[MP012 以公司為中心的設計](../../CH00_fundamental_principles/meta_principles/MP012_company_centered_design.qmd), [R004 應用程式 YAML 配置](../SO_R005_app_yaml_configuration.qmd)*

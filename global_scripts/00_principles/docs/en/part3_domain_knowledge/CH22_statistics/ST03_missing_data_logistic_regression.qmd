@@ -1,0 +1,269 @@
+---
+title: "ST03: Missing Data in Logistic Regression for Customer Churn Prediction"
+subtitle: "Strategies for handling missing predictors, with application to nrec_prob in DNA analysis"
+chapter: "CH21"
+category: "statistics"
+number: "ST03"
+date-created: "2026-03-02"
+date-modified: "2026-03-02"
+author: "Claude"
+type: "domain_knowledge"
+law: "Statistics"
+article-number: "Knowledge Article 3"
+related_to:
+  - "fn_analysis_dna.R"
+  - "fn_D01_02_core.R"
+  - "fn_rsv_classification.R"
+  - "ST01_univariate_poisson_regression"
+context:
+  issue: "GitHub Issue #211 — D_RACING nrec_prob NA analysis"
+  problem: "18,221 customers but only 56 have cai_value; 8/10 product lines cannot train churn model"
+  model: "nrec ~ f_label + cai (logistic regression with cross-validation)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Knowledge Article 3: Missing Data in Logistic Regression {#overview}
+
+## Section 1: Problem Statement {#problem}
+
+### 1.1 Context
+
+The DNA analysis pipeline (`fn_analysis_dna.R`) trains a logistic regression model to predict customer churn probability (`nrec_prob`):
+
+$$
+\text{logit}(P(\text{nrec} = 1)) = \beta_0 + \beta_1 \cdot \text{f\_label} + \beta_2 \cdot \text{cai}
+$$
+
+Where:
+
+- `nrec` (binary): whether the customer did NOT re-purchase (1 = churned)
+- `f_label` (categorical): purchase frequency label (e.g., "1-time", "2-3 times", "4+ times")
+- `cai` (continuous): Customer Activity Index, measuring engagement intensity
+
+### 1.2 The Missing Data Problem
+
+`cai` requires `times != 1 & ni >= ni_threshold` — customers must have multiple purchases AND sufficient interaction count. In D_RACING:
+
+- 18,221 total customers
+- Only **56** have `cai_value` (0.3%)
+- `f_label` is available for nearly all customers
+
+The current implementation (`fn_analysis_dna.R` line 940) requires **at least 10 complete observations** (non-NA on all three variables) to train the model. This causes 8 out of 10 product lines to have **all-NA** `nrec_prob`.
+
+### 1.3 Missing Data Mechanism
+
+This is **MNAR (Missing Not At Random)** — the missingness of `cai` is structurally determined by the customer's behavior:
+
+- One-time buyers **cannot** have CAI by definition
+- CAI existence is a direct function of purchase frequency
+- This is not random missingness that can be "filled in" — the value genuinely does not exist for these customers
+
+This distinction is critical for choosing the right approach.
+
+## Section 2: Approaches {#approaches}
+
+### 2.1 Complete Case Analysis (Current Implementation)
+
+```r
+da_clean <- da[complete.cases(da[, c("nrec", "f_label", "cai")]), ]
+if (nrow(da_clean) < 10) {
+  data_by_customer[, `:=`(nrec_prob = NA, nrec = NA)]
+}
+```
+
+**Properties:**
+
+- Unbiased only under MCAR (Missing Completely At Random)
+- Our data is MNAR → estimates are biased
+- Discards 99.7% of observations
+- Entire product lines get no predictions
+
+**Verdict:** Unacceptable for this use case.
+
+### 2.2 Multiple Imputation (MI)
+
+#### 2.2.1 Procedure
+
+```r
+library(mice)
+
+# Step 1: Create m imputed datasets
+imp <- mice(da[, c("nrec", "f_label", "cai")], m = 20, method = "pmm")
+
+# Step 2: Fit logistic regression on each
+fit <- with(imp, glm(nrec ~ f_label + cai, family = binomial))
+
+# Step 3: Pool using Rubin's Rules
+pooled <- pool(fit)
+summary(pooled)
+```
+
+#### 2.2.2 Rubin's Rules
+
+For m imputed datasets with estimates $\hat{\theta}_1, \ldots, \hat{\theta}_m$ and variances $\hat{V}_1, \ldots, \hat{V}_m$:
+
+- **Combined estimate:** $\bar{\theta} = \frac{1}{m} \sum_{i=1}^{m} \hat{\theta}_i$
+- **Within-imputation variance:** $\bar{V} = \frac{1}{m} \sum_{i=1}^{m} \hat{V}_i$
+- **Between-imputation variance:** $B = \frac{1}{m-1} \sum_{i=1}^{m} (\hat{\theta}_i - \bar{\theta})^2$
+- **Total variance:** $T = \bar{V} + (1 + \frac{1}{m}) B$
+
+The term $(1 + \frac{1}{m}) B$ captures uncertainty **due to missing data**.
+
+#### 2.2.3 MI for Prediction
+
+For prediction (not just inference), MI can also impute missing X values at prediction time:
+
+```r
+# Impute cai for customers who lack it
+new_data_imp <- mice(new_data[, c("f_label", "cai")], m = 20)
+
+# Predict on each imputed dataset
+preds <- sapply(1:20, function(i) {
+  d <- complete(new_data_imp, i)
+  predict(model, newdata = d, type = "response")
+})
+
+# Average predictions across imputations
+nrec_prob <- rowMeans(preds)
+```
+
+#### 2.2.4 Applicability to Our Case
+
+**Problem:** MI assumes MAR (Missing At Random) — that missingness can be explained by observed variables. Our `cai` is MNAR — missingness is determined by the unobserved value itself (low-activity customers don't have CAI because they have low activity).
+
+Imputing `cai` for one-time buyers produces **synthetic values for a quantity that conceptually doesn't exist.** A customer who bought once does not have an "activity index" — imputing one is not filling a gap, it's fabricating a concept.
+
+**MI is statistically elegant but conceptually inappropriate here.**
+
+### 2.3 Model Degradation (Recommended) {#model-degradation}
+
+#### 2.3.1 Concept
+
+Instead of imputing missing predictors, use **different models for different data availability tiers:**
+
+```
+Tier 1: Customer has f_label + cai → full model (nrec ~ f_label + cai)
+Tier 2: Customer has f_label only  → simple model (nrec ~ f_label)
+Tier 3: Insufficient data          → population base rate
+```
+
+#### 2.3.2 Implementation
+
+```r
+# Train full model on complete cases (if available)
+if (n_complete >= 10) {
+  model_full <- glm(nrec ~ f_label + cai, data = da_complete, family = "binomial")
+}
+
+# Always train simple model (f_label available for nearly all customers)
+if (n_f_only >= 10) {
+  model_simple <- glm(nrec ~ f_label, data = da_f_only, family = "binomial")
+}
+
+# Predict using best available model
+pred <- case_when(
+  !is.na(cai) & exists("model_full") ~ predict(model_full, type = "response"),
+  !is.na(f_label) & exists("model_simple") ~ predict(model_simple, type = "response"),
+  TRUE ~ base_rate  # population-level churn rate
+)
+```
+
+#### 2.3.3 Why This Is Appropriate
+
+1. **Respects the data structure**: One-time buyers genuinely lack `cai` — we don't pretend otherwise
+2. **`f_label` is highly informative**: Purchase frequency is the strongest predictor of churn. A model with only `f_label` is still useful
+3. **Graceful degradation**: Every customer gets the best prediction their data supports
+4. **No fabricated values**: Follows MP029 (No Fake Data)
+5. **Computationally simple**: No iterative imputation on 18K+ records
+
+#### 2.3.4 Statistical Justification
+
+When the missingness mechanism is MNAR and the missing variable is structurally absent (not just unobserved), model degradation is preferred over imputation because:
+
+- Imputation models assume the missing values come from the same distribution as observed values — violated when the value **cannot exist**
+- The degraded model's coefficients are estimated on the correct population (all customers with `f_label`), not a biased complete-case subset
+- Prediction accuracy for the degraded model can be validated against held-out data
+
+### 2.4 Missing Indicator Method
+
+```r
+da$cai_missing <- as.integer(is.na(da$cai))
+da$cai_filled  <- ifelse(is.na(da$cai), 0, da$cai)
+model <- glm(nrec ~ f_label + cai_filled + cai_missing, family = "binomial")
+```
+
+**Properties:**
+
+- Uses all observations
+- `cai_missing` captures the structural effect of being a low-activity customer
+- Criticized by Groenwold et al. (2012) for biased coefficient estimates
+- But for **prediction** (not inference), can work well in practice
+- Related to the "pattern submodel" approach (Little, 1992)
+
+### 2.5 Tree-Based Methods (Alternative)
+
+XGBoost and random forests handle missing values natively:
+
+```r
+library(xgboost)
+# XGBoost learns optimal split direction for missing values
+model <- xgboost(data = as.matrix(da[, c("f_label_numeric", "cai")]),
+                 label = da$nrec, nrounds = 100, objective = "binary:logistic")
+```
+
+**Properties:**
+
+- No imputation or model degradation needed
+- Learns from the missingness pattern automatically
+- But changes the model family (no longer logistic regression)
+- May be overkill for a two-predictor model
+
+## Section 3: Comparison Matrix {#comparison}
+
+| Criterion | Complete Case | MI (Rubin) | Model Degradation | Missing Indicator | Tree-Based |
+|-----------|:---:|:---:|:---:|:---:|:---:|
+| Valid under MNAR | No | No | **Yes** | Partially | **Yes** |
+| Uses all observations | No | **Yes** | **Yes** | **Yes** | **Yes** |
+| Conceptually appropriate | No | No (fabricates CAI) | **Yes** | Partially | **Yes** |
+| Computational cost | Low | **High** | Low | Low | Medium |
+| Implementation complexity | Low | High | **Low** | Low | Medium |
+| Correct SEs | Only if MCAR | **Yes** (if MAR) | Yes (per tier) | No | N/A |
+| Follows MP029 | Yes | No (synthetic values) | **Yes** | Borderline | **Yes** |
+
+## Section 4: Recommendation for DNA Pipeline {#recommendation}
+
+### 4.1 Primary: Model Degradation
+
+For the `fn_analysis_dna.R` churn prediction, **Model Degradation** is the recommended approach because:
+
+1. The missing data is **MNAR/structural**, not MAR — imputation assumptions are violated
+2. The primary use is **prediction** (classifying customers into R/S/V tiers), not statistical inference
+3. `f_label` alone provides meaningful discrimination for churn risk
+4. Implementation is minimal — add a fallback model in the existing pipeline
+5. Aligns with MP029 (No Fake Data) — no synthetic `cai` values created
+
+### 4.2 When MI Would Be Appropriate
+
+MI (with Rubin's Rules) would be the correct choice if:
+
+- The missing data were MAR (e.g., `cai` missing due to data collection errors, not structural absence)
+- The goal were statistical inference (reporting coefficients, confidence intervals, p-values)
+- The analysis were for a research paper requiring methodological rigor
+
+### 4.3 Implementation Plan
+
+See GitHub Issue #211 for the specific implementation in `fn_analysis_dna.R`.
+
+## Section 5: References {#references}
+
+- Rubin, D. B. (1987). *Multiple Imputation for Nonresponse in Surveys.* Wiley.
+- van Buuren, S. (2018). *Flexible Imputation of Missing Data.* 2nd ed. CRC Press.
+- Groenwold, R. H. H., et al. (2012). "Missing covariate data in clinical research: when and when not to use the missing-indicator method for analysis." *CMAJ*, 184(11), 1265-1269.
+- Little, R. J. A. (1992). "Regression with missing X's: A review." *JASA*, 87(420), 1227-1237.
+- Sterne, J. A. C., et al. (2009). "Multiple imputation for missing data in epidemiological and clinical research." *BMJ*, 338, b2393.

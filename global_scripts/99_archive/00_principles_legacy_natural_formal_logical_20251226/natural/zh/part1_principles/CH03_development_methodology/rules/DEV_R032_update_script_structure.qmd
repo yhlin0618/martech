@@ -1,0 +1,228 @@
+---
+title: "DEV_R032: 更新腳本結構規則"
+subtitle: "所有更新腳本（sc_ 前綴檔案和實施腳本）必須遵循標準化的四部分結構：初始化、主要、測試和去初始化。這確保了所有系統修改腳本的適當資源管理、錯誤處理、驗證和清理"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R032"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 32
+  title: "更新腳本結構規則"
+related_to:
+  - "MP31: 初始化優先"
+  - "MP33: 去初始化最終"
+  - "MP42: 可運行優先"
+  - "MP58: 資料庫表創建策略"
+  - "MP70: 類型前綴命名"
+  - "P76: 錯誤處理模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三十二條：更新腳本結構規則 {#overview}
+
+**開發方法法第三十二條（更新腳本結構規則）**
+
+所有更新腳本（`sc_` 前綴檔案和實施腳本）必須遵循標準化的四部分結構：初始化、主要、測試和去初始化。這確保了所有系統修改腳本的適當資源管理、錯誤處理、驗證和清理。
+
+:::{.callout-important}
+## 摘要
+所有更新腳本（`sc_` 前綴檔案和實施腳本）必須遵循標準化的四部分結構：INITIALIZE（初始化）、MAIN（主要）、TEST（測試）和 DEINITIALIZE（去初始化）。
+:::
+
+# 第一項：動機 {#motivation}
+
+系統修改腳本需要一致的模式以確保可靠性、可維護性和安全性。四部分結構強制執行：
+
+1. **適當初始化** - 在操作之前設定環境
+2. **結構化執行** - 清楚定義的主處理部分
+3. **驗證** - 明確測試更改是否正確應用
+4. **清理** - 無論執行路徑如何都能可靠地釋放資源
+
+# 第二項：實施 {#implementation}
+
+每個更新腳本必須包含這四個部分，並用註釋清楚標記：
+
+```r
+# 1. INITIALIZE
+# 初始化代碼...
+
+# 2. MAIN
+# 帶錯誤處理的主處理代碼...
+
+# 3. TEST
+# 驗證代碼...
+
+# 4. DEINITIALIZE
+# 清理代碼...
+```
+
+## 第一款：INITIALIZE 部分 {#initialize-section}
+
+INITIALIZE 部分必須：
+
+- 為模式源引適當的初始化腳本
+- 設定資料庫連接
+- 載入所需的套件和依賴項
+- 配置環境變數
+- 初始化錯誤追蹤
+
+範例：
+```r
+# 1. INITIALIZE
+# 為更新模式源引初始化腳本
+source(file.path("update_scripts", "global_scripts", "00_principles", "sc_initialization_update_mode.R"))
+
+# 連接到所需資料庫
+if (!exists("app_data") || !inherits(app_data, "DBIConnection")) {
+  app_data <- dbConnect_from_list("app_data")
+  connection_created <- TRUE
+  message("已連接到 app_data 資料庫")
+} else {
+  connection_created <- FALSE
+}
+
+# 初始化錯誤追蹤
+error_occurred <- FALSE
+```
+
+## 第二款：MAIN 部分 {#main-section}
+
+MAIN 部分必須：
+
+- 包裝在 tryCatch 區塊中
+- 在失敗時設定錯誤追蹤變數
+- 執行核心功能
+- 適當記錄成功/失敗
+
+範例：
+```r
+# 2. MAIN
+tryCatch({
+  # 核心操作代碼
+  dbExecute(app_data, create_table_query)
+  
+  message("主處理成功完成")
+}, error = function(e) {
+  message("MAIN 部分錯誤：", e$message)
+  error_occurred <- TRUE
+})
+```
+
+## 第三款：TEST 部分 {#test-section}
+
+TEST 部分必須：
+
+- 驗證更改是否正確應用
+- 僅在 MAIN 部分成功時運行
+- 為 DEINITIALIZE 部分設定 test_passed 變數
+- 包含適當的錯誤處理
+
+範例：
+```r
+# 3. TEST
+if (!error_occurred) {
+  tryCatch({
+    # 驗證查詢
+    table_exists <- nrow(dbGetQuery(app_data, "SELECT name FROM sqlite_master WHERE type='table' AND name='target_table'")) > 0
+    
+    if (table_exists) {
+      message("驗證成功：表存在")
+      test_passed <- TRUE
+    } else {
+      message("驗證失敗：表不存在")
+      test_passed <- FALSE
+    }
+  }, error = function(e) {
+    message("TEST 部分錯誤：", e$message)
+    test_passed <- FALSE
+  })
+} else {
+  message("由於 MAIN 部分錯誤，跳過測試")
+  test_passed <- FALSE
+}
+```
+
+## 第四款：DEINITIALIZE 部分 {#deinitialize-section}
+
+DEINITIALIZE 部分必須：
+
+- 釋放腳本中獲取的所有資源
+- 關閉腳本打開的資料庫連接
+- 報告最終狀態
+- 返回成功/失敗布林值
+- 始終執行，無論前面部分是否有錯誤
+
+範例：
+```r
+# 4. DEINITIALIZE
+tryCatch({
+  # 關閉此腳本中打開的連接
+  if (exists("connection_created") && connection_created && 
+      exists("app_data") && inherits(app_data, "DBIConnection")) {
+    dbDisconnect(app_data)
+    message("資料庫連接已關閉")
+  }
+  
+  # 報告最終狀態
+  if (exists("test_passed") && test_passed) {
+    message("腳本成功執行，所有測試通過")
+    final_status <- TRUE
+  } else {
+    message("腳本執行不完整或測試失敗")
+    final_status <- FALSE
+  }
+  
+}, error = function(e) {
+  message("DEINITIALIZE 部分錯誤：", e$message)
+  final_status <- FALSE
+}, finally = {
+  # 這將始終執行
+  message("腳本執行完成於 ", Sys.time())
+})
+
+# 返回最終狀態
+if (exists("final_status")) {
+  final_status
+} else {
+  FALSE
+}
+```
+
+# 第三項：強制執行 {#enforcement}
+
+所有新的更新腳本必須遵循此結構。現有腳本在修改時應更新為此結構。
+
+此規則的實施詳細說明在語法文件中：
+`/update_scripts/global_scripts/16_NSQL_Language/extensions/sc_update_script_syntax.md`
+
+# 第四項：原理 {#rationale}
+
+- 一致的腳本結構能夠快速理解
+- 適當的資源管理防止連接洩漏
+- 明確的測試確保更改得到驗證
+- 清晰的錯誤處理提高可靠性
+- 明確定義的返回值使自動執行和監控成為可能
+
+# 第五項：相關原則 {#related-principles}
+
+- MP31：初始化優先 - 在操作之前建立適當的設定
+- MP33：去初始化最終 - 確保適當清理資源
+- MP42：可運行優先 - 腳本應該無需額外步驟即可運行
+- MP58：資料庫表創建策略 - 創建資料庫表的方法
+- MP70：類型前綴命名 - 使用類型前綴的一致命名
+- P76：錯誤處理模式 - 標準化的錯誤處理方法
+
+---
+
+*基於：開發方法法第三十二條*  
+*相關連結：[MP31 初始化優先](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [MP33 去初始化最終](../../CH00_fundamental_principles/meta_principles/MP033_deinitialization_final.qmd)*

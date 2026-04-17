@@ -1,0 +1,899 @@
+---
+title: "MP118: Secure Development Practices"
+subtitle: "Security-first development lifecycle and DevSecOps integration"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP118"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-meta-principle"
+law: "Secure Development and DevSecOps Law"
+article-number: 
+  number: 118
+  title: "Secure Development Practices Framework"
+influences:
+  - "MP037: Principle-Guided Modifications"
+  - "MP043: Runnable First"
+  - "MP110: Security Credentials Management"
+  - "MP114: Input Validation and Sanitization"
+extends:
+  - "MP037: Principle-Guided Modifications"
+criticality: "CRITICAL"
+enforcement: "MANDATORY"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+---
+
+## Core Statement
+
+Security MUST be integrated into every phase of the development lifecycle through secure coding practices, automated security testing, code review requirements, threat modeling, security training, and continuous security validation in a comprehensive DevSecOps framework.
+
+## Secure Development Lifecycle (SDL)
+
+### Security by Design
+
+```r
+# Security requirements definition
+define_security_requirements <- function(project) {
+  requirements <- list(
+    # Authentication requirements
+    authentication = list(
+      multi_factor = TRUE,
+      session_management = "secure",
+      password_policy = "strong"
+    ),
+    
+    # Authorization requirements  
+    authorization = list(
+      rbac = TRUE,
+      least_privilege = TRUE,
+      separation_of_duties = TRUE
+    ),
+    
+    # Data protection
+    data_protection = list(
+      encryption_at_rest = TRUE,
+      encryption_in_transit = TRUE,
+      pii_handling = "compliant"
+    ),
+    
+    # Input validation
+    input_validation = list(
+      server_side = TRUE,
+      whitelist_approach = TRUE,
+      parameterized_queries = TRUE
+    ),
+    
+    # Logging and monitoring
+    security_logging = list(
+      audit_trail = TRUE,
+      security_events = TRUE,
+      anomaly_detection = TRUE
+    )
+  )
+  
+  return(requirements)
+}
+
+# Threat modeling
+perform_threat_modeling <- function(application) {
+  threat_model <- list(
+    # STRIDE analysis
+    stride = perform_stride_analysis(application),
+    
+    # Attack surface analysis
+    attack_surface = analyze_attack_surface(application),
+    
+    # Data flow diagrams
+    data_flows = create_data_flow_diagrams(application),
+    
+    # Trust boundaries
+    trust_boundaries = identify_trust_boundaries(application),
+    
+    # Threat scenarios
+    scenarios = generate_threat_scenarios(application)
+  )
+  
+  # Risk assessment
+  threat_model$risks <- assess_threat_risks(threat_model)
+  
+  # Mitigation strategies
+  threat_model$mitigations <- design_mitigations(threat_model$risks)
+  
+  return(threat_model)
+}
+
+# STRIDE threat analysis
+perform_stride_analysis <- function(application) {
+  stride <- list(
+    # Spoofing
+    spoofing = identify_spoofing_threats(application),
+    
+    # Tampering
+    tampering = identify_tampering_threats(application),
+    
+    # Repudiation
+    repudiation = identify_repudiation_threats(application),
+    
+    # Information Disclosure
+    info_disclosure = identify_disclosure_threats(application),
+    
+    # Denial of Service
+    dos = identify_dos_threats(application),
+    
+    # Elevation of Privilege
+    privilege_elevation = identify_privilege_threats(application)
+  )
+  
+  return(stride)
+}
+```
+
+### Secure Coding Standards
+
+```r
+# R secure coding guidelines
+r_secure_coding_standards <- function() {
+  standards <- list(
+    # Input handling
+    input_handling = list(
+      rule = "Always validate and sanitize input",
+      example = '
+        safe_input <- function(user_input) {
+          # Type checking
+          if (!is.character(user_input)) {
+            stop("Invalid input type")
+          }
+          
+          # Length validation
+          if (nchar(user_input) > 100) {
+            stop("Input too long")
+          }
+          
+          # Sanitization
+          sanitized <- gsub("[^a-zA-Z0-9 ]", "", user_input)
+          
+          return(sanitized)
+        }
+      '
+    ),
+    
+    # SQL query safety
+    sql_safety = list(
+      rule = "Use parameterized queries only",
+      example = '
+        safe_query <- function(con, user_id) {
+          # CORRECT: Parameterized query
+          result <- dbGetQuery(con, 
+            "SELECT * FROM users WHERE id = ?",
+            params = list(user_id)
+          )
+          
+          # NEVER: String concatenation
+          # query <- paste0("SELECT * FROM users WHERE id = ", user_id)
+          
+          return(result)
+        }
+      '
+    ),
+    
+    # Secrets management
+    secrets_management = list(
+      rule = "Never hardcode secrets",
+      example = '
+        get_api_key <- function() {
+          # CORRECT: Environment variable
+          api_key <- Sys.getenv("API_KEY")
+          
+          if (nchar(api_key) == 0) {
+            stop("API_KEY not set")
+          }
+          
+          # NEVER: Hardcoded
+          # api_key <- "sk-1234567890abcdef"
+          
+          return(api_key)
+        }
+      '
+    ),
+    
+    # Error handling
+    error_handling = list(
+      rule = "Never expose sensitive information in errors",
+      example = '
+        safe_error_handling <- function() {
+          tryCatch({
+            # Sensitive operation
+            connect_to_database()
+          }, error = function(e) {
+            # Log detailed error internally
+            log_error(e$message)
+            
+            # Return generic error to user
+            stop("Database connection failed. Please try again.")
+          })
+        }
+      '
+    ),
+    
+    # File operations
+    file_operations = list(
+      rule = "Validate file paths and types",
+      example = '
+        safe_file_read <- function(filename, base_dir = "data") {
+          # Path traversal prevention
+          safe_path <- normalizePath(
+            file.path(base_dir, basename(filename)),
+            mustWork = FALSE
+          )
+          
+          if (!startsWith(safe_path, normalizePath(base_dir))) {
+            stop("Invalid file path")
+          }
+          
+          # File type validation
+          if (!grepl("\\.(csv|txt|json)$", safe_path)) {
+            stop("Invalid file type")
+          }
+          
+          return(readLines(safe_path))
+        }
+      '
+    )
+  )
+  
+  return(standards)
+}
+
+# Code complexity limits
+enforce_complexity_limits <- function(code) {
+  metrics <- list(
+    # Cyclomatic complexity
+    cyclomatic = measure_cyclomatic_complexity(code),
+    max_cyclomatic = 10,
+    
+    # Function length
+    function_length = count_function_lines(code),
+    max_function_lines = 50,
+    
+    # File length
+    file_length = count_file_lines(code),
+    max_file_lines = 500,
+    
+    # Nesting depth
+    nesting_depth = measure_nesting_depth(code),
+    max_nesting = 4
+  )
+  
+  violations <- check_complexity_violations(metrics)
+  
+  if (length(violations) > 0) {
+    stop(paste("Complexity violations:", violations))
+  }
+  
+  return(metrics)
+}
+```
+
+### Security Testing
+
+```r
+# Automated security testing pipeline
+security_testing_pipeline <- function(code_path) {
+  test_results <- list(
+    timestamp = Sys.time(),
+    code_path = code_path,
+    tests = list()
+  )
+  
+  # Static Application Security Testing (SAST)
+  test_results$tests$sast <- run_sast(code_path)
+  
+  # Dynamic Application Security Testing (DAST)
+  test_results$tests$dast <- run_dast(code_path)
+  
+  # Software Composition Analysis (SCA)
+  test_results$tests$sca <- run_sca(code_path)
+  
+  # Interactive Application Security Testing (IAST)
+  test_results$tests$iast <- run_iast(code_path)
+  
+  # Security unit tests
+  test_results$tests$unit <- run_security_unit_tests(code_path)
+  
+  # Penetration testing
+  test_results$tests$pentest <- run_automated_pentest(code_path)
+  
+  # Generate report
+  security_report <- generate_security_report(test_results)
+  
+  # Fail build if critical issues
+  if (has_critical_issues(test_results)) {
+    stop("Critical security issues found. Build failed.")
+  }
+  
+  return(security_report)
+}
+
+# Static Application Security Testing (SAST)
+run_sast <- function(code_path) {
+  sast_results <- list()
+  
+  # R code analysis
+  r_files <- list.files(code_path, pattern = "\\.R$", recursive = TRUE)
+  
+  for (file in r_files) {
+    file_analysis <- list(
+      # Check for hardcoded secrets
+      secrets = scan_for_secrets(file),
+      
+      # SQL injection vulnerabilities
+      sql_injection = scan_for_sql_injection(file),
+      
+      # Command injection
+      command_injection = scan_for_command_injection(file),
+      
+      # Path traversal
+      path_traversal = scan_for_path_traversal(file),
+      
+      # Insecure randomness
+      weak_random = scan_for_weak_randomness(file),
+      
+      # Unsafe deserialization
+      deserialization = scan_for_unsafe_deserialization(file)
+    )
+    
+    sast_results[[file]] <- file_analysis
+  }
+  
+  return(sast_results)
+}
+
+# Security unit tests
+create_security_unit_tests <- function() {
+  tests <- list(
+    # Authentication tests
+    test_authentication = function() {
+      # Test password requirements
+      expect_error(validate_password("weak"))
+      expect_true(validate_password("Str0ng!Pass#2024"))
+      
+      # Test session timeout
+      session <- create_session()
+      Sys.sleep(session_timeout + 1)
+      expect_false(is_session_valid(session))
+      
+      # Test MFA
+      expect_true(requires_mfa("admin"))
+    },
+    
+    # Authorization tests
+    test_authorization = function() {
+      # Test RBAC
+      expect_false(can_access("user", "admin_panel"))
+      expect_true(can_access("admin", "admin_panel"))
+      
+      # Test least privilege
+      expect_error(elevate_privileges("user", "admin"))
+    },
+    
+    # Input validation tests
+    test_input_validation = function() {
+      # Test SQL injection prevention
+      malicious_input <- "'; DROP TABLE users; --"
+      expect_error(process_user_input(malicious_input))
+      
+      # Test XSS prevention
+      xss_input <- "<script>alert('XSS')</script>"
+      sanitized <- sanitize_input(xss_input)
+      expect_false(grepl("<script>", sanitized))
+    },
+    
+    # Encryption tests
+    test_encryption = function() {
+      # Test data encryption
+      sensitive_data <- "SSN: 123-45-6789"
+      encrypted <- encrypt_data(sensitive_data)
+      expect_true(is_encrypted(encrypted))
+      
+      # Test secure communication
+      connection <- create_connection()
+      expect_true(is_using_tls(connection))
+    }
+  )
+  
+  return(tests)
+}
+```
+
+### Code Review Process
+
+```r
+# Security-focused code review
+security_code_review <- function(pull_request) {
+  review <- list(
+    pr_id = pull_request$id,
+    reviewer = get_current_user(),
+    timestamp = Sys.time(),
+    checks = list()
+  )
+  
+  # Automated checks
+  review$checks$automated <- list(
+    # Security scanning
+    security_scan = run_security_scan(pull_request$diff),
+    
+    # Dependency check
+    dependency_check = check_new_dependencies(pull_request$diff),
+    
+    # Secret detection
+    secret_scan = scan_for_secrets_in_diff(pull_request$diff),
+    
+    # Code quality
+    quality_metrics = analyze_code_quality(pull_request$diff)
+  )
+  
+  # Manual review checklist
+  review$checks$manual <- list(
+    # Security checklist
+    auth_proper = "[ ] Authentication implemented correctly",
+    authz_proper = "[ ] Authorization checks in place",
+    input_validated = "[ ] All inputs validated",
+    output_encoded = "[ ] All outputs properly encoded",
+    secrets_secure = "[ ] No hardcoded secrets",
+    error_handling = "[ ] Error handling doesn't leak info",
+    logging_adequate = "[ ] Security events logged",
+    
+    # OWASP Top 10 checklist
+    injection_prevented = "[ ] Injection attacks prevented",
+    broken_auth_fixed = "[ ] Authentication secure",
+    sensitive_data_protected = "[ ] Sensitive data encrypted",
+    xxe_prevented = "[ ] XML external entities disabled",
+    access_control_proper = "[ ] Access control enforced",
+    security_misconfig_fixed = "[ ] Security configured properly",
+    xss_prevented = "[ ] XSS vulnerabilities fixed",
+    deserialization_safe = "[ ] Deserialization is safe",
+    components_updated = "[ ] Components up to date",
+    logging_monitoring = "[ ] Logging and monitoring adequate"
+  )
+  
+  # Required approvals
+  review$approvals <- list(
+    security_team = FALSE,
+    lead_developer = FALSE,
+    code_owner = FALSE
+  )
+  
+  return(review)
+}
+
+# Peer review requirements
+enforce_peer_review <- function(commit) {
+  # Check for review bypass attempts
+  if (is_direct_push_to_main(commit)) {
+    block_commit(commit)
+    alert_security_team("REVIEW_BYPASS_ATTEMPT", commit)
+    stop("Direct push to main branch not allowed")
+  }
+  
+  # Require minimum reviewers
+  reviewers <- get_commit_reviewers(commit)
+  
+  if (length(reviewers) < 2) {
+    stop("Minimum 2 reviewers required")
+  }
+  
+  # Require security team review for sensitive changes
+  if (contains_security_changes(commit)) {
+    if (!has_security_team_review(commit)) {
+      stop("Security team review required")
+    }
+  }
+  
+  return(TRUE)
+}
+```
+
+### DevSecOps Integration
+
+```r
+# CI/CD security pipeline
+configure_security_pipeline <- function() {
+  pipeline <- list(
+    # Pre-commit hooks
+    pre_commit = list(
+      secret_scanning = TRUE,
+      linting = TRUE,
+      unit_tests = TRUE
+    ),
+    
+    # Build stage
+    build = list(
+      sast_scan = TRUE,
+      dependency_check = TRUE,
+      license_check = TRUE
+    ),
+    
+    # Test stage
+    test = list(
+      security_tests = TRUE,
+      integration_tests = TRUE,
+      dast_scan = TRUE
+    ),
+    
+    # Deploy stage
+    deploy = list(
+      environment_scan = TRUE,
+      configuration_check = TRUE,
+      runtime_protection = TRUE
+    ),
+    
+    # Post-deploy
+    post_deploy = list(
+      penetration_test = TRUE,
+      monitoring = TRUE,
+      vulnerability_scan = TRUE
+    )
+  )
+  
+  return(pipeline)
+}
+
+# GitHub Actions security workflow
+create_github_security_workflow <- function() {
+  workflow <- '
+name: Security Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run TruffleHog (Secret Scanning)
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+    
+    - name: Run Semgrep (SAST)
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: auto
+    
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v3
+      
+    - name: Run Security Tests
+      run: |
+        Rscript tests/security_tests.R
+    
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    
+    - name: Upload Security Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: security-report.html
+  '
+  
+  return(workflow)
+}
+
+# Container security
+secure_container_build <- function(dockerfile_path) {
+  # Scan base image
+  scan_base_image(dockerfile_path)
+  
+  # Apply security best practices
+  secured_dockerfile <- apply_dockerfile_security(dockerfile_path)
+  
+  # Build with security flags
+  build_command <- sprintf(
+    "docker build --no-cache --pull --security-opt=no-new-privileges:true -f %s .",
+    secured_dockerfile
+  )
+  
+  system(build_command)
+  
+  # Scan built image
+  scan_built_image()
+  
+  # Sign image
+  sign_container_image()
+}
+```
+
+### Security Training
+
+```r
+# Developer security training program
+security_training_program <- function() {
+  training <- list(
+    # Onboarding training
+    onboarding = list(
+      secure_coding_basics = TRUE,
+      owasp_top_10 = TRUE,
+      company_security_policies = TRUE,
+      tool_training = TRUE
+    ),
+    
+    # Ongoing training
+    ongoing = list(
+      frequency = "quarterly",
+      topics = c(
+        "Latest vulnerabilities",
+        "New attack techniques",
+        "Security tool updates",
+        "Incident case studies"
+      )
+    ),
+    
+    # Role-specific training
+    role_specific = list(
+      developers = c("Secure coding", "SAST tools", "Code review"),
+      architects = c("Threat modeling", "Security patterns", "Risk assessment"),
+      devops = c("Infrastructure security", "Container security", "CI/CD security"),
+      managers = c("Security governance", "Risk management", "Compliance")
+    ),
+    
+    # Certification paths
+    certifications = list(
+      recommended = c("CSSLP", "CEH", "Security+"),
+      advanced = c("OSCP", "CISSP", "CCSP")
+    )
+  )
+  
+  return(training)
+}
+
+# Security champions program
+establish_security_champions <- function() {
+  champions_program <- list(
+    # Selection criteria
+    selection = list(
+      interest_in_security = TRUE,
+      technical_expertise = TRUE,
+      communication_skills = TRUE,
+      team_influence = TRUE
+    ),
+    
+    # Responsibilities
+    responsibilities = list(
+      "Security point of contact for team",
+      "Conduct security reviews",
+      "Promote security best practices",
+      "Participate in threat modeling",
+      "Report security metrics"
+    ),
+    
+    # Training and support
+    support = list(
+      dedicated_training = TRUE,
+      security_team_mentorship = TRUE,
+      tools_access = TRUE,
+      time_allocation = "20%"
+    ),
+    
+    # Recognition
+    recognition = list(
+      certification_support = TRUE,
+      conference_attendance = TRUE,
+      internal_recognition = TRUE,
+      career_advancement = TRUE
+    )
+  )
+  
+  return(champions_program)
+}
+```
+
+### Incident Response in Development
+
+```r
+# Development incident response
+handle_security_incident_in_dev <- function(incident) {
+  response <- list(
+    incident_id = generate_uuid(),
+    detected_at = Sys.time(),
+    type = incident$type
+  )
+  
+  # Immediate actions
+  if (incident$type == "exposed_secret") {
+    response$actions <- list(
+      rotate = rotate_exposed_secret(incident$secret),
+      scan = scan_for_secret_usage(incident$secret),
+      audit = audit_secret_access_logs(incident$secret),
+      notify = notify_security_team(incident)
+    )
+  } else if (incident$type == "vulnerable_dependency") {
+    response$actions <- list(
+      assess = assess_vulnerability_impact(incident$dependency),
+      patch = apply_security_patch(incident$dependency),
+      test = run_regression_tests(),
+      deploy = emergency_deployment()
+    )
+  } else if (incident$type == "malicious_code") {
+    response$actions <- list(
+      quarantine = quarantine_affected_code(incident$location),
+      analyze = analyze_malicious_code(incident$code),
+      clean = remove_malicious_code(incident$location),
+      investigate = investigate_code_origin(incident)
+    )
+  }
+  
+  # Post-incident
+  response$post_incident <- list(
+    root_cause = perform_root_cause_analysis(incident),
+    lessons_learned = document_lessons_learned(incident),
+    process_improvement = update_security_processes(incident)
+  )
+  
+  return(response)
+}
+```
+
+### Security Metrics
+
+```r
+# Development security metrics
+track_security_metrics <- function() {
+  metrics <- list(
+    # Vulnerability metrics
+    vulnerabilities = list(
+      found_in_development = count_dev_vulnerabilities(),
+      found_in_production = count_prod_vulnerabilities(),
+      mean_time_to_fix = calculate_mttr_vulnerabilities(),
+      escape_rate = calculate_vulnerability_escape_rate()
+    ),
+    
+    # Code quality metrics
+    code_quality = list(
+      security_defect_density = calculate_security_defect_density(),
+      code_coverage = measure_security_test_coverage(),
+      cyclomatic_complexity = measure_average_complexity()
+    ),
+    
+    # Process metrics
+    process = list(
+      peer_review_rate = calculate_review_rate(),
+      security_training_completion = calculate_training_completion(),
+      security_champion_coverage = calculate_champion_coverage()
+    ),
+    
+    # Tool effectiveness
+    tools = list(
+      sast_effectiveness = measure_sast_effectiveness(),
+      false_positive_rate = calculate_false_positive_rate(),
+      automation_coverage = calculate_automation_coverage()
+    )
+  )
+  
+  return(metrics)
+}
+
+# Security scorecard
+generate_security_scorecard <- function() {
+  scorecard <- list(
+    overall_score = calculate_overall_security_score(),
+    
+    categories = list(
+      secure_design = score_secure_design(),
+      secure_coding = score_secure_coding(),
+      security_testing = score_security_testing(),
+      dependency_management = score_dependency_management(),
+      incident_response = score_incident_response()
+    ),
+    
+    trends = analyze_security_trends(),
+    
+    recommendations = generate_improvement_recommendations()
+  )
+  
+  return(scorecard)
+}
+```
+
+## Infrastructure as Code Security
+
+```r
+# Secure IaC practices
+secure_infrastructure_code <- function(iac_path) {
+  # Scan Terraform files
+  if (file.exists(file.path(iac_path, "main.tf"))) {
+    scan_terraform_security(iac_path)
+  }
+  
+  # Scan CloudFormation
+  if (file.exists(file.path(iac_path, "template.yaml"))) {
+    scan_cloudformation_security(iac_path)
+  }
+  
+  # Scan Kubernetes manifests
+  if (file.exists(file.path(iac_path, "k8s"))) {
+    scan_kubernetes_security(iac_path)
+  }
+  
+  # Policy as Code
+  enforce_policy_as_code(iac_path)
+}
+
+# Policy as Code enforcement
+enforce_policy_as_code <- function(iac_path) {
+  policies <- list(
+    # Encryption requirements
+    encryption = "All storage must be encrypted",
+    
+    # Network security
+    network = "No public IP addresses on databases",
+    
+    # Access control
+    access = "IAM roles must follow least privilege",
+    
+    # Compliance
+    compliance = "Resources must be tagged for compliance"
+  )
+  
+  # Validate against policies
+  for (policy in names(policies)) {
+    if (!validate_policy(iac_path, policy)) {
+      stop(paste("Policy violation:", policies[[policy]]))
+    }
+  }
+}
+```
+
+## Related Rules and Principles
+
+### Security Implementation Rules
+- **R280**: Secure coding standards
+- **R281**: Code review requirements
+- **R282**: Security testing procedures
+- **R283**: DevSecOps pipeline configuration
+- **R284**: Security training requirements
+
+### Integration with Other MPs
+- **MP037**: Principle-Guided Modifications
+- **MP110**: Security Credentials Management
+- **MP114**: Input Validation and Sanitization
+- **MP116**: Dependency and Vulnerability Management
+
+## Compliance Requirements
+
+- **ISO 27034**: Application security
+- **NIST SSDF**: Secure Software Development Framework
+- **OWASP SAMM**: Software Assurance Maturity Model
+- **PCI DSS**: Requirement 6 - Secure development
+
+## Validation Checklist
+
+- [ ] Security requirements defined
+- [ ] Threat modeling completed
+- [ ] Secure coding standards followed
+- [ ] Security tests automated
+- [ ] Code reviews mandatory
+- [ ] DevSecOps pipeline configured
+- [ ] Security training completed
+- [ ] Security champions active
+- [ ] Metrics tracked
+- [ ] Incident response ready
+
+---
+
+**Security is everyone's responsibility**: Build security into every line of code, every process, and every decision. Security is not a feature—it's a foundation.

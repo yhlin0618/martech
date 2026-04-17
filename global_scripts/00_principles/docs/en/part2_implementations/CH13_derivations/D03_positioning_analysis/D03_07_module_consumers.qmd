@@ -1,0 +1,236 @@
+---
+
+title: "D03_07: Application Module Consumers"
+subtitle: "UI modules that consume D03 derivation outputs"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_07"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_05_position_table"
+  - "D03_06_execution"
+implements:
+  - "DM_R049": "Derivation Consumer Documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_07: Application Module Consumers {#overview}
+
+This task documents which application UI modules consume the outputs from the D03 Positioning Analysis derivation. This completes the data flow traceability from ETL -> DRV -> APP.
+
+## Output-to-Module Mapping {#mapping}
+
+The following table maps each D03 output table to its consuming UI modules:
+
+| D03 Output Table | Consuming Module | Component Location |
+|------------------|------------------|-------------------|
+| `df_position` | positionTable, positionKFE, positionDNAPlotly | `macro/position*/` |
+| `df_position` | positionMSPlotly, positionStrategy | `macro/position*/` |
+| `df_position` | reportPositioning | `report/reportPositioning/` |
+
+## Primary Consuming Modules {#modules}
+
+### positionTable
+
+**Location**: `global_scripts/10_rshinyapp_components/macro/positionTable/`
+
+**Purpose**: Interactive data table showing competitive positioning data.
+
+**Tables Consumed**:
+- `df_position` - Full position data with property ratings
+
+**Data Access Pattern**:
+```nsql
+# Pattern: Load position data filtered by platform and product line
+QUERY df_position
+  FILTER BY: platform_id, product_line_id
+  COLLECT TO: position_data
+```
+
+### positionKFE (Key Factor Evaluation)
+
+**Location**: `global_scripts/10_rshinyapp_components/macro/positionKFE/`
+
+**Purpose**: Key factor evaluation visualization showing property importance.
+
+**Tables Consumed**:
+- `df_position` - Property ratings for factor analysis
+
+### positionDNAPlotly
+
+**Location**: `global_scripts/10_rshinyapp_components/macro/positionDNAPlotly/`
+
+**Purpose**: DNA-style radar chart visualization of product positioning.
+
+**Tables Consumed**:
+- `df_position` - Property ratings for radar chart
+
+### positionMSPlotly (Market Share)
+
+**Location**: `global_scripts/10_rshinyapp_components/macro/positionMSPlotly/`
+
+**Purpose**: Market share visualization based on positioning data.
+
+**Tables Consumed**:
+- `df_position` - Position scores and sales data
+
+### positionStrategy
+
+**Location**: `global_scripts/10_rshinyapp_components/macro/positionStrategy/`
+
+**Purpose**: Strategic positioning map (e.g., 2x2 matrix visualization).
+
+**Tables Consumed**:
+- `df_position` - Position scores for strategic mapping
+
+### reportPositioning
+
+**Location**: `global_scripts/10_rshinyapp_components/report/reportPositioning/`
+
+**Purpose**: Report generation for positioning analysis exports.
+
+**Tables Consumed**:
+- `df_position` - Complete position data for report generation
+
+## Data Flow Diagram {#data-flow}
+
+```
+                    D03 Derivation Pipeline
+                           │
+                           ▼
+              ┌─────────────────────────┐
+              │     df_position         │
+              │   (Unified Position     │
+              │        Table)           │
+              └───────────┬─────────────┘
+                          │
+                   ┌──────┴──────┐
+                   │ app_data    │
+                   │ (DuckDB)    │
+                   └──────┬──────┘
+                          │
+    ┌─────────┬───────────┼───────────┬─────────┐
+    │         │           │           │         │
+    ▼         ▼           ▼           ▼         ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+│position│ │position│ │position│ │position│ │position│
+│Table   │ │KFE     │ │DNA     │ │MS      │ │Strategy│
+└────────┘ └────────┘ └────────┘ └────────┘ └────────┘
+    │         │           │           │         │
+    └─────────┴───────────┼───────────┴─────────┘
+                          │
+                          ▼
+                   ┌─────────────┐
+                   │   report    │
+                   │ Positioning │
+                   └─────────────┘
+```
+
+## Module Data Access Patterns {#usage}
+
+### Position Data Access (NSQL)
+
+```nsql
+# Pattern: Load position data filtered by platform and product line
+QUERY df_position
+  FILTER BY: platform_id, product_line_id
+  COLUMNS: asin, brand, product_name, prop_*_avg, position_score, sales_rank
+  ORDER BY: position_score DESC
+  COLLECT TO: position_data
+```
+
+### Property Comparison (NSQL)
+
+```nsql
+# Pattern: Compare products on specific properties
+QUERY df_position
+  FILTER BY: platform_id, product_line_id
+  SELECT: asin, brand, prop_durability_avg, prop_value_avg, prop_quality_avg
+  ORDER BY: prop_durability_avg DESC
+  COLLECT TO: property_comparison
+```
+
+### Strategic Positioning (NSQL)
+
+```nsql
+# Pattern: Load data for strategy matrix
+QUERY df_position
+  FILTER BY: platform_id, product_line_id
+  SELECT: asin, brand, position_score, avg_rating, sales_rank
+  CALCULATE:
+    x_axis: position_score
+    y_axis: sales_rank_percentile
+  COLLECT TO: strategy_data
+```
+
+## Impact Analysis {#impact}
+
+When modifying D03 outputs, the following modules will be affected:
+
+| Change Type | Affected Modules | Required Actions |
+|-------------|-----------------|------------------|
+| Column rename in `df_position` | ALL position modules | Update column references |
+| New property columns | positionTable, positionKFE | Optional: display new properties |
+| Position score calculation change | positionStrategy, positionMS | Review strategic mapping |
+| Schema change | ALL | Critical: requires testing |
+| Table removal | ALL | Critical: requires major refactoring |
+
+## Visualization Component Integration
+
+### Position Table Component
+
+Displays full position data in an interactive DT::datatable:
+
+```nsql
+COMPONENT positionTable:
+  DATA: df_position
+  COLUMNS: asin, brand, product_name, prop_*_avg, position_score
+  FEATURES: sorting, filtering, pagination, export
+```
+
+### Radar Chart (positionDNAPlotly)
+
+Displays property ratings as a radar/spider chart:
+
+```nsql
+COMPONENT positionDNAPlotly:
+  DATA: df_position
+  AXES: prop_*_avg columns
+  TRACES: one trace per product
+  INTERACTIVITY: hover, selection
+```
+
+### Strategy Matrix (positionStrategy)
+
+Displays 2x2 strategic positioning:
+
+```nsql
+COMPONENT positionStrategy:
+  DATA: df_position
+  X_AXIS: position_score
+  Y_AXIS: sales_performance
+  QUADRANTS: stars, question_marks, cash_cows, dogs
+```
+
+## Principle Compliance {#compliance}
+
+This documentation implements **DM_R049 (Derivation Consumer Documentation)** by:
+
+1. **Output-Consumer Mapping**: Every output table is mapped to its consumers
+2. **Module Location**: Full paths provided in `10_rshinyapp_components/`
+3. **Data Flow Visualization**: ASCII diagram showing complete flow
+4. **Impact Analysis**: Change impact documented for maintenance
+
+## Related Documentation
+
+- [D03_06_execution.qmd](D03_06_execution.qmd) - Master execution flow
+- [D03_05_position_table.qmd](D03_05_position_table.qmd) - Position table creation
+- [DM_R049](../../../part1_principles/CH02_data_management/rules/DM_R049_derivation_consumer_documentation.qmd) - Consumer documentation requirement

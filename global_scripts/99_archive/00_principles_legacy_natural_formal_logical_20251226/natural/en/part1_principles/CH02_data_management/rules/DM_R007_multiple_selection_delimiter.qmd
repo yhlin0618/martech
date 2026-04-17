@@ -1,0 +1,176 @@
+---
+title: "DM_R007: Multiple Selection Delimiter Rule"
+subtitle: "When representing multiple selections within a single cell or field, always use semicolons (;) as the delimiter"
+chapter: "CH02"
+category: "rule"
+number: "DM_R007"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 7
+  title: "Multiple Selection Delimiter Rules"
+related_to:
+  - "MP008: Terminology Axiomatization"
+  - "MP010: Information Flow Transparency"
+  - "DM_P001: Data Integrity"
+  - "DM_R001: Data Frame Creation Strategy"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 7: Multiple Selection Delimiter Rules {#overview}
+
+**Data Management Law Article 7 (Multiple Selection Delimiter Rules)**
+
+This rule establishes the standard of using semicolons as delimiters when representing multiple selections within a single field.
+
+:::{.callout-important}
+## Core Rule
+When representing multiple selections within a single cell or field, always use semicolons (`;`) as the delimiter.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Benefits of Using Semicolons {#benefits}
+
+Using semicolons as separators for multiple selections:
+
+1. **Avoids CSV Conflicts**: Commas are reserved as field separators in CSV files, making semicolons safer for internal field delimitation
+2. **Aligns with Excel Standards**: Semicolons are Excel's default list separator in many regional settings
+3. **Ensures Data Integrity**: Reduces ambiguity during data export, import, and processing operations
+4. **Facilitates Parsing**: Makes automated data extraction more reliable and consistent
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Format Specification {#format-specification}
+
+When storing multiple values in a single field:
+
+```
+value1;value2;value3
+```
+
+- **MUST** use semicolons without surrounding spaces
+- **MUST NOT** use commas, vertical bars, or other characters as delimiters
+- **SHOULD** remove any semicolons within individual values before concatenation
+- **SHOULD** avoid empty values between delimiters (i.e., `value1;;value3`)
+
+## Subsection 2: Handling in R Code {#r-handling}
+
+```r
+# Splitting a multi-selection field
+selections <- unlist(strsplit(df$multiple_selection_field, ";"))
+
+# Combining values into a multi-selection field
+combined <- paste(selected_values, collapse = ";")
+```
+
+## Subsection 3: Database Storage {#database-storage}
+
+- **Preferred**: Store in normalized tables with proper relationships
+- **Alternative**: Store as semicolon-delimited strings for simple use cases
+- **Never**: Use comma-delimited strings in database fields that may be exported to CSV
+
+# Section 3: File Format Compatibility {#file-format-compatibility}
+
+| Format | Compatibility | Notes |
+|--------|---------------|-------|
+| CSV    | High          | Avoids conflict with comma field separators |
+| Excel  | High          | Matches Excel's default list separator |
+| JSON   | Medium        | Arrays preferred for JSON; use semicolons when stored as strings |
+| XML    | Medium        | Dedicated elements preferred; use semicolons when stored as attributes |
+| SQL    | Medium        | Normalized tables preferred; use semicolons for simple cases |
+
+# Section 4: Examples {#examples}
+
+## Subsection 1: Correct Usage {#correct-usage}
+
+```
+# Product categories
+Electronics;Computers;Accessories
+
+# Selected regions
+North America;Europe;Asia
+
+# Selected filters
+price_range:100-500;color:blue;size:medium
+```
+
+## Subsection 2: Incorrect Usage {#incorrect-usage}
+
+```
+# Using commas (AVOID)
+Electronics,Computers,Accessories
+
+# Using vertical bars (AVOID)
+North America|Europe|Asia
+
+# Using other delimiters (AVOID)
+price_range:100-500/color:blue/size:medium
+```
+
+# Section 5: Integration with Data Processing {#data-processing-integration}
+
+## Subsection 1: Processing Operations {#processing-operations}
+
+When processing multi-selection data:
+
+1. **Extraction**: Split the string using the semicolon delimiter
+   ```r
+   categories <- strsplit(product$categories, ";")[[1]]
+   ```
+
+2. **Filtering**: Check for the presence of a specific value
+   ```r
+   has_electronics <- grepl("Electronics", product$categories)
+   # More precise matching to avoid partial matches
+   has_electronics <- grepl("(^|;)Electronics(;|$)", product$categories)
+   ```
+
+3. **Aggregation**: Count selections
+   ```r
+   selection_count <- lengths(strsplit(df$selections, ";"))
+   ```
+
+4. **Visualization**: Transform to factors for visualization
+   ```r
+   all_selections <- unlist(strsplit(df$selections, ";"))
+   selection_counts <- table(all_selections)
+   ```
+
+# Section 6: Exception Handling {#exception-handling}
+
+## Subsection 1: Handling Legacy Data {#legacy-data}
+
+In situations where legacy data uses different delimiters:
+
+1. **Convert** to semicolon format during data processing
+   ```r
+   # Convert comma-separated to semicolon-separated
+   standardized <- gsub(",", ";", legacy_data$multiple_values)
+   ```
+
+2. **Document** any exceptions where semicolons cannot be used
+3. **Implement** validation checks to enforce delimiter consistency
+
+# Section 7: Benefits Summary {#benefits-summary}
+
+By adhering to this rule:
+
+1. **Data processing pipelines will be more robust**
+2. **The risk of data corruption during import/export operations will be significantly reduced**
+3. **Compatibility across different systems and formats will be improved**
+4. **Automated processing will be more reliable**
+
+---
+
+*Based on: Data Management Law Article 7*  
+*Related to: [MP008 Terminology Axiomatization](../../CH00_fundamental_principles/meta_principles/MP008_terminology_axiomatization.qmd), [DM_P001 Data Integrity](../principles/DM_P001_data_integrity.qmd)*

@@ -1,0 +1,260 @@
+﻿# D03 定位分析 - 實作規則
+# ================================================
+# 此檔定義「文件」與「程式」之間的約束合約。
+# 每個 DRV 步驟必須僅實作其文件中定義的責任。
+#
+# 遵循 MP005 的「案例法」概念：以伴隨規格文件維持一致性
+# 建立日期：2026-01-01
+
+derivation_id: D03
+title: "D03: 定位分析"
+description: "使用 AI 評論分析與產品檔案進行競品定位分析"
+
+# 步驟定義
+# ================
+# 類型：
+#   - conceptual：描述要做什麼（WHAT）
+#   - concrete：定義實際函式呼叫、輸入輸出
+#   - orchestration：只協調子步驟，不進行直接計算
+#   - documentation：僅文件用途，無實作腳本
+
+derivation_steps:
+  d03_00:
+    title: "消費 ETL 輸出"
+    type: "conceptual"
+    layer: "2TR→3PR"
+    responsibility: "驗證並使用 ETL03-07 的輸出"
+
+    # ETL 相依
+    consumes_from:
+      - "ETL03": "產品資料管線"
+      - "ETL04": "競品分析"
+      - "ETL05": "評論屬性管線"
+      - "ETL06": "評論準備"
+      - "ETL07": "競品銷售資料"
+
+    # 驗證所需資料表
+    required_tables:
+      - "df_product_profile"
+      - "df_comment_property"
+      - "df_review_data"
+
+  d03_01:
+    title: "評論屬性評分"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "抽樣最新評論並轉為 long format，供 AI 評分"
+
+    # 實作約束
+    must_perform:
+      - "每個 product_id 抽樣最新 N 筆評論"
+      - "以 property_columns 進行 wide_to_long 轉換"
+
+    # 輸入/輸出
+    input_table: "df_review_data___transformed"
+    input_database: "transformed_data.duckdb"
+    output_table: "df_sampled_long___processed"
+    output_database: "processed_data.duckdb"
+
+    # 抽樣規格
+    sampling:
+      method: "每個 product_id 取最新 N 筆"
+      default_n: 50
+
+  d03_02:
+    title: "AI 評分（Rate Reviews）"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "以 OpenAI API 對每組（review, property）執行評分"
+
+    # 實作約束
+    must_call: "OpenAI API"
+    api_pattern: "每組（review, property）回傳評分"
+
+    # 輸入/輸出
+    input_table: "df_sampled_long___processed"
+    input_database: "processed_data.duckdb"
+    output_table: "df_rating_results___processed"
+    output_database: "processed_data.duckdb"
+
+    # 輸出欄位
+    produces:
+      - property_name      # 被評估的屬性
+      - rating             # AI 產生的分數（通常為 1-5 或情緒標籤）
+      - confidence         # 選填的信心分數
+      - review_id          # 對應原始評論 ID
+
+    # 關鍵：金鑰處理
+    security:
+      api_key_source: "Sys.getenv('OPENAI_API_KEY')"
+      never_log_key: true
+
+  d03_03:
+    title: "處理評論結果"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "將 AI 評分從 long 轉為 wide 格式"
+
+    # 實作約束
+    must_perform: "以 property_columns 進行 long_to_wide"
+
+    # 輸入/輸出
+    input_table: "df_rating_results___processed"
+    input_database: "processed_data.duckdb"
+    output_table: "df_comment_property_ratingonly_{product_line_id}___cleansed"
+    output_database: "cleansed_data.duckdb"
+
+    # Pivot 規格
+    pivot:
+      id_column: "review_id"
+      names_from: "property_name"
+      values_from: "rating"
+
+  d03_04:
+    title: "依 ASIN 聚合"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "將評論評分彙總到產品層級（ASIN）"
+
+    # 實作約束
+    must_perform:
+      - "依 product_id（ASIN）彙總"
+      - "可選：缺值以 mice 插補"
+
+    # 輸入/輸出
+    input_table: "df_comment_property_ratingonly_{product_line_id}___cleansed"
+    input_database: "cleansed_data.duckdb"
+    output_table: "df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed"
+    output_database: "cleansed_data.duckdb"
+
+    # 聚合規格
+    group_by: ["product_id"]  # ASIN
+    aggregations:
+      - "每個屬性平均分數"
+      - "評論數：count(*) as review_count"
+
+    # 可選插補
+    imputation:
+      method: "mice"
+      when: "missing_rate > threshold"
+    failure_policy:
+      missing_input: "若任一 product_line_id 的來源表缺失，步驟必須失敗並 stop()"
+      missing_output: "若任一預期 product_line_id 的輸出表缺失，步驟必須失敗並 stop()"
+
+  d03_05:
+    title: "建立 Position Table"
+    type: "concrete"
+    layer: "5NM"
+    responsibility: "整併所有資料來源並建立最終 Position Table"
+
+    # 實作約束
+    must_perform:
+      - "彙總 cleansed_data 全部產品線資料"
+      - "與 competitor_sales 合併"
+      - "與 product_profiles 合併"
+
+    # 輸入/輸出
+    input_tables:
+      - "df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed"
+      - "df_competitor_sales"
+      - "df_product_profile"
+    input_databases:
+      - "cleansed_data.duckdb"
+      - "transformed_data.duckdb"
+    output_table: "df_position"
+    output_database: "app_data.duckdb"
+
+    # 最終表：5NM 不保留 suffix
+    note: "輸出表不帶 ___suffix（依 MP144）"
+    failure_policy:
+      missing_input: "任一每線位流程輸入或輸出缺值時，合併/最終化必須停止並失敗"
+      missing_output: "未建立 df_position 或 finalization 失敗時，步驟必須停止並失敗"
+      etl07_empty_folder_policy:
+        behavior: "ETL07（競品銷售）允許無法處理資料夾並繼續，視為非致命警告"
+        summary_fields:
+          checked_folders: "掃描到的資料夾數"
+          imported_files: "成功寫入檔案數"
+          imported_rows: "成功寫入列數"
+          skipped_folders_no_supported_files: "沒有可讀 csv/xlsx/xls 檔案的資料夾"
+          skipped_folders_no_rows: "有可讀檔案但無可插入列的資料夾"
+          skipped_folders_invalid_reference: "產品線命名不合法或無對應關係的資料夾"
+          output_mode: "以 summary log 與 execution metadata ledger（若有）作為輸出"
+        hard_fail_condition: "掃描完全部資料夾後總寫入列數為 0 時，步驟必須失敗"
+        telemetry_signature:
+          output_ledger: "app_data.drv_run_events（或同等表）"
+          run_event_fields:
+            - "platform_id"
+            - "phase"
+            - "sequence"
+            - "status"
+            - "rows_input"
+            - "rows_output"
+            - "rows_written_delta"
+            - "skipped_folders_no_supported_files"
+            - "skipped_folders_no_rows"
+            - "skipped_folders_invalid_reference"
+
+  d03_06:
+    title: "Execution Orchestration"
+    type: "documentation"
+    layer: "N/A"
+    responsibility: "文件化 master execution flow"
+    note: "僅文件用途，無專屬實作腳本"
+
+  d03_07:
+    title: "模組使用方"
+    type: "documentation"
+    layer: "N/A"
+    responsibility: "文件化哪些 UI 模組會使用 D03 輸出"
+    note: "無實作腳本 - 文件-only"
+
+# 監管規則
+# =========
+
+enforcement:
+  rule: "每個 D_XX 腳本必須僅實作文件中宣告的責任"
+  principle_reference: "DRY（不要重複自己）"
+
+  violations:
+    - pattern: "OpenAI API 呼叫在 D03_02 之外出現"
+      severity: "critical"
+      action: "所有 AI 評分必須限定在 D03_02"
+
+    - pattern: "wide_to_long 轉換不在 D03_01"
+      severity: "warning"
+      action: "此轉換應歸屬 D03_01"
+
+    - pattern: "long_to_wide 轉換不在 D03_03"
+      severity: "warning"
+      action: "此 pivot 應歸屬 D03_03"
+
+    - pattern: "D03 中混入資料清洗邏輯"
+      severity: "critical"
+      action: "資料清洗邏輯應放在 ETL03-07，不應放在 D03"
+
+    - pattern: "硬編碼 API 金鑰"
+      severity: "critical"
+      action: "必須使用 Sys.getenv('OPENAI_API_KEY')"
+
+    - pattern: "D03（含 D03_10）缺少必要表仍回傳成功"
+      severity: "critical"
+      action: "D03_04/D03_05/D03_10 任一必需輸入輸出缺失必須透過 stop() 明確 fail"
+
+    - pattern: "ETL07 略過/缺料資料夾未記錄 telemetry"
+      severity: "warning"
+      action: "在回傳 summary 前，需記錄 MP150 telemetry（來源路徑、原因、列數）"
+
+# 平台腳本對照
+# =================
+
+platform_implementations:
+  amz:
+    d03_01: "update_scripts/DRV/amz/amz_D03_08.R"
+    d03_02: "update_scripts/DRV/amz/amz_D03_06.R"
+    d03_03: "update_scripts/DRV/amz/amz_D03_09.R"
+    d03_04: "update_scripts/DRV/amz/amz_D03_07.R"
+    d03_05_prep: "update_scripts/DRV/amz/amz_D03_10.R"
+    d03_05_final: "update_scripts/DRV/amz/amz_D03_11.R"
+
+  cbz:
+    note: "視平台需求補齊"

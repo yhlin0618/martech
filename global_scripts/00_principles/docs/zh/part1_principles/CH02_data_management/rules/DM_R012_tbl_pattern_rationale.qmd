@@ -1,0 +1,145 @@
+---
+title: "DM_R012: tbl() 模式通用原理"
+subtitle: "解釋為什麼 R100（通過 tbl() 的資料庫存取規則）和 R101（統一 tbl 型資料存取模式）原則主張對所有資料類型使用 tbl 型模式，包括列表和其他非資料庫來源"
+chapter: "CH02"
+category: "rule"
+number: "DM_R012"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 12
+  title: "tbl() 模式通用原理"
+related_to:
+  - "R100: 通過 tbl() 的資料庫存取規則"
+  - "R101: 統一 tbl 型資料存取模式"
+  - "R91: 通用資料存取模式"
+  - "MP17: 關注點分離"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十二條：tbl() 模式通用原理 {#overview}
+
+**資料管理法第十二條（tbl() 模式通用原理）**
+
+本文件解釋為什麼 R100（通過 tbl() 的資料庫存取規則）和 R101（統一 tbl 型資料存取模式）原則主張對所有資料類型使用 tbl 型模式，包括列表和其他非資料庫來源。
+
+:::{.callout-important}
+## 概述
+tbl() 模式從根本上講是關於在不同資料來源上創建一致的抽象。通過透過 R100 和 R101 普遍採用此模式，我們創建了一個更可維護、靈活和可理解的代碼庫，可以隨著時間的推移更容易地發展。
+:::
+
+# 第一項：核心優勢 {#core-benefits}
+
+## 第一款：心智模型一致性 {#mental-model-consistency}
+
+對所有資料來源使用相同的存取模式為開發人員創建了一致的心智模型。開發人員可以在整個代碼庫中應用相同的思維模式，而不是根據資料來源類型切換方法。這減少了認知負擔並使代碼更可預測。
+
+## 第二款：環境可移植性 {#environment-portability}
+
+應用程式通常需要在多個環境中運行：
+- 開發（通常使用列表中的本地測試資料）
+- 測試（使用模擬資料或測試資料庫）
+- 暫存/QA（使用測試資料庫）
+- 生產（使用實時資料庫）
+
+統一的存取模式意味著代碼可以在這些環境之間移動而無需更改。
+
+## 第三款：資料來源獨立性 {#data-source-independence}
+
+使用資料的組件不需要知道或關心資料的儲存或存取方式。這遵循關注點分離原則（MP17）。tbl() 模式提供了這種抽象，允許在不影響使用資料的組件的情況下更改資料來源。
+
+## 第四款：未來保障 {#future-proofing}
+
+隨著應用程式的發展，資料來源經常會改變。開始時的簡單列表稍後可能會成為資料庫表或 API 呼叫。從一開始就使用一致的存取模式使這些轉換無縫，避免了昂貴的重寫。
+
+## 第五款：查詢組合 {#query-composition}
+
+tbl() 模式建立在查詢組合的概念上——在執行之前建立您想要的描述。這對於資料庫（可以轉換為 SQL）和列表（可以在記憶體中執行）都很有價值。它鼓勵更容易推理的宣告式風格。
+
+## 第六款：延遲評估 {#lazy-evaluation}
+
+通過將資料操作的定義與其執行分開，tbl() 模式實現了延遲評估。操作可以在實際運行之前進行優化或重新排序，這可以提高性能。
+
+# 第二項：示範優勢的範例 {#examples}
+
+## 第一款：跨不同來源的相同代碼 {#same-code-across-sources}
+
+```r
+# 適用於資料庫連接
+customers <- universal_data_accessor(db_conn, "customers")
+
+# 適用於列表資料
+customers <- universal_data_accessor(list_data, "customers")
+
+# 適用於基於函數的連接
+customers <- universal_data_accessor(function_conn, "customers")
+```
+
+## 第二款：從開發到生產的輕鬆轉換 {#easy-transition}
+
+```r
+# 在開發中：使用記憶體中的測試資料
+if (ENVIRONMENT == "development") {
+  conn <- create_test_data()
+} else {
+  # 在生產中：使用資料庫
+  conn <- dbConnect(...)
+}
+
+# 相同的存取代碼在兩個環境中都有效
+data <- universal_data_accessor(conn, "customers")
+```
+
+## 第三款：關注點分離 {#separation-of-concerns}
+
+```r
+# 組件不需要知道資料來自哪裡
+customerModule <- function(id, data_connection) {
+  moduleServer(id, function(input, output, session) {
+    customer_data <- universal_data_accessor(data_connection, "customers")
+    # 使用資料而不關心其來源
+  })
+}
+```
+
+# 第三項：實際實施 {#practical-implementation}
+
+雖然具有延遲評估的完整 tbl() 實施是理想的，但平衡複雜性與實用性很重要。對於更簡單的應用程式，建議以下實施進程：
+
+1. 從實施 R91 的基本 universal_data_accessor 開始
+2. 根據 R100 為資料庫添加 tbl() 支援
+3. 如果需要，根據 R101 為非資料庫來源添加類 tbl 介面
+
+類 tbl 介面的複雜性應與應用程式的需求相匹配。簡單的應用程式可能不需要完整的延遲評估功能，而複雜的資料操作從這種方法中受益匪淺。
+
+# 第四項：相關原則 {#related-principles}
+
+- R100：通過 tbl() 的資料庫存取規則
+- R101：統一 tbl 型資料存取模式
+- R91：通用資料存取模式
+- MP17：關注點分離
+
+# 第五項：結論 {#conclusion}
+
+tbl() 模式從根本上講是關於在不同資料來源上創建一致的抽象。通過透過 R100 和 R101 普遍採用此模式，我們創建了一個更可維護、靈活和可理解的代碼庫，可以隨著時間的推移更容易地發展。
+
+這種方法的價值在於它提供的統一性：
+- 開發人員只需學習一種模式
+- 代碼在環境之間更具可移植性
+- 資料來源可以在不影響使用代碼的情況下發展
+- 測試和模擬變得更簡單
+- 系統架構變得更清晰
+
+---
+
+*基於：資料管理法第十二條*  
+*相關連結：[R100 通過 tbl() 的資料庫存取規則](DM_R009_database_access_via_tbl.qmd), [R101 統一 tbl 型資料存取模式](DM_R011_unified_tbl_data_access.qmd)*

@@ -1,0 +1,266 @@
+---
+title: "DEV_R019: app.R 函數禁止規則"
+subtitle: "app.R 檔案除了必需的 Shiny server 函數外，絕不能包含函數定義。所有應用功能、輔助工具和處理邏輯都必須按照適當的檔案組織原則定義在單獨的檔案中"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R019"
+date-created: "2025-04-08"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article: 
+  number: 19
+  title: "app.R 函數禁止規則"
+implements:
+  - "P0012: app.R 是全域原則"
+  - "MP0017: 關注點分離"
+related_to:
+  - "R0021: 一函數一檔案"
+  - "P0004: 應用程式建構原則"
+  - "R0009: UI-Server-Defaults 三重規則"
+  - "MP0016: 模組化原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十九條：app.R 函數禁止規則 {#overview}
+
+**開發方法法第十九條（app.R 函數禁止規則）**
+
+此規則確立了 app.R 檔案中禁止函數定義的標準。
+
+:::{.callout-important}
+## 核心需求
+**app.R 檔案除了必需的 Shiny server 函數外，絕不能包含函數定義。** 所有應用功能、輔助工具和處理邏輯都必須按照適當的檔案組織原則定義在單獨的檔案中。
+:::
+
+# 第一項：理由 {#rationale}
+
+app.R 檔案作為應用程式的入口點和協調器，而非功能邏輯的儲存庫。透過禁止在 app.R 中定義函數，我們：
+
+1. **維持全域一致性**：確保 app.R 保持為穩定、可移植的模板
+2. **強化關注點分離**：將協調與實施分開
+3. **改善可維護性**：使功能更容易定位、測試和更新
+4. **支援模組化**：鼓勵將程式碼正確組織成模組化元件
+5. **增強可重用性**：使函數能在應用程式的不同部分重複使用
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：app.R 中允許的內容 {#permitted-content}
+
+app.R 檔案應該**僅**包含：
+
+- 初始化腳本來源
+- 配置載入
+- UI 定義（僅結構）
+- Server 函數定義（協調但不實施邏輯）
+- shinyApp() 呼叫以啟動應用程式
+
+```r
+# 正確的 app.R 結構
+source(file.path("update_scripts", "global_scripts", "00_principles", "sc_initialization_app_mode.R"))
+
+# 載入配置
+config <- fn_load_app_config("app_config.yaml")
+
+# UI 定義 - 僅結構
+ui <- page_navbar(
+  # UI 結構元素
+)
+
+# Server 函數 - 僅協調
+server <- function(input, output, session) {
+  # 模組初始化
+  moduleServer("module1", module1Server)
+  moduleServer("module2", module2Server)
+}
+
+# 應用程式啟動
+shinyApp(ui, server)
+```
+
+## 第二款：app.R 中禁止的內容 {#prohibited-content}
+
+以下內容**絕不**應出現在 app.R 中：
+
+- **自訂函數定義**：無工具、輔助或處理函數
+- **匿名函數定義**：除簡單反應式表達式外，無複雜的內聯函數
+- **函數變數**：除 server 函數外，無函數賦值
+- **複雜邏輯**：無資料轉換或處理邏輯
+
+## 第三款：允許的例外 {#allowed-exceptions}
+
+此規則僅有的允許例外為：
+
+1. **Server 函數**：必需的 `server <- function(input, output, session) {...}` 定義
+2. **簡單反應式表達式**：如 server 函數內的 `observeEvent(input$x, {...})`
+3. **簡單渲染函數**：如 server 函數內的 `renderText({...})`
+
+## 第四款：適當的替代位置 {#proper-alternative-placement}
+
+不在 app.R 中定義函數，而是：
+
+1. **工具函數**：放置在 `/update_scripts/global_scripts/04_utils/fn_{function_name}.R`
+2. **元件函數**：放置在適當的模組目錄：`/update_scripts/global_scripts/10_rshinyapp_components/{module}/fn_{function_name}.R`
+3. **處理函數**：放置在 `/update_scripts/global_scripts/05_data_processing/fn_{function_name}.R`
+
+# 第三項：範例 {#examples}
+
+## 第一款：違規範例 {#violation-examples}
+
+```r
+# 違規：在 app.R 中定義函數
+formatCurrency <- function(value) {
+  paste0("$", format(value, big.mark = ","))
+}
+
+# 違規：複雜的匿名函數
+df <- reactive({
+  function(x) {
+    # 複雜處理邏輯
+    x %>% 
+      filter(value > threshold) %>%
+      group_by(category) %>%
+      summarize(total = sum(value))
+  }(data())
+})
+
+# 違規：server 內的輔助函數
+server <- function(input, output, session) {
+  # 在 server 內定義的輔助函數
+  calculateTotal <- function(data) {
+    sum(data$value)
+  }
+  
+  output$total <- renderText({
+    calculateTotal(dataset())
+  })
+}
+```
+
+## 第二款：符合規範的範例 {#compliant-examples}
+
+```r
+# 符合規範：無函數定義，適當的來源
+source(file.path("update_scripts", "global_scripts", "00_principles", "sc_initialization_app_mode.R"))
+
+# 僅結構的 UI
+ui <- page_navbar(
+  title = "Application",
+  nav_panel("Analysis", analysisUI("analysis"))
+)
+
+# 僅協調的 Server
+server <- function(input, output, session) {
+  # 初始化模組
+  analysisServer("analysis")
+  
+  # 允許簡單的反應式表達式
+  observeEvent(input$refresh, {
+    # 僅簡單動作，無複雜邏輯
+    session$reload()
+  })
+}
+
+# 應用程式啟動
+shinyApp(ui, server)
+```
+
+# 第四項：實施流程 {#implementation-process}
+
+## 第一款：檢查函數違規 {#check-violations}
+
+在部署應用程式前，驗證 app.R 不包含函數定義：
+
+```r
+# 檢查 app.R 中函數定義的函數
+check_app_r_functions <- function(file_path = "app.R") {
+  content <- readLines(file_path)
+  
+  # 尋找函數賦值模式
+  function_patterns <- c(
+    "<- function\\(",
+    "= function\\(",
+    "function\\([^)]*\\) \\{",
+    "\\}$"
+  )
+  
+  # 找到 server 函數定義
+  server_line <- grep("server[[:space:]]*<-[[:space:]]*function", content)
+  
+  # 檢查其他函數定義
+  violations <- lapply(function_patterns, function(pattern) {
+    matches <- grep(pattern, content)
+    # 移除 server 函數和簡單反應式表達式
+    matches[!matches %in% c(server_line, server_line+1, server_line-1)]
+  })
+  
+  violations <- unique(unlist(violations))
+  
+  if (length(violations) > 0) {
+    cat("在 app.R 中發現函數定義違規：\n")
+    for (line in violations) {
+      cat(line, ": ", content[line], "\n")
+    }
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+## 第二款：重構函數違規 {#refactor-violations}
+
+對於在 app.R 中找到的每個函數：
+
+1. 使用適當名稱創建新檔案（例如 `fn_{function_name}.R`）
+2. 將函數定義移至新檔案
+3. 按照 R0021（一函數一檔案）添加適當文檔
+4. 確保函數在初始化期間正確來源
+
+## 第三款：更新 app.R {#update-app-r}
+
+修改 app.R 以移除函數定義並確保遵循適當結構：
+
+1. 將函數替換為對外部定義函數的呼叫
+2. 確保初始化腳本載入所有必要函數
+3. 透過委派給模組簡化 server 函數內的複雜邏輯
+
+# 第五項：驗證程序 {#verification-procedures}
+
+驗證符合此規則：
+
+1. **靜態分析**：執行腳本檢查函數定義
+2. **程式碼審查**：包含對 app.R 函數違規的明確檢查
+3. **文檔檢查**：確保所有函數在單獨檔案中正確記錄
+
+# 第六項：優點 {#benefits}
+
+遵守此規則提供幾個優點：
+
+1. **簡化的 app.R**：使主應用程式檔案更易理解
+2. **更好的組織**：確保功能正確組織
+3. **改進的測試**：使函數更容易進行單元測試
+4. **增強的協作**：澄清 app.R 與功能元件的角色
+5. **一致的結構**：確保不同專案間的一致性
+
+# 第七項：與其他原則的關係 {#relationship-to-other-principles}
+
+此規則：
+
+1. **實施 P0012（app.R 是全域原則）**：透過強制將 app.R 視為全域資源的關鍵方面
+2. **實施 MP0017（關注點分離）**：透過將協調與實施分離
+3. **關聯 R0021（一函數一檔案）**：透過確保函數在自己的檔案中正確組織
+4. **支援 P0004（應用程式建構原則）**：透過強制適當的應用程式結構
+5. **補充 R0009（UI-Server-Defaults 三重規則）**：透過確保元件實施的模組化
+
+---
+
+*基於：開發方法法第十九條*  
+*相關連結：[P0012 app.R 是全域原則](../principles/P0012_app_r_is_global.qmd), [MP0017 關注點分離](../../CH00_fundamental_principles/meta_principles/MP0017_separation_of_concerns.qmd)*

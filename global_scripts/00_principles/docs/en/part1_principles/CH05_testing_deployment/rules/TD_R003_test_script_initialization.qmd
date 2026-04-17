@@ -1,0 +1,352 @@
+---
+title: "TD_R003: Test Script Initialization Rule"
+subtitle: "Establishes standardized patterns for initializing test scripts, ensuring proper working directory setup, consistent dependency loading, correct source file inclusion, and flexible execution modes"
+chapter: "CH05"
+category: "rule"
+number: "TD_R003"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Testing & Deployment Law"
+article-number: 
+  number: 3
+  title: "Test Script Initialization Rule"
+implements:
+  - "MP051: Test Data Design"
+  - "R074: Shiny Test Data"
+depends_on:
+  - "R037: Dynamic Root Path Detection"
+  - "R045: Initialization Imports Only"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 3: Test Script Initialization Rule {#overview}
+
+**Testing & Deployment Law Article 3 (Test Script Initialization Rule)**
+
+This rule establishes standardized patterns for initializing test scripts.
+
+:::{.callout-important}
+## Core Requirement
+Establishes standardized patterns for initializing test scripts, ensuring proper working directory setup, consistent dependency loading, correct source file inclusion, and flexible execution modes.
+:::
+
+# Section 1: Implementation Principles {#implementation}
+
+## Subsection 1: Demo Mode Flag {#demo-mode-flag}
+
+All test scripts MUST include a DEMO_MODE flag at the top of the file to allow easy switching between testing and interactive demonstration:
+
+```r
+# Set to TRUE to skip tests and just launch the app
+DEMO_MODE <- TRUE  # Change to FALSE to run tests
+```
+
+The run_tests() function MUST check this flag and behave accordingly:
+
+```r
+run_tests <- function() {
+  # Check if in demo mode
+  if (DEMO_MODE) {
+    message("Running in DEMO_MODE - launching app without tests")
+    create_test_app(test_data)
+    return()
+  }
+  
+  # Run tests when not in demo mode
+  # ...test code here...
+}
+```
+
+## Subsection 2: Working Directory Management {#working-directory-management}
+
+All test scripts MUST include proper working directory management using the standard path detection patterns:
+
+```r
+# Initialize proper working directory (ROOT_DIR)
+if (!exists("script_triggered_from_app_mode") || !script_triggered_from_app_mode) {
+  # Get the project root path dynamically based on directory structure
+  source_find_root <- function(start_path = getwd()) {
+    current_path <- normalizePath(start_path, winslash = "/")
+    while (!file.exists(file.path(current_path, "app.R"))) {
+      parent_path <- dirname(current_path)
+      if (parent_path == current_path) {
+        stop("Cannot find project root directory containing app.R")
+      }
+      current_path <- parent_path
+    }
+    return(current_path)
+  }
+  
+  # Set the correct working directory
+  root_path <- source_find_root()
+  setwd(root_path)
+  
+  # Source initialization script to set up proper environment
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+}
+```
+
+## Subsection 3: Test Script Initialization Sequence {#initialization-sequence}
+
+Test scripts MUST follow this initialization sequence:
+
+1. **Demo Mode Flag**: Set DEMO_MODE flag at the top of the file
+2. **Environment Setup**: Set working directory to ROOT_DIR
+3. **Mode Initialization**: Source app mode initialization script
+4. **Required Libraries**: Load testing libraries
+5. **Module Under Test**: Source the module being tested
+6. **Test Utilities**: Load test helpers and utilities
+7. **Test Data**: Define or load test data
+8. **Test Functions**: Define test and utility functions
+9. **Test Execution**: Run the tests with DEMO_MODE check
+
+## Subsection 4: Test Module Sourcing {#test-module-sourcing}
+
+Modules being tested MUST be sourced using relative paths from the ROOT_DIR, not absolute paths:
+
+```r
+# CORRECT: Source using relative path from root
+source(file.path("update_scripts", "global_scripts", "component_path", "component.R"))
+
+# INCORRECT: Source using working directory relative path
+source("component.R")  # Will fail if cwd isn't in the component directory
+
+# INCORRECT: Source using hard-coded absolute path
+source("/Users/developer/project/component.R")  # Will fail on other machines
+```
+
+# Section 2: Standard Testing Pattern Structure {#standard-testing-pattern}
+
+## Subsection 1: Test Script Structure {#test-script-structure}
+
+Test scripts MUST implement a standardized structure:
+
+```r
+#' @title Component Test Script
+#' @description Tests for the component following R0074 and R75
+#' @file component_test.R
+
+# Initialization blocks (following the sequence above)
+
+#' Test data creation function
+#' @return Standardized test data following R74
+create_test_data <- function() {
+  # Implementation according to R74
+}
+
+#' Component validation tests
+#' @param test_data The test data to use
+run_validation_tests <- function(test_data) {
+  test_that("Component handles complete data", {
+    # Test with complete data
+  })
+  
+  test_that("Component handles incomplete data", {
+    # Test with incomplete data
+  })
+  
+  test_that("Component handles empty data", {
+    # Test with empty data
+  })
+}
+
+#' Interactive test app for manual testing
+#' @param test_data The test data to use
+create_test_app <- function(test_data) {
+  # Create interactive test app
+  ui <- fluidPage(...)
+  server <- function(input, output, session) {...}
+  shinyApp(ui, server)
+}
+
+# Execute the tests
+test_data <- create_test_data()
+run_validation_tests(test_data)
+
+# Only run interactive test app when requested
+if (interactive() && !exists("skip_interactive") && !isTRUE(getOption("test.mode"))) {
+  create_test_app(test_data)
+}
+```
+
+## Subsection 2: Test Script Naming Convention {#naming-convention}
+
+Test scripts MUST follow this naming convention:
+
+- **Component Tests**: `{component_name}_test.R`
+- **Unit Tests**: `test_{function_name}.R`
+- **Integration Tests**: `integration_test_{feature_name}.R`
+
+# Section 3: Standard Testing Blocks {#standard-testing-blocks}
+
+## Subsection 1: Automatic Working Directory Detection Block {#auto-directory-detection}
+
+```r
+# Standard working directory detection block
+source_find_root <- function(start_path = getwd()) {
+  current_path <- normalizePath(start_path, winslash = "/")
+  while (!file.exists(file.path(current_path, "app.R"))) {
+    parent_path <- dirname(current_path)
+    if (parent_path == current_path) {
+      stop("Cannot find project root directory containing app.R")
+    }
+    current_path <- parent_path
+  }
+  return(current_path)
+}
+
+# Do not initialize if already in app mode
+if (!exists("script_triggered_from_app_mode") || !script_triggered_from_app_mode) {
+  root_path <- source_find_root()
+  setwd(root_path)
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+}
+```
+
+## Subsection 2: Standard Test App Block {#standard-test-app}
+
+```r
+# Standard test app creation function
+create_standard_test_app <- function(module_ui_fn, module_server_fn, test_data, id = "test_module") {
+  ui <- fluidPage(
+    title = "Module Test",
+    
+    # Test controls
+    fluidRow(
+      column(12,
+             h3("Test Controls"),
+             selectInput("test_scenario", "Test Scenario:", 
+                        choices = names(test_data$scenarios),
+                        selected = names(test_data$scenarios)[1])
+      )
+    ),
+    
+    # Module under test
+    fluidRow(
+      column(12,
+             h3("Module Test Results"),
+             module_ui_fn(id)
+      )
+    ),
+    
+    # Debug information
+    fluidRow(
+      column(12,
+             h3("Debug Information"),
+             verbatimTextOutput("debug_info")
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    # Select current test data based on scenario
+    current_data <- reactive({
+      scenario <- input$test_scenario
+      test_data$scenarios[[scenario]]
+    })
+    
+    # Call the module server function
+    module_result <- module_server_fn(id, current_data())
+    
+    # Display debug information
+    output$debug_info <- renderPrint({
+      list(
+        test_scenario = input$test_scenario,
+        data_summary = summarize_test_data(current_data()),
+        module_result = if(is.reactive(module_result)) module_result() else module_result
+      )
+    })
+  }
+  
+  # Launch the app with specific options for reliable browser opening
+  shinyApp(ui, server, options = list(
+    launch.browser = TRUE,  # Force browser launch
+    port = 8765,            # Use a specific port
+    host = "127.0.0.1"      # Listen on localhost only
+  ))
+}
+```
+
+# Section 4: Launching Test Apps in Browser {#launching-test-apps}
+
+When creating test applications that need to launch automatically in a browser, ensure they launch reliably in both interactive and non-interactive environments by following these guidelines:
+
+## Subsection 1: Create a Dedicated Runner Script {#dedicated-runner}
+
+For test apps that should always launch in a browser, create a separate runner script:
+
+```r
+# run_demo.R - Dedicated script to launch the test app in browser
+# Source the main test script to inherit its data and functions
+source(paste0(dirname(sys.frame(1)$ofile), "/app_test.R"))
+
+# Set browser launch option without custom browser function
+# This avoids the infinite recursion problem
+options(shiny.launch.browser = TRUE)
+
+# Create and run the app (do NOT set both options and parameter)
+message("Launching demo app...")
+app <- create_test_app(test_data)
+runApp(app, port = 8765) # Don't use launch.browser=TRUE here
+```
+
+## Subsection 2: Configure Shiny App Options {#configure-shiny-options}
+
+When creating test apps, specify browser launch options directly:
+
+```r
+shinyApp(ui, server, options = list(
+  launch.browser = TRUE,  # Force browser launch
+  port = 8765,            # Use a specific port
+  host = "127.0.0.1"      # Listen on localhost only
+))
+```
+
+## Subsection 3: Set Browser Function {#set-browser-function}
+
+For environments that might not have a default browser set:
+
+```r
+# WARNING: Only use this if options(shiny.launch.browser = TRUE) is NOT set
+# or you will create an infinite recursion!
+options(browser = function(url) {
+  message("Opening browser at: ", url)
+  utils::browseURL(url)
+})
+```
+
+# Section 5: Validation Checklist {#validation-checklist}
+
+To validate a test script against this rule, verify that:
+
+1. The script properly initializes the ROOT_DIR working directory
+2. Initialization sequence follows the standard pattern
+3. All module sourcing uses relative paths from ROOT_DIR
+4. The test script follows the standard structure
+5. The naming convention is properly followed
+6. The script distinguishes between automated and interactive tests
+
+# Section 6: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Consistency**: All test scripts use the same initialization pattern
+2. **Reliability**: Tests work consistently across different environments
+3. **Flexibility**: Easy switching between test and demo modes
+4. **Maintainability**: Standardized structure makes tests easier to maintain
+5. **Portability**: Tests can be run on different machines
+
+---
+
+*Based on: Testing & Deployment Law Article 3*  
+*Related to: [MP051 Test Data Design](../../CH00_fundamental_principles/meta_principles/MP051_test_data_design.qmd), [R074 Shiny Test Data](./TD_R001_shiny_test_data.qmd)*

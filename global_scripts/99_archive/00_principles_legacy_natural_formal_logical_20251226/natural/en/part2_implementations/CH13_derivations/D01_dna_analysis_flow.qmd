@@ -1,0 +1,412 @@
+---
+title: "D01: Customer DNA Analysis Derivation"
+subtitle: "Business logic for customer DNA analysis using ETL-prepared sales data"
+chapter: "CH13"
+category: "derivation"
+number: "D01"
+date-created: "2025-04-07"
+date-modified: "2025-08-27"
+author: "Claude"
+type: "derivation"
+law: "Derivation Workflows"
+derives_from:
+  - "MP064": "ETL-Derivation Separation Principle"
+consumes:
+  - "ETL01": "Sales Data Preparation Pipeline"
+related_to:
+  - "MP092_platform_code_standard"
+  - "DM_R022_platform_code_convention"
+  - "R039_derivation_platform_independence"
+  - "R041_derivation_folder_structure"
+  - "R120_filter_variable_naming_convention"
+  - "S03_product_line_mapping_sequence"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# D01: Customer DNA Analysis Derivation {#overview}
+
+This document defines the **business logic layer** for customer DNA analysis. D01 consumes standardized sales transaction data from ETL01 and applies customer aggregation, RFM calculations, and DNA profiling algorithms to generate customer behavioral insights.
+
+## Section 1: Data Dimensions {#dimensions}
+
+DNA analysis operates across three key dimensions:
+
+1. **Platform** (`platform_code`): The sales channel or marketplace using three-letter codes (amz, eby, cbz, etc.)
+2. **Product Line** (`product_line_id_filter`): The category of products (jewelry, soap dispensers, etc.)
+3. **Customer** (`customer_id`): The individual purchaser
+
+Each DNA profile is uniquely identified by the combination of customer, platform, and product line filter, allowing for multi-dimensional analysis of customer behavior patterns filtered by different product categories and sales channels.
+
+## Section 2: Derivation Process {#process}
+
+```
+ETL01 OUTPUT → CUSTOMER AGGREGATION → RFM CALCULATION → DNA ANALYSIS → SEGMENTATION → APP VIEWS
+```
+
+**Key Principle**: D01 contains NO data preparation logic. All data cleansing, standardization, and transformation is handled by ETL01.
+
+## Section 3: Data Input from ETL01 {#input}
+
+### Subsection 1: Consume ETL-Prepared Data {#consume-etl}
+
+```nsql
+CONSUME transformed_data.df_sales_standardized FROM ETL01
+```
+
+### Subsection 2: ETL01 Output Schema {#etl-schema}
+
+D01 receives standardized transaction-level data with:
+- `transaction_id`: Unique transaction identifier
+- `customer_id`: Customer identifier (already converted)
+- `product_id`: Product identifier
+- `product_line_id`: Product category (already joined)
+- `platform_code`: Sales platform three-letter code (eby, cbz, amz, etc.)
+- `payment_time`: Transaction timestamp
+- `lineproduct_price`: Transaction amount
+- ETL metadata columns
+
+### Subsection 3: Implementation Example {#consume-example}
+
+```r
+# Get clean data from ETL01
+etl01_result <- execute_etl01_complete(etl01_config)
+
+if (etl01_result$success) {
+  # Read standardized sales data
+  sales_data <- tbl2(transformed_conn, etl01_result$output_table) %>%
+    collect()
+  
+  # Verify expected columns
+  required_cols <- c("customer_id", "platform_code", "product_line_id", 
+                    "payment_time", "lineproduct_price")
+  stopifnot(all(required_cols %in% names(sales_data)))
+}
+```
+
+## Section 4: Customer Aggregation (D01_01) {#aggregation}
+
+### Subsection 1: Aggregate by Customer {#aggregate-op}
+
+```nsql
+AGGREGATE transformed_data.df_sales_standardized BY customer_id, platform_code, product_line_id
+TO processed_data.df_customer_aggregated
+```
+
+### Subsection 2: Aggregation Logic {#aggregate-logic}
+
+Performs customer-level aggregation with multi-dimensional grouping:
+- Groups by customer, platform, and product line
+- Calculates transaction metrics per customer
+- Maintains temporal information for RFM analysis
+
+```r
+# Customer aggregation with product line filtering
+df_customer_aggregated <- sales_data %>%
+  group_by(customer_id, platform_id, product_line_id_filter = product_line_id) %>%
+  summarise(
+    total_spent = sum(lineproduct_price, na.rm = TRUE),
+    transaction_count = n(),
+    first_purchase = min(payment_time, na.rm = TRUE),
+    last_purchase = max(payment_time, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## Section 5: RFM Calculation (D01_02) {#rfm}
+
+### Subsection 1: Calculate RFM Metrics {#rfm-calc}
+
+```nsql
+CALCULATE RFM FROM processed_data.df_customer_aggregated
+TO processed_data.df_customer_rfm
+```
+
+### Subsection 2: RFM Implementation {#rfm-impl}
+
+```r
+# Calculate RFM scores
+reference_date <- max(sales_data$payment_time, na.rm = TRUE)
+
+df_customer_rfm <- df_customer_aggregated %>%
+  mutate(
+    # Recency: Days since last purchase
+    r_value = as.numeric(difftime(reference_date, last_purchase, units = "days")),
+    
+    # Frequency: Number of transactions
+    f_value = transaction_count,
+    
+    # Monetary: Average transaction value
+    m_value = total_spent / transaction_count,
+    
+    # Inter-purchase time for repeat customers
+    ipt = ifelse(transaction_count > 1, 
+                as.numeric(difftime(last_purchase, first_purchase, units = "days")) / 
+                (transaction_count - 1),
+                NA),
+    
+    # Customer tenure
+    customer_tenure_days = as.numeric(difftime(reference_date, first_purchase, units = "days"))
+  )
+```
+
+## Section 6: DNA Analysis (D01_03) {#dna}
+
+### Subsection 1: Perform DNA Analysis {#dna-calc}
+
+```nsql
+ANALYZE DNA FROM processed_data.df_customer_rfm
+TO app_data.df_customer_dna
+```
+
+### Subsection 2: DNA Algorithm {#dna-algo}
+
+The DNA analysis applies behavioral segmentation based on RFM metrics:
+
+```r
+# DNA analysis with NES (New/Existing/Sleeping) classification
+df_customer_dna <- df_customer_rfm %>%
+  mutate(
+    # NES Status classification
+    nes_status = case_when(
+      transaction_count == 1 & customer_tenure_days <= 30 ~ "N",  # New
+      r_value <= 60 ~ "E0",                                       # Existing active
+      r_value <= 180 ~ "S1",                                      # Sleeping 1-6 months
+      TRUE ~ "S2"                                                 # Sleeping 6+ months
+    ),
+    
+    # Normalized DNA scores (0-1 scale)
+    dna_m_score = percent_rank(m_value),
+    dna_f_score = percent_rank(f_value),
+    dna_r_score = 1 - percent_rank(r_value),  # Invert for recency
+    
+    # Customer Activity Index
+    cai = (dna_m_score + dna_f_score + dna_r_score) / 3,
+    
+    # DNA segment codes
+    dna_segment = paste0(
+      cut(dna_m_score, breaks = 4, labels = c("M1", "M2", "M3", "M4")),
+      cut(dna_f_score, breaks = 3, labels = c("F1", "F2", "F3")),
+      cut(dna_r_score, breaks = 4, labels = c("R1", "R2", "R3", "R4"))
+    )
+  )
+```
+
+## Section 7: Create Customer Profile (D01_04) {#profile}
+
+### Subsection 1: Operation {#profile-op}
+
+```nsql
+CREATE PROFILE FROM processed_data.df_{source}_sales_standardized 
+TO app_data.df_customer_profile
+```
+
+### Subsection 2: Profile Creation {#profile-creation}
+
+Creates customer profile data:
+- `customer_id`: Unique customer identifier
+- `buyer_name`: Customer name
+- `email`: Customer email
+- Other available customer attributes
+
+Process details:
+- Performs deduplication with distinct (customer_id, platform_id)
+- Stores in app_data schema for application access
+- Assigns platform_id to track data source
+- Focuses on customer entity only (not product line specific)
+- No product_line_id_filter involvement (customer entity level only)
+
+### Subsection 3: Implementation Example {#profile-example}
+
+```r
+# Create customer profile (independent of product line)
+df_customer_profile <- df_amazon_sales_standardized %>%
+  mutate(
+    buyer_name = as.character(customer_id),
+    email = ship_postal_code
+  ) %>% 
+  select(customer_id, buyer_name, email, platform_id) %>%   
+  distinct(customer_id, platform_id, .keep_all=TRUE) %>% 
+  arrange(customer_id)
+
+# Save customer profile to app_data
+dbWriteTable(
+  app_data,
+  "df_customer_profile",
+  df_customer_profile,
+  append = TRUE
+)
+```
+
+## Section 8: Generate Application Views {#app-views}
+
+### Subsection 1: Create Application Tables {#app-tables}
+
+```nsql
+CREATE VIEWS FROM app_data.df_customer_dna
+FOR UI COMPONENTS AND ANALYTICS
+```
+
+### Subsection 2: Application Data Preparation {#app-prep}
+
+Prepares final data structures for application consumption:
+
+```r
+# Save customer DNA to application database
+dbWriteTable(
+  app_data,
+  "df_customer_dna",
+  df_customer_dna,
+  overwrite = TRUE
+)
+
+# Create customer segments view
+df_customer_segments <- df_customer_dna %>%
+  select(customer_id, platform_id, product_line_id_filter, 
+         nes_status, dna_segment, cai) %>%
+  mutate(
+    value_tier = case_when(
+      dna_m_score >= 0.8 ~ "Premium",
+      dna_m_score >= 0.6 ~ "High",
+      dna_m_score >= 0.4 ~ "Medium",
+      TRUE ~ "Low"
+    )
+  )
+
+dbWriteTable(
+  app_data,
+  "df_customer_segments",
+  df_customer_segments,
+  overwrite = TRUE
+)
+```
+
+## Section 9: Complete D01 Execution {#execution}
+
+### Master Derivation Function
+
+```r
+#' Execute complete D01 Customer DNA Analysis
+#' 
+#' Consumes ETL01 output and performs full DNA analysis
+#'
+execute_d01_complete <- function(etl01_result, dna_config = list()) {
+  
+  d01_start_time <- Sys.time()
+  
+  message("=== Starting D01: Customer DNA Analysis Derivation ===")
+  
+  # Step 1: Verify ETL01 completion
+  if (!etl01_result$success) {
+    stop("D01 requires successful ETL01 execution")
+  }
+  
+  # Step 2: Read ETL-prepared data
+  sales_data <- tbl2(transformed_conn, etl01_result$output_table) %>%
+    collect()
+  
+  message("D01 - Processing ", nrow(sales_data), " transactions")
+  
+  # Step 3: Customer aggregation
+  customer_aggregated <- perform_customer_aggregation(sales_data)
+  message("✓ Customer aggregation completed: ", nrow(customer_aggregated), " profiles")
+  
+  # Step 4: RFM calculation
+  customer_rfm <- calculate_rfm_metrics(customer_aggregated)
+  message("✓ RFM calculation completed")
+  
+  # Step 5: DNA analysis
+  customer_dna <- perform_dna_analysis(customer_rfm, dna_config)
+  message("✓ DNA analysis completed")
+  
+  # Step 6: Generate application views
+  app_tables <- create_application_views(customer_dna)
+  message("✓ Application views created: ", length(app_tables), " tables")
+  
+  # Calculate execution time
+  d01_end_time <- Sys.time()
+  execution_time <- as.numeric(difftime(d01_end_time, d01_start_time, units = "secs"))
+  
+  # Return results
+  return(list(
+    success = TRUE,
+    derivation_name = "D01_Customer_DNA_Analysis",
+    customer_count = nrow(customer_dna),
+    segments_identified = length(unique(customer_dna$dna_segment)),
+    execution_time_secs = execution_time,
+    output_tables = names(app_tables)
+  ))
+}
+
+# Usage:
+# etl01_result <- execute_etl01_complete(etl01_config)
+# d01_result <- execute_d01_complete(etl01_result)
+```
+
+## Section 10: ETL-Derivation Integration Pattern {#integration}
+
+### Clean Separation of Concerns
+
+The D01 derivation demonstrates the clear separation between ETL and business logic:
+
+**ETL01 Responsibilities (Data Preparation)**:
+- Import raw sales data
+- Standardize formats and encoding
+- Map schema and convert types
+- Join with product dictionaries
+- Output: Clean transaction-level data
+
+**D01 Responsibilities (Business Logic)**:
+- Aggregate transactions by customer
+- Calculate RFM metrics
+- Perform DNA behavioral analysis
+- Generate customer segments
+- Create application views
+
+### Integration Example
+
+```r
+# Complete pipeline execution
+pipeline_execution <- function(source_file) {
+  
+  # Phase 1: Data Preparation (ETL)
+  etl_config <- list(
+    source = list(path = source_file, type = "csv"),
+    transformation = list(...)
+  )
+  etl_result <- execute_etl01_complete(etl_config)
+  
+  # Phase 2: Business Analysis (Derivation)
+  if (etl_result$success) {
+    dna_config <- list(
+      delta = 0.1,
+      ni_threshold = 5,
+      reference_date = "auto"
+    )
+    d01_result <- execute_d01_complete(etl_result, dna_config)
+    
+    # Phase 3: Results
+    message("Pipeline complete:")
+    message("- Transactions processed: ", etl_result$transaction_count)
+    message("- Customers analyzed: ", d01_result$customer_count)
+    message("- Segments identified: ", d01_result$segments_identified)
+  }
+}
+```
+
+## Conclusion
+
+D01 exemplifies the ETL-Derivation Separation Principle (MP064) by:
+
+1. **Consuming clean data**: All data preparation is handled by ETL01
+2. **Focusing on business logic**: Only customer aggregation, RFM, and DNA analysis
+3. **Clear boundaries**: No data cleansing, format fixing, or schema transformations
+4. **Modular design**: Can be updated independently of ETL pipeline
+5. **Reusability**: Multiple derivations can consume the same ETL output
+
+This separation ensures maintainable, scalable, and testable data processing systems where each component has a single, well-defined responsibility.

@@ -1,0 +1,138 @@
+# MAMBA Enterprise Platform Configuration
+# L4 Enterprise Application
+# Created: 2025-07-29
+# Company: MAMBA
+
+app:
+  name: "MAMBA Enterprise Platform"
+  version: "1.0.0"
+  tier: "l4_enterprise"
+  description: "AI-powered precision marketing solution for enterprise clients"
+
+theme:
+  version: 5
+  bootswatch: cosmo
+layout: navbar
+
+brand_name: "MAMBA"
+language: "zh_TW.UTF-8"
+RAW_DATA_DIR: "./data/local_data/rawdata_MAMBA"
+parameters_folder: "default"
+
+# Environment variables should be in .env file
+# OPENAI_API_KEY: [set in .env]
+
+# Database connection configuration (MP142: Configuration-Driven Pipeline)
+# Mode options:
+#   - "duckdb": Force use local DuckDB file (for local development)
+#   - "supabase": Force use Supabase PostgreSQL (for deployment testing)
+#   - "auto": Auto-detect (DuckDB if valid local file exists, else Supabase)
+database:
+  mode: "supabase"
+  duckdb:
+    path: "data/app_data/app_data.duckdb"
+    read_only: true
+  # Supabase credentials are configured in the 'supabase:' section below
+
+# Platform definitions (MP065)
+platforms:
+  cbz:
+    status: "active"
+  eby:
+    status: "active"
+
+# Pipeline orchestration (MP140-MP142) — required by update_scripts/Makefile
+# Issue #371: MAMBA had no pipeline: section, so make run was a no-op.
+pipeline:
+  platforms:
+    cbz:
+      enabled: true
+      # D03 removed (#374): df_cbz_sales___standardized lacks ship_country
+      # / ship_state / order_status — D03_01 needs those columns. ETL
+      # standardization layer must add them first (separate effort).
+      # D04 added (#374 Tier 2): Poisson precision marketing
+      drv_groups: ["D00", "D01", "D04", "D05"]
+    eby:
+      enabled: true
+      drv_groups: ["D00", "D01", "D04", "D05"]
+    all:
+      enabled: true
+      depends_on_platforms:
+        - cbz
+        - eby
+      # NOTE (#374): D05 re-enabled with cross-platform-safe write helper.
+      # D03 (worldMap) blocked: fn_D03_01_core.R hard-codes amz-specific
+      # columns (order_status, ship_country, ship_state, amazon_order_id)
+      # that don't exist in df_cbz_sales___standardized or
+      # df_eby_sales___standardized. Requires ETL standardization layer
+      # to propagate ship_country/ship_state from source systems —
+      # separate effort, deferred from this Spectra change.
+      drv_groups:
+        - D01
+        - D05
+    precision:
+      enabled: false   # Poisson precision marketing — not currently used by MAMBA dashboard
+
+  execution:
+    # #378: Changed from 2 to 1 because DuckDB does not support concurrent
+    # writers to the same file. Parallel 0IM targets (orders/sales/customers/
+    # products all writing to raw_data.duckdb) caused last-write-wins data loss.
+    parallel_workers: 1
+
+  scheduling:
+    mode: "manual"
+    schedule: "0 2 * * 0"  # Sunday 2:00 AM (not actually scheduled, manual only)
+
+googlesheet:
+  product_profile: "1DADOOtwUuWqB3azFPmTcFSDunyACx_RsNpKlGoL2ta4"
+  comment_property: "1-esqSKUQ9MF1My8XIw1pG4MNfuDu_b6t8NXac39iGuc"
+
+# Metadata sources (required by all_ETL_metadata_0IM.R)
+# Issue #371: MAMBA does not use GSheet-sourced metadata for ETL,
+# so all platforms are disabled. This section exists solely to satisfy
+# the metadata ETL target's schema check.
+metadata_sources:
+  cbz:
+    enabled: false
+    sheet_id: ""
+    sheet_name: "metadata_CBZ"
+  eby:
+    enabled: false
+    sheet_id: ""
+    sheet_name: "metadata_EBY"
+
+# Components with their data sources - using all standard patterns
+components:
+  micro:
+    microCustomer:
+      primary: customer_details
+      history: customer_history
+    sales: sales_by_customer_dta
+  
+  macro:
+    trends:
+      data_source: sales_trends
+      parameters:
+        show_kpi: true
+        refresh_interval: 300
+
+# Supabase configuration (app_data deployment)
+# Values are pulled from environment variables at runtime.
+supabase:
+  db:
+    host_env: "SUPABASE_DB_HOST"
+    port_env: "SUPABASE_DB_PORT"
+    name_env: "SUPABASE_DB_NAME"
+    user_env: "SUPABASE_DB_USER"
+    password_env: "SUPABASE_DB_PASSWORD"
+    sslmode: "require"
+
+# Deployment settings
+deployment:
+  main_file: "scripts/global_scripts/10_rshinyapp_components/unions/union_production_test.R"  # 主要應用檔案
+  target: "posit_connect"
+  url: "https://connect.posit.cloud"
+  account_name: "kyle-lin"
+  app_name: "mamba-enterprise"
+  app_id: "mamba-enterprise"
+  title: "MAMBA Enterprise Platform"

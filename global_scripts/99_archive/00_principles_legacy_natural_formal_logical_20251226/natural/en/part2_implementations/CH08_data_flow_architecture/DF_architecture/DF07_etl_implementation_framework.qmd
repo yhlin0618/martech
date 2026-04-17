@@ -1,0 +1,704 @@
+---
+id: "DF007"
+title: "ETL Implementation Framework"
+type: "data-flow"
+date_created: "2025-07-15"
+date_modified: "2025-07-15"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "MP0052": "Unidirectional Data Flow"
+  - "MP0018": "Don't Repeat Yourself"
+influences:
+  - "ETL001": "Customer DNA Analysis Pipeline"
+  - "ETL002": "Customer View Filtering Pipeline"
+  - "ETL003": "product Profiles Pipeline"
+relates_to:
+  - "D01": "DNA Analysis Derivation"
+  - "D02": "Customer View Filtering Derivation"
+  - "D03": "Positioning Analysis Derivation"
+---
+
+# DF07: ETL Implementation Framework
+
+## Core Principle
+
+ETL Implementation Framework provides **standardized patterns and architectures** for building complete end-to-end data pipelines. It defines how to implement the theoretical data flow concepts from DF000-DF006 into concrete, reusable ETL operations that business derivations can reference without duplicating implementation logic.
+
+## Purpose and Scope
+
+### What ETL Implementation Framework Defines
+- **Standardized ETL architecture patterns**: Common structures for all ETL implementations
+- **Phase-based execution models**: Clear progression through data processing stages
+- **Configuration management standards**: Consistent approach to ETL configuration
+- **Error handling and monitoring patterns**: Unified approach to ETL observability
+- **Integration patterns**: How ETL operations connect with business derivations
+
+### What ETL Implementation Framework Does NOT Define
+- **Specific business logic**: Individual ETL implementations handle domain-specific processing
+- **Data source connections**: ETL implementations handle their own connectivity
+- **Performance optimization**: ETL implementations optimize for their specific use cases
+- **UI components**: Application layer handles user interface elements
+
+## ETL Architecture Evolution
+
+### 7-Layer Architecture (Current Standard)
+
+Building on DF000 pipeline architecture, the ETL framework implements a comprehensive 7-layer data flow:
+
+```mermaid
+graph TD
+    A[External Source] --> B[0IM: Import]
+    B --> C[1ST: Staging] 
+    C --> D[2TR: Transform]
+    D --> E[3PR: Processed]
+    E --> F[4CL: Cleanse]
+    F --> G[5DN: DB Normalize]
+    G --> H[6NM: Data Normalize]
+    H --> I[App Data]
+    
+    B -.-> B1["Layer 0: Import<br/>• Source-specific ingestion<br/>• Metadata preservation<br/>• Platform identification"]
+    C -.-> C1["Layer 1: Staging<br/>• File preprocessing<br/>• Type optimization<br/>• Encoding standardization"]
+    D -.-> D1["Layer 2: Transform<br/>• Business logic application<br/>• Derived field calculation<br/>• Metric computation"]
+    E -.-> E1["Layer 3: Processed<br/>• Business validation checkpoint<br/>• Data completeness verification<br/>• Stable snapshot creation"]
+    F -.-> F1["Layer 4: Cleanse<br/>• Technical data quality<br/>• Duplicate removal<br/>• Format standardization"]
+    G -.-> G1["Layer 5: DB Normalize<br/>• Relational structure<br/>• Product master data<br/>• Reference integrity"]
+    H -.-> H1["Layer 6: Data Normalize<br/>• ML feature preparation<br/>• Statistical normalization<br/>• Model input formatting"]
+    I -.-> I1["Application Layer<br/>• UI-ready formatting<br/>• Performance optimization<br/>• Component integration"]
+```
+
+### Layer Definitions and Responsibilities
+
+| Layer | Phase | Code | Purpose | Database | Key Activities |
+|-------|-------|------|---------|----------|----------------|
+| **0** | Import | IM | External data ingestion | raw_data | Source-specific import, metadata capture |
+| **1** | Staging | ST | Data preparation | staged_data | File preprocessing, encoding standardization |
+| **2** | Transform | TR | Business logic application | transformed_data | Business rules, derived fields, metrics |
+| **3** | Processed | PR | Business validation | processed_data | Completeness checks, business validation |
+| **4** | Cleanse | CL | Technical data quality | cleansed_data | Quality checks, deduplication, formatting |
+| **5** | DB Normalize | DN | Relational structure | normalized_data | Master data, reference integrity |
+| **6** | Data Normalize | NM | ML preparation | normalized_data | Feature engineering, statistical normalization |
+| **7** | Application | AP | UI optimization | app_data | Performance optimization, UI formatting |
+
+## Phase-Based Implementation Patterns
+
+### Standard Naming Convention
+
+All ETL operations follow a consistent phase-based naming structure:
+
+```
+{platform}_ETL{Series}_{Phase}{Abbreviation}_{Sequence}.R
+
+Examples:
+- amz_ETL03_0IM_00.R  (Amazon, ETL03, Import Phase, Sequence 00)
+- amz_ETL03_1ST_00.R  (Amazon, ETL03, Staging Phase, Sequence 00)
+- amz_ETL03_2TR_00.R  (Amazon, ETL03, Transform Phase, Sequence 00)
+```
+
+### Phase Execution Framework
+
+Each phase follows a standardized execution pattern:
+
+```r
+#' Standard Phase Execution Template
+#' 
+#' Template for implementing any ETL phase following the common pattern
+#'
+execute_etl_phase <- function(etl_series, phase_code, phase_name, config) {
+  
+  phase_start_time <- Sys.time()
+  
+  tryCatch({
+    message("Starting ", etl_series, " Phase ", phase_code, " (", phase_name, ")")
+    
+    # Phase-specific logic
+    result <- switch(phase_code,
+      "0IM" = execute_import_phase(config),
+      "1ST" = execute_staging_phase(config),
+      "2TR" = execute_transform_phase(config),
+      "3PR" = execute_processed_phase(config),
+      "4CL" = execute_cleanse_phase(config),
+      "5DN" = execute_db_normalize_phase(config),
+      "6NM" = execute_data_normalize_phase(config)
+    )
+    
+    # Calculate execution time
+    phase_end_time <- Sys.time()
+    execution_time <- as.numeric(difftime(phase_end_time, phase_start_time, units = "mins"))
+    
+    message("Completed ", etl_series, " Phase ", phase_code, " in ", 
+            round(execution_time, 2), " minutes")
+    
+    return(list(
+      success = TRUE,
+      phase = paste0(phase_code, "_", phase_name),
+      result = result,
+      execution_time_mins = execution_time,
+      start_time = phase_start_time,
+      end_time = phase_end_time
+    ))
+    
+  }, error = function(e) {
+    message("ERROR in ", etl_series, " Phase ", phase_code, ": ", e$message)
+    
+    return(list(
+      success = FALSE,
+      phase = paste0(phase_code, "_", phase_name),
+      error = e$message,
+      execution_time_mins = NA,
+      start_time = phase_start_time,
+      end_time = Sys.time()
+    ))
+  })
+}
+```
+
+## Common ETL Implementation Patterns
+
+### 1. Multi-Source Import Pattern (Phase 0IM)
+
+Import phase handles multiple data sources with consistent metadata tracking:
+
+```r
+#' Multi-Source Import Pattern
+#' 
+#' Standard pattern for importing data from multiple external sources
+#'
+execute_import_phase <- function(config) {
+  
+  # Connect to raw_data database
+  raw_conn <- dbConnect_from_list("raw_data")
+  
+  import_results <- list()
+  
+  # Process each import operation (0IM_00, 0IM_01, 0IM_02, ...)
+  for (import_config in config$import_operations) {
+    
+    import_id <- import_config$operation_id  # "00", "01", "02", etc.
+    source_type <- import_config$source_type # "google_sheets", "csv", "api"
+    
+    # Execute source-specific import
+    imported_data <- switch(source_type,
+      "google_sheets" = import_from_google_sheets(import_config),
+      "csv" = import_from_csv(import_config),
+      "excel" = import_from_excel(import_config),
+      "api" = import_from_api(import_config)
+    )
+    
+    # Add standard ETL metadata
+    imported_data <- imported_data %>%
+      mutate(
+        etl_import_timestamp = Sys.time(),
+        etl_import_id = import_id,
+        etl_source_type = source_type,
+        etl_platform_id = import_config$platform_id
+      )
+    
+    # Write to raw_data with standardized naming
+    table_name <- paste0("raw_", import_config$data_type, "_", import_id)
+    dbWriteTable(raw_conn, table_name, imported_data, overwrite = TRUE)
+    
+    import_results[[import_id]] <- list(
+      table_name = table_name,
+      row_count = nrow(imported_data),
+      data_type = import_config$data_type
+    )
+    
+    message("Import ", import_id, " completed: ", nrow(imported_data), " rows")
+  }
+  
+  dbDisconnect(raw_conn)
+  return(import_results)
+}
+```
+
+### 2. Unified Staging Pattern (Phase 1ST)
+
+Staging phase processes all imported data with unified validation:
+
+```r
+#' Unified Staging Pattern
+#' 
+#' Standard pattern for staging and validating imported data
+#'
+execute_staging_phase <- function(config) {
+  
+  # Connect to databases
+  raw_conn <- dbConnect_from_list("raw_data")
+  staged_conn <- dbConnect_from_list("staged_data")
+  
+  staging_results <- list()
+  
+  # Get all raw tables from Phase 0
+  raw_tables <- dbListTables(raw_conn)
+  target_tables <- raw_tables[grepl("^raw_", raw_tables)]
+  
+  for (table_name in target_tables) {
+    
+    # Load raw data
+    raw_data_df <- dbGetQuery(raw_conn, paste("SELECT * FROM", table_name))
+    
+    # Apply encoding standardization
+    if (config$staging$encoding_target == "UTF-8") {
+      char_cols <- sapply(raw_data_df, is.character)
+      raw_data_df[char_cols] <- lapply(raw_data_df[char_cols], function(x) {
+        Encoding(x) <- "UTF-8"
+        return(x)
+      })
+    }
+    
+    # Apply data type optimization
+    raw_data_df <- optimize_data_types(raw_data_df)
+    
+    # Apply file structure validation
+    if (config$staging$validate_structure) {
+      validate_data_structure(raw_data_df, config$staging$required_columns)
+    }
+    
+    # Add staging metadata
+    raw_data_df$etl_staging_timestamp <- Sys.time()
+    raw_data_df$etl_validation_status <- "passed"
+    
+    # Write to staged_data
+    staged_table_name <- gsub("^raw_", "staged_", table_name)
+    dbWriteTable(staged_conn, staged_table_name, raw_data_df, overwrite = TRUE)
+    
+    staging_results[[table_name]] <- list(
+      staged_table = staged_table_name,
+      row_count = nrow(raw_data_df)
+    )
+  }
+  
+  dbDisconnect(raw_conn)
+  dbDisconnect(staged_conn)
+  
+  return(staging_results)
+}
+```
+
+### 3. Business Logic Transform Pattern (Phase 2TR)
+
+Transform phase applies business logic and creates derived fields:
+
+```r
+#' Business Logic Transform Pattern
+#' 
+#' Standard pattern for applying business logic and creating derived fields
+#'
+execute_transform_phase <- function(config) {
+  
+  # Connect to databases
+  staged_conn <- dbConnect_from_list("staged_data")
+  transform_conn <- dbConnect_from_list("transformed_data")
+  
+  transform_results <- list()
+  
+  # Get all staged tables
+  staged_tables <- dbListTables(staged_conn)
+  target_tables <- staged_tables[grepl("^staged_", staged_tables)]
+  
+  for (table_name in target_tables) {
+    
+    # Load staged data
+    staged_data_df <- dbGetQuery(staged_conn, paste("SELECT * FROM", table_name))
+    
+    # Apply business logic transformations
+    transformed_data <- staged_data_df %>%
+      # Apply column mappings
+      rename(!!!config$transformation$column_mapping) %>%
+      # Apply type conversions
+      mutate(across(all_of(names(config$transformation$type_conversions)), 
+                    ~convert_type(.x, config$transformation$type_conversions[[cur_column()]]))) %>%
+      # Apply business calculations
+      mutate(!!!config$transformation$derived_fields) %>%
+      # Apply business rules
+      filter(!!!config$transformation$business_filters)
+    
+    # Add transformation metadata
+    transformed_data$etl_transform_timestamp <- Sys.time()
+    transformed_data$etl_business_logic_version <- config$transformation$version
+    
+    # Write to transformed_data
+    transform_table_name <- gsub("^staged_", "transformed_", table_name)
+    dbWriteTable(transform_conn, transform_table_name, transformed_data, overwrite = TRUE)
+    
+    transform_results[[table_name]] <- list(
+      transformed_table = transform_table_name,
+      row_count = nrow(transformed_data)
+    )
+  }
+  
+  dbDisconnect(staged_conn)
+  dbDisconnect(transform_conn)
+  
+  return(transform_results)
+}
+```
+
+### 4. Business Validation Pattern (Phase 3PR)
+
+Processed phase creates a stable business validation checkpoint:
+
+```r
+#' Business Validation Pattern
+#' 
+#' Standard pattern for business validation and checkpoint creation
+#'
+execute_processed_phase <- function(config) {
+  
+  # Connect to databases
+  transform_conn <- dbConnect_from_list("transformed_data")
+  processed_conn <- dbConnect_from_list("processed_data")
+  
+  processed_results <- list()
+  
+  # Get all transformed tables
+  transformed_tables <- dbListTables(transform_conn)
+  target_tables <- transformed_tables[grepl("^transformed_", transformed_tables)]
+  
+  for (table_name in target_tables) {
+    
+    # Load transformed data
+    transformed_data_df <- dbGetQuery(transform_conn, paste("SELECT * FROM", table_name))
+    
+    # Apply business validation rules
+    validation_results <- validate_business_rules(transformed_data_df, config$processed$validation_rules)
+    
+    # Create processed data with validation status
+    processed_data <- transformed_data_df %>%
+      mutate(
+        etl_processed_timestamp = Sys.time(),
+        etl_validation_score = validation_results$score,
+        etl_validation_status = validation_results$status,
+        etl_business_complete = validation_results$complete
+      )
+    
+    # Write to processed_data
+    processed_table_name <- gsub("^transformed_", "processed_", table_name)
+    dbWriteTable(processed_conn, processed_table_name, processed_data, overwrite = TRUE)
+    
+    processed_results[[table_name]] <- list(
+      processed_table = processed_table_name,
+      row_count = nrow(processed_data),
+      validation_score = validation_results$score
+    )
+  }
+  
+  dbDisconnect(transform_conn)
+  dbDisconnect(processed_conn)
+  
+  return(processed_results)
+}
+```
+
+## Configuration Management Framework
+
+### Standard ETL Configuration Structure
+
+```r
+# Standard ETL Configuration Template
+etl_config_template <- list(
+  # ETL identification
+  etl_name = "example_etl",
+  etl_version = "1.0",
+  platform_id = "amz",
+  
+  # Import operations (Phase 0IM)
+  import_operations = list(
+    list(
+      operation_id = "00",
+      source_type = "google_sheets",
+      data_type = "product_profiles",
+      platform_id = "amz"
+    ),
+    list(
+      operation_id = "01",
+      source_type = "csv",
+      data_type = "competitor_products",
+      platform_id = "amz"
+    )
+  ),
+  
+  # Staging configuration (Phase 1ST)
+  staging = list(
+    encoding_target = "UTF-8",
+    validate_structure = TRUE,
+    required_columns = c("id", "name", "category"),
+    data_type_optimization = TRUE
+  ),
+  
+  # Transformation configuration (Phase 2TR)
+  transformation = list(
+    version = "1.0",
+    column_mapping = list(
+      "product_id" = "asin",
+      "product_name" = "product_name"
+    ),
+    type_conversions = list(
+      "product_id" = "character",
+      "price" = "numeric"
+    ),
+    derived_fields = list(
+      price_category = "case_when(price < 20 ~ 'Low', price < 50 ~ 'Medium', TRUE ~ 'High')"
+    ),
+    business_filters = list(
+      "!is.na(product_id)",
+      "price > 0"
+    )
+  ),
+  
+  # Processed configuration (Phase 3PR)
+  processed = list(
+    validation_rules = list(
+      completeness = 0.95,
+      uniqueness = 0.99,
+      validity = 0.90
+    )
+  ),
+  
+  # Cleansing configuration (Phase 4CL)
+  cleansing = list(
+    duplicate_strategy = "remove_exact",
+    missing_value_strategy = "impute_median",
+    outlier_handling = "cap_iqr"
+  ),
+  
+  # DB Normalization configuration (Phase 5DN)
+  db_normalization = list(
+    create_master_tables = TRUE,
+    enforce_referential_integrity = TRUE,
+    create_indexes = TRUE
+  ),
+  
+  # Data Normalization configuration (Phase 6NM)
+  data_normalization = list(
+    scaling_method = "standard",
+    categorical_encoding = "one_hot",
+    feature_selection = TRUE
+  )
+)
+```
+
+## Error Handling and Monitoring Framework
+
+### Comprehensive Error Handling
+
+```r
+#' ETL Error Handling Framework
+#' 
+#' Provides consistent error handling across all ETL phases
+#'
+etl_with_error_handling <- function(etl_function, config, phase_name) {
+  
+  start_time <- Sys.time()
+  
+  tryCatch({
+    
+    # Pre-execution validation
+    validate_phase_config(config, phase_name)
+    
+    # Execute ETL phase
+    result <- etl_function(config)
+    
+    # Post-execution validation
+    validate_phase_result(result, config, phase_name)
+    
+    # Calculate execution metrics
+    end_time <- Sys.time()
+    execution_time <- as.numeric(difftime(end_time, start_time, units = "mins"))
+    
+    # Return success result
+    return(list(
+      success = TRUE,
+      result = result,
+      phase = phase_name,
+      execution_time_mins = execution_time,
+      start_time = start_time,
+      end_time = end_time,
+      error = NULL
+    ))
+    
+  }, error = function(e) {
+    
+    # Log error details
+    error_details <- list(
+      phase = phase_name,
+      error_message = e$message,
+      error_time = Sys.time(),
+      config_snapshot = config,
+      call_stack = sys.calls()
+    )
+    
+    # Write error log
+    write_etl_error_log(error_details)
+    
+    # Return failure result
+    return(list(
+      success = FALSE,
+      result = NULL,
+      phase = phase_name,
+      execution_time_mins = NA,
+      start_time = start_time,
+      end_time = Sys.time(),
+      error = error_details
+    ))
+  })
+}
+```
+
+### ETL Execution Monitoring
+
+```r
+#' Complete ETL Execution with Monitoring
+#' 
+#' Executes full ETL pipeline with comprehensive monitoring
+#'
+execute_monitored_etl <- function(etl_config) {
+  
+  etl_start_time <- Sys.time()
+  execution_log <- list()
+  
+  message("Starting ETL: ", etl_config$etl_name)
+  
+  # Execute all phases in sequence
+  phases <- list(
+    list(name = "import", func = execute_import_phase),
+    list(name = "staging", func = execute_staging_phase),
+    list(name = "transform", func = execute_transform_phase),
+    list(name = "processed", func = execute_processed_phase),
+    list(name = "cleanse", func = execute_cleanse_phase),
+    list(name = "db_normalize", func = execute_db_normalize_phase),
+    list(name = "data_normalize", func = execute_data_normalize_phase)
+  )
+  
+  for (phase in phases) {
+    phase_result <- etl_with_error_handling(
+      phase$func,
+      etl_config,
+      phase$name
+    )
+    
+    execution_log[[phase$name]] <- phase_result
+    
+    if (!phase_result$success) {
+      return(create_etl_failure_result(phase$name, execution_log))
+    }
+  }
+  
+  # Calculate total execution time
+  etl_end_time <- Sys.time()
+  total_execution_time <- as.numeric(difftime(etl_end_time, etl_start_time, units = "mins"))
+  
+  # Create success result
+  etl_result <- list(
+    success = TRUE,
+    etl_name = etl_config$etl_name,
+    execution_log = execution_log,
+    total_execution_time_mins = total_execution_time,
+    start_time = etl_start_time,
+    end_time = etl_end_time
+  )
+  
+  # Write execution summary
+  write_etl_execution_summary(etl_result)
+  
+  message("ETL completed successfully: ", etl_config$etl_name)
+  
+  return(etl_result)
+}
+```
+
+## Integration with Business Derivations
+
+### D Series Integration Pattern
+
+ETL operations provide clean interfaces for business derivations:
+
+```r
+# Business Derivation Integration Pattern
+# In D03 (Positioning Analysis):
+
+# Instead of implementing data processing directly:
+# OLD approach (duplicated logic):
+# raw_data <- import_competitor_data(source_path)
+# clean_data <- clean_and_validate(raw_data)
+# processed_data <- apply_business_logic(clean_data)
+
+# NEW approach (reference ETL):
+positioning_etl_result <- execute_monitored_etl(etl04_competitor_config)
+
+if (positioning_etl_result$success) {
+  # Access processed data from ETL04
+  competitor_data <- tbl2(app_conn, "competitor_analysis") %>% collect()
+  
+  # Apply business-specific positioning analysis
+  positioning_insights <- analyze_competitive_positioning(competitor_data)
+  
+  # Generate positioning recommendations
+  recommendations <- generate_positioning_recommendations(positioning_insights)
+}
+```
+
+## Relationship to Data Flow Framework
+
+ETL Implementation Framework provides concrete implementations of DF series concepts:
+
+- **DF000 (Pipeline Architecture)**: Implements the theoretical pipeline as 7-layer ETL
+- **DF001 (Staging Operations)**: Provides staging implementation patterns
+- **DF002 (Transform Operations)**: Provides transformation implementation patterns
+- **DF003 (Cleansing Operations)**: Provides cleansing implementation patterns
+- **DF004 (Processing Operations)**: Provides processing implementation patterns
+- **DF005 (Application Data)**: Provides application data preparation patterns
+- **DF006 (Metadata Management)**: Integrates metadata tracking throughout ETL
+
+## Best Practices
+
+### 1. Configuration-Driven Development
+- Use standardized configuration structures
+- Externalize business logic to configuration files
+- Version control all configuration changes
+
+### 2. Comprehensive Error Handling
+- Implement error handling at every phase
+- Log errors with sufficient context for debugging
+- Provide graceful degradation where possible
+
+### 3. Monitoring and Observability
+- Track execution time for each phase
+- Monitor data quality metrics throughout pipeline
+- Maintain execution logs for audit trails
+
+### 4. Modular Design
+- Keep each phase focused on its specific responsibility
+- Use consistent patterns across all ETL implementations
+- Enable independent testing of each phase
+
+## Future Extensions
+
+### Planned Framework Enhancements
+
+1. **Parallel Processing Support**
+   - Multi-threaded import operations
+   - Parallel transformation processing
+   - Distributed processing capabilities
+
+2. **Real-time Integration**
+   - Streaming data support
+   - Event-driven processing
+   - Real-time validation
+
+3. **Advanced Monitoring**
+   - Performance metrics collection
+   - Automated alerting
+   - Dashboard integration
+
+4. **ML Integration**
+   - Automated feature engineering
+   - Model training integration
+   - Prediction pipeline support
+
+## Conclusion
+
+The ETL Implementation Framework provides a comprehensive foundation for building robust, scalable, and maintainable data pipelines. By standardizing configuration, execution, monitoring, and error handling patterns, it enables the creation of consistent ETL operations that business derivations can reliably reference.
+
+This framework bridges the gap between theoretical data flow concepts (DF series) and practical implementation needs (ETL series), ensuring that all data processing follows consistent patterns while remaining flexible enough to handle diverse business requirements.

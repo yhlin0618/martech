@@ -1,0 +1,83 @@
+---
+title: "MP152: Breaking Version Principle"
+subtitle: "Major version upgrades must be explicit migrations, not implicit compatibility"
+author: "MAMBA Architecture Team"
+date: "2026-02-28"
+version: "1.0.0"
+category: "Meta-Principle"
+tags: ["release", "versioning", "migration", "compatibility", "operability"]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+---
+
+## Statement
+
+**A new version release must define a single expected contract, and legacy behavior must not be silently tolerated.**
+
+When compatibility is intentionally broken, migration must be explicit: inputs, configuration, and execution entry points are upgraded through documented migration steps before the new version is executed.
+
+This does not contradict the no-fallback principle. It applies at the version boundary:
+- No-fallback governs behavior inside an operating version.
+- Breaking Version defines what should happen when moving to the next version.
+
+## Core Rules
+
+### 1) No Hidden Legacy Branches in New Version
+
+The new version must not silently branch to old schema parsing, old environment names, or old deployment defaults when migration is incomplete.
+
+```r
+# BAD: legacy fallback path in v2
+cfg <- if (file.exists("app_config_v2.yaml")) {
+  yaml::read_yaml("app_config_v2.yaml")
+} else {
+  yaml::read_yaml("app_config.yaml")
+}
+
+# GOOD: explicit migration gate
+cfg_path <- "app_config_v2.yaml"
+if (!file.exists(cfg_path)) {
+  stop(
+    "v2 configuration required but missing: ", cfg_path,
+    "\nRun migration utility migrate_config_v1_to_v2() first."
+  )
+}
+cfg <- yaml::read_yaml(cfg_path)
+```
+
+### 2) Full-Version Replacement Over Partial Patching
+
+Do not patch only isolated parts to keep old and new versions running together.
+If a version introduces incompatible semantics, ship one migration path that replaces required inputs and behavior atomically (scripts, schema, deployment expectations).
+
+### 3) Migration Is a Contract, Not a Best-Effort Recovery
+
+Upgrade tooling should be explicit and checkable:
+- required source version detected
+- migration steps executed
+- post-migration validation passed
+- clear failure when any step is skipped
+
+## Scope
+
+- Major release migrations for configs, schemas, API contracts, and deployment entry files
+- AI-assisted repository migration tasks between major version boundaries
+- Repository-wide rewrite jobs where compatibility is intentionally dropped
+
+## Acceptance Conditions
+
+1. New version entry script fails if expected version marker or required migration artifacts are missing.
+2. Legacy compatibility branches are removed or replaced by explicit compatibility adapters with deprecation plan.
+3. Migration artifacts are versioned, idempotent, and documented.
+4. Post-migration verification includes at least one failure-injection check for missing mandatory fields.
+
+## Related Principles
+
+- **MP151**: No-Fallback Principle
+- **MP137**: No Hardcoded Project-Specific Content
+- **MP004**: Sensible Defaults (applies only within stable version scope)
+- **MP037**: Principle-Guided Modifications

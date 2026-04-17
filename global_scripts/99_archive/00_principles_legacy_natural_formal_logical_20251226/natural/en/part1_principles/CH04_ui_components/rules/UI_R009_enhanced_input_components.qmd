@@ -1,0 +1,200 @@
+---
+title: "UI_R009: Enhanced Input Components Rule"
+subtitle: "Enhanced input components (such as selectizeInput, pickerInput) should be used in place of their basic counterparts (like selectInput, checkboxInput) throughout the application UI to ensure consistency, better user experience, and improved functionality"
+chapter: "CH04"
+category: "rule"
+number: "UI_R009"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article: 
+  number: 9
+  title: "Enhanced Input Components Rule"
+implements:
+  - "P075: Search Input Optimization"
+  - "P072: UI Package Consistency"
+  - "P070: Complete Input Display"
+related_to:
+  - "R010: Package Consistency Naming"
+  - "P026: Reactive Requirement Validation"
+  - "P022: CSS Over Conditional Controls"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 9: Enhanced Input Components Rule {#overview}
+
+**UI Components Law Article 9 (Enhanced Input Components Rule)**
+
+This rule establishes the standard for using enhanced input components in application UI.
+
+:::{.callout-important}
+## Core Requirement
+Enhanced input components (such as selectizeInput, pickerInput) should be used in place of their basic counterparts (like selectInput, checkboxInput) throughout the application UI to ensure consistency, better user experience, and improved functionality.
+:::
+
+# Section 1: Implementation Principles {#implementation}
+
+## Subsection 1: Select Component Substitution {#select-substitution}
+
+Always use enhanced select components instead of basic ones:
+
+| Instead of | Use |
+|------------|-----|
+| `selectInput()` | `selectizeInput()` |
+| `selectInput(selectize=FALSE)` | `selectizeInput()` |
+| Standard `<select>` HTML tags | `selectizeInput()` |
+
+```r
+# INCORRECT: Basic select input
+selectInput("category", "Select Category:", choices = categories)
+
+# CORRECT: Enhanced select input
+selectizeInput("category", "Select Category:", choices = categories)
+```
+
+## Subsection 2: Configuration for Different Dataset Sizes {#dataset-size-configuration}
+
+Configure selectizeInput differently based on dataset size (as specified in P0075):
+
+### Small Datasets (<100 products) {#small-datasets}
+
+```r
+selectizeInput(
+  "small_dataset",
+  "Select product:",
+  choices = small_dataset,
+  options = list(
+    placeholder = "Select an product...",
+    searchField = c("label", "value"),
+    render = I("{
+      option: function(product, escape) {
+        return '<div>' + escape(product.label) + '</div>';
+      }
+    }")
+  )
+)
+```
+
+### Medium Datasets (100-1,000 products) {#medium-datasets}
+
+```r
+selectizeInput(
+  "medium_dataset",
+  "Select product:",
+  choices = medium_dataset,
+  options = list(
+    placeholder = "Type to search...",
+    maxOptions = 10,
+    searchField = c("label", "value"),
+    render = I("{
+      option: function(product, escape) {
+        return '<div>' + escape(product.label) + '</div>';
+      }
+    }")
+  )
+)
+```
+
+### Large Datasets (>1,000 products) {#large-datasets}
+
+```r
+selectizeInput(
+  "large_dataset",
+  "Select product:",
+  choices = NULL, # Will be populated server-side
+  options = list(
+    placeholder = "Type to search...",
+    loadThrottle = 300,
+    maxOptions = 10,
+    searchField = c("label", "value")
+  )
+)
+
+# With server-side handler
+observe({
+  query <- input$large_dataset_search
+  if (is.null(query) || nchar(query) < 2) return()
+  
+  # Search logic here...
+  results <- search_dataset(query)
+  
+  updateSelectizeInput(session, "large_dataset", choices = results)
+})
+```
+
+## Subsection 3: Required Configuration Parameters {#required-configuration}
+
+All selectizeInput components should include these basic configurations:
+
+```r
+selectizeInput(
+  "input_id",
+  "Label:",
+  choices = dataset,
+  options = list(
+    placeholder = "Descriptive placeholder...",
+    searchField = c("label", "value"),  # Fields to search in
+    maxOptions = 10,                   # Limit displayed options
+    render = I("{
+      option: function(product, escape) {
+        return '<div>' + escape(product.label) + '</div>';
+      }
+    }")
+  )
+)
+```
+
+## Subsection 4: Other Enhanced Input Types {#other-enhanced-inputs}
+
+Apply the same principle to other input types:
+
+| Basic Component | Enhanced Alternative |
+|-----------------|----------------------|
+| `checkboxInput()` | `shinyWidgets::prettyCheckbox()` |
+| `radioButtons()` | `shinyWidgets::prettyRadioButtons()` |
+| `sliderInput()` | `shinyWidgets::sliderTextInput()` (when appropriate) |
+| `dateInput()` | `shinyWidgets::airDatepickerInput()` |
+
+# Section 2: Exceptions {#exceptions}
+
+The following exceptions are permitted:
+
+1. **Legacy Code**: Existing code may continue to use basic inputs but should be updated incrementally
+2. **Performance-Critical Sections**: When performance testing shows significant benefits to using simpler components
+3. **Specialized Requirements**: Cases where the enhanced components lack specific needed functionality
+4. **Preview/Demo Versions**: Simple prototypes or demos that will be improved before production
+
+# Section 3: Benefits {#benefits}
+
+1. **Consistency**: Creates a consistent user experience throughout the application
+2. **User Experience**: Provides better search, filtering, and selection capabilities
+3. **Accessibility**: Enhanced components often have better accessibility features
+4. **Mobile Usability**: Better experience on mobile and touch devices
+5. **Search Performance**: More efficient searching, especially for large datasets
+6. **Visual Appearance**: More modern and professional UI
+
+# Section 4: Verification Process {#verification-process}
+
+1. **Visual Inspection**: Review UI components for compliance
+2. **Code Review**: Check input component usage in UI definitions
+3. **Prototype Testing**: Verify performance with large datasets
+
+# Section 5: Additional Guidelines {#additional-guidelines}
+
+1. **Documentation**: Document any custom configurations in code comments
+2. **Helper Functions**: Create helper functions for frequently used configurations
+3. **Standard Options**: Maintain a central list of standard configuration options
+4. **Style Consistency**: Ensure all enhanced inputs follow the same styling guidelines
+
+---
+
+*Based on: UI Components Law Article 9*  
+*Related to: [P075 Search Input Optimization](../principles/UI_P075_search_input_optimization.qmd), [P072 UI Package Consistency](../principles/UI_P072_ui_package_consistency.qmd)*

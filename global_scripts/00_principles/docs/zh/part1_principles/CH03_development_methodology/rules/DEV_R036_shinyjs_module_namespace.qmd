@@ -1,0 +1,475 @@
+---
+title: "DEV_R036: ShinyJS 模組命名空間處理規則"
+subtitle: "在 moduleServer 上下文中使用 shinyjs 函數時，必須使用 session$ns() 而非 ns() 來正確命名空間元素 ID"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R036"
+date-created: "2025-09-28"
+date-modified: "2025-09-28"
+author: "Claude"
+type: "rule"
+law: "開發方法論法"
+article-number:
+  number: 36
+  title: "ShinyJS 模組命名空間處理規則"
+related_to:
+  - "UI_R002: Shiny 模組 ID 處理規則"
+  - "DEV_R030: Shiny 應用程式顯式命名空間規則"
+  - "DEV_R022: 模組數據連接規則"
+  - "MP017: 關注點分離"
+  - "MP058: 命名空間衝突避免"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第 36 條：ShinyJS 模組命名空間處理規則 {#overview}
+
+**開發方法論法第 36 條（ShinyJS 模組命名空間處理規則）**
+
+本規則建立了在 Shiny 模組中使用 shinyjs 函數的正確模式，特別針對不同上下文中命名空間函數可用性的問題。
+
+:::{.callout-important}
+## 核心規則
+在 `moduleServer` 上下文中使用 shinyjs 函數（show、hide、toggle 等）時，必須使用 `session$ns()` 來命名空間元素 ID，而不是僅在 UI 函數中可用的 `ns()`。
+:::
+
+# 第 1 節：問題說明 {#problem}
+
+## 第 1 小節：命名空間上下文差異 {#namespace-context}
+
+在 Shiny 模組中，存在兩種不同的命名空間上下文：
+
+1. **UI 上下文**：UI 函數中由 `NS(id)` 創建的 `ns()` 函數
+2. **伺服器上下文**：`moduleServer` 中可用的 `session$ns()` 函數
+
+## 第 2 小節：常見錯誤模式 {#error-pattern}
+
+當嘗試在伺服器上下文中使用 `ns()` 時，會發生以下錯誤：
+
+```r
+# 錯誤 - 導致錯誤
+moduleServer(id, function(input, output, session) {
+  observeEvent(input$button, {
+    shinyjs::show(id = ns("panel"))  # ❌ 錯誤：找不到函數 "ns"
+  })
+})
+```
+
+這是因為 `ns()` 在 `moduleServer` 函數範圍內未定義。
+
+# 第 2 節：實施指南 {#implementation}
+
+## 第 1 小節：模組伺服器中的正確模式 {#correct-server-pattern}
+
+在 `moduleServer` 中使用 shinyjs 函數時，始終使用 `session$ns()`：
+
+```r
+# 正確 - 使用 session$ns()
+moduleNameServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    observeEvent(input$toggle_button, {
+      # 使用 session$ns() 來命名空間 ID
+      shinyjs::toggle(id = session$ns("panel"))
+    })
+
+    observeEvent(input$show_button, {
+      shinyjs::show(id = session$ns("hidden_content"))
+    })
+
+    observeEvent(input$hide_button, {
+      shinyjs::hide(id = session$ns("visible_content"))
+    })
+  })
+}
+```
+
+## 第 2 小節：UI 函數模式保持不變 {#ui-pattern}
+
+在 UI 函數中，繼續使用標準的 `ns()` 模式：
+
+```r
+# 正確 - 在 UI 函數中使用 ns()
+moduleNameUI <- function(id) {
+  ns <- NS(id)  # 創建命名空間函數
+
+  tagList(
+    shinyjs::useShinyjs(),
+
+    # UI 中的所有 ID 都使用 ns()
+    actionButton(ns("toggle_button"), "切換面板"),
+    actionButton(ns("show_button"), "顯示內容"),
+    actionButton(ns("hide_button"), "隱藏內容"),
+
+    # 隱藏的元素也使用 ns()
+    shinyjs::hidden(
+      div(
+        id = ns("panel"),  # 此 ID 將在伺服器中以 session$ns("panel") 引用
+        h3("面板內容"),
+        p("此面板可以切換")
+      )
+    ),
+
+    div(
+      id = ns("hidden_content"),
+      style = "display: none;",
+      p("初始隱藏的內容")
+    ),
+
+    div(
+      id = ns("visible_content"),
+      p("初始可見的內容")
+    )
+  )
+}
+```
+
+# 第 3 節：完整工作範例 {#complete-example}
+
+## 第 1 小節：完整模組實現 {#full-implementation}
+
+```r
+# UI 函數
+collapsiblePanelUI <- function(id) {
+  ns <- NS(id)
+
+  tagList(
+    shinyjs::useShinyjs(),
+
+    bs4Dash::box(
+      title = "可摺疊面板",
+      width = 12,
+
+      # 切換按鈕
+      actionButton(
+        ns("toggle_btn"),
+        "切換內容",
+        class = "btn-primary mb-3"
+      ),
+
+      # 要切換的內容
+      shinyjs::hidden(
+        div(
+          id = ns("collapsible_content"),
+          class = "mt-3",
+
+          # 可摺疊部分內的多個元素
+          selectInput(
+            ns("selector"),
+            "選擇選項：",
+            choices = c("選項 A", "選項 B", "選項 C")
+          ),
+
+          textAreaInput(
+            ns("notes"),
+            "備註：",
+            rows = 3
+          ),
+
+          actionButton(
+            ns("submit"),
+            "提交",
+            class = "btn-success"
+          )
+        )
+      ),
+
+      # 狀態訊息
+      div(
+        id = ns("status_message"),
+        class = "alert alert-info mt-3",
+        style = "display: none;",
+        textOutput(ns("status_text"))
+      )
+    )
+  )
+}
+
+# 伺服器函數
+collapsiblePanelServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+
+    # 切換面板可見性
+    observeEvent(input$toggle_btn, {
+      # 正確：為 shinyjs 函數使用 session$ns()
+      shinyjs::toggle(
+        id = session$ns("collapsible_content"),
+        anim = TRUE,
+        animType = "slide"
+      )
+    })
+
+    # 處理表單提交
+    observeEvent(input$submit, {
+      # 顯示狀態訊息
+      shinyjs::show(
+        id = session$ns("status_message"),
+        anim = TRUE
+      )
+
+      # 更新狀態文字
+      output$status_text <- renderText({
+        paste("已提交：", input$selector, "備註：", input$notes)
+      })
+
+      # 3 秒後隱藏訊息
+      shinyjs::delay(
+        3000,
+        shinyjs::hide(
+          id = session$ns("status_message"),
+          anim = TRUE
+        )
+      )
+    })
+
+    # 基於選擇的條件可見性
+    observeEvent(input$selector, {
+      if (input$selector == "選項 C") {
+        # 僅在選項 C 時顯示提交按鈕
+        shinyjs::show(id = session$ns("submit"))
+      } else {
+        shinyjs::hide(id = session$ns("submit"))
+      }
+    })
+  })
+}
+```
+
+# 第 4 節：需要 session$ns() 的常見 ShinyJS 函數 {#shinyjs-functions}
+
+## 第 1 小節：可見性函數 {#visibility-functions}
+
+所有 shinyjs 可見性函數在模組中使用時都需要 `session$ns()`：
+
+```r
+# 在 moduleServer 內
+shinyjs::show(id = session$ns("element_id"))
+shinyjs::hide(id = session$ns("element_id"))
+shinyjs::toggle(id = session$ns("element_id"))
+shinyjs::toggleState(id = session$ns("button_id"))
+shinyjs::enable(id = session$ns("input_id"))
+shinyjs::disable(id = session$ns("input_id"))
+```
+
+## 第 2 小節：CSS 和類別函數 {#css-functions}
+
+CSS 操作函數也需要正確的命名空間：
+
+```r
+# 在 moduleServer 內
+shinyjs::addClass(id = session$ns("element_id"), class = "highlight")
+shinyjs::removeClass(id = session$ns("element_id"), class = "highlight")
+shinyjs::toggleClass(id = session$ns("element_id"), class = "active")
+
+# 內聯 CSS
+shinyjs::inlineCSS(paste0("#", session$ns("element_id"), " { color: red; }"))
+```
+
+## 第 3 小節：進階 ShinyJS 函數 {#advanced-functions}
+
+更複雜的 shinyjs 操作：
+
+```r
+# 在 moduleServer 內
+
+# 執行帶有命名空間 ID 的 JavaScript
+shinyjs::runjs(sprintf(
+  "document.getElementById('%s').scrollIntoView();",
+  session$ns("target_element")
+))
+
+# HTML 操作
+shinyjs::html(
+  id = session$ns("content_div"),
+  html = "<p>新內容</p>"
+)
+
+# 延遲動作
+shinyjs::delay(
+  1000,
+  shinyjs::hide(id = session$ns("temporary_message"))
+)
+
+# 點擊模擬
+shinyjs::click(id = session$ns("hidden_button"))
+```
+
+# 第 5 節：應避免的反模式 {#anti-patterns}
+
+## 第 1 小節：在伺服器中創建 ns 函數 {#creating-ns-server}
+
+:::{.callout-warning}
+## 永遠不要在 moduleServer 中創建 NS()
+
+```r
+# 錯誤 - 不要在伺服器中創建 NS
+moduleServer(id, function(input, output, session) {
+  ns <- NS(id)  # ❌ 這創建了一個新的命名空間，而不是模組的命名空間
+
+  observeEvent(input$button, {
+    shinyjs::show(id = ns("panel"))  # ❌ 錯誤的命名空間
+  })
+})
+```
+
+這創建了一個不匹配模組實際命名空間的新命名空間函數。
+:::
+
+## 第 2 小節：使用未命名空間的 ID {#unnamespaced-ids}
+
+:::{.callout-warning}
+## 始終為模組 ID 命名空間
+
+```r
+# 錯誤 - 缺少命名空間
+moduleServer(id, function(input, output, session) {
+  observeEvent(input$button, {
+    shinyjs::show(id = "panel")  # ❌ 在模組上下文中找不到元素
+  })
+})
+```
+
+這將無法找到元素，因為它在尋找全域 ID，而不是模組命名空間的 ID。
+:::
+
+## 第 3 小節：混合命名空間方法 {#mixed-namespace}
+
+:::{.callout-warning}
+## 不一致的命名空間使用
+
+```r
+# 錯誤 - 不一致的方法
+moduleServer(id, function(input, output, session) {
+  # 創建本地 ns 變數（令人困惑且容易出錯）
+  ns <- session$ns  # ❌ 不必要且令人困惑
+
+  observeEvent(input$button, {
+    shinyjs::show(id = ns("panel"))  # 有效但不必要地複雜
+  })
+})
+```
+
+雖然這在技術上有效，但不必要地複雜且可能導致混淆。始終直接使用 `session$ns()`。
+:::
+
+# 第 6 節：測試和除錯 {#testing}
+
+## 第 1 小節：驗證命名空間 {#verify-namespace}
+
+要除錯命名空間問題，可以列印命名空間 ID：
+
+```r
+moduleServer(id, function(input, output, session) {
+  observeEvent(input$debug_button, {
+    # 列印實際的命名空間 ID
+    print(paste("命名空間 ID：", session$ns("panel")))
+
+    # 驗證元素存在
+    shinyjs::runjs(sprintf(
+      "console.log('元素存在：', document.getElementById('%s') !== null);",
+      session$ns("panel")
+    ))
+  })
+})
+```
+
+## 第 2 小節：常見除錯步驟 {#debugging-steps}
+
+1. **檢查瀏覽器控制台**：尋找關於缺少元素的 JavaScript 錯誤
+2. **驗證 ID 匹配**：確保 UI 使用 `ns()` 而伺服器使用 `session$ns()`
+3. **列印命名空間 ID**：使用 `print(session$ns("id"))` 查看實際 ID
+4. **檢查 HTML**：使用瀏覽器開發者工具查看實際元素 ID
+
+# 第 7 節：與其他模組模式的整合 {#integration}
+
+## 第 1 小節：嵌套模組 {#nested-modules}
+
+當模組嵌套時，每個層級維持其自己的命名空間：
+
+```r
+# 父模組伺服器
+parentModuleServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # 父模組的 shinyjs 呼叫
+    observeEvent(input$parent_button, {
+      shinyjs::show(id = session$ns("parent_panel"))
+    })
+
+    # 呼叫子模組（不需要特殊的命名空間處理）
+    childModuleServer("child")
+  })
+}
+
+# 子模組伺服器
+childModuleServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # 子模組的 shinyjs 呼叫使用子模組的 session$ns
+    observeEvent(input$child_button, {
+      shinyjs::show(id = session$ns("child_panel"))
+    })
+  })
+}
+```
+
+## 第 2 小節：動態 UI 與 ShinyJS {#dynamic-ui}
+
+創建將用 shinyjs 操作的動態 UI 時：
+
+```r
+moduleServer(id, function(input, output, session) {
+  output$dynamic_ui <- renderUI({
+    tagList(
+      actionButton(session$ns("dynamic_button"), "動態動作"),
+      shinyjs::hidden(
+        div(
+          id = session$ns("dynamic_content"),
+          "此內容可以切換"
+        )
+      )
+    )
+  })
+
+  # 操作動態創建的元素
+  observeEvent(input$dynamic_button, {
+    shinyjs::toggle(id = session$ns("dynamic_content"))
+  })
+})
+```
+
+# 實施檢查清單 {#checklist}
+
+:::{.callout-note}
+## ShinyJS 模組命名空間檢查清單
+
+在模組中使用 shinyjs 時，驗證：
+
+- [ ] UI 函數使用 `ns <- NS(id)` 和 `ns()` 為所有元素 ID
+- [ ] 伺服器函數使用 `moduleServer(id, function(input, output, session) {...})`
+- [ ] 所有 shinyjs 函數呼叫在伺服器中使用 `session$ns("element_id")`
+- [ ] 沒有在 `moduleServer` 內創建 `NS()` 函數
+- [ ] 在 `renderUI` 中創建的動態 UI 元素使用 `session$ns()`
+- [ ] 嵌套模組各自使用其自己的 `session$ns()`
+- [ ] JavaScript 代碼片段正確跳脫命名空間 ID
+- [ ] 關於缺少函數的錯誤訊息已解決
+- [ ] 瀏覽器控制台沒有關於缺少元素的錯誤
+- [ ] 模組在使用不同 ID 多次實例化時正確工作
+:::
+
+# 結論 {#conclusion}
+
+ShinyJS 模組命名空間處理規則確保 shinyjs 函數在 Shiny 模組中正確工作，通過在每個上下文中使用適當的命名空間函數。記住：
+
+- **在 UI 函數中**：使用由 `NS(id)` 創建的 `ns()`
+- **在伺服器函數中**：使用由 `moduleServer` 提供的 `session$ns()`
+- **永不**：在 `moduleServer` 內創建 `NS()` 或使用未命名空間的 ID
+
+遵循此模式可防止常見的「找不到函數 'ns'」錯誤，並確保您的模組無論如何實例化或嵌套都能可靠工作。
+
+---
+
+*基於：開發方法論法第 36 條*
+*相關：[UI_R002 Shiny 模組 ID 處理](../../CH04_ui_components/rules/UI_R002_shiny_module_id_handling.qmd)、[DEV_R030 Shiny 中的顯式命名空間](DEV_R030_explicit_namespace_in_shiny.qmd)*

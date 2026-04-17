@@ -1,0 +1,338 @@
+version: '1.0'
+template_type: merged
+last_updated: '2026-04-14'
+phase_order:
+- 0IM
+- 1ST
+- 2TR
+- 3PR
+- 4CL
+- 5NM
+execution:
+  parallel_workers: 1
+  per_target_timeout_minutes: 30
+  total_pipeline_timeout_hours: 4
+  log_retention_days: 30
+platform_schema:
+  etl:
+    naming_pattern: '{platform}_ETL_{datatype}_{phase}.R'
+    directory_pattern: ETL/{platform}/
+    phases_available:
+    - 0IM
+    - 1ST
+    - 2TR
+    auto_dependency_rule: Same datatype, earlier phase
+  drv:
+    naming_pattern: '{platform}_D{group}_{seq}.R'
+    directory_pattern: DRV/{platform}/
+    groups_available:
+    - D01
+    - D03
+    - D04
+    - D05
+    auto_dependency_rule: Within group, earlier sequence
+available_platforms:
+  cbz:
+    name: Cyberbiz
+    description: Primary e-commerce platform
+  amz:
+    name: Amazon
+    description: Amazon marketplace platform
+  eby:
+    name: eBay
+    description: eBay marketplace platform
+  all:
+    name: Cross-Platform
+    description: Cross-platform aggregations
+  precision:
+    name: Precision Marketing
+    description: Precision marketing specific pipelines
+excluded_patterns:
+- '**/backup_*/**'
+- '**/archive/**'
+- '**/check_*.R'
+- '**/validate_*.R'
+- '**/generate_*.R'
+- '**/consolidate_*.R'
+- '**/rename_*.R'
+- '**/update_all_platforms_*.R'
+- '**/*_DEBUG.R'
+- '**/*_test.R'
+- '**/*_backup.R'
+scheduling:
+  default_mode: manual
+  cron_schedule: 0 2 * * 0
+  log_path: logs/
+  mode: manual
+  schedule: 0 2 * * 0
+platforms:
+  cbz:
+    enabled: yes
+    drv_groups:
+    - D00
+    - D01
+    - D04
+    - D05
+    etl:
+      customers:
+        phases:
+        - 0IM
+        - 1ST
+        - 2TR
+        scripts:
+        - script: cbz_ETL_customers_0IM.R
+          phase: 0IM
+        - script: cbz_ETL_customers_1ST.R
+          phase: 1ST
+          depends: cbz_ETL_customers_0IM
+        - script: cbz_ETL_customers_2TR.R
+          phase: 2TR
+          depends: cbz_ETL_customers_1ST
+      orders:
+        phases:
+        - 0IM
+        - 1ST
+        - 2TR
+        scripts:
+        - script: cbz_ETL_orders_0IM.R
+          phase: 0IM
+        - script: cbz_ETL_orders_1ST.R
+          phase: 1ST
+          depends: cbz_ETL_orders_0IM
+        - script: cbz_ETL_orders_2TR.R
+          phase: 2TR
+          depends: cbz_ETL_orders_1ST
+      products:
+        phases:
+        - 0IM
+        - 1ST
+        - 2TR
+        scripts:
+        - script: cbz_ETL_products_0IM.R
+          phase: 0IM
+        - script: cbz_ETL_products_1ST.R
+          phase: 1ST
+          depends: cbz_ETL_products_0IM
+        - script: cbz_ETL_products_2TR.R
+          phase: 2TR
+          depends: cbz_ETL_products_1ST
+      sales:
+        phases:
+        - 0IM
+        - 1ST
+        - 2TR
+        scripts:
+        - script: cbz_ETL_sales_0IM.R
+          phase: 0IM
+        - script: cbz_ETL_sales_1ST.R
+          phase: 1ST
+          depends: cbz_ETL_sales_0IM
+        - script: cbz_ETL_sales_2TR.R
+          phase: 2TR
+          depends: cbz_ETL_sales_1ST
+        - script: cbz_ETL_sales_2TS.R
+          phase: 2TS
+          depends: cbz_ETL_sales_2TR
+      sales_time_series:
+        phases: 2TR
+        scripts:
+        - script: cbz_ETL_sales_time_series_2TR.R
+          phase: 2TR
+      shared:
+        phases: 0IM
+        scripts:
+        - script: cbz_ETL_shared_0IM.R
+          phase: 0IM
+    drv:
+      D01:
+        description: D01 Derivations
+        scripts:
+        - script: cbz_D01_00.R
+          depends_etl: cbz_ETL_sales_2TS
+        - script: cbz_D01_01.R
+          depends_drv: cbz_D01_00
+        - script: cbz_D01_02.R
+          depends_drv: cbz_D01_01
+        - script: cbz_D01_03.R
+          depends_drv: cbz_D01_02
+        - script: cbz_D01_04.R
+          depends_drv: cbz_D01_03
+        - script: cbz_D01_05.R
+          depends_drv: cbz_D01_04
+        - script: cbz_D01_06.R
+          depends_drv: cbz_D01_05
+      D04:
+        description: D04 Derivations
+        scripts:
+        - script: cbz_D04_01.R
+        - script: cbz_D04_02.R
+          depends_drv: cbz_D04_01
+        - script: cbz_D04_03.R
+          depends_drv: cbz_D04_02
+        - script: cbz_D04_04.R
+          depends_drv: cbz_D04_03
+        - script: cbz_D04_05.R
+          depends_drv: cbz_D04_04
+        - script: cbz_D04_06.R
+          depends_drv: cbz_D04_05
+      D05:
+        description: D05 Derivations
+        scripts:
+        - script: cbz_D05_01.R
+  eby:
+    enabled: yes
+    drv_groups:
+    - D00
+    - D01
+    - D04
+    - D05
+    etl:
+      order_details_0IM__:
+        phases: []
+        scripts:
+        - script: eby_ETL_order_details_0IM___MAMBA.R
+          phase: MAMBA
+      order_details_1ST___MAMBA:
+        phases: []
+        scripts:
+        - script: eby_ETL_order_details_1ST___MAMBA_DEBUG.R
+          phase: DEBUG
+      order_details_1ST__:
+        phases: []
+        scripts:
+        - script: eby_ETL_order_details_1ST___MAMBA.R
+          phase: MAMBA
+      orders_0IM__:
+        phases: []
+        scripts:
+        - script: eby_ETL_orders_0IM___MAMBA.R
+          phase: MAMBA
+      orders_1ST__:
+        phases: []
+        scripts:
+        - script: eby_ETL_orders_1ST___MAMBA.R
+          phase: MAMBA
+      sales_0IM__:
+        phases: []
+        scripts:
+        - script: eby_ETL_sales_0IM___MAMBA.R
+          phase: MAMBA
+      sales_1ST__:
+        phases: []
+        scripts:
+        - script: eby_ETL_sales_1ST___MAMBA.R
+          phase: MAMBA
+      sales_2TR__:
+        phases: []
+        scripts:
+        - script: eby_ETL_sales_2TR___MAMBA.R
+          phase: MAMBA
+      sales_2TS__:
+        phases: []
+        scripts:
+        - script: eby_ETL_sales_2TS___MAMBA.R
+          phase: MAMBA
+      sales_time_series_2TR__:
+        phases: []
+        scripts:
+        - script: eby_ETL_sales_time_series_2TR___MAMBA.R
+          phase: MAMBA
+    drv:
+      D01:
+        description: D01 Derivations
+        scripts:
+        - script: eby_D01_00.R
+          depends_etl: eby_ETL_sales_2TS___MAMBA
+        - script: eby_D01_01.R
+          depends_drv: eby_D01_00
+        - script: eby_D01_02.R
+          depends_drv: eby_D01_01
+        - script: eby_D01_03.R
+          depends_drv: eby_D01_02
+        - script: eby_D01_04.R
+          depends_drv: eby_D01_03
+        - script: eby_D01_05.R
+          depends_drv: eby_D01_04
+        - script: eby_D01_06.R
+          depends_drv: eby_D01_05
+      D04:
+        description: D04 Derivations
+        scripts:
+        - script: eby_D04_02.R
+        - script: eby_D04_04.R
+          depends_drv: eby_D04_02
+      D05:
+        description: D05 Derivations
+        scripts:
+        - script: eby_D05_01.R
+  all:
+    enabled: yes
+    depends_on_platforms:
+    - cbz
+    - eby
+    drv_groups:
+    - D01
+    - D05
+    etl:
+      item_profile:
+        phases:
+        - 0IM
+        - 1ST
+        - 2TR
+        scripts:
+        - script: all_ETL_item_profile_0IM.R
+          phase: 0IM
+        - script: all_ETL_item_profile_1ST.R
+          phase: 1ST
+          depends: all_ETL_item_profile_0IM
+        - script: all_ETL_item_profile_2TR.R
+          phase: 2TR
+          depends: all_ETL_item_profile_1ST
+      metadata:
+        phases: 0IM
+        scripts:
+        - script: all_ETL_metadata_0IM.R
+          phase: 0IM
+      metadata_turbo:
+        phases: 0IM
+        scripts:
+        - script: all_ETL_metadata_turbo_0IM.R
+          phase: 0IM
+      product_mapping_0IM__:
+        phases: []
+        scripts:
+        - script: all_ETL_product_mapping_0IM___MAMBA.R
+          phase: MAMBA
+      summary:
+        phases:
+        - 0IM
+        - 1ST
+        - 2TR
+        scripts:
+        - script: all_ETL_summary_0IM.R
+          phase: 0IM
+        - script: all_ETL_summary_1ST.R
+          phase: 1ST
+          depends: all_ETL_summary_0IM
+        - script: all_ETL_summary_2TR.R
+          phase: 2TR
+          depends: all_ETL_summary_1ST
+    drv:
+      D01:
+        description: D01 Derivations
+        scripts:
+        - script: all_D01_07.R
+          depends_drv:
+          - cbz_D01_06
+          - eby_D01_06
+        - script: all_D01_08.R
+          depends_drv: all_D01_07
+      D05:
+        description: D05 Derivations
+        scripts:
+        - script: all_D05_01.R
+  precision:
+    enabled: no
+source:
+  base: /Users/che/Library/CloudStorage/Dropbox/che_workspace/projects/ai_martech/l4_enterprise/shared/global_scripts/21_rshinyapp_templates/config/_targets_config.base.yaml
+  override: /Users/che/Library/CloudStorage/Dropbox/che_workspace/projects/ai_martech/l4_enterprise/MAMBA/app_config.yaml

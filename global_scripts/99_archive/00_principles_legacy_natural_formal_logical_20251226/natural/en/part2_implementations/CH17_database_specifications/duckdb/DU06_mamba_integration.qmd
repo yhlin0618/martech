@@ -1,0 +1,574 @@
+---
+title: "DU06: DuckDB MAMBA Integration Patterns"
+subtitle: "Integration Patterns and Best Practices for MAMBA Framework"
+author: "MAMBA Framework"
+date: "2025-08-28"
+categories: [duckdb, mamba, integration]
+---
+
+# DuckDB MAMBA Integration Patterns
+
+## Overview
+
+This document details how DuckDB integrates with the MAMBA framework's architecture, following established principles and patterns for database operations, ETL pipelines, and application development.
+
+## Core Integration Patterns
+
+### Using tbl2() Universal Function
+
+The MAMBA framework provides `tbl2()` as a universal database interface that works seamlessly with DuckDB:
+
+```r
+# Load the tbl2 function
+source("scripts/global_scripts/02_db_utils/fn_tbl2.R")
+
+# Use with DuckDB connection
+con <- dbConnect(duckdb::duckdb(), "data/analytics.duckdb")
+
+# Query using tbl2
+sales_summary <- tbl2(con, "sales") %>%
+  filter(sale_date >= "2024-01-01") %>%
+  group_by(product_category) %>%
+  summarize(
+    total_sales = sum(amount),
+    order_count = n()
+  ) %>%
+  collect()
+```
+
+### Configuration-Driven Database Setup
+
+Following MP065 (Platform Configuration Management):
+
+```yaml
+# app_config.yaml
+database:
+  type: "duckdb"
+  path: "data/mamba_analytics.duckdb"
+  read_only: false
+  
+  settings:
+    memory_limit: "8GB"
+    threads: 4
+    temp_directory: "/tmp/duckdb"
+    preserve_insertion_order: false
+    
+  extensions:
+    - json
+    - httpfs
+    - postgres
+    
+  initialization:
+    - "SET timezone='Asia/Taipei'"
+    - "SET default_null_order='NULLS LAST'"
+```
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_connection.R`
+**Function**: `load_config_connection()`
+**Purpose**: Load DuckDB connection with YAML configuration
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_connection.R")
+con <- load_config_connection("app_config.yaml")
+```
+
+## ETL Pipeline Integration
+
+Following MP064 (ETL and Derivation Separation):
+
+### ETL Pipeline with DuckDB
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R`
+**Function**: `mamba_etl_json_pipeline()`
+**Purpose**: ETL pipeline for processing API data
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R")
+rows_processed <- mamba_etl_json_pipeline(con, api_response, "sales_fact")
+```
+
+### Derivation Scripts (Separate from ETL)
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R`
+**Function**: `mamba_customer_segmentation()`
+**Purpose**: Customer RFM segmentation and metrics derivation
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R")
+segments <- mamba_customer_segmentation(con, recency_days = 90)
+```
+
+## Platform Integration
+
+Following MP092 (Platform ID Standards) and MP094 (Platform API Architecture):
+
+### Platform-Specific Configuration
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R`
+**Function**: `mamba_load_platform_config()`
+**Purpose**: Load and configure platform-specific settings
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R")
+platform_config <- mamba_load_platform_config(con)
+```
+
+### Platform API Data Storage
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R`
+**Function**: `mamba_etl_json_pipeline()`
+**Purpose**: Store and process platform API responses
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R")
+rows <- mamba_etl_json_pipeline(con, api_response, "platform_data")
+```
+
+## Shiny Application Integration
+
+### Connection Pool for Shiny Apps
+
+```r
+# R: DuckDB connection pool for Shiny
+create_shiny_duckdb_pool <- function(config_path) {
+  config <- yaml::read_yaml(config_path)
+  
+  # Create connection pool
+  pool <- pool::dbPool(
+    drv = duckdb::duckdb(),
+    dbdir = config$database$path,
+    minSize = 1,
+    maxSize = config$database$max_connections %||% 5,
+    idleTimeout = 3600000,  # 1 hour
+    validationQuery = "SELECT 1"
+  )
+  
+  # Apply initial settings to pool connections
+  pool::poolWithTransaction(pool, function(con) {
+    for (setting in names(config$database$settings)) {
+      dbExecute(con, sprintf("SET %s='%s'", 
+                            setting, 
+                            config$database$settings[[setting]]))
+    }
+  })
+  
+  return(pool)
+}
+
+# Shiny server function
+server <- function(input, output, session) {
+  # Initialize pool
+  pool <- create_shiny_duckdb_pool("app_config.yaml")
+  
+  # Clean up on stop
+  onStop(function() {
+    pool::poolClose(pool)
+  })
+  
+  # Reactive data query
+  sales_data <- reactive({
+    req(input$date_range)
+    
+    pool::poolWithTransaction(pool, function(con) {
+      tbl2(con, "sales") %>%
+        filter(
+          sale_date >= input$date_range[1],
+          sale_date <= input$date_range[2]
+        ) %>%
+        collect()
+    })
+  })
+  
+  # Render output
+  output$sales_plot <- renderPlotly({
+    plot_ly(sales_data(), 
+            x = ~sale_date, 
+            y = ~amount, 
+            type = 'scatter', 
+            mode = 'lines')
+  })
+}
+```
+
+### Async Query Processing
+
+```r
+# R: Async DuckDB queries for Shiny
+library(future)
+library(promises)
+
+async_duckdb_query <- function(pool, query) {
+  future_promise({
+    con <- pool::poolCheckout(pool)
+    on.exit(pool::poolReturn(con))
+    
+    result <- dbGetQuery(con, query)
+    return(result)
+  })
+}
+
+# In Shiny server
+server <- function(input, output, session) {
+  pool <- create_shiny_duckdb_pool("app_config.yaml")
+  
+  observeEvent(input$analyze, {
+    # Show loading indicator
+    showModal(modalDialog("Processing...", footer = NULL))
+    
+    # Run async query
+    async_duckdb_query(pool, "
+      SELECT * FROM complex_analysis_view
+    ") %...>% {
+      result <- .
+      removeModal()
+      
+      # Update UI with results
+      output$results <- renderTable(result)
+    } %...!% {
+      error <- .
+      removeModal()
+      showNotification(paste("Error:", error$message), type = "error")
+    }
+  })
+}
+```
+
+## Data Validation Patterns
+
+### Schema Validation
+
+```r
+# R: Validate data against MAMBA schema
+validate_mamba_schema <- function(con, table_name, schema_def) {
+  # Get actual schema
+  actual_schema <- dbGetQuery(con, sprintf("
+    SELECT 
+      column_name,
+      data_type,
+      is_nullable
+    FROM information_schema.columns
+    WHERE table_name = '%s'
+    ORDER BY ordinal_position
+  ", table_name))
+  
+  # Compare with expected schema
+  validation_results <- list()
+  
+  for (i in seq_len(nrow(schema_def))) {
+    expected <- schema_def[i,]
+    actual <- actual_schema[actual_schema$column_name == expected$column_name,]
+    
+    if (nrow(actual) == 0) {
+      validation_results[[expected$column_name]] <- list(
+        status = "missing",
+        message = sprintf("Column %s is missing", expected$column_name)
+      )
+    } else if (actual$data_type != expected$data_type) {
+      validation_results[[expected$column_name]] <- list(
+        status = "type_mismatch",
+        message = sprintf("Column %s: expected %s, got %s", 
+                         expected$column_name,
+                         expected$data_type,
+                         actual$data_type)
+      )
+    } else {
+      validation_results[[expected$column_name]] <- list(
+        status = "valid"
+      )
+    }
+  }
+  
+  return(validation_results)
+}
+```
+
+### Data Quality Checks
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R`
+**Function**: `mamba_data_quality_check()`
+**Purpose**: Comprehensive data quality validation
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_mamba_patterns.R")
+quality_report <- mamba_data_quality_check(con, "sales_fact")
+```
+
+## Testing Patterns
+
+### Unit Testing DuckDB Queries
+
+```r
+# R: Test framework for DuckDB queries
+library(testthat)
+
+test_duckdb_queries <- function() {
+  # Setup test database
+  test_con <- dbConnect(duckdb::duckdb(), ":memory:")
+  
+  # Create test data
+  dbExecute(test_con, "
+    CREATE TABLE test_sales (
+      id INTEGER,
+      amount DECIMAL(10,2),
+      sale_date DATE
+    )
+  ")
+  
+  dbExecute(test_con, "
+    INSERT INTO test_sales VALUES
+    (1, 100.00, '2024-01-01'),
+    (2, 200.00, '2024-01-02'),
+    (3, 150.00, '2024-01-03')
+  ")
+  
+  test_that("Aggregation queries work correctly", {
+    result <- dbGetQuery(test_con, "
+      SELECT SUM(amount) as total
+      FROM test_sales
+    ")
+    
+    expect_equal(result$total, 450.00)
+  })
+  
+  test_that("Date filtering works correctly", {
+    result <- dbGetQuery(test_con, "
+      SELECT COUNT(*) as cnt
+      FROM test_sales
+      WHERE sale_date >= '2024-01-02'
+    ")
+    
+    expect_equal(result$cnt, 2)
+  })
+  
+  test_that("tbl2 function works with DuckDB", {
+    source("scripts/global_scripts/02_db_utils/fn_tbl2.R")
+    
+    result <- tbl2(test_con, "test_sales") %>%
+      filter(amount > 100) %>%
+      collect()
+    
+    expect_equal(nrow(result), 2)
+  })
+  
+  # Cleanup
+  dbDisconnect(test_con, shutdown = TRUE)
+}
+```
+
+### Integration Testing
+
+```r
+# R: Integration tests for MAMBA + DuckDB
+test_mamba_integration <- function() {
+  # Test configuration loading
+  test_that("Configuration loads correctly", {
+    config <- yaml::read_yaml("tests/fixtures/test_config.yaml")
+    expect_equal(config$database$type, "duckdb")
+  })
+  
+  # Test ETL pipeline
+  test_that("ETL pipeline completes successfully", {
+    test_config <- "tests/fixtures/test_config.yaml"
+    
+    expect_no_error({
+      mamba_etl_pipeline(test_config)
+    })
+    
+    # Verify output
+    con <- load_mamba_duckdb(test_config)
+    row_count <- dbGetQuery(con, "SELECT COUNT(*) as n FROM sales_fact")$n
+    expect_gt(row_count, 0)
+    dbDisconnect(con, shutdown = TRUE)
+  })
+  
+  # Test platform integration
+  test_that("Platform-specific setup works", {
+    con <- setup_platform_duckdb("CBZ")
+    
+    # Check schema exists
+    schemas <- dbGetQuery(con, "
+      SELECT schema_name 
+      FROM information_schema.schemata
+      WHERE schema_name = 'CBZ'
+    ")
+    
+    expect_equal(nrow(schemas), 1)
+    dbDisconnect(con, shutdown = TRUE)
+  })
+}
+```
+
+## Performance Monitoring
+
+### Query Performance Tracking
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R`
+**Function**: `create_performance_dashboard()`
+**Purpose**: Track and monitor query performance metrics
+:::
+
+```r
+# Usage example
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_query_patterns.R")
+metrics <- create_performance_dashboard(con)
+```
+
+## Migration Patterns
+
+### Migrating from SQLite to DuckDB
+
+```r
+# R: Migrate MAMBA app from SQLite to DuckDB
+migrate_sqlite_to_duckdb <- function(sqlite_path, duckdb_path) {
+  # Connect to both databases
+  sqlite_con <- dbConnect(RSQLite::SQLite(), sqlite_path)
+  duckdb_con <- dbConnect(duckdb::duckdb(), duckdb_path)
+  
+  # Install and load SQLite scanner
+  dbExecute(duckdb_con, "INSTALL sqlite; LOAD sqlite;")
+  
+  # Attach SQLite database
+  dbExecute(duckdb_con, sprintf("
+    ATTACH '%s' AS sqlite_db (TYPE SQLITE)
+  ", sqlite_path))
+  
+  # Get all tables
+  tables <- dbListTables(sqlite_con)
+  
+  # Migrate each table
+  for (table in tables) {
+    message(sprintf("Migrating table: %s", table))
+    
+    # Create table in DuckDB with optimized types
+    dbExecute(duckdb_con, sprintf("
+      CREATE TABLE %s AS 
+      SELECT * FROM sqlite_db.%s
+    ", table, table))
+    
+    # Verify migration
+    sqlite_count <- dbGetQuery(sqlite_con, 
+      sprintf("SELECT COUNT(*) as n FROM %s", table))$n
+    duckdb_count <- dbGetQuery(duckdb_con, 
+      sprintf("SELECT COUNT(*) as n FROM %s", table))$n
+    
+    if (sqlite_count != duckdb_count) {
+      warning(sprintf("Row count mismatch for %s: SQLite=%d, DuckDB=%d",
+                     table, sqlite_count, duckdb_count))
+    }
+  }
+  
+  # Create indexes
+  create_mamba_indexes(duckdb_con)
+  
+  # Cleanup
+  dbDisconnect(sqlite_con)
+  dbExecute(duckdb_con, "DETACH sqlite_db")
+  dbDisconnect(duckdb_con, shutdown = TRUE)
+  
+  message("Migration complete")
+}
+```
+
+## Error Handling Patterns
+
+### Robust Query Execution
+
+```r
+# R: Error-resilient DuckDB operations
+safe_duckdb_operation <- function(con, operation, max_retries = 3) {
+  for (attempt in 1:max_retries) {
+    result <- tryCatch({
+      operation(con)
+    }, error = function(e) {
+      if (grepl("out of memory", e$message, ignore.case = TRUE)) {
+        # Handle memory errors
+        message("Memory error detected, clearing cache...")
+        dbExecute(con, "PRAGMA disable_object_cache")
+        dbExecute(con, "PRAGMA enable_object_cache")
+        gc()
+        
+        if (attempt < max_retries) {
+          message(sprintf("Retrying (attempt %d/%d)...", 
+                         attempt + 1, max_retries))
+          return(NULL)
+        }
+      } else if (grepl("locked", e$message, ignore.case = TRUE)) {
+        # Handle locking errors
+        message("Database locked, waiting...")
+        Sys.sleep(2^attempt)  # Exponential backoff
+        
+        if (attempt < max_retries) {
+          return(NULL)
+        }
+      }
+      
+      # Re-throw other errors
+      stop(e)
+    })
+    
+    if (!is.null(result)) {
+      return(result)
+    }
+  }
+  
+  stop("Operation failed after all retries")
+}
+
+# Usage
+result <- safe_duckdb_operation(con, function(con) {
+  dbGetQuery(con, "SELECT * FROM large_table")
+})
+```
+
+## Best Practices Summary
+
+### DO's
+1. **Use tbl2()** for all database operations
+2. **Configure via YAML** for all settings
+3. **Separate ETL from derivations** (MP064)
+4. **Use platform_ids** not numeric IDs (MP092)
+5. **Implement connection pooling** for Shiny apps
+6. **Track query performance** in production
+7. **Validate schemas** after migrations
+8. **Use async queries** for long-running operations
+
+### DON'Ts
+1. **Don't hardcode** database paths or settings
+2. **Don't mix** ETL and business logic
+3. **Don't ignore** memory limits
+4. **Don't skip** data validation
+5. **Don't use** numeric platform IDs
+6. **Don't share** connections between threads
+
+## Related Documentation
+
+- [MAMBA Principles](../../part1_principles/)
+- [ETL Pipelines (MP064)](../../part1_principles/CH00_fundamental_principles/04_data_management/MP064_etl_derivation_separation.qmd)
+- [Platform Standards (MP092)](../../part1_principles/CH00_fundamental_principles/04_data_management/MP092_platform_code_standard.qmd)
+- [DuckDB Index](index.qmd)

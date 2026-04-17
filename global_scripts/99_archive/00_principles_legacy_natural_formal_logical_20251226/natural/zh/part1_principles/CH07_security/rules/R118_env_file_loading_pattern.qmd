@@ -1,0 +1,598 @@
+---
+title: "R118: .env 檔案載入模式"
+subtitle: "具備備援機制的標準化環境變數載入"
+chapter: "CH07"
+category: "rule"
+number: "R118"
+date-created: "2025-10-03"
+date-modified: "2025-10-03"
+author: "Claude Code (principle-revisor)"
+type: "rule"
+parent-principle: "MP110"
+enforcement: "REQUIRED"
+severity: "HIGH"
+related_to:
+  - "MP011_discrepancy_principle"
+  - "R092_universal_dbi"
+  - "MP020_dry"
+  - "SEC_R001_no_hardcoded_credentials"
+  - "SEC_R002_environment_variable_standards"
+  - "ISSUE_118"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+## 規則聲明
+
+所有專案**必須**使用標準化模式從 `.env` 檔案載入環境變數，採用 dotenv 優先、readRenviron 備援的方式，並強制驗證關鍵變數。
+
+## 解決的問題
+
+### R118 之前（不一致的模式）
+
+專案有多種不一致的 .env 檔案載入方式：
+
+```r
+# 模式 1：直接呼叫 dotenv（無備援）
+dotenv::load_dot_env()  # ❌ 套件未安裝時會失敗
+
+# 模式 2：僅使用 readRenviron（較不彈性）
+readRenviron(".env")  # ❌ 解析功能有限
+
+# 模式 3：無驗證
+load_dot_env()  # ❌ 未檢查關鍵變數是否載入
+
+# 模式 4：不明確的檔案位置
+load_dot_env(file = "somewhere/.env")  # ❌ 路徑不一致
+```
+
+**問題：**
+- dotenv 不可用時無備援機制
+- 無驗證關鍵環境變數
+- .env 檔案位置不一致
+- 載入失敗時靜默無通知
+- 缺乏清晰的狀態訊息
+
+### R118 之後（標準化模式）
+
+所有專案統一做法：
+
+```r
+# 方法 1：使用工具函數（建議）
+source("global_scripts/04_utils/fn_load_env_file.R")
+load_env_file(
+  app_dir = getwd(),
+  required_vars = c("OPENAI_API_KEY", "PGHOST", "PGPASSWORD")
+)
+
+# 方法 2：內聯模式（函數不可用時）
+env_file <- file.path(getwd(), ".env")
+if (file.exists(env_file)) {
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    dotenv::load_dot_env(file = env_file)
+    message("✅ 使用 dotenv 載入環境變數")
+  } else {
+    readRenviron(env_file)
+    message("✅ 使用 readRenviron 載入環境變數")
+  }
+
+  # 驗證關鍵變數
+  for (var in c("OPENAI_API_KEY", "PGHOST")) {
+    if (!nzchar(Sys.getenv(var))) {
+      warning("⚠️  必要變數 ", var, " 未設定")
+    }
+  }
+}
+```
+
+## 標準實作
+
+### 工具函數：fn_load_env_file.R
+
+**位置**：`global_scripts/04_utils/fn_load_env_file.R`
+
+```r
+#' 從 .env 檔案載入環境變數
+#'
+#' @description
+#' 以備援機制從 .env 檔案載入環境變數。
+#' 遵循 MAMBA 標準模式，優先使用 dotenv 套件。
+#'
+#' @param app_dir 字元。專案根目錄。預設：getwd()
+#' @param env_filename 字元。.env 檔案名稱。預設：".env"
+#' @param required_vars 字元向量。需驗證的變數。預設：c("OPENAI_API_KEY")
+#' @param silent 邏輯。抑制訊息。預設：FALSE
+#'
+#' @return 不可見的列表，包含狀態和已載入變數
+#'
+#' @examples
+#' # 基本用法
+#' load_env_file()
+#'
+#' # 自訂位置
+#' load_env_file(app_dir = "/path/to/project")
+#'
+#' # 驗證多個變數
+#' load_env_file(required_vars = c("OPENAI_API_KEY", "PGHOST", "PGPASSWORD"))
+#'
+#' @export
+load_env_file <- function(app_dir = getwd(),
+                          env_filename = ".env",
+                          required_vars = c("OPENAI_API_KEY"),
+                          silent = FALSE) {
+
+  env_file <- file.path(app_dir, env_filename)
+  result <- list(success = FALSE, method = NULL, loaded_vars = character(0))
+
+  # 檢查 .env 檔案是否存在
+  if (!file.exists(env_file)) {
+    if (!silent) message("ℹ️  在 ", app_dir, " 中找不到 .env 檔案")
+    return(invisible(result))
+  }
+
+  # 優先嘗試 dotenv，備援使用 readRenviron
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    tryCatch({
+      dotenv::load_dot_env(file = env_file)
+      result$method <- "dotenv"
+      result$success <- TRUE
+      if (!silent) message("✅ 使用 dotenv 套件從 .env 載入環境變數")
+    }, error = function(e) {
+      if (!silent) warning("⚠️  使用 dotenv 載入 .env 失敗：", e$message)
+    })
+  }
+
+  # 若 dotenv 失敗或不可用，備援使用 readRenviron
+  if (!result$success) {
+    tryCatch({
+      readRenviron(env_file)
+      result$method <- "readRenviron"
+      result$success <- TRUE
+      if (!silent) message("✅ 使用 readRenviron 從 .env 載入環境變數")
+    }, error = function(e) {
+      if (!silent) warning("⚠️  使用 readRenviron 載入 .env 失敗：", e$message)
+      return(invisible(result))
+    })
+  }
+
+  # 驗證必要變數
+  if (result$success && length(required_vars) > 0) {
+    for (var in required_vars) {
+      value <- Sys.getenv(var)
+      if (nzchar(value)) {
+        result$loaded_vars <- c(result$loaded_vars, var)
+        if (!silent) message("  ✓ ", var, " 已設定")
+      } else {
+        if (!silent) warning("  ⚠️  ", var, " 未設定")
+      }
+    }
+  }
+
+  return(invisible(result))
+}
+```
+
+## 使用模式
+
+### 模式 1：應用程式初始化（最常見）
+
+```r
+# 在 app.R 或初始化腳本中
+source("global_scripts/04_utils/fn_load_env_file.R")
+
+# 載入並驗證
+load_env_file(
+  required_vars = c(
+    "OPENAI_API_KEY",
+    "PGHOST",
+    "PGPORT",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGDATABASE"
+  )
+)
+```
+
+### 模式 2：開發腳本
+
+```r
+# 在分析或測試腳本中
+source("global_scripts/04_utils/fn_load_env_file.R")
+
+# 載入最低限度要求
+load_env_file(
+  required_vars = c("OPENAI_API_KEY")
+)
+```
+
+### 模式 3：靜默載入（背景作業）
+
+```r
+# 在排程任務或背景程序中
+result <- load_env_file(
+  required_vars = c("OPENAI_API_KEY", "PGHOST"),
+  silent = TRUE
+)
+
+if (!result$success) {
+  stop("載入環境變數失敗")
+}
+```
+
+### 模式 4：自訂 .env 位置
+
+```r
+# 用於非標準結構的專案
+load_env_file(
+  app_dir = "/path/to/project/root",
+  env_filename = ".env.production"
+)
+```
+
+## 關鍵要求
+
+### 1. ✅ 備援機制
+
+**必須**先嘗試 dotenv，備援使用 readRenviron：
+
+```r
+if (requireNamespace("dotenv", quietly = TRUE)) {
+  dotenv::load_dot_env(file = env_file)
+} else {
+  readRenviron(env_file)
+}
+```
+
+**理由**：dotenv 提供更好的解析功能，但並非所有環境都已安裝。
+
+### 2. ✅ 檔案位置一致性
+
+**.env 必須位於專案根目錄**：
+
+```r
+# ✅ 正確
+env_file <- file.path(getwd(), ".env")
+env_file <- file.path(app_dir, ".env")
+
+# ❌ 錯誤
+env_file <- ".env"  # 相對路徑不明確
+env_file <- "config/.env"  # 非標準位置
+```
+
+### 3. ✅ 變數驗證
+
+**必須**在載入後驗證關鍵環境變數：
+
+```r
+# 驗證每個必要變數
+for (var in required_vars) {
+  value <- Sys.getenv(var)
+  if (!nzchar(value)) {
+    warning("⚠️  必要變數 ", var, " 未設定")
+  }
+}
+```
+
+### 4. ✅ 清晰的狀態訊息
+
+**必須**提供明確的回饋訊息：
+
+```r
+message("✅ 使用 dotenv 載入環境變數")
+message("  ✓ OPENAI_API_KEY 已設定")
+warning("  ⚠️  PGHOST 未設定")
+```
+
+### 5. ✅ 安全性遵循
+
+**.env 絕不可提交到版本控制**：
+
+```bash
+# .gitignore（必要）
+.env
+.env.*
+!.env.example
+```
+
+## 檔案結構標準
+
+### .env 範本 (.env.example)
+
+**可安全提交** - 提供結構但不含機密資訊：
+
+```bash
+# .env.example
+# 複製為 .env 並填入實際值
+
+# 資料庫設定
+PGHOST=your-database-host.com
+PGPORT=5432
+PGUSER=your-username
+PGPASSWORD=your-secure-password
+PGDATABASE=your-database-name
+PGSSLMODE=require
+
+# API 金鑰
+OPENAI_API_KEY=sk-proj-your-key-here
+
+# 應用程式設定
+APP_ENV=development
+LOG_LEVEL=INFO
+```
+
+### 實際 .env 檔案
+
+**絕不提交** - 包含真實憑證：
+
+```bash
+# .env
+# 此檔案在 .gitignore 中 - 請勿提交
+
+PGHOST=prod-db.company.com
+PGPORT=5432
+PGUSER=app_user
+PGPASSWORD=actual_secure_password_here
+PGDATABASE=production_db
+PGSSLMODE=require
+
+OPENAI_API_KEY=sk-proj-actual-key-here
+
+APP_ENV=production
+LOG_LEVEL=WARN
+```
+
+## 與其他原則的整合
+
+### MP011：差異原則
+
+確保在任何程式碼嘗試存取環境變數之前載入 .env：
+
+```r
+# 正確：先載入 .env，再檢查環境
+load_env_file(required_vars = c("OPENAI_API_KEY"))
+api_key <- Sys.getenv("OPENAI_API_KEY")
+if (!nzchar(api_key)) {
+  stop("OPENAI_API_KEY 不可用")  # MP011 遵循
+}
+```
+
+### R092：通用 DBI 方法
+
+資料庫連線使用此模式載入的環境變數：
+
+```r
+# 遵循 R118 載入 .env
+load_env_file(required_vars = c("PGHOST", "PGUSER", "PGPASSWORD"))
+
+# 使用 R092 連線
+con <- dbConnect(
+  RPostgres::Postgres(),
+  host = Sys.getenv("PGHOST"),
+  port = Sys.getenv("PGPORT"),
+  user = Sys.getenv("PGUSER"),
+  password = Sys.getenv("PGPASSWORD"),
+  dbname = Sys.getenv("PGDATABASE")
+)
+```
+
+### MP020：DRY（不重複自己）
+
+使用 `load_env_file()` 函數而非重複模式：
+
+```r
+# ✅ 正確：DRY 遵循
+source("global_scripts/04_utils/fn_load_env_file.R")
+load_env_file(required_vars = c("OPENAI_API_KEY"))
+
+# ❌ 錯誤：重複模式
+env_file <- file.path(getwd(), ".env")
+if (file.exists(env_file)) {
+  if (requireNamespace("dotenv", quietly = TRUE)) {
+    dotenv::load_dot_env(file = env_file)
+  } else {
+    readRenviron(env_file)
+  }
+}
+# （在多個檔案中重複）
+```
+
+### SEC_R001：無硬編碼憑證
+
+R118 是載入憑證的標準機制：
+
+```r
+# ✅ 正確：來自 .env 的憑證（R118 + SEC_R001）
+load_env_file(required_vars = c("API_KEY"))
+api_key <- Sys.getenv("API_KEY")
+
+# ❌ 錯誤：硬編碼憑證（違反 SEC_R001）
+api_key <- "sk-proj-hardcoded-key"
+```
+
+## 錯誤處理
+
+### 常見問題與解決方案
+
+#### 問題 1：找不到 .env 檔案
+
+```r
+# 錯誤訊息
+ℹ️  在 /path/to/project 中找不到 .env 檔案
+
+# 解決方案：在專案根目錄建立 .env 檔案
+cat("OPENAI_API_KEY=your-key\n", file = ".env")
+```
+
+#### 問題 2：載入後變數未設定
+
+```r
+# 警告訊息
+⚠️  必要變數 PGHOST 未設定
+
+# 解決方案：檢查 .env 檔案格式
+# 確保等號周圍無空格
+# PGHOST=localhost  ✅ 正確
+# PGHOST = localhost  ❌ 可能失敗
+```
+
+#### 問題 3：dotenv 套件不可用
+
+```r
+# 函數自動備援至 readRenviron
+✅ 使用 readRenviron 從 .env 載入環境變數
+
+# 無需動作 - 備援機制處理此情況
+```
+
+#### 問題 4：權限被拒
+
+```r
+# 錯誤：無法開啟檔案 '.env'：權限被拒
+
+# 解決方案：修正檔案權限
+# chmod 600 .env
+```
+
+## 測試與驗證
+
+### 單元測試模式
+
+```r
+# 測試 .env 載入
+test_that("load_env_file 正常運作", {
+  # 建立暫時 .env
+  temp_dir <- tempdir()
+  temp_env <- file.path(temp_dir, ".env")
+  writeLines("TEST_VAR=test_value", temp_env)
+
+  # 載入並驗證
+  result <- load_env_file(
+    app_dir = temp_dir,
+    required_vars = "TEST_VAR",
+    silent = TRUE
+  )
+
+  expect_true(result$success)
+  expect_equal(Sys.getenv("TEST_VAR"), "test_value")
+  expect_true("TEST_VAR" %in% result$loaded_vars)
+
+  # 清理
+  unlink(temp_env)
+})
+```
+
+### 整合測試模式
+
+```r
+# 測試完整初始化流程
+test_that("初始化正確載入 .env", {
+  # 設定
+  source("global_scripts/04_utils/fn_load_env_file.R")
+
+  # 執行
+  result <- load_env_file(required_vars = c("OPENAI_API_KEY"))
+
+  # 驗證
+  expect_true(result$success)
+  expect_true(nzchar(Sys.getenv("OPENAI_API_KEY")))
+})
+```
+
+## 遵循檢查清單
+
+每個專案初始化腳本必須：
+
+- [ ] 從 `global_scripts/04_utils/` 載入 `fn_load_env_file.R`
+- [ ] 以適當的 `required_vars` 呼叫 `load_env_file()`
+- [ ] 將 `.env` 檔案放在專案根目錄
+- [ ] 在 `.gitignore` 中包含 `.env`
+- [ ] 在版本庫中提供 `.env.example` 範本
+- [ ] 載入後驗證關鍵變數
+- [ ] 處理 dotenv 和 readRenviron 兩種情況
+- [ ] 提供清晰的狀態訊息
+- [ ] 回傳結構化結果以便程式化檢查
+
+## 遷移指南
+
+### 遷移現有專案
+
+**步驟 1**：新增工具函數
+
+```bash
+# 確保 fn_load_env_file.R 可用
+ls global_scripts/04_utils/fn_load_env_file.R
+```
+
+**步驟 2**：取代現有的 .env 載入程式碼
+
+```r
+# 舊程式碼（移除）
+# dotenv::load_dot_env()
+
+# 新程式碼（新增）
+source("global_scripts/04_utils/fn_load_env_file.R")
+load_env_file(required_vars = c("OPENAI_API_KEY", "PGHOST"))
+```
+
+**步驟 3**：若需要，將 .env 移至專案根目錄
+
+```bash
+# 檢查目前位置
+find . -name ".env"
+
+# 若不在根目錄，移動至根目錄
+mv config/.env ./.env
+```
+
+**步驟 4**：更新 .gitignore
+
+```bash
+# 若不存在，新增至 .gitignore
+echo ".env" >> .gitignore
+echo ".env.*" >> .gitignore
+echo "!.env.example" >> .gitignore
+```
+
+**步驟 5**：建立 .env.example
+
+```bash
+# 複製目前的 .env 並移除值
+cp .env .env.example
+# 編輯 .env.example，將實際值替換為佔位符
+```
+
+## 相關文件
+
+- **ISSUE-118**：初始實作與標準化
+- **MP110**：安全憑證管理（母原則）
+- **SEC_R001**：無硬編碼憑證
+- **SEC_R002**：環境變數標準
+- **R092**：通用 DBI 方法
+- **MP011**：差異原則
+
+## 執行
+
+**此規則為必要，並透過以下方式執行：**
+
+1. 程式碼審查 - 所有 PR 必須使用標準化模式
+2. CI/CD 檢查 - 自動驗證 .env 處理
+3. 安全稽核 - 定期掃描不合規程式碼
+4. 原則遵循 - 在原則遵循指標中追蹤
+
+**不遵循的補救措施：**
+
+1. 立即：更新使用 `load_env_file()` 函數
+2. 24 小時內：驗證所有必要變數已檢查
+3. 1 週內：為 .env 載入新增全面測試
+
+---
+
+**版本**：1.0
+**狀態**：活躍
+**實作**：ISSUE-118（2025-10-03）
+**下次審查**：2025-11-03

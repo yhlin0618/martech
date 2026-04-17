@@ -1,0 +1,300 @@
+---
+title: "DEV_R010: AI Parameter Modification Rule"
+subtitle: "When AI systems (including LLMs like Claude) modify parameters or configuration files, they must follow the Slowly Changing Dimension Type 2 (SCD Type 2) approach, ensuring append-only without overwriting"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R010"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article-number: 
+  number: 10
+  title: "AI Parameter Modification Rule"
+related_to:
+  - "MP014: Change Tracking"
+  - "MP012: Company-Centered Design"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 10: AI Parameter Modification Rule {#overview}
+
+**Development Methodology Law Article 10 (AI Parameter Modification Rule)**
+
+When AI systems (including LLMs like Claude) modify parameters or configuration files, they must follow the Slowly Changing Dimension Type 2 (SCD Type 2) approach:
+
+1. **Append-Only Principle**: AI must never overwrite or delete existing parameter entries
+2. **Additive Changes**: New parameter values must be added as new rows or entries with appropriate metadata
+3. **Change Tracking**: All AI-generated modifications must include versioning information and rationale
+4. **Original Preservation**: Original parameter values must remain in the system for reference and potential rollback
+
+:::{.callout-important}
+## Core Requirement
+The SCD Type 2 approach maintains a complete history of all parameter changes, providing robust auditability, traceability, and rollback capabilities.
+:::
+
+# Section 1: Conceptual Framework {#conceptual-framework}
+
+## Subsection 1: Historical Integrity {#historical-integrity}
+
+The SCD Type 2 approach maintains a complete history of all parameter changes:
+
+1. **Historical Integrity**: Preserves the full history of parameter evolution
+2. **Auditability**: Enables tracking of who made changes and why
+3. **Rollback Support**: Facilitates reverting to previous parameter states if needed
+4. **Explainability**: Documents the reasoning behind each parameter modification
+
+## Subsection 2: Parameter File Structure {#parameter-file-structure}
+
+Parameter files should support the SCD Type 2 approach by including:
+
+```
+Parameter Name | Parameter Value | Version | Effective Date | End Date | Modified By | Rationale | Active Flag
+```
+
+Where:
+- **Active Flag**: Indicates whether this is the currently active parameter value (1=active, 0=historical)
+- **End Date**: Set to NULL for the current version, otherwise indicates when this version became inactive
+
+# Section 2: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Excel Parameter Files {#excel-parameter-files}
+
+For Excel-based parameter files:
+
+1. **Sheet Structure**: Include version columns in addition to parameter data
+2. **Filter Columns**: Always include an "Active" or "Include" column (1=active, 0=inactive)
+3. **Data Processing**: Filter records where `active == 1` or `include != 0` during loading
+
+```r
+# Example: Loading data with SCD Type 2 filtering
+platform_data <- param_data %>%
+  # Filter out inactive rows
+  dplyr::filter(is.na(include) | include != 0) %>%
+  # Process active data
+  dplyr::mutate(
+    platform_key = tolower(gsub(" ", "", platform_name_english)),
+    platform_display = platform_name_english
+  )
+```
+
+## Subsection 2: AI Modification Procedure {#ai-modification-procedure}
+
+When AI modifies parameters, it must follow this procedure:
+
+```
+1. READ current parameter file into a dataframe
+2. IDENTIFY records to be changed
+3. UPDATE the identified records:
+   - Set active=0 or include=0 for the original entries
+   - IF end_date column exists, set to current date
+4. CREATE new records:
+   - Copy all fields from the original entries
+   - Set the new parameter values
+   - Set active=1 or include=1
+   - Set version = previous_version + 1
+   - Set modified_by to AI identifier
+   - Set effective_date to current date
+   - Set end_date to NULL
+   - Include modification rationale
+5. APPEND the new records to the dataframe
+6. WRITE the updated dataframe to the parameter file
+```
+
+## Subsection 3: Handling Different Parameter Types {#handling-different-parameter-types}
+
+### Dictionary-Based Parameters
+
+```r
+# INCORRECT - Direct replacement
+ui_terminology_dictionary$Chinese[5] <- "新的翻譯"
+
+# CORRECT - SCD Type 2 approach
+new_entry <- data.frame(
+  English = ui_terminology_dictionary$English[5],
+  Chinese = "新的翻譯",
+  Version = max(ui_terminology_dictionary$Version, na.rm=TRUE) + 1,
+  EffectiveDate = Sys.Date(),
+  EndDate = NA,
+  ModifiedBy = "Claude AI",
+  Rationale = "Improved translation accuracy",
+  Active = 1
+)
+
+# Set old entry to inactive
+ui_terminology_dictionary$Active[5] <- 0
+ui_terminology_dictionary$EndDate[5] <- Sys.Date()
+
+# Append new entry
+ui_terminology_dictionary <- rbind(ui_terminology_dictionary, new_entry)
+```
+
+### YAML Configuration
+
+```yaml
+# Example YAML with versioning support
+parameters:
+  - name: refresh_interval
+    values:
+      - value: 300
+        version: 1
+        effective_date: 2025-04-01
+        end_date: 2025-04-04
+        modified_by: Initial Config
+        rationale: Default setting
+        active: false
+      - value: 600
+        version: 2
+        effective_date: 2025-04-04
+        end_date: null
+        modified_by: Claude AI
+        rationale: Reduced server load
+        active: true
+```
+
+# Section 3: Implementation Examples {#implementation-examples}
+
+## Subsection 1: UI Terminology Dictionary Updates {#ui-terminology-dictionary-updates}
+
+When AI updates UI terminology:
+
+```r
+update_terminology <- function(term, new_translation, language, rationale) {
+  # Load dictionary
+  dict_path <- file.path("app_data", "parameters", "ui_terminology_dictionary.xlsx")
+  ui_data <- readxl::read_excel(dict_path)
+  
+  # Check if term exists
+  term_idx <- which(ui_data$English == term)
+  
+  if (length(term_idx) > 0) {
+    # Existing term - SCD Type 2 approach
+    if (!"Active" %in% names(ui_data)) {
+      # Add Active column if it doesn't exist
+      ui_data$Active <- 1
+    }
+    if (!"Version" %in% names(ui_data)) {
+      # Add Version column if it doesn't exist
+      ui_data$Version <- 1
+    }
+    
+    # Mark existing entry as inactive
+    ui_data$Active[term_idx] <- 0
+    
+    # Create new entry
+    new_entry <- ui_data[term_idx, ]
+    new_entry[[language]] <- new_translation
+    new_entry$Version <- max(ui_data$Version, na.rm=TRUE) + 1
+    new_entry$Active <- 1
+    new_entry$ModifiedBy <- "Claude AI"
+    new_entry$Rationale <- rationale
+    
+    # Append new entry
+    ui_data <- rbind(ui_data, new_entry)
+  }
+  
+  # Write updated dictionary back to file
+  openxlsx::write.xlsx(ui_data, dict_path)
+  
+  return(ui_data)
+}
+```
+
+## Subsection 2: Platform Data Updates {#platform-data-updates}
+
+When AI updates platform configurations:
+
+```r
+update_platform_parameter <- function(platform_name, parameter_name, new_value, rationale) {
+  # Load platform data
+  platform_path <- file.path("app_data", "parameters", "platform.xlsx")
+  platform_data <- readxl::read_excel(platform_path)
+  
+  # Find the platform record
+  platform_idx <- which(platform_data$platform_name_english == platform_name)
+  
+  if (length(platform_idx) > 0) {
+    # Existing platform - SCD Type 2 approach
+    if (!"include" %in% names(platform_data)) {
+      # Add include column if it doesn't exist
+      platform_data$include <- 1
+    }
+    
+    # Make copy of original row
+    new_row <- platform_data[platform_idx, ]
+    
+    # Mark original as inactive
+    platform_data$include[platform_idx] <- 0
+    
+    # Update parameter in new row
+    new_row[[parameter_name]] <- new_value
+    new_row$include <- 1
+    
+    # Add metadata if those columns exist
+    if ("modified_by" %in% names(platform_data)) {
+      new_row$modified_by <- "Claude AI"
+    }
+    if ("modification_date" %in% names(platform_data)) {
+      new_row$modification_date <- Sys.Date()
+    }
+    if ("rationale" %in% names(platform_data)) {
+      new_row$rationale <- rationale
+    }
+    
+    # Append new row
+    platform_data <- rbind(platform_data, new_row)
+    
+    # Write back to file
+    openxlsx::write.xlsx(platform_data, platform_path)
+    
+    return(platform_data)
+  }
+}
+```
+
+# Section 4: Benefits {#benefits}
+
+## Subsection 1: Technical Benefits {#technical-benefits}
+
+1. **Accountability**: Clear tracking of all AI-generated changes
+2. **Reversibility**: Easy to revert to previous parameter states
+3. **Transparency**: Changes include rationale and metadata
+4. **Safety**: Original values are never lost or overwritten
+5. **Continuous Improvement**: Allows parameter evolution while maintaining history
+
+## Subsection 2: Management Benefits {#management-benefits}
+
+1. **Compliance**: Meets audit and compliance requirements
+2. **Governance**: Supports effective parameter management and governance
+3. **Collaboration**: Facilitates collaboration between human and AI systems
+4. **Learning**: Learn from parameter evolution history
+
+# Section 5: Monitoring and Compliance {#monitoring-and-compliance}
+
+## Subsection 1: Ensure Compliance {#ensure-compliance}
+
+To ensure compliance with this rule:
+
+1. **Regular Audits**: Periodically review parameter files for correct SCD Type 2 implementation
+2. **Automated Checks**: Implement validation to ensure AI tools follow append-only principle
+3. **Change Reports**: Generate reports of parameter changes by AI systems
+4. **Version Control**: Maintain parameter files in version control systems when possible
+
+## Subsection 2: Monitoring Metrics {#monitoring-metrics}
+
+1. **Change Frequency**: Track how often AI modifies parameters
+2. **Rollback Rate**: Monitor percentage of changes that need to be rolled back
+3. **Rationale Quality**: Assess quality of rationales provided by AI
+4. **Compliance Rate**: Measure percentage of adherence to SCD Type 2 approach
+
+---
+
+*Based on: Development Methodology Law Article 10*  
+*Related to: [MP014 Change Tracking](../../CH00_fundamental_principles/meta_principles/MP014_change_tracking.qmd), [MP012 Company-Centered Design](../../CH00_fundamental_principles/meta_principles/MP012_company_centered_design.qmd)*

@@ -1,0 +1,185 @@
+---
+title: "MP040: 確定性代碼庫轉換元原則 (Deterministic Codebase Transformations)"
+subtitle: "通過專用轉換模組而非手動編輯執行系統性代碼變更"
+author: "System"
+date: "2025-04-07"
+date-modified: "2025-08-16"
+categories: [meta-principle, refactoring, automation, code-transformation]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 背景
+
+在整個代碼庫中進行系統性變更時（例如，替換函數名稱、更新 API 調用或重構模式），手動過程容易出錯、不一致且難以驗證。無論變更是由人類還是 AI 助手進行，這都適用。
+
+## 原則
+
+**對代碼庫的確定性、系統性變更應通過專用轉換模組執行，而不是通過手動編輯或直接的 AI 輔助替換。**
+
+## 理由
+
+1. **可靠性**：程序化轉換消除了人為錯誤、拼寫錯誤和不一致性。
+2. **可重複性**：該過程可以多次運行並產生相同的結果。
+3. **可驗證性**：轉換可以系統地測試和驗證。
+4. **透明度**：變更過程在代碼中明確記錄。
+5. **效率**：大規模變更可以更快速地執行，使用更少的資源。
+6. **可逆性**：如有必要，變更可以更容易地回滾。
+
+## 實施
+
+代碼庫轉換應實施為：
+
+1. **專用模組**：定義搜索模式及其替換
+2. **版本化腳本**：存儲在代碼庫中以供將來參考
+3. **可測試函數**：具有明確的輸入和輸出
+4. **記錄的過程**：解釋變更的理由和範圍
+
+## 範例
+
+### 函數名稱替換
+
+```r
+# transform_function_names.R
+replace_function_name <- function(old_name, new_name, file_pattern = "\\.R$", 
+                                  dir = ".", recursive = TRUE, dry_run = FALSE) {
+  # 查找所有匹配的檔案
+  files <- list.files(path = dir, pattern = file_pattern, 
+                     recursive = recursive, full.names = TRUE)
+  
+  # 報告統計
+  replaced_count <- 0
+  files_modified <- 0
+  
+  # 處理每個檔案
+  for (file in files) {
+    content <- readLines(file)
+    # 創建匹配函數名稱但不在其他單詞內的搜索模式
+    pattern <- paste0("\\b", old_name, "\\b")
+    new_content <- gsub(pattern, new_name, content)
+    
+    # 計算替換
+    file_replacements <- sum(content != new_content)
+    
+    if (file_replacements > 0) {
+      files_modified <- files_modified + 1
+      replaced_count <- replaced_count + file_replacements
+      
+      if (!dry_run) {
+        writeLines(new_content, file)
+        message(sprintf("修改 %s：%d 個替換", file, file_replacements))
+      } else {
+        message(sprintf("[試運行] 將修改 %s：%d 個替換", 
+                       file, file_replacements))
+      }
+    }
+  }
+  
+  # 返回摘要
+  list(
+    files_scanned = length(files),
+    files_modified = files_modified,
+    replacements = replaced_count,
+    dry_run = dry_run
+  )
+}
+
+# 使用範例：
+# result <- replace_function_name("oneTimeUnionUI", "oneTimeUnionUI2", dir = "components")
+```
+
+### 組件模式轉換
+
+```r
+# transform_component_pattern.R
+transform_component_pattern <- function(pattern_detector, transformer_function, 
+                                       file_pattern = "\\.R$", dir = ".", 
+                                       recursive = TRUE, dry_run = FALSE) {
+  # 查找所有匹配的檔案
+  files <- list.files(path = dir, pattern = file_pattern, 
+                     recursive = recursive, full.names = TRUE)
+  
+  # 追蹤統計
+  transformed_count <- 0
+  files_modified <- 0
+  
+  # 處理每個檔案
+  for (file in files) {
+    # 將整個檔案作為單個字串讀取以保留格式
+    content <- paste(readLines(file), collapse = "\n")
+    
+    # 查找模式的匹配項
+    matches <- gregexpr(pattern_detector, content, perl = TRUE)
+    match_count <- length(attr(matches[[1]], "match.length"))
+    
+    if (match_count > 0 && matches[[1]][1] != -1) {
+      # 應用轉換
+      new_content <- content
+      match_positions <- matches[[1]]
+      match_lengths <- attr(matches[[1]], "match.length")
+      
+      # 以相反順序處理以保持正確的位置
+      for (i in rev(seq_along(match_positions))) {
+        pos <- match_positions[i]
+        len <- match_lengths[i]
+        match_text <- substr(content, pos, pos + len - 1)
+        transformed_text <- transformer_function(match_text)
+        
+        # 用轉換後的文本替換匹配的文本
+        new_content <- paste0(
+          substr(new_content, 1, pos - 1),
+          transformed_text,
+          substr(new_content, pos + len, nchar(new_content))
+        )
+      }
+      
+      if (new_content != content) {
+        files_modified <- files_modified + 1
+        transformed_count <- transformed_count + match_count
+        
+        if (!dry_run) {
+          writeLines(strsplit(new_content, "\n")[[1]], file)
+          message(sprintf("修改 %s：%d 個轉換", file, match_count))
+        } else {
+          message(sprintf("[試運行] 將修改 %s：%d 個轉換", 
+                         file, match_count))
+        }
+      }
+    }
+  }
+  
+  # 返回摘要
+  list(
+    files_scanned = length(files),
+    files_modified = files_modified,
+    transformations = transformed_count,
+    dry_run = dry_run
+  )
+}
+
+# 使用範例：
+# transform_oneTimeUnionUI <- function(text) {
+#   gsub("oneTimeUnionUI\\(", "oneTimeUnionUI2(", text)
+# }
+# result <- transform_component_pattern("oneTimeUnionUI\\([^\\)]+\\)", 
+#                                     transform_oneTimeUnionUI, 
+#                                     dir = "components")
+```
+
+## 相關原則
+
+- MP0031：初始化優先
+- MP0038：基本功能優先
+- MP0039：啟動時的一次性操作
+- R58：演進優於替換
+- SLN01：處理非邏輯數據類型
+
+## 應用
+
+當為符合 SLN01（處理非邏輯數據類型）或其他原則而重構代碼時，創建轉換模組以可靠地在整個代碼庫中傳播變更。這確保了解決方案模式的一致實施。

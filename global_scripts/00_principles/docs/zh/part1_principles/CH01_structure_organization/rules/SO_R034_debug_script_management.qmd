@@ -1,0 +1,339 @@
+---
+title: "SO_R034: 除錯腳本管理與歸檔"
+subtitle: "除錯腳本是臨時調查工具，問題解決後必須歸檔，不得保留在活躍程式碼庫中"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, debugging, archive, organization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+除錯腳本是臨時調查工具，問題解決後必須歸檔，不得保留在活躍程式碼庫中。
+
+## 理由
+
+**問題**：除錯腳本的累積會導致：
+- 程式碼庫中充斥一次性調查腳本
+- 無法確認哪些除錯工具仍然相關
+- Git 狀態混亂
+- 刪除除錯腳本時失去歷史脈絡
+
+**解決方案**：清晰的生命週期管理，搭配歸檔以保留歷史參考。
+
+## 腳本分類
+
+### 臨時除錯腳本
+
+**特徵**：
+- 為特定問題調查而創建
+- 一次性使用或問題專屬
+- 不打算在多個問題間重複使用
+- 前綴：`debug_`
+
+**生命週期**：創建 → 使用 → 歸檔（問題解決後）
+
+**範例**：
+```r
+debug_all_duplicates.R           # 調查重複欄位問題
+debug_eby_tables.R               # 檢查 eBay 表格結構
+debug_etl_error_visibility.R     # 診斷 ETL 錯誤處理
+```
+
+### 持久除錯工具
+
+**特徵**：
+- 可重複使用的除錯函數
+- 通用追蹤/日誌工具
+- 屬於永久程式碼庫基礎設施
+
+**生命週期**：維護在程式碼庫中，版本控制
+
+**位置**：`scripts/global_scripts/22_initializations/sc_debug_verbose_init.R`
+
+**範例**：
+```r
+# 持久除錯工具
+sc_debug_verbose_init.R          # 可設定的除錯追蹤
+fn_log_execution_context.R       # 執行環境日誌
+fn_trace_function_calls.R        # 函數呼叫追蹤
+```
+
+## 實施規則
+
+### 創建除錯腳本
+
+#### 何時創建
+- 調查特定錯誤或意外行為
+- 需要臨時檢測進行問題診斷
+- 驗證系統行為假設
+
+#### 命名慣例
+```
+debug_[component]_[issue_description].R
+
+範例：
+debug_database_connection_timeout.R
+debug_eby_missing_records.R
+debug_poisson_convergence_failure.R
+```
+
+#### 標頭範本
+```r
+#!/usr/bin/env Rscript
+# =============================================================================
+# 除錯腳本：[問題描述]
+# =============================================================================
+# 目的：[具體調查目標]
+# 問題：ISSUE_XXX 或 GitHub Issue #YYY
+# 創建日期：YYYY-MM-DD
+# 預期生命週期：臨時 - 問題解決後歸檔
+# =============================================================================
+
+# 載入必要函式庫
+suppressPackageStartupMessages({
+  library(DBI)
+  library(duckdb)
+})
+
+# [除錯調查程式碼]
+```
+
+### 歸檔程序
+
+#### 何時歸檔
+- 問題已解決或關閉
+- 調查已完成（即使問題未完全解決）
+- 除錯腳本不再需要用於活躍工作
+
+#### 歸檔位置
+```
+scripts/global_scripts/00_principles/changelog/archive/debugging/
+└── [YYYYMMDD]_[issue_identifier]/
+    ├── debug_script_1.R
+    ├── debug_script_2.R
+    └── README.md  （可選 - 描述調查脈絡）
+```
+
+#### 歸檔命名模式
+```
+[date]_[issue_identifier]/
+
+範例：
+20251113_database_duplicates/
+20251116_eby_tables/
+20251130_poisson_convergence/
+```
+
+#### 歸檔步驟
+```bash
+# 1. 創建歸檔目錄
+mkdir -p scripts/global_scripts/00_principles/changelog/archive/debugging/20251130_issue_123
+
+# 2. 移動除錯腳本
+mv debug_issue_123_*.R scripts/global_scripts/00_principles/changelog/archive/debugging/20251130_issue_123/
+
+# 3. 創建脈絡 README（可選）
+cat > scripts/global_scripts/00_principles/changelog/archive/debugging/20251130_issue_123/README.md << 'EOF'
+# ISSUE_123 除錯腳本
+
+## 問題
+生產環境資料庫連接逾時
+
+## 調查期間
+2025-11-25 至 2025-11-30
+
+## 腳本
+- debug_issue_123_connection_pool.R：連接池耗盡測試
+- debug_issue_123_timeout_logging.R：詳細逾時日誌
+
+## 解決方案
+將連接池大小從 10 增加到 25
+EOF
+```
+
+### 問題關閉整合
+
+關閉涉及除錯腳本的問題時：
+
+1. **在問題關閉說明中記錄除錯腳本位置**：
+   ```markdown
+   ## 問題解決
+
+   透過增加連接池大小修復。
+
+   ## 除錯腳本已歸檔
+   位置：`changelog/archive/debugging/20251130_issue_123/`
+   腳本：
+   - debug_issue_123_connection_pool.R
+   - debug_issue_123_timeout_logging.R
+   ```
+
+2. **在 CHANGELOG 中參考**：
+   ```markdown
+   ## ISSUE_123 - 資料庫連接逾時修復
+
+   ### 除錯腳本
+   已歸檔至 `changelog/archive/debugging/20251130_issue_123/`
+   ```
+
+## 範例
+
+### 正確的除錯腳本生命週期 ✓
+
+```r
+# 1. 創建：調查重複欄位
+# 檔案：debug_duplicate_columns.R（在根目錄或工作目錄）
+
+# 2. 使用：運行調查
+Rscript debug_duplicate_columns.R
+
+# 3. 解決：問題已修復
+
+# 4. 歸檔：移動到歸檔
+mv debug_duplicate_columns.R \
+   scripts/global_scripts/00_principles/changelog/archive/debugging/20251113_duplicate_columns/
+
+# 5. 記錄：更新問題和 CHANGELOG
+```
+
+### 錯誤的除錯腳本管理 ✗
+
+```r
+# 錯誤：除錯腳本永久留在根目錄
+./debug_old_issue.R  # 6個月前創建，從未歸檔
+
+# 錯誤：刪除除錯腳本未歸檔
+rm debug_something.R  # 失去歷史脈絡
+
+# 錯誤：除錯腳本在組件目錄中
+scripts/global_scripts/01_db/debug_connection.R  # 應該歸檔，不應保留在組件中
+
+# 錯誤：除錯腳本使用 test_ 前綴
+test_debug_something.R  # 混淆 - 是測試還是除錯腳本？
+```
+
+## 歸檔目錄結構
+
+### 建議的組織
+
+```
+changelog/archive/debugging/
+├── 20251113_database_duplicates/
+│   ├── debug_all_duplicates.R
+│   ├── debug_duplicate_columns.R
+│   └── README.md
+├── 20251116_eby_tables/
+│   ├── debug_eby_tables.R
+│   ├── debug_eby_missing_data.R
+│   └── investigation_notes.txt
+├── 20251120_poisson_convergence/
+│   └── debug_convergence_filter.R
+└── 20251130_root_cleanup/
+    └── README.md
+```
+
+### 歸檔 README 範本
+
+```markdown
+# 除錯腳本：[問題標題]
+
+## 問題參考
+- 問題 ID：ISSUE_XXX
+- GitHub：#YYY
+- 創建日期：YYYY-MM-DD
+- 解決日期：YYYY-MM-DD
+
+## 問題描述
+[簡短描述調查的問題]
+
+## 調查方法
+[使用了什麼除錯策略]
+
+## 此歸檔中的腳本
+- `debug_script_1.R`：[用途]
+- `debug_script_2.R`：[用途]
+
+## 關鍵發現
+[除錯腳本揭示了什麼]
+
+## 解決方案
+[問題如何解決]
+
+## 相關文檔
+- CHANGELOG：[changelog 條目路徑]
+- 問題文檔：[如有存在的路徑]
+```
+
+## 定期清理
+
+### 月度稽核（建議）
+
+```bash
+#!/bin/bash
+# 月度除錯腳本清理
+
+echo "檢查根目錄中的除錯腳本..."
+ROOT_DEBUG=$(find . -maxdepth 1 -name "debug_*.R" -type f)
+
+if [ -n "$ROOT_DEBUG" ]; then
+  echo "在根目錄發現除錯腳本："
+  echo "$ROOT_DEBUG"
+  echo ""
+  echo "創建歸檔並移動："
+  echo "  mkdir -p scripts/global_scripts/00_principles/changelog/archive/debugging/$(date +%Y%m%d)_cleanup"
+  echo "  mv debug_*.R scripts/global_scripts/00_principles/changelog/archive/debugging/$(date +%Y%m%d)_cleanup/"
+else
+  echo "✓ 根目錄無除錯腳本"
+fi
+```
+
+## 與其他原則的關係
+
+### MP046：除錯程式碼追蹤
+MP046 定義持久除錯工具（如 `sc_debug_verbose_init.R`），這些是程式碼庫的一部分。
+SO_R034 管理為特定調查創建的臨時除錯腳本。
+
+### SO_R025：腳本組織
+SO_R034 擴展 SO_R025，指定除錯腳本的生命週期和歸檔。
+
+### SO_R033：測試腳本位置
+除錯腳本與測試腳本不同：
+- **測試腳本**：可重複使用的驗證，保留在 `98_test/`
+- **除錯腳本**：臨時調查，使用後歸檔
+
+## 執行機制
+
+### 程式碼審查檢查清單
+
+- [ ] 根目錄中沒有超過 30 天的 debug_*.R 檔案
+- [ ] 已關閉的問題記錄除錯腳本歸檔位置
+- [ ] 除錯腳本標頭中包含問題參考
+- [ ] 複雜調查的已歸檔除錯腳本有脈絡 README
+
+### 自動清理提醒
+
+```bash
+# 添加到月度 cron 作業或 CI/CD
+find . -maxdepth 1 -name "debug_*.R" -mtime +30 -exec echo "舊除錯腳本：{}" \;
+```
+
+## 版本歷史
+
+| 版本 | 日期 | 變更 |
+|------|------|------|
+| 1.0 | 2025-11-30 | 根據根目錄清理初始創建 |
+
+## 另請參閱
+
+- MP046：除錯程式碼追蹤
+- SO_R025：腳本組織層級
+- SO_R033：測試腳本位置標準
+- SO_R035：臨時檔案和日誌管理

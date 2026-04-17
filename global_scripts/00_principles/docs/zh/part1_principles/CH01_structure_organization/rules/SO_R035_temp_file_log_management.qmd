@@ -1,0 +1,522 @@
+---
+title: "SO_R035: 臨時檔案和日誌管理"
+subtitle: "臨時檔案和日誌必須存放在指定目錄中，具有明確的保留政策，絕不可放在專案根目錄"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, logging, temporary, organization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+臨時檔案和日誌必須存放在指定目錄中，具有明確的保留政策，絕不可放在專案根目錄。
+
+## 理由
+
+**問題**：分散的臨時檔案和日誌會導致：
+- Git 狀態因未追蹤檔案而混亂
+- 無法確認哪些檔案可以安全刪除
+- 過時資料浪費儲存空間
+- 需要清理時遺失重要日誌
+- 安全風險（臨時檔案可能包含敏感資料）
+
+**解決方案**：結構化目錄搭配明確的保留和清理政策。
+
+## 目錄結構
+
+### 必要目錄
+
+```
+project_root/
+├── logs/
+│   ├── active/              # 當前運作日誌
+│   │   ├── etl/             # ETL 執行日誌
+│   │   ├── api/             # API 互動日誌
+│   │   ├── app/             # 應用程式日誌
+│   │   └── error/           # 錯誤日誌
+│   └── archive/             # 歷史日誌（按日期）
+│       ├── 2025-11/
+│       └── 2025-12/
+├── data/
+│   ├── temp/                # 臨時資料檔案
+│   │   ├── cache/           # 快取檔案（可重新生成）
+│   │   └── scratch/         # 暫存工作區（可安全刪除）
+│   └── output/              # 生成的輸出（可能需要歸檔）
+└── output/                  # 應用程式輸出檔案
+```
+
+### .gitignore 設定
+
+```gitignore
+# 臨時檔案
+logs/active/
+logs/archive/
+data/temp/
+*.log
+*.tmp
+*.cache
+*.rds  # 除非明確記錄為持久性
+
+# 輸出檔案（除非有記錄）
+output/
+*.csv  # 生成的資料
+*.xlsx # 生成的報告
+```
+
+## 檔案類型管理
+
+### 日誌檔案（.log）
+
+#### 命名慣例
+```
+[component]_[action]_YYYYMMDD_HHMMSS.log
+
+範例：
+etl_eby_execution_20251130_143022.log
+api_openai_request_20251130_143523.log
+app_startup_20251130_120000.log
+error_database_connection_20251130_145030.log
+```
+
+#### 儲存規則
+
+**活躍日誌**：`logs/active/[component]/`
+```r
+# ETL 日誌
+logs/active/etl/
+├── etl_eby_execution_20251130_143022.log
+└── etl_cbz_execution_20251130_150000.log
+
+# API 日誌
+logs/active/api/
+├── api_openai_request_20251130_143523.log
+└── api_authentication_20251130_120100.log
+
+# 應用程式日誌
+logs/active/app/
+└── app_startup_20251130_120000.log
+
+# 錯誤日誌
+logs/active/error/
+└── error_database_connection_20251130_145030.log
+```
+
+#### 保留政策
+- **活躍期**：`logs/active/` 中保留 30 天
+- **歸檔**：30 天後移至 `logs/archive/YYYY-MM/`
+- **長期**：保留歸檔 12 個月
+- **刪除**：超過 12 個月的日誌可刪除（除非記錄關鍵事件）
+
+#### 歸檔程序
+```bash
+#!/bin/bash
+# 歸檔超過 30 天的日誌
+
+ARCHIVE_DIR="logs/archive/$(date +%Y-%m)"
+mkdir -p "$ARCHIVE_DIR"
+
+find logs/active -name "*.log" -mtime +30 -exec mv {} "$ARCHIVE_DIR/" \;
+```
+
+### 臨時資料檔案（.rds, .tmp, .cache）
+
+#### 分類
+
+**快取檔案**：可從來源重新生成
+```r
+data/temp/cache/
+├── api_response_cache_openai.rds
+├── database_query_cache_20251130.rds
+└── translation_cache_en_zh.rds
+```
+
+**暫存檔案**：工作用臨時資料
+```r
+data/temp/scratch/
+├── intermediate_calculation_123.rds
+├── temp_join_result.rds
+└── validation_output_temp.rds
+```
+
+#### 保留政策
+- **快取檔案**：7 天後刪除或重新生成時刪除
+- **暫存檔案**：任務完成後刪除或 24 小時後刪除
+- **例外**：記錄問題解決的驗證結果應歸檔
+
+#### 儲存規則
+- **位置**：`data/temp/cache/` 或 `data/temp/scratch/`
+- **命名**：包含時間戳或用途
+- **文檔**：如果檔案是持久資料，移至 `data/` 並在 README 中記錄
+
+#### 清理自動化
+```bash
+#!/bin/bash
+# 清理臨時檔案
+
+# 刪除舊快取（7 天）
+find data/temp/cache -type f -mtime +7 -delete
+
+# 刪除舊暫存檔案（1 天）
+find data/temp/scratch -type f -mtime +1 -delete
+```
+
+### 輸出檔案（.csv, .xlsx, .html）
+
+#### 分類
+
+**例行輸出**：可從來源重新生成
+```r
+output/reports/daily/
+output/exports/customer_list.csv
+output/visualizations/trend_plot.html
+```
+
+**重要結果**：值得歸檔
+```r
+output/analysis/
+output/validation/
+output/benchmarks/
+```
+
+#### 保留政策
+- **例行輸出**：14 天後刪除或重新生成時刪除
+- **重要結果**：歸檔至 `output/archive/YYYY-MM/`
+- **關鍵結果**：版本控制或移至永久儲存
+
+#### 歸檔決策樹
+```
+此輸出是否可從程式碼 + 資料重現？
+├─ 是：可在保留期後刪除
+└─ 否：考慮歸檔或版本控制
+   ├─ 包含手動分析？→ 歸檔
+   ├─ 記錄關鍵決策？→ 歸檔 + 版本控制
+   └─ 用於出版？→ 永久儲存 + 版本控制
+```
+
+## 根目錄政策
+
+### 根目錄禁止
+
+**絕對禁止**：
+- 日誌檔案（`*.log`）
+- 臨時資料（`*.rds`、`*.tmp`、`*.cache`）
+- 輸出 CSV（`*.csv` 除非有記錄）
+- 備份檔案（`*.backup`、`*.bak`）
+
+### 例外：無
+
+所有臨時和日誌檔案必須在指定目錄中。
+
+### 根目錄允許的檔案
+
+僅允許以下類型在根目錄：
+- `app.R` - 應用程式進入點
+- `*.Rproj` - RStudio 專案檔案
+- `README.md` - 專案文檔
+- `CHANGELOG.md` - 變更歷史
+- 設定檔（`.Rprofile`、`renv.lock`、`app_config.yaml`）
+- `.gitignore`、`.Rbuildignore` 等
+
+## 實施範例
+
+### 正確的檔案管理 ✓
+
+```r
+# 寫入日誌
+log_file <- file.path("logs/active/etl",
+                      sprintf("etl_execution_%s.log", format(Sys.time(), "%Y%m%d_%H%M%S")))
+write_log(message, log_file)
+
+# 臨時快取
+cache_file <- file.path("data/temp/cache",
+                        sprintf("api_cache_%s.rds", Sys.Date()))
+saveRDS(api_response, cache_file)
+
+# 暫存工作區
+scratch_file <- file.path("data/temp/scratch",
+                          sprintf("temp_calculation_%s.rds", Sys.time()))
+saveRDS(intermediate_data, scratch_file)
+
+# 重要輸出帶歸檔
+output_file <- file.path("output/analysis",
+                         sprintf("validation_results_%s.csv", Sys.Date()))
+write.csv(results, output_file)
+```
+
+### 錯誤的檔案管理 ✗
+
+```r
+# 錯誤：日誌在根目錄
+write_log(message, "execution.log")
+
+# 錯誤：臨時資料在根目錄
+saveRDS(temp_data, "temp_results.rds")
+
+# 錯誤：輸出在根目錄
+write.csv(results, "output.csv")
+
+# 錯誤：無時間戳或脈絡
+saveRDS(data, "cache.rds")  # 哪個快取？何時創建？
+```
+
+## 日誌最佳實踐
+
+### 日誌層級和組織
+
+```r
+# 建議的日誌結構
+logs/active/
+├── etl/
+│   ├── success/          # 成功執行
+│   ├── error/            # 失敗執行
+│   └── warning/          # 有警告的執行
+├── api/
+│   ├── request/          # API 請求
+│   ├── response/         # API 回應
+│   └── error/            # API 錯誤
+└── app/
+    ├── startup/          # 應用程式初始化
+    ├── runtime/          # 運行時操作
+    └── shutdown/         # 清理操作
+```
+
+### 日誌輪替腳本
+
+```r
+#!/usr/bin/env Rscript
+# 日誌輪替和歸檔
+
+library(lubridate)
+
+# 歸檔超過 30 天的日誌
+archive_logs <- function() {
+  log_dirs <- c("logs/active/etl", "logs/active/api", "logs/active/app", "logs/active/error")
+
+  for (dir in log_dirs) {
+    if (!dir.exists(dir)) next
+
+    log_files <- list.files(dir, pattern = "\\.log$", full.names = TRUE)
+
+    for (log_file in log_files) {
+      file_age <- difftime(Sys.time(), file.info(log_file)$mtime, units = "days")
+
+      if (file_age > 30) {
+        # 根據檔案日期決定歸檔目錄
+        file_date <- format(file.info(log_file)$mtime, "%Y-%m")
+        archive_dir <- file.path("logs/archive", file_date)
+
+        dir.create(archive_dir, showWarnings = FALSE, recursive = TRUE)
+
+        file.copy(log_file, file.path(archive_dir, basename(log_file)))
+        file.remove(log_file)
+
+        message(sprintf("已歸檔：%s -> %s", basename(log_file), archive_dir))
+      }
+    }
+  }
+}
+
+# 清理舊快取檔案
+clean_cache <- function(days = 7) {
+  cache_dir <- "data/temp/cache"
+  if (!dir.exists(cache_dir)) return()
+
+  cache_files <- list.files(cache_dir, full.names = TRUE)
+
+  for (cache_file in cache_files) {
+    file_age <- difftime(Sys.time(), file.info(cache_file)$mtime, units = "days")
+
+    if (file_age > days) {
+      file.remove(cache_file)
+      message(sprintf("已刪除快取：%s（%.1f 天前）", basename(cache_file), file_age))
+    }
+  }
+}
+
+# 清理暫存工作區
+clean_scratch <- function(hours = 24) {
+  scratch_dir <- "data/temp/scratch"
+  if (!dir.exists(scratch_dir)) return()
+
+  scratch_files <- list.files(scratch_dir, full.names = TRUE)
+
+  for (scratch_file in scratch_files) {
+    file_age <- difftime(Sys.time(), file.info(scratch_file)$mtime, units = "hours")
+
+    if (file_age > hours) {
+      file.remove(scratch_file)
+      message(sprintf("已刪除暫存：%s（%.1f 小時前）", basename(scratch_file), file_age))
+    }
+  }
+}
+
+# 執行清理
+archive_logs()
+clean_cache()
+clean_scratch()
+```
+
+## 自動清理
+
+### 建議的 Cron 作業
+
+```bash
+# /etc/cron.d/mamba_cleanup
+# 每天凌晨 2 點運行
+
+0 2 * * * /usr/bin/Rscript /path/to/MAMBA/scripts/maintenance/cleanup_temp_files.R
+```
+
+### 每週清理腳本
+
+```bash
+#!/bin/bash
+# 臨時檔案每週清理
+
+echo "=== MAMBA 臨時檔案清理 ==="
+echo "開始：$(date)"
+
+# 歸檔舊日誌（30 天以上）
+echo "歸檔日誌..."
+ARCHIVE_DIR="logs/archive/$(date +%Y-%m)"
+mkdir -p "$ARCHIVE_DIR"
+find logs/active -name "*.log" -mtime +30 -exec mv {} "$ARCHIVE_DIR/" \;
+
+# 清理快取（7 天以上）
+echo "清理快取..."
+find data/temp/cache -type f -mtime +7 -delete
+
+# 清理暫存（1 天以上）
+echo "清理暫存..."
+find data/temp/scratch -type f -mtime +1 -delete
+
+# 報告
+echo "完成：$(date)"
+echo "已歸檔日誌：$(ls -l logs/archive/$(date +%Y-%m) | wc -l) 個檔案"
+echo "當前快取：$(du -sh data/temp/cache)"
+echo "當前暫存：$(du -sh data/temp/scratch)"
+```
+
+## 安全考量
+
+### 臨時檔案中的敏感資料
+
+**風險**：臨時檔案可能包含：
+- API 金鑰或憑證
+- 客戶個人識別資訊（PII）
+- 專有商業資料
+
+**緩解措施**：
+1. **永不提交**臨時檔案到版本控制
+2. **加密**包含敏感資料的臨時檔案
+3. **安全刪除**（非僅取消連結）敏感臨時檔案
+4. **稽核**臨時檔案位置以檢查敏感資料
+
+```r
+# 安全刪除函數
+secure_delete <- function(file_path) {
+  if (file.exists(file_path)) {
+    # 刪除前用隨機資料覆寫
+    file_size <- file.info(file_path)$size
+    con <- file(file_path, "wb")
+    writeBin(as.raw(sample(0:255, file_size, replace = TRUE)), con)
+    close(con)
+
+    # 刪除檔案
+    file.remove(file_path)
+    message("已安全刪除：", file_path)
+  }
+}
+```
+
+## 執行機制
+
+### 預提交鉤子
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# 檢查正在提交的臨時檔案
+TEMP_FILES=$(git diff --cached --name-only --diff-filter=A | grep -E '\.(log|tmp|cache|rds)$' | grep -v 'data/temp/')
+
+if [ -n "$TEMP_FILES" ]; then
+  echo "錯誤：在提交中檢測到臨時檔案："
+  echo "$TEMP_FILES"
+  echo ""
+  echo "臨時檔案應在："
+  echo "  - logs/active/（日誌）"
+  echo "  - data/temp/（臨時資料）"
+  exit 1
+fi
+
+# 檢查應該在 logs/ 或 data/temp/ 中的根目錄檔案
+ROOT_TEMP=$(git diff --cached --name-only --diff-filter=A | grep -E '^[^/]+\.(log|rds|tmp)$')
+
+if [ -n "$ROOT_TEMP" ]; then
+  echo "錯誤：根目錄中的臨時檔案："
+  echo "$ROOT_TEMP"
+  echo ""
+  echo "移至適當目錄："
+  echo "  - logs/active/[component]/（.log）"
+  echo "  - data/temp/cache/ 或 data/temp/scratch/（.rds、.tmp）"
+  exit 1
+fi
+```
+
+### 程式碼審查檢查清單
+
+- [ ] 根目錄中沒有 .log、.rds、.tmp 檔案
+- [ ] 日誌寫入 `logs/active/[component]/`
+- [ ] 臨時資料在 `data/temp/cache/` 或 `data/temp/scratch/`
+- [ ] 檔案名稱包含時間戳或清晰脈絡
+- [ ] 臨時檔案中的敏感資料有安全處理
+
+## 監控和稽核
+
+### 磁碟空間監控
+
+```r
+#!/usr/bin/env Rscript
+# 監控臨時目錄的磁碟使用
+
+check_disk_usage <- function() {
+  dirs <- c("logs/active", "logs/archive", "data/temp/cache", "data/temp/scratch")
+
+  for (dir in dirs) {
+    if (dir.exists(dir)) {
+      size_mb <- sum(file.info(list.files(dir, recursive = TRUE, full.names = TRUE))$size) / 1024^2
+      file_count <- length(list.files(dir, recursive = TRUE))
+
+      cat(sprintf("%-25s: %6.1f MB, %4d 個檔案\n", dir, size_mb, file_count))
+
+      # 過大時警告
+      if (size_mb > 1000) {
+        warning(sprintf("%s 超過 1 GB - 考慮清理", dir))
+      }
+    }
+  }
+}
+
+check_disk_usage()
+```
+
+## 版本歷史
+
+| 版本 | 日期 | 變更 |
+|------|------|------|
+| 1.0 | 2025-11-30 | 根據根目錄清理初始創建 |
+
+## 另請參閱
+
+- SO_R025：腳本組織層級
+- SO_R033：測試腳本位置標準
+- SO_R034：除錯腳本管理
+- MP100：UTF-8 編碼標準（適用於所有檔案）

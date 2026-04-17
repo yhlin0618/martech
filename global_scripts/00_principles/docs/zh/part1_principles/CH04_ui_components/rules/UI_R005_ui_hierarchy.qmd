@@ -1,0 +1,207 @@
+---
+title: "UI_R005: UI 階層結構規則"
+subtitle: "應用程式 UI 必須遵循嚴格的階層結構，以 page_navbar 作為頂層容器，page_sidebar 作為導航面板內的第二層容器。此階層結構確保應用程式間的導航結構一致，同時允許模組特定的側邊欄"
+chapter: "CH04"
+category: "rule"
+number: "UI_R005"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article-number: 
+  number: 5
+  title: "UI 階層結構規則"
+related_to:
+  - "MP017: 關注點分離原則"
+  - "SO_P003: 應用程式構建原則"
+  - "SO_P007: app.R 是全域原則"
+  - "UI_R001: UI-Server-Defaults 三元組規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第五條：UI 階層結構規則 {#overview}
+
+**UI組件法第五條（UI 階層結構規則）**
+
+應用程式 UI 必須遵循嚴格的階層結構，以 `page_navbar` 作為頂層容器，`page_sidebar` 作為導航面板內的第二層容器。此階層結構確保應用程式間的導航結構一致，同時允許模組特定的側邊欄。
+
+:::{.callout-important}
+## 核心要求
+透過建立一致的階層式 UI 結構，此規則確保使用者體驗的一致性，支援模組獨立性，並與 Shiny 的設計模式保持一致。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：頂層導航結構 {#top-level-navigation}
+
+**頂層 UI 結構必須是：**
+
+1. **Page Navbar**：應用程式必須使用 `page_navbar()` 作為其最外層 UI 容器
+2. **導航面板**：內容必須在導航欄內的 `nav_panel()` 組件中組織
+3. **全域屬性**：標題、主題和導航欄選項應在 `page_navbar` 層級設置
+
+## 第二款：第二層側邊欄結構 {#second-level-sidebar}
+
+**在導航面板內：**
+
+1. **Page Sidebar**：每個導航面板應使用 `page_sidebar()` 作為其容器
+2. **側邊欄組件**：每個 `page_sidebar()` 必須包含來自 sidebars 目錄的側邊欄組件
+3. **模組特定側邊欄**：每個導航面板應有其自己的側邊欄實例，具有適當的情境
+
+## 第三款：模組內容結構 {#module-content-structure}
+
+**在每個 `page_sidebar()` 內：**
+
+1. **內容組織**：內容應使用適當的布局組件組織
+2. **組件組合**：內容應從 components 目錄中的 UI 組件組合而成
+3. **一致模式**：相似功能的內容應遵循一致的模式
+
+## 第四款：禁止的結構 {#prohibited-structures}
+
+**以下 UI 結構被禁止：**
+
+1. **頂層 Page Sidebar**：使用 `page_sidebar()` 作為頂層容器
+2. **無導航的側邊欄**：在導航情境之外使用側邊欄組件
+3. **導航欄中的直接內容**：在沒有導航面板的情況下直接在導航欄中放置內容
+4. **混合導航模式**：在同一應用程式中混合不同的導航模式
+
+# 第二項：實施範例 {#implementation-examples}
+
+## 第一款：正確的 UI 階層 {#proper-ui-hierarchy}
+
+```r
+ui <- page_navbar(
+  title = config$title,
+  theme = bs_theme(version = config$theme$version, bootswatch = config$theme$bootswatch),
+  navbar_options = navbar_options(bg = "#f8f9fa"),
+  
+  # 具有模組特定側邊欄的導航面板
+  nav_panel(
+    title = "微觀分析",
+    value = "micro",
+    page_sidebar(
+      sidebar = sidebarHybridUI("app_sidebar", active_module = "micro"),
+      microCustomerUI("customer_module")
+    )
+  ),
+  
+  nav_panel(
+    title = "宏觀分析",
+    value = "macro",
+    page_sidebar(
+      sidebar = sidebarHybridUI("macro_sidebar", active_module = "macro"),
+      macroAnalysisUI("macro_module")
+    )
+  )
+)
+```
+
+## 第二款：錯誤的 UI 階層（違反規則）{#incorrect-ui-hierarchy}
+
+```r
+# 錯誤：page_sidebar 在頂層而不是 page_navbar
+ui <- page_sidebar(
+  title = config$title,
+  theme = bs_theme(version = config$theme$version, bootswatch = config$theme$bootswatch),
+  
+  sidebar = sidebarHybridUI("app_sidebar", active_module = "micro"),
+  
+  navset_pill(
+    id = "main_nav",
+    nav_panel(title = "微觀分析", value = "micro", microCustomerUI("customer_module")),
+    nav_panel(title = "宏觀分析", value = "macro", macroAnalysisUI("macro_module"))
+  )
+)
+```
+
+# 第三項：常見錯誤和解決方案 {#common-errors}
+
+## 第一款：缺少導航情境 {#error-missing-navigation}
+
+**問題**：使用 `page_sidebar()` 作為頂層容器。
+
+**解決方案**：
+- 使用 `page_navbar()` 作為頂層容器
+- 將 `page_sidebar()` 放置在每個導航面板內
+- 為每個導航面板創建模組特定的側邊欄
+
+## 第二款：跨所有模組的單一側邊欄 {#error-single-sidebar}
+
+**問題**：在所有導航面板中使用相同的側邊欄實例。
+
+**解決方案**：
+- 為每個導航面板創建單獨的側邊欄實例
+- 使用模組特定的側邊欄配置
+- 確保每個側邊欄具有適當的情境
+
+## 第三款：不一致的導航結構 {#error-inconsistent-navigation}
+
+**問題**：在應用程式的不同部分使用不同的導航模式。
+
+**解決方案**：
+- 在整個應用程式中標準化單一導航模式
+- 一致地使用 `page_navbar()` 作為頂層容器
+- 確保所有模組遵循相同的導航結構
+
+## 第四款：導航欄中的直接內容 {#error-direct-content}
+
+**問題**：在沒有導航面板的情況下直接在導航欄中放置內容。
+
+**解決方案**：
+- 始終使用 `nav_panel()` 來組織內容
+- 將所有內容組件放置在導航面板內
+- 在導航面板內使用適當的布局容器
+
+# 第四項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與關注點分離原則的關聯（MP017）{#relation-to-separation-of-concerns}
+
+此規則透過以下方式支援關注點分離：
+1. **導航與內容**：分離導航結構與內容
+2. **全域與模組特定**：分離全域應用程式結構與模組特定結構
+3. **布局與功能**：分離布局關注點與功能關注點
+4. **情境邊界**：在不同導航情境之間建立清晰的邊界
+
+## 第二款：與應用程式構建原則的關聯（SO_P003）{#relation-to-app-construction}
+
+此規則透過以下方式實施應用程式構建原則：
+1. **一致結構**：確保一致的應用程式結構
+2. **模組組織**：支援應用程式的模組化組織
+3. **導航框架**：建立清晰的導航框架
+4. **UI 組合**：以一致的方式支援 UI 元素的組合
+
+## 第三款：與 app.R 是全域原則的關聯（SO_P007）{#relation-to-app-r-global}
+
+此規則透過以下方式補充 app.R 是全域：
+1. **標準化結構**：為所有應用程式提供標準的頂層結構
+2. **減少決策**：減少主 app.R 檔案中的結構決策數量
+3. **清晰模式**：建立 UI 組織的清晰模式
+4. **一致性**：確保應用程式間的一致性
+
+# 第五項：優點 {#benefits}
+
+## 第一款：使用者體驗優點 {#user-experience-benefits}
+
+1. **一致的使用者體驗**：使用者在應用程式間遇到熟悉的導航結構
+2. **模組獨立性**：模組可以有自己的側邊欄和導航情境
+3. **清晰組織**：UI 組件以清晰、可預測的階層組織
+4. **情境感知**：UI 組件可以感知其導航情境
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **簡化開發**：開發人員遵循 UI 組織的標準模式
+2. **更好的維護**：UI 結構更容易理解和維護
+3. **相容性**：確保與 Shiny 的設計模式和最佳實踐相容
+4. **可擴展性**：應用程式結構可以擴展以容納新模組和功能
+
+---
+
+*基於：UI組件法第五條*  
+*相關連結：[MP017 關注點分離原則](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [SO_P003 應用程式構建原則](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd)*

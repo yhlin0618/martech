@@ -1,0 +1,399 @@
+---
+title: "DM_P005: 行對齊表格原則"
+subtitle: "通過行對齊優化資料表操作效能"
+chapter: "CH02"
+category: "principle"
+number: "DM_P005"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "資料管理法"
+article: "第五條"
+related_to:
+  - "CH00.MP043: 資料庫文件化"
+  - "CH00.MP045: 自動資料可用性偵測"
+  - "DM_R002: 通用資料存取"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**資料管理法第五條（行對齊表格原則）**
+
+當資料庫表格維持相同的行順序並共享共同鍵時，應將其標記為行對齊以啟用優化操作。行對齊表格允許使用高度優化的行操作如 `bind_cols()` 而非更昂貴的連接操作。
+
+:::{.callout-important}
+## 核心原則
+行對齊表格具有相同的行數、相同的排序，並在相同位置有對應的記錄，允許使用 `bind_cols()` 等優化操作取代昂貴的 `join` 操作。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：行對齊概念 {#alignment-concept}
+
+行對齊表格具有以下特性：
+1. **共享主鍵**：表格共享相同的主鍵（如 `customer_id`）
+2. **相同行序**：維持相同的記錄排序
+3. **位置對應**：對應的記錄在相同的行位置
+
+## 第二款：效能優勢 {#performance-benefits}
+
+行對齊結構啟用的優化：
+- 使用 `bind_cols()` 而非 `left_join()` 大幅提升合併速度
+- 分析操作期間減少記憶體使用
+- 簡化資料處理程式碼
+- 避免複雜的連接邏輯
+
+## 第三款：應用場景 {#use-cases}
+
+在 MAMBA 應用中的實例：
+- `df_customer_profile` 和 `df_dna_by_customer` 表格
+- 客戶主檔與客戶屬性表
+- 產品資訊與產品特徵表
+
+# 第二項：實作要求 {#implementation}
+
+## 第一款：明確文件化 {#documentation}
+
+行對齊表格應在資料庫文件中明確標記：
+
+```yaml
+# database_schema.yaml
+row_aligned_tables:
+  - group: customer_data
+    tables:
+      - df_customer_profile
+      - df_dna_by_customer
+    key: customer_id
+    description: "客戶主檔與DNA資料按customer_id行對齊"
+    
+  - group: product_data
+    tables:
+      - df_product_info
+      - df_product_features
+    key: product_id
+    description: "產品資訊與特徵按product_id行對齊"
+```
+
+## 第二款：結構驗證 {#verification}
+
+添加驗證程式確保行對齊保持：
+
+```r
+# 驗證行對齊函數
+verify_row_alignment <- function(table1, table2, key_column) {
+  # 檢查行數是否相同
+  if (nrow(table1) != nrow(table2)) {
+    warning(paste("表格行數不同:", 
+                  nrow(table1), "vs", nrow(table2)))
+    return(FALSE)
+  }
+  
+  # 檢查鍵值是否完全相同
+  if (!identical(table1[[key_column]], table2[[key_column]])) {
+    warning("鍵值順序不同或值不匹配")
+    return(FALSE)
+  }
+  
+  message("行對齊驗證通過")
+  return(TRUE)
+}
+
+# 批次驗證函數
+verify_all_alignments <- function(alignment_config) {
+  results <- list()
+  
+  for (group in alignment_config) {
+    tables <- group$tables
+    key <- group$key
+    
+    # 驗證每對表格
+    for (i in 1:(length(tables) - 1)) {
+      table1 <- get(tables[i])
+      table2 <- get(tables[i + 1])
+      
+      result <- verify_row_alignment(table1, table2, key)
+      results[[paste(tables[i], tables[i + 1], sep = "_")]] <- result
+    }
+  }
+  
+  return(results)
+}
+```
+
+## 第三款：模式強制 {#schema-enforcement}
+
+修改行對齊表格時，操作必須維持對齊：
+
+```r
+# 安全的行對齊表格插入
+insert_aligned_rows <- function(tables, new_data, key_column) {
+  # 確保所有表格都獲得新資料
+  for (table_name in names(tables)) {
+    if (!table_name %in% names(new_data)) {
+      stop(paste("缺少表格的新資料:", table_name))
+    }
+  }
+  
+  # 驗證新資料有相同的鍵值
+  key_values <- NULL
+  for (data in new_data) {
+    if (is.null(key_values)) {
+      key_values <- data[[key_column]]
+    } else {
+      if (!identical(key_values, data[[key_column]])) {
+        stop("新資料的鍵值不一致")
+      }
+    }
+  }
+  
+  # 同時插入所有表格
+  for (table_name in names(tables)) {
+    tables[[table_name]] <- rbind(tables[[table_name]], 
+                                   new_data[[table_name]])
+  }
+  
+  return(tables)
+}
+
+# 安全的行對齊表格刪除
+delete_aligned_rows <- function(tables, condition, key_column) {
+  # 在所有表格中應用相同的刪除條件
+  for (table_name in names(tables)) {
+    tables[[table_name]] <- tables[[table_name]][!condition, ]
+  }
+  
+  # 驗證對齊仍然保持
+  verify_all_alignments(tables)
+  
+  return(tables)
+}
+```
+
+# 第三項：資料存取模式 {#access-patterns}
+
+## 第一款：優化的合併操作 {#optimized-merging}
+
+對行對齊表格優先使用列綁定而非連接：
+
+```r
+# ✅ 推薦：對行對齊表格使用 bind_cols
+combine_aligned_tables <- function(df_profile, df_dna) {
+  # 驗證對齊
+  if (!verify_row_alignment(df_profile, df_dna, "customer_id")) {
+    stop("表格未正確對齊")
+  }
+  
+  # 使用 bind_cols 進行快速合併
+  # 移除第二個表格的鍵列以避免重複
+  combined_data <- bind_cols(
+    df_profile, 
+    df_dna[, !names(df_dna) %in% "customer_id"]
+  )
+  
+  return(combined_data)
+}
+
+# ❌ 避免：對行對齊表格使用 join（效率較低）
+combine_with_join <- function(df_profile, df_dna) {
+  # 對行對齊表格來說效率較低
+  combined_data <- left_join(df_profile, df_dna, by = "customer_id")
+  return(combined_data)
+}
+```
+
+## 第二款：效能比較 {#performance-comparison}
+
+```r
+# 效能測試函數
+benchmark_merge_methods <- function(n_rows = 100000) {
+  # 創建測試資料
+  df1 <- data.frame(
+    id = 1:n_rows,
+    value1 = rnorm(n_rows)
+  )
+  
+  df2 <- data.frame(
+    id = 1:n_rows,
+    value2 = rnorm(n_rows)
+  )
+  
+  # 測試 bind_cols
+  time_bind <- system.time({
+    result_bind <- bind_cols(df1, df2[, -1])
+  })
+  
+  # 測試 left_join
+  time_join <- system.time({
+    result_join <- left_join(df1, df2, by = "id")
+  })
+  
+  # 報告結果
+  cat("bind_cols 時間:", time_bind[3], "秒\n")
+  cat("left_join 時間:", time_join[3], "秒\n")
+  cat("加速比:", time_join[3] / time_bind[3], "倍\n")
+}
+```
+
+# 第四項：一致性檢查 {#consistency-checks}
+
+## 第一款：定期驗證 {#periodic-verification}
+
+```r
+# 自動化對齊檢查
+schedule_alignment_checks <- function() {
+  # 每日檢查
+  check_daily <- function() {
+    config <- load_alignment_config()
+    results <- verify_all_alignments(config)
+    
+    if (any(!unlist(results))) {
+      send_alert("行對齊驗證失敗", results)
+    }
+    
+    log_results(results)
+  }
+  
+  # 排程執行
+  schedule_task(check_daily, "daily", "02:00")
+}
+```
+
+## 第二款：修復機制 {#repair-mechanism}
+
+```r
+# 修復行對齊
+repair_row_alignment <- function(tables, key_column) {
+  # 找出共同的鍵值
+  common_keys <- Reduce(intersect, 
+                        lapply(tables, function(t) t[[key_column]]))
+  
+  # 按共同鍵值排序並篩選
+  aligned_tables <- list()
+  for (name in names(tables)) {
+    table <- tables[[name]]
+    # 只保留共同鍵值
+    table <- table[table[[key_column]] %in% common_keys, ]
+    # 按鍵值排序
+    table <- table[order(table[[key_column]]), ]
+    aligned_tables[[name]] <- table
+  }
+  
+  # 驗證修復結果
+  verify_all_alignments(aligned_tables)
+  
+  return(aligned_tables)
+}
+```
+
+# 第五項：違規場景 {#violations}
+
+## 第一款：常見違規 {#common-violations}
+
+1. **不一致的插入**：記錄添加到一個表格但未添加到對應的行對齊表格
+2. **獨立排序**：表格獨立排序，破壞行序對應關係
+3. **選擇性刪除**：從一個表格刪除記錄而未移除對齊表格中的對應行
+4. **匯入/匯出錯誤**：匯入/匯出操作後未驗證行對齊
+
+## 第二款：預防措施 {#prevention}
+
+```r
+# 封裝的行對齊表格操作類別
+AlignedTableGroup <- R6::R6Class("AlignedTableGroup",
+  public = list(
+    tables = NULL,
+    key_column = NULL,
+    
+    initialize = function(tables, key_column) {
+      self$tables <- tables
+      self$key_column <- key_column
+      self$verify_alignment()
+    },
+    
+    verify_alignment = function() {
+      # 驗證所有表格對齊
+      for (i in 1:(length(self$tables) - 1)) {
+        if (!verify_row_alignment(
+          self$tables[[i]], 
+          self$tables[[i + 1]], 
+          self$key_column)) {
+          stop("表格初始化時未對齊")
+        }
+      }
+    },
+    
+    insert = function(new_data) {
+      self$tables <- insert_aligned_rows(
+        self$tables, new_data, self$key_column)
+      invisible(self)
+    },
+    
+    delete = function(condition) {
+      self$tables <- delete_aligned_rows(
+        self$tables, condition, self$key_column)
+      invisible(self)
+    },
+    
+    merge = function() {
+      result <- self$tables[[1]]
+      for (i in 2:length(self$tables)) {
+        result <- bind_cols(result, 
+          self$tables[[i]][, !names(self$tables[[i]]) %in% self$key_column])
+      }
+      return(result)
+    }
+  )
+)
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 行對齊表格實作檢查清單
+
+**文件化**：
+- [ ] 行對齊表格在 schema 文件中標記
+- [ ] 記錄對齊的鍵列
+- [ ] 說明對齊的目的和優勢
+- [ ] 提供使用範例
+
+**驗證機制**：
+- [ ] 實作 `verify_row_alignment()` 函數
+- [ ] 設定定期驗證排程
+- [ ] 建立驗證失敗警報
+- [ ] 記錄驗證結果
+
+**操作安全**：
+- [ ] 使用封裝的插入函數
+- [ ] 使用封裝的刪除函數
+- [ ] 實作修復機制
+- [ ] 防止獨立修改
+
+**效能優化**：
+- [ ] 使用 `bind_cols()` 進行合併
+- [ ] 避免不必要的 `join` 操作
+- [ ] 定期效能基準測試
+- [ ] 監控記憶體使用
+
+**維護流程**：
+- [ ] 匯入/匯出時驗證
+- [ ] 批次操作維持對齊
+- [ ] 文件化違規處理
+- [ ] 團隊培訓
+:::
+
+# 結論 {#conclusion}
+
+行對齊表格原則通過維持表格間的行對應關係，實現顯著的效能提升。使用 `bind_cols()` 取代 `join` 操作可以大幅減少計算時間和記憶體使用。關鍵在於嚴格維護對齊屬性，通過自動化驗證和封裝操作確保資料一致性。
+
+---
+
+*基於：資料管理法第五條*  
+*相關：[MP043 資料庫文件化](../../CH00_fundamental_principles/04_data_management/MP043_database_documentation.qmd)、[DM_R002 通用資料存取](../rules/DM_R002_universal_data_access.qmd)*

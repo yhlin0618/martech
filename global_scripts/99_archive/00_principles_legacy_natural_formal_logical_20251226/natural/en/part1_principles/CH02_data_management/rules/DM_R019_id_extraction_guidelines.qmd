@@ -1,0 +1,139 @@
+---
+title: "DM_R019: ID Extraction Guidelines for Data Cleansing and Processing"
+subtitle: "IDs related to data uniqueness, deduplication, and foreign keys must be established in the Cleanse stage; derived IDs tied to analysis logic should be generated in the Process stage"
+chapter: "CH02"
+category: "rule"
+number: "DM_R019"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article: 
+  number: 19
+  title: "ID Extraction Guidelines"
+related_to:
+  - "MP58: Database Table Creation Strategy"
+  - "P02: Data Integrity"
+  - "R89: Integer ID Type Conversion"
+  - "R90: ID Relationship Validation"
+  - "D03: Positioning Analysis Derivation Flow"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 19: ID Extraction Guidelines for Data Cleansing and Processing {#overview}
+
+**Data Management Law Article 19 (ID Extraction Guidelines)**
+
+IDs related to data uniqueness, deduplication, and foreign keys must be established in the Cleanse stage; derived IDs tied to analysis logic should be generated in the Process stage.
+
+:::{.callout-important}
+## Core Principle
+IDs related to data uniqueness, deduplication, and foreign keys must be established in the Cleanse stage; derived IDs tied to analysis logic should be generated in the Process stage.
+:::
+
+# Section 1: Two-Stage Purpose {#two-stage-purpose}
+
+| Stage | Primary Goal | Common Actions | Why Important |
+|-------|--------------|----------------|---------------|
+| **Cleanse** | Fix **data quality** to ensure data trustworthiness | Deduplication, null handling, type standardization, anomaly detection | Prevent dirty data from contaminating downstream processes |
+| **Process** | Transform based on **business logic** for analysis/modeling | Aggregation, KPI calculation, feature engineering | Convert "correct" data into "useful" data |
+
+# Section 2: ID Placement Guidelines {#id-placement-guidelines}
+
+| ID Purpose | Recommended Stage | Reason |
+|------------|-------------------|--------|
+| **Unique/Foreign Keys**<br>(`customer_id`, `order_id`, `ebay_product_number`, etc.) | **Cleanse** | Early establishment enables deduplication, data splitting, and clear lineage |
+| **Analysis-Derived Keys**<br>(`week_id`, `cohort_id`, `session_id`, etc.) | **Process** | Flexibility for analysis granularity changes |
+| **Report-Only Indices**<br>(frontend sorting numbers, etc.) | **Process/Final Report** | No business logic dependency, generate last |
+
+# Section 3: Standard Workflow {#standard-workflow}
+
+## Subsection 1: Staging (Raw Landing) {#staging}
+
+Store raw files with load timestamps only.
+
+## Subsection 2: Cleanse {#cleanse}
+
+- Execute deduplication, value imputation, validation
+- **Generate or map IDs that affect uniqueness/normalization**
+
+## Subsection 3: Process/Transform {#process-transform}
+
+- Aggregate and derive fields based on analysis needs
+- Generate derived IDs (e.g., `session_id_v2`) for maximum flexibility
+
+# Section 4: Why Establish IDs Early? {#why-establish-ids-early}
+
+- **Avoid Mismatches:** Primary keys ensure correct aggregation/joining
+- **Easy Traceability:** Fixed primary keys provide clear Raw → Clean → Process lineage
+- **Simplified Debugging:** Use same ID to trace back to original records
+
+# Section 5: Practical Techniques {#practical-techniques}
+
+| Technique | Description |
+|-----------|-------------|
+| **Hash/UUID Temporary Keys** | Generate `raw_row_hash` in Cleanse when no natural key exists |
+| **Encapsulate ID Logic** | Use UDF/SQL modules for isolation, testing, and version control |
+| **Version Derived Keys** | Use names like `session_id_v2` to prevent version conflicts |
+| **Update Data Dictionary** | Document IDs immediately in data catalog/ER diagrams |
+
+# Section 6: Implementation Examples {#implementation-examples}
+
+## Subsection 1: Cleanse Stage ID Generation {#cleanse-stage-id-generation}
+
+```r
+# In fn_cleanse_eby_reviews.R
+cleansed_reviews <- raw_reviews %>%
+  mutate(
+    # Establish primary identifier early
+    ebay_product_number = standardize_product_number(product_number),
+    # Create composite key for deduplication
+    review_id = paste(ebay_product_number, reviewer, date, sep = "_")
+  ) %>%
+  distinct(review_id, .keep_all = TRUE)
+```
+
+## Subsection 2: Process Stage ID Generation {#process-stage-id-generation}
+
+```r
+# In fn_process_eby_reviews.R
+processed_reviews <- cleansed_reviews %>%
+  mutate(
+    # Analysis-specific IDs generated during processing
+    week_id = format(date, "%Y-W%V"),
+    cohort_id = format(first_purchase_date, "%Y-%m"),
+    session_id = generate_session_id(user_id, timestamp)
+  )
+```
+
+# Section 7: Platform-Specific Considerations {#platform-specific-considerations}
+
+## Subsection 1: Amazon (amz) {#amazon}
+
+- Primary ID: `asin` (10-character alphanumeric)
+- Establish in Cleanse: Validate format, deduplicate
+
+## Subsection 2: eBay (eby) {#ebay}
+
+- Primary ID: `ebay_product_number` (10-13 digits)
+- Secondary IDs: `seller`, `country`
+- Establish in Cleanse: Standardize format, handle variations
+
+# Section 8: Related Principles {#related-principles}
+
+- **MP58**: Database Table Creation Strategy - Consistent table structures
+- **P02**: Data Integrity - Ensure data quality throughout pipeline
+- **R89**: Integer ID Type Conversion - Handle ID type conversions properly
+- **R90**: ID Relationship Validation - Validate ID relationships before operations
+
+---
+
+*Based on: Data Management Law Article 19*  
+*Related to: [MP58 Database Table Creation Strategy](../../CH00_fundamental_principles/meta_principles/MP058_database_table_creation_strategy.qmd), [P02 Data Integrity](../../CH01_structure_organization/principles/SO_P002_data_integrity.qmd)*

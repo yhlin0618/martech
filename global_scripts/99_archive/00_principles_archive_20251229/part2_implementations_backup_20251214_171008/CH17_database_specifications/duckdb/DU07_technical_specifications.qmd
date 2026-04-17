@@ -1,0 +1,175 @@
+---
+title: "DU07: DuckDB Technical Specifications"
+subtitle: "Complete Technical Specifications for DuckDB"
+author: "MAMBA Framework"
+date: "2025-08-27"
+categories: [database, duckdb, specifications]
+---
+
+# DuckDB Technical Specifications
+
+## Overview
+
+DuckDB is an in-process SQL OLAP database management system designed for analytical query workloads. It provides excellent performance for analytical queries while maintaining a simple deployment model with zero external dependencies.
+
+## Supported Data Types
+
+### General-Purpose Data Types
+
+| Type | Aliases | Description | Size/Range |
+|------|---------|-------------|------------|
+| **BIGINT** | INT8, LONG | Signed eight-byte integer | -2^63 to 2^63-1 |
+| **INTEGER** | INT4, INT, SIGNED | Signed four-byte integer | -2^31 to 2^31-1 |
+| **SMALLINT** | INT2, SHORT | Signed two-byte integer | -2^15 to 2^15-1 |
+| **TINYINT** | INT1 | Signed one-byte integer | -2^7 to 2^7-1 |
+| **HUGEINT** | - | Signed sixteen-byte integer | -2^127 to 2^127-1 |
+| **UBIGINT** | - | Unsigned eight-byte integer | 0 to 2^64-1 |
+| **UINTEGER** | - | Unsigned four-byte integer | 0 to 2^32-1 |
+| **USMALLINT** | - | Unsigned two-byte integer | 0 to 2^16-1 |
+| **UTINYINT** | - | Unsigned one-byte integer | 0 to 2^8-1 |
+| **UHUGEINT** | - | Unsigned sixteen-byte integer | 0 to 2^128-1 |
+| **DOUBLE** | FLOAT8 | Double precision floating-point | 8 bytes |
+| **FLOAT** | FLOAT4, REAL | Single precision floating-point | 4 bytes |
+| **DECIMAL(p,s)** | NUMERIC(p,s) | Fixed-precision decimal | Default: p=18, s=3 |
+| **VARCHAR** | CHAR, BPCHAR, TEXT, STRING | Variable-length character string | No limit |
+| **BOOLEAN** | BOOL, LOGICAL | Logical boolean | true/false/NULL |
+| **DATE** | - | Calendar date | year, month, day |
+| **TIME** | - | Time of day (no timezone) | HH:MM:SS.ffffff |
+| **TIMESTAMP** | DATETIME | Date and time combination | Microsecond precision |
+| **TIMESTAMP WITH TIME ZONE** | TIMESTAMPTZ | Timestamp with timezone | Current timezone |
+| **INTERVAL** | - | Date/time delta | Flexible duration |
+| **BLOB** | BYTEA, BINARY, VARBINARY | Variable-length binary data | No limit |
+| **BIT** | BITSTRING | String of 1s and 0s | Variable length |
+| **UUID** | - | UUID data type | 128-bit |
+| **JSON** | - | JSON object (via extension) | Requires json extension |
+
+### Nested/Composite Data Types
+
+DuckDB supports five nested data types for complex data structures:
+
+| Type | Description | Key Characteristics |
+|------|-------------|-------------------|
+| **ARRAY** | Fixed-length ordered sequence | All elements same type, fixed size |
+| **LIST** | Variable-length ordered sequence | All elements same type, variable size |
+| **MAP** | Key-value pairs | Keys and values can be different types |
+| **STRUCT** | Named fields | Each field can be different type |
+| **UNION** | Alternative types | Stores one of multiple types |
+
+#### Important Notes on Nested Types:
+- **LIST** columns can contain different lengths per row but must have same element type
+- **STRUCT** requires all rows to have same fields
+- **MAP** allows different keys per row
+- **UNION** can store different member types per row
+- Nested types can be arbitrarily nested to any depth
+
+## Database Limitations
+
+### Size Limits
+
+| Component | Limit | Notes |
+|-----------|-------|-------|
+| Database file size | No hard limit | Limited by disk space |
+| Table size | No hard limit | Limited by available memory/disk |
+| Row size | No specific limit | Practical limit based on memory |
+| Column count | 1000+ columns | Soft limit, can be higher |
+| JSON object size | 16,777,216 bytes | Default, configurable |
+| String length | No hard limit | Limited by available memory |
+
+### Performance Considerations
+
+1. **Memory Usage**: DuckDB can operate entirely in memory or spill to disk
+2. **Parallelization**: Automatic multi-threading for query execution
+3. **Vectorized Execution**: Processes data in chunks for CPU efficiency
+4. **Column Storage**: Columnar storage format optimized for analytics
+
+## File Format Support
+
+### Native Reading Support
+- **CSV**: Full support with auto-detection
+- **Parquet**: Native high-performance reader
+- **JSON/NDJSON**: Flexible schema detection
+- **Arrow**: Zero-copy data exchange
+
+### Reading Parameters
+
+#### JSON Reading Parameters
+- `auto_detect`: Auto-detect schema (default: true)
+- `columns`: Explicitly specify column types
+- `maximum_depth`: Nesting depth for type detection (default: -1)
+- `sample_size`: Objects to sample for auto-detection (default: 20480)
+- `format`: array, newline_delimited, unstructured, auto
+- `records`: Parse as records (default: auto)
+- `compression`: none, gzip, zstd, auto_detect
+- `maximum_object_size`: Max JSON object size in bytes
+
+## Configuration Options
+
+### Key Configuration Settings
+
+```sql
+-- Memory limit
+SET memory_limit='10GB';
+
+-- Thread count
+SET threads=4;
+
+-- Temp directory
+SET temp_directory='/path/to/temp';
+
+-- Preserve insertion order
+SET preserve_insertion_order=true;
+```
+
+## Extension System
+
+DuckDB supports extensions for additional functionality:
+
+```sql
+-- Install and load JSON extension
+INSTALL json;
+LOAD json;
+
+-- Other useful extensions
+INSTALL httpfs;    -- Read from HTTP/S3
+INSTALL postgres;  -- PostgreSQL compatibility
+INSTALL sqlite;    -- SQLite compatibility
+```
+
+## Type Conversion Rules
+
+### Implicit Casting
+DuckDB performs implicit casting in many scenarios:
+- Numeric types cast to wider types automatically
+- Strings cast to numbers when valid
+- Timestamps cast to dates by truncation
+
+### Explicit Casting
+Use `::` or `CAST()` for explicit conversion:
+```sql
+SELECT '42'::INTEGER;
+SELECT CAST('2024-01-01' AS DATE);
+SELECT '["a","b","c"]'::JSON;
+```
+
+## Best Practices
+
+1. **Use Appropriate Types**: Choose the narrowest type that fits your data
+2. **Leverage LIST for Arrays**: More flexible than PostgreSQL arrays
+3. **JSON for Semi-Structured**: Use JSON type for flexible schemas
+4. **Partition Large Tables**: Use Hive-style partitioning for large datasets
+5. **Compression**: Enable compression for Parquet files
+6. **Batch Operations**: Use batch inserts for better performance
+
+## Common Gotchas
+
+1. **LIST Column Storage**: Cannot be directly written to some formats
+2. **JSON Comparison**: Physical vs logical comparison differences
+3. **NULL Handling**: Three-valued logic in comparisons
+4. **Time Zones**: TIMESTAMP vs TIMESTAMPTZ behavior
+5. **Memory Limits**: Default memory limit may need adjustment
+
+## References
+
+- [DuckDB Official Documentation](https://duckdb.org/docs/)
+- [DuckDB GitHub Repository](https://github.com/duckdb/duckdb)
+- [DuckDB Performance Guide](https://duckdb.org/docs/guides/performance/)

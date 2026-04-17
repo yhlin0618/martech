@@ -1,0 +1,514 @@
+---
+id: "DM_R027"
+title: "ETL Schema Validation Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2026-02-11"
+author: "Claude"
+status: "active"
+version: "1.2"
+weight: 27
+implements:
+  - "MP102": "ETL Output Standardization Principle"
+related_to:
+  - "MP064": "ETL-Derivation Separation"
+  - "MP149": "Data Transaction Integrity"
+  - "MP092": "Platform ID Standard"
+  - "DM_R024": "List Column Handling"
+  - "DM_R025": "Type Conversion R-DuckDB"
+  - "DM_R053": "Multi-Source ETL Priority Pattern"
+---
+
+# DM_R027: ETL Schema Validation Rule
+
+## Rule Statement
+
+**All ETL outputs must be validated against the schema registry before being written to the database**: This ensures data consistency, catches schema violations early, and maintains documentation accuracy.
+
+**For 0IM ETLs that import from external sources (e.g., Google Sheets, API, Excel), source-to-local completeness validation is mandatory immediately after write**: The ETL must verify source unit coverage, row-level reconciliation, and critical-key reconciliation (such as `ASIN`), and must fail when mismatches exist.
+
+## Implementation Requirements
+
+### 1. Schema Registry Location
+
+```yaml
+# Standard location for ETL schemas
+path: scripts/global_scripts/00_principles/docs/en/part2_implementations/CH10_database_specifications/etl_schemas/
+files:
+  - schema_registry.yaml    # Master registry
+  - core_schemas.yaml       # Core table definitions
+  - platform_extensions/    # Platform-specific extensions
+    - cbz_extensions.yaml
+    - eby_extensions.yaml
+    - amz_extensions.yaml
+```
+
+### 2. Validation Function Implementation
+
+```r
+# Location: scripts/global_scripts/05_etl_utils/fn_validate_etl_schema.R
+
+validate_etl_schema <- function(
+  data,
+  platform_id,
+  table_type,
+  allow_extensions = TRUE
+) {
+  # Load schema definition
+  schema_path <- file.path(
+    GLOBAL_SCRIPTS_DIR,
+    "00_principles/docs/en/part2_implementations/CH10_database_specifications/etl_schemas"
+  )
+  
+  core_schema <- yaml::read_yaml(
+    file.path(schema_path, "core_schemas.yaml")
+  )[[table_type]]
+  
+  if (is.null(core_schema)) {
+    stop(sprintf("Unknown table type: %s", table_type))
+  }
+  
+  # Check core fields
+  data_fields <- names(data)
+  core_fields <- names(core_schema$fields)
+  missing_core <- setdiff(core_fields, data_fields)
+  
+  if (length(missing_core) > 0) {
+    stop(sprintf(
+      "Missing required core fields in %s_%s: %s",
+      platform_id, table_type,
+      paste(missing_core, collapse = ", ")
+    ))
+  }
+  
+  # Validate data types
+  for (field in core_fields) {
+    expected_type <- core_schema$fields[[field]]$type
+    actual_type <- class(data[[field]])[1]
+    
+    if (!validate_type_compatibility(expected_type, actual_type)) {
+      warning(sprintf(
+        "Type mismatch for %s: expected %s, got %s",
+        field, expected_type, actual_type
+      ))
+    }
+  }
+  
+  # Check platform extensions
+  if (allow_extensions) {
+    extension_path <- file.path(
+      schema_path, "platform_extensions",
+      sprintf("%s_extensions.yaml", platform_id)
+    )
+    
+    if (file.exists(extension_path)) {
+      extensions <- yaml::read_yaml(extension_path)[[table_type]]
+      
+      # Verify extension fields use platform prefix
+      extension_fields <- setdiff(data_fields, core_fields)
+      invalid_extensions <- extension_fields[
+        !grepl(sprintf("^%s_", platform_id), extension_fields)
+      ]
+      
+      if (length(invalid_extensions) > 0) {
+        warning(sprintf(
+          "Extension fields missing platform prefix: %s",
+          paste(invalid_extensions, collapse = ", ")
+        ))
+      }
+    }
+  }
+  
+  return(invisible(TRUE))
+}
+```
+
+### 3. Type Compatibility Checking
+
+```r
+validate_type_compatibility <- function(expected, actual) {
+  type_map <- list(
+    "VARCHAR" = c("character", "factor"),
+    "INTEGER" = c("integer", "numeric"),
+    "NUMERIC" = c("numeric", "double", "integer"),
+    "BOOLEAN" = c("logical"),
+    "TIMESTAMP" = c("POSIXct", "POSIXlt", "Date"),
+    "TEXT" = c("character")
+  )
+  
+  if (expected %in% names(type_map)) {
+    return(actual %in% type_map[[expected]])
+  }
+  
+  return(TRUE)  # Unknown types pass by default
+}
+```
+
+### 4. Integration in ETL Scripts
+
+```r
+# Required validation before writing
+# In any ETL script:
+
+# Phase 0IM: Import and validate
+df_sales <- process_raw_data(raw_input)
+
+# Validate against schema
+validate_etl_schema(
+  data = df_sales,
+  platform_id = "cbz",
+  table_type = "sales",
+  allow_extensions = TRUE
+)
+
+# Only write if validation passes
+dbWriteTable(con, "df_cbz_sales___raw", df_sales, overwrite = TRUE)
+message("Schema validation passed, data written successfully")
+```
+
+### 5. 0IM Source Reconciliation Gate (Mandatory)
+
+```r
+# Required for 0IM external imports (Google/API/Excel)
+# Compare source keys vs. just-written local table keys
+
+validate_0im_key_reconciliation <- function(source_keys, local_keys, key_name = "ASIN") {
+  source_keys <- unique(trimws(as.character(source_keys)))
+  local_keys <- unique(trimws(as.character(local_keys)))
+
+  source_keys <- source_keys[!is.na(source_keys) & nzchar(source_keys)]
+  local_keys <- local_keys[!is.na(local_keys) & nzchar(local_keys)]
+
+  missing_in_local <- setdiff(source_keys, local_keys)
+  extra_in_local <- setdiff(local_keys, source_keys)
+
+  list(
+    ok = length(missing_in_local) == 0 && length(extra_in_local) == 0,
+    key_name = key_name,
+    source_n = length(source_keys),
+    local_n = length(local_keys),
+    missing_in_local = missing_in_local,
+    extra_in_local = extra_in_local
+  )
+}
+
+# Example in 0IM ETL
+recon <- validate_0im_key_reconciliation(
+  source_keys = google_df$ASIN,
+  local_keys = dbGetQuery(con, "SELECT DISTINCT ASIN FROM df_product_profile_hsg")$ASIN,
+  key_name = "ASIN"
+)
+
+if (!recon$ok) {
+  stop(sprintf(
+    "DM_R027 0IM reconciliation failed (%s): source=%d local=%d missing=%d extra=%d",
+    recon$key_name,
+    recon$source_n,
+    recon$local_n,
+    length(recon$missing_in_local),
+    length(recon$extra_in_local)
+  ))
+}
+```
+
+#### Required execution point
+
+- Reconciliation must run after `dbWriteTable()` in the same 0IM script.
+- Reconciliation must run before downstream 1ST/2TR phases are allowed to proceed.
+- Any mismatch is a hard failure in production ETL runs.
+
+### 6. 0IM Source Unit Completeness Audit (Mandatory)
+
+```r
+# Required in 0IM imports from external files/tabs/pages
+# Track every source unit and fail when any expected unit is not imported.
+
+validate_0im_source_units <- function(source_units, unit_report) {
+  expected_units <- unique(as.character(source_units))
+  expected_units <- expected_units[!is.na(expected_units) & nzchar(expected_units)]
+
+  report <- unit_report
+  report$unit_id <- as.character(report$unit_id)
+  report$status <- as.character(report$status)
+
+  imported_units <- unique(report$unit_id[report$status == "IMPORTED"])
+  missing_units <- setdiff(expected_units, imported_units)
+  failed_units <- report$unit_id[report$status %in% c("FAILED", "WRITE_FAIL", "READ_FAIL")]
+
+  list(
+    ok = length(missing_units) == 0 && length(failed_units) == 0,
+    expected_n = length(expected_units),
+    imported_n = length(imported_units),
+    missing_units = missing_units,
+    failed_units = unique(failed_units)
+  )
+}
+
+# Hard fail example:
+unit_check <- validate_0im_source_units(source_units, unit_report)
+if (!unit_check$ok) {
+  stop(sprintf(
+    "DM_R027 0IM source-unit completeness failed: expected=%d imported=%d missing=%d failed=%d",
+    unit_check$expected_n,
+    unit_check$imported_n,
+    length(unit_check$missing_units),
+    length(unit_check$failed_units)
+  ))
+}
+```
+
+### 7. 0IM Transaction Boundary (Mandatory)
+
+```r
+# All 0IM external imports must use transaction boundaries
+DBI::dbBegin(con)
+committed <- FALSE
+
+on.exit({
+  if (!committed) {
+    try(DBI::dbRollback(con), silent = TRUE)
+  }
+}, add = TRUE)
+
+# 1) import/write
+# 2) row reconciliation
+# 3) key reconciliation
+
+if (!all_checks_pass) {
+  stop("DM_R027 transaction gate failed: rollback required")
+}
+
+DBI::dbCommit(con)
+committed <- TRUE
+```
+
+Rules:
+- Validation must happen before commit.
+- Any required check failure must produce rollback and hard failure.
+- No partial committed data is allowed for production 0IM runs.
+
+#### Minimum required fields in 0IM audit report
+
+- `unit_id` (file path / sheet name / page token)
+- `status` (`IMPORTED`, `EMPTY`, `FAILED`, `SKIPPED`)
+- `rows_source`
+- `rows_written`
+- `error_message`
+- `run_timestamp`
+
+#### Production enforcement
+
+- External-source 0IM runs must stop on any `FAILED` source unit.
+- Downstream 1ST/2TR must not continue when 0IM completeness audit fails.
+- The audit report must be persisted as CSV in `output/` or `logs/` for traceability.
+
+## Schema Definition Format
+
+### Core Schema Definition
+
+```yaml
+# core_schemas.yaml
+sales:
+  description: "Standardized sales transaction data"
+  fields:
+    order_id:
+      type: VARCHAR
+      required: true
+      description: "Unique order identifier"
+    customer_id:
+      type: VARCHAR
+      required: true
+      description: "Customer identifier"
+    order_date:
+      type: VARCHAR
+      required: true
+      description: "Order date (string, to be parsed)"
+    product_id:
+      type: VARCHAR
+      required: true
+      description: "Product identifier"
+    quantity:
+      type: INTEGER
+      required: true
+      description: "Quantity sold"
+    unit_price:
+      type: NUMERIC
+      required: true
+      description: "Price per unit"
+    total_amount:
+      type: NUMERIC
+      required: true
+      description: "Total transaction amount"
+    platform_id:
+      type: VARCHAR
+      required: true
+      description: "Three-letter platform_id"
+    import_timestamp:
+      type: TIMESTAMP
+      required: true
+      description: "When data was imported"
+    import_source:
+      type: VARCHAR
+      required: true
+      description: "Data source (API/CSV/etc)"
+```
+
+### Platform Extension Definition
+
+```yaml
+# platform_extensions/cbz_extensions.yaml
+sales:
+  description: "Cyberbiz-specific sales fields"
+  fields:
+    cbz_shop_id:
+      type: VARCHAR
+      required: false
+      description: "Cyberbiz shop identifier"
+    cbz_payment_id:
+      type: VARCHAR
+      required: false
+      description: "Payment transaction ID"
+    cbz_member_level:
+      type: VARCHAR
+      required: false
+      description: "Customer membership tier"
+```
+
+## Validation Reporting
+
+### Generate Schema Compliance Report
+
+```r
+generate_schema_report <- function(con) {
+  platforms <- c("cbz", "eby", "amz")
+  table_types <- c("sales", "customers", "products", "reviews")
+  
+  report <- expand.grid(
+    platform = platforms,
+    table_type = table_types,
+    stringsAsFactors = FALSE
+  ) %>%
+    mutate(
+      table_name = sprintf("df_%s_%s___raw", platform, table_type),
+      exists = FALSE,
+      valid = FALSE,
+      core_fields_count = 0,
+      extension_fields_count = 0,
+      issues = ""
+    )
+  
+  for (i in 1:nrow(report)) {
+    table_name <- report$table_name[i]
+    
+    if (dbExistsTable(con, table_name)) {
+      report$exists[i] <- TRUE
+      
+      tryCatch({
+        data_sample <- tbl2(con, table_name) %>%
+          head(1) %>%
+          collect()
+        
+        validation <- validate_etl_schema(
+          data = data_sample,
+          platform_id = report$platform[i],
+          table_type = report$table_type[i]
+        )
+        
+        report$valid[i] <- TRUE
+        report$core_fields_count[i] <- length(get_core_fields(report$table_type[i]))
+        report$extension_fields_count[i] <- ncol(data_sample) - report$core_fields_count[i]
+        
+      }, error = function(e) {
+        report$issues[i] <- e$message
+      })
+    }
+  }
+  
+  return(report)
+}
+```
+
+## Error Handling
+
+### Validation Failures
+
+```r
+# Strict mode: Stop on validation failure
+validate_etl_schema_strict <- function(...) {
+  result <- validate_etl_schema(...)
+  if (!result) {
+    stop("ETL schema validation failed. Data not written.")
+  }
+  return(result)
+}
+
+# Permissive mode: Warn but continue
+validate_etl_schema_permissive <- function(...) {
+  result <- tryCatch(
+    validate_etl_schema(...),
+    error = function(e) {
+      warning(sprintf("Schema validation warning: %s", e$message))
+      return(FALSE)
+    }
+  )
+  return(result)
+}
+```
+
+## Migration Support
+
+### Add Validation to Existing ETLs
+
+```r
+# Helper to retrofit validation
+add_schema_validation <- function(etl_script_path) {
+  script_content <- readLines(etl_script_path)
+  
+  # Find dbWriteTable calls
+  write_lines <- grep("dbWriteTable", script_content)
+  
+  for (line_num in write_lines) {
+    # Parse the dbWriteTable call
+    line <- script_content[line_num]
+    
+    # Extract table name and data frame
+    if (grepl('df_[a-z]{3}_\\w+___raw', line)) {
+      # Insert validation before write
+      validation_code <- sprintf(
+        "# Schema validation (DM_R027)\nvalidate_etl_schema(data = %s, platform_id = '%s', table_type = '%s')\n",
+        extract_df_name(line),
+        extract_platform_id(line),
+        extract_table_type(line)
+      )
+      
+      script_content <- c(
+        script_content[1:(line_num-1)],
+        validation_code,
+        script_content[line_num:length(script_content)]
+      )
+    }
+  }
+  
+  return(script_content)
+}
+```
+
+## Benefits
+
+1. **Early Error Detection**: Catch schema issues before data corruption
+2. **Documentation Enforcement**: Schema registry stays current
+3. **Cross-Platform Compatibility**: Ensures standardized outputs
+4. **Type Safety**: Prevents type mismatches in downstream processing
+5. **Audit Trail**: Validation logs provide compliance evidence
+6. **Source Integrity Guarantee (0IM)**: Prevents silent key loss during external-source imports
+
+## Related Standards
+
+- **MP102**: Implements the ETL Output Standardization Principle
+- **MP064**: Maintains ETL-Derivation separation
+- **DM_R024-R026**: Handles complex data types appropriately
+
+## Conclusion
+
+This rule ensures all ETL outputs conform to documented schemas, preventing data quality issues and maintaining system-wide consistency. The validation framework provides both strict and permissive modes to support gradual migration while enforcing standards for new development.

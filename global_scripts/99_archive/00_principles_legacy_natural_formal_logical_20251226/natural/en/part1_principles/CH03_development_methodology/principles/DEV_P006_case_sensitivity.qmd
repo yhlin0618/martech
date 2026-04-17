@@ -1,0 +1,390 @@
+---
+title: "DEV_P006: Case Sensitivity Principle"
+subtitle: "UI case sensitive, server case insensitive for robust processing"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P006"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article: "Article 6"
+derives_from:
+  - "CH00.MP012: Company-Centered Design"
+related_to:
+  - "UI_P001: Natural Language UI"
+  - "DM_P001: Data Integrity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Article 6 (Case Sensitivity Principle)**
+
+This article establishes clear guidelines for handling case sensitivity throughout the application architecture, maintaining a distinction between user-facing presentation and server-side processing.
+
+:::{.callout-important}
+## Core Principle
+- **UI is case sensitive**: User-facing text must preserve exact capitalization for proper branding and readability
+- **Server is case insensitive**: All server-side processing should standardize case (generally to lowercase) for consistency and to prevent errors
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Strict Outward, Permissive Inward {#approach}
+
+This principle enforces a "strict outward, permissive inward" approach that:
+
+1. Ensures professional presentation and brand consistency in user-facing elements
+2. Reduces errors caused by case inconsistencies in data processing
+3. Aligns with the Company-Centered Design principle by maintaining professional appearance while increasing system robustness
+4. Prevents common case-related bugs in string comparisons and lookups
+5. Simplifies data normalization and improves system reliability
+
+## Subsection 2: Benefits {#benefits}
+
+By maintaining this dual approach:
+
+- **User Experience**: Professional appearance with consistent branding
+- **System Reliability**: Reduced errors from case mismatches
+- **Data Consistency**: Normalized data storage and retrieval
+- **Developer Efficiency**: Clear rules prevent ambiguity
+- **Cross-Platform Compatibility**: Works across different filesystems and databases
+
+# Section 2: UI Components {#ui-components}
+
+## Subsection 1: Text Display {#text-display}
+
+第一項：UI文字顯示必須保持精確的大小寫 (UI text display must preserve exact capitalization)
+
+1. Always use the exact capitalization specified in UI terminology dictionaries
+2. Respect proper nouns, acronyms, and brand-specific capitalization
+3. Never automatically transform case of displayed text
+4. Preserve user-entered text case when displaying back to users
+
+第二項：品牌一致性要求 (Brand consistency requirements)
+
+1. Company names must maintain official capitalization
+2. Product names follow brand guidelines
+3. Technical terms preserve standard conventions (e.g., "SQL", "API", "URL")
+
+## Subsection 2: Labels and Headings {#labels-headings}
+
+第一項：英文標題格式 (English heading formats)
+
+```r
+# Title Case for English headings
+heading <- "Customer Analysis Report"
+button_label <- "Generate Report"
+menu_item <- "View Dashboard"
+```
+
+第二項：多語言支援 (Multi-language support)
+
+```r
+# Respect language-specific conventions
+chinese_heading <- "客戶分析報告"  # No case concept
+german_heading <- "Kundenanalysebericht"  # Noun capitalization
+french_heading <- "Rapport d'analyse client"  # Sentence case
+```
+
+## Subsection 3: Error Messages {#error-messages}
+
+第一項：錯誤訊息格式 (Error message format)
+
+```r
+# Begin with capital letter, use proper sentence case
+error_message <- "Unable to connect to database. Please check your credentials."
+warning_message <- "Warning: This action cannot be undone."
+info_message <- "Successfully saved 150 records."
+```
+
+# Section 3: Server-Side Processing {#server-processing}
+
+## Subsection 1: Data Storage {#data-storage}
+
+第一項：正規化儲存 (Normalized storage)
+
+```r
+# Store normalized data for consistency
+store_customer <- function(customer_name) {
+  normalized_name <- tolower(trimws(customer_name))
+  
+  # Store both normalized and original
+  db_insert(
+    normalized = normalized_name,
+    original = customer_name,
+    display = customer_name  # Preserve for display
+  )
+}
+```
+
+第二項：語意保留 (Semantic preservation)
+
+```r
+# Preserve case only when semantically meaningful
+store_data <- function(data) {
+  list(
+    # Case-insensitive fields
+    email = tolower(data$email),
+    username = tolower(data$username),
+    
+    # Case-sensitive fields
+    password_hash = data$password_hash,  # Cryptographic data
+    customer_name = data$customer_name,  # Display name
+    notes = data$notes  # User-entered content
+  )
+}
+```
+
+## Subsection 2: Data Comparison {#data-comparison}
+
+第一項：字串比較標準 (String comparison standards)
+
+```r
+# All string comparisons should be case-insensitive by default
+compare_strings <- function(str1, str2) {
+  tolower(trimws(str1)) == tolower(trimws(str2))
+}
+
+# Database queries with case-insensitive matching
+query <- "SELECT * FROM customers WHERE LOWER(email) = LOWER(?)"
+```
+
+第二項：查詢處理 (Lookup processing)
+
+```r
+# Case-insensitive lookup with case-preserved return
+find_customer <- function(search_term) {
+  normalized_search <- tolower(trimws(search_term))
+  
+  result <- db_query(
+    "SELECT original_name FROM customers 
+     WHERE normalized_name = ?",
+    normalized_search
+  )
+  
+  return(result$original_name)  # Return with original case
+}
+```
+
+## Subsection 3: File and Resource Naming {#resource-naming}
+
+第一項：內部資源識別 (Internal resource identifiers)
+
+```r
+# Use lowercase for internal resource identifiers
+resource_id <- tolower(gsub("[^a-z0-9]", "_", resource_name))
+file_key <- tolower(paste0(category, "_", timestamp))
+```
+
+第二項：跨平台相容性 (Cross-platform compatibility)
+
+```r
+# Support case-insensitive matching for resource lookup
+find_file_case_insensitive <- function(target_file) {
+  files <- list.files(recursive = TRUE)
+  matches <- files[tolower(files) == tolower(target_file)]
+  
+  if (length(matches) > 0) {
+    return(matches[1])
+  }
+  return(NULL)
+}
+```
+
+# Section 4: Implementation Examples {#examples}
+
+## Subsection 1: Parameter File Handling {#parameter-files}
+
+```r
+# When processing parameter files like platform.xlsx:
+
+process_platform_data <- function(platform_data) {
+  # UI representation - Case sensitive for display
+  platform_display_name <- platform_data$platform_name_english
+  
+  # Server lookup key - Case insensitive for processing
+  platform_key <- tolower(gsub(" ", "", platform_data$platform_name_english))
+  
+  list(
+    display = platform_display_name,
+    key = platform_key
+  )
+}
+```
+
+## Subsection 2: Translation Dictionary Access {#translation}
+
+```r
+# Case-sensitive display of translations
+translate <- function(text) {
+  # Exact match for retrieving translations
+  ui_dictionary[[text]]
+}
+
+# Case-insensitive matching for parameter files
+find_language_column <- function(columns, target_language) {
+  for (col in columns) {
+    if (tolower(col) == tolower(target_language)) {
+      return(col)  # Return actual column name
+    }
+  }
+  return(NULL)
+}
+```
+
+## Subsection 3: Configuration Handling {#configuration}
+
+```r
+# Robust configuration access
+get_config_value <- function(config, path) {
+  # Split path and normalize
+  parts <- strsplit(path, "\\.")[[1]]
+  
+  current <- config
+  for (part in parts) {
+    # Case-insensitive matching
+    names_lower <- tolower(names(current))
+    idx <- which(names_lower == tolower(part))[1]
+    
+    if (!is.na(idx)) {
+      current <- current[[names(current)[idx]]]
+    } else {
+      return(NULL)
+    }
+  }
+  
+  return(current)
+}
+
+# Usage
+debug_mode <- get_config_value(config, "Parameters.Debug")
+```
+
+# Section 5: Common Pitfalls and Solutions {#pitfalls}
+
+## Subsection 1: Database Queries {#db-pitfalls}
+
+第一項：錯誤模式 (Incorrect patterns)
+
+```r
+# INCORRECT: Case-sensitive comparison
+query <- "SELECT * FROM users WHERE name = 'Customer'"
+
+# CORRECT: Case-insensitive comparison
+query <- "SELECT * FROM users WHERE LOWER(name) = LOWER('Customer')"
+```
+
+## Subsection 2: Filename Mismatches {#file-pitfalls}
+
+第一項：檔案存在檢查 (File existence checks)
+
+```r
+# INCORRECT: Direct case-sensitive check
+if (file.exists("Config.yaml")) {
+  # May fail on case-sensitive filesystems
+}
+
+# CORRECT: Case-insensitive lookup
+config_file <- find_file_case_insensitive("config.yaml")
+if (!is.null(config_file) && file.exists(config_file)) {
+  # Works across filesystems
+}
+```
+
+## Subsection 3: Configuration Lookups {#config-pitfalls}
+
+第一項：設定存取 (Configuration access)
+
+```r
+# INCORRECT: Direct case-sensitive access
+value <- config$Parameters$Debug
+
+# CORRECT: Case-insensitive helper
+value <- get_config_value(config, "parameters.debug")
+```
+
+# Section 6: Best Practices {#best-practices}
+
+## Subsection 1: Implementation Guidelines {#guidelines}
+
+1. **UI Text Management**
+   - All UI text should come from terminology dictionaries
+   - Never hardcode display text in application logic
+   - Maintain separate display and processing values
+
+2. **Data Processing**
+   - Standardize incoming data to consistent case before processing
+   - Store both normalized and original versions when needed
+   - Use case-insensitive comparisons by default
+
+3. **Logging and Debugging**
+   - Preserve original case in log files for debugging
+   - Include both normalized and original values in error messages
+   - Document case transformations in code comments
+
+## Subsection 2: Testing Strategies {#testing}
+
+```r
+# Test case sensitivity handling
+test_case_sensitivity <- function() {
+  test_cases <- list(
+    c("Email", "email", TRUE),
+    c("UserName", "username", TRUE),
+    c("API", "api", TRUE),
+    c("SQL", "sql", TRUE)
+  )
+  
+  for (test in test_cases) {
+    result <- compare_strings(test[1], test[2])
+    expect_equal(result, test[3])
+  }
+}
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Case Sensitivity Implementation Checklist
+
+**UI Components:**
+- [ ] Display text preserves exact capitalization
+- [ ] Brand names maintain official case
+- [ ] Error messages use proper sentence case
+- [ ] Language-specific conventions respected
+
+**Server Processing:**
+- [ ] Data normalized to lowercase for storage
+- [ ] Case-insensitive string comparisons
+- [ ] Resource lookups handle case variations
+- [ ] Original case preserved for display
+
+**Data Management:**
+- [ ] Both normalized and original values stored
+- [ ] Database queries use case-insensitive matching
+- [ ] Configuration access handles case variations
+
+**Testing:**
+- [ ] Case variations tested
+- [ ] Cross-platform compatibility verified
+- [ ] UI display accuracy confirmed
+- [ ] Server processing robustness validated
+:::
+
+# Conclusion {#conclusion}
+
+By maintaining case sensitivity in the UI while enforcing case insensitivity in server-side processing, we create applications that both look professional to users and operate robustly in the background. This principle helps prevent common errors while ensuring a polished user experience, embodying the "strict outward, permissive inward" philosophy that characterizes robust system design.
+
+---
+
+*Based on: Development Methodology Law Article 6*  
+*Derives from: [MP012 Company-Centered Design](../../CH00_fundamental_principles/MP012_company_centered_design.qmd)*  
+*Related to: [UI_P001 Natural Language UI](../../CH04_ui_components/principles/UI_P001_natural_language_ui.qmd), [DM_P001 Data Integrity](../../CH02_data_management/principles/DM_P001_data_integrity.qmd)*

@@ -1,0 +1,256 @@
+---
+title: "SO_R018: 函數檔案命名規則"
+subtitle: "建立函數檔案的一致命名約定，澄清何時以及如何在檔案名稱中使用 'fn_' 前綴，同時確保函數檔案名稱和函數物件名稱之間的清晰區分"
+chapter: "CH01"
+category: "rule"
+number: "SO_R018"
+date-created: "2025-08-18"
+date-modified: "2025-10-06"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 18
+  title: "函數檔案命名規則"
+implements:
+  - "R019: 物件命名約定"
+  - "R021: 一函數一檔案"
+  - "R023: 物件檔案名稱轉換"
+related_to:
+  - "R001: 檔案命名約定"
+  - "MP047: 函數式編程"
+  - "R067: 函數封裝"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十八條：函數檔案命名規則 {#overview}
+
+**結構組織法第十八條（函數檔案命名規則）**
+
+此規則建立函數檔案的一致命名約定。
+
+:::{.callout-important}
+## 核心需求
+建立函數檔案的一致命名約定，澄清何時以及如何在檔案名稱中使用 "fn_" 前綴，同時確保函數檔案名稱和函數物件名稱之間的清晰區分。
+:::
+
+# 第一項：實施原則 {#implementation}
+
+## 第一款：函數檔案命名模式 {#file-naming-pattern}
+
+所有包含函數定義的檔案必須遵循此命名模式：
+
+```
+fn_[函數名稱].R
+```
+
+其中：
+- `fn_` 是檔案名稱的必需前綴
+- `[函數名稱]` 遵循 R0019 的物件命名約定，根據 R23 將點替換為底線
+- `.R` 是 R 腳本的檔案副檔名
+
+## 第二款：函數物件命名模式 {#object-naming-pattern}
+
+在函數檔案內，函數物件本身必須根據 R0019 物件命名約定命名，不包含 "fn_" 前綴：
+
+```r
+# 檔案：fn_calculate_revenue.R
+calculate_revenue <- function(sales_data, date_range) {
+  # 函數實施
+}
+```
+
+## 第三款：一函數一檔案 {#one-function-one-file}
+
+遵循 R0021（一函數一檔案），每個函數檔案應該正好包含一個主要函數，檔案以該函數命名：
+
+```r
+# 檔案：fn_process_customer_data.R
+process_customer_data <- function(customer_id) {
+  # 主要函數實施
+  
+  # 如果輔助函數僅在此函數內使用，可以包含
+  validate_id <- function(id) {
+    # 輔助函數實施
+  }
+  
+  # 使用輔助函數的函數實施
+  validate_id(customer_id)
+  # 其餘實施
+}
+```
+
+## 第四款：函數檔案組織 {#file-organization}
+
+函數檔案應根據其目的和領域進行組織：
+
+1. **工具函數**：通用函數應放在 `04_utils` 目錄
+2. **模組特定**：特定於模組的函數應放在模組目錄
+3. **領域特定**：特定於領域的函數應放在領域目錄
+
+# 第二項：有效範例 {#valid-examples}
+
+## 第一款：標準工具函數 {#standard-utility}
+
+```
+檔案路徑：update_scripts/global_scripts/04_utils/fn_clean_data.R
+
+# 函數實施
+clean_data <- function(data) {
+  # 實施
+}
+```
+
+## 第二款：模組函數 {#module-function}
+
+```
+檔案路徑：update_scripts/global_scripts/10_rshinyapp_components/micro/customer_profile/fn_format_customer_data.R
+
+# 函數實施
+format_customer_data <- function(customer_data) {
+  # 實施
+}
+```
+
+## 第三款：帶類型前綴的函數 {#type-prefix-function}
+
+```
+檔案路徑：update_scripts/global_scripts/04_utils/fn_dt_transform_dates.R
+
+# 函數實施
+dt.transform_dates <- function(data, format = "%Y-%m-%d") {
+  # 實施
+}
+```
+
+# 第三項：常見錯誤警示 ⚠️ {#common-mistakes}
+
+## 第一款：雙重前綴反模式 {#double-prefix-antipattern}
+
+一個常見的錯誤是在檔案名稱和函數名稱中都重複使用 `fn_` 前綴：
+
+**❌ 錯誤：重複前綴**
+
+```r
+# 檔案：fn_chat_api.R
+fn_chat_api <- function(messages, api_key, model) {  # 不正確
+  # 這違反了 SO_R018
+}
+
+# 在其他檔案中使用：
+result <- fn_chat_api(msgs, key, "gpt-4")  # 錯誤！
+```
+
+**✅ 正確：前綴僅用於檔案名稱**
+
+```r
+# 檔案：fn_chat_api.R
+chat_api <- function(messages, api_key, model) {  # 正確
+  # 函數名稱沒有 fn_ 前綴
+}
+
+# 在其他檔案中使用：
+result <- chat_api(msgs, key, "gpt-4")  # 正確！
+```
+
+## 第二款：為什麼這很重要 {#why-it-matters}
+
+1. **命名空間污染**：`fn_` 前綴是檔案組織標記，不是函數語義名稱的一部分
+2. **冗餘資訊**：當你呼叫 `fn_chat_api()` 時，`fn_` 沒有增加任何意義 - 它顯然是一個函數
+3. **不一致性**：MAMBA 程式碼庫 95% 遵循正確模式；違規會造成混淆
+4. **違反 R0019**：物件命名應該是語義化的（`chat_api` 描述其功能；`fn_chat_api` 是冗餘的）
+
+## 第三款：實際違規案例 {#real-violations}
+
+以下檔案目前違反此原則，需要修正：
+
+1. `fn_chat_api.R` → 包含 `fn_chat_api <- function()` （應該是 `chat_api`）
+2. `fn_strip_code_fence.R` → 包含 `fn_strip_code_fence <- function()` （應該是 `strip_code_fence`）
+3. `fn_validate_path_consistency.R` → 包含 `fn_validate_path_consistency <- function()` （應該是 `validate_path_consistency`）
+
+## 第四款：遷移模式 {#migration-pattern}
+
+修正違規時：
+
+```r
+# 步驟 1：在定義檔案中重命名函數
+# 檔案：fn_chat_api.R
+-fn_chat_api <- function(...) {
++chat_api <- function(...) {
+
+# 步驟 2：更新所有呼叫程式碼
+-result <- fn_chat_api(args)
++result <- chat_api(args)
+
+# 步驟 3：驗證沒有破壞
+# 執行測試並檢查未定義函數錯誤
+```
+
+## 第五款：檢測規則 {#detection-rule}
+
+可以使用以下命令檢測違反此原則的檔案：
+
+```bash
+# 找出檔案名稱模式 fn_X.R 中包含函數 fn_X <- 的檔案
+grep -r "fn_[a-z_]* <- function" scripts/global_scripts/*/fn_*.R
+```
+
+# 第四項：其他無效模式 {#additional-invalid-patterns}
+
+## 第一款：缺少檔案前綴 {#missing-file-prefix}
+
+```
+# 錯誤：檔案名稱缺少 fn_ 前綴
+檔案路徑：update_scripts/global_scripts/04_utils/clean_data.R
+
+clean_data <- function(data) {
+  # 實施
+}
+```
+
+## 第二款：函數名稱中的前綴 {#prefix-in-function-name}
+
+```
+# 錯誤：函數名稱包含 fn_ 前綴
+檔案路徑：update_scripts/global_scripts/04_utils/fn_clean_data.R
+
+fn_clean_data <- function(data) {  # 錯誤 - 應該只是 "clean_data"
+  # 實施
+}
+```
+
+## 第三款：不一致的命名 {#inconsistent-naming}
+
+```
+# 錯誤：函數名稱與檔案名稱不匹配
+檔案路徑：update_scripts/global_scripts/04_utils/fn_clean_data.R
+
+format_data <- function(data) {  # 錯誤 - 應該是 "clean_data"
+  # 實施
+}
+```
+
+# 第五項：驗證流程 {#verification-process}
+
+1. **檔案命名檢查**：確保所有函數檔案遵循 `fn_*` 命名模式
+2. **函數名稱檢查**：驗證函數物件名稱不包含 `fn_` 前綴
+3. **一致性檢查**：確認函數物件名稱與其檔案名稱匹配（減去前綴並將點替換為底線）
+
+# 第六項：優點 {#benefits}
+
+1. **清晰性**：函數檔案和函數物件之間有明確區分
+2. **一致性**：整個程式碼庫的統一命名
+3. **導航性**：使程式碼更容易導航和發現
+4. **可維護性**：簡化維護和重構
+5. **IDE 支援**：更好地支援 IDE 功能，如自動完成和搜尋
+
+---
+
+*基於：結構組織法第十八條*  
+*相關連結：[R021 一函數一檔案](./SO_R021_one_function_one_file.qmd), [MP047 函數式編程](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd)*

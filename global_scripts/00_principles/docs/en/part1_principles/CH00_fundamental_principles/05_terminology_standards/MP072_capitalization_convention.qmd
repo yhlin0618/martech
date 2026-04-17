@@ -1,0 +1,210 @@
+---
+title: "MP071: Capitalization Convention"
+subtitle: "Capital letters in code denote NSQL or SNSQL syntax elements for visual differentiation"
+author: "Development Team"
+date: "2025-04-15"
+date-modified: "2025-08-16"
+categories: [meta-principle, naming-conventions, nsql, syntax]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Summary
+
+**Capital letters in code are typically used to denote NSQL (Natural SQL) or SNSQL (Specialized Natural SQL) syntax elements.** This convention provides visual differentiation between regular R code and NSQL/SNSQL directives, parameters, or patterns.
+
+## Convention Details
+
+### Core Convention {#core-convention}
+
+Capital letters in code, especially all-caps identifiers, typically indicate one of the following:
+
+1. **NSQL/SNSQL Directives**: `CREATE`, `IMPLEMENT`, `SYNC GIT`, `INITIALIZE`, etc.
+2. **NSQL/SNSQL Context Identifiers**: `UPDATE_MODE`, `SINGLE REPOSITORY`
+3. **Special NSQL/SNSQL Parameters**: `$AUTO_COMMIT`, `$VERBOSE`
+4. **Section Markers**: `INITIALIZE`, `MAIN`, `TEST`, `DEINITIALIZE`
+
+This convention follows a similar pattern to SAS, where capitalized keywords denote language directives.
+
+### Exceptions {#exceptions}
+
+The following exceptions to this convention apply:
+
+1. **Constants**: Constants in R code may be in all capital letters (e.g., `PI`, `MAX_RETRIES`)
+2. **Environment Variables**: System or environment variables may be capitalized
+3. **Package Names**: Some R package names contain capital letters by convention
+4. **Class Names**: Some class names may start with capital letters
+
+### Application in Code {#application}
+
+#### NSQL/SNSQL Directives
+
+```
+CREATE df_profile_by_customer AT app_data
+=== CREATE TABLE df_profile_by_customer ===
+CREATE OR REPLACE TABLE df_profile_by_customer (
+  customer_id INTEGER,
+  ...
+);
+```
+
+#### Section Markers
+
+```r
+# 1. INITIALIZE
+source(file.path("update_scripts", "global_scripts", "00_principles", "sc_initialization_update_mode.R"))
+
+# 2. MAIN
+tryCatch({
+  # Main processing code
+}, error = function(e) {
+  message("Error in MAIN section: ", e$message)
+})
+```
+
+#### NSQL Parameters
+
+```
+SYNC GIT
+=== Git Synchronization Details ===
+$commit_message = "[R008] Update implementation patterns"
+$AUTO_COMMIT = TRUE
+```
+
+## Rationale
+
+This convention provides several benefits:
+
+1. **Visual Differentiation**: Makes NSQL/SNSQL elements immediately recognizable in mixed code
+2. **Syntax Highlighting**: Facilitates syntax highlighting in editors
+3. **Code Parsing**: Simplifies automated parsing and processing of NSQL/SNSQL elements
+4. **Cognitive Load**: Reduces cognitive load by clearly separating regular code from NSQL/SNSQL directives
+5. **Language Consistency**: Aligns with conventions in other languages like SAS
+
+## Implementation Guidelines
+
+### For Developers {#developer-guidelines}
+
+- Use all-caps for NSQL/SNSQL directives and section markers
+- Use camelCase or snake_case for regular R variables and functions
+- Pay attention to capitalization in existing code to maintain consistency
+
+### For Documentation {#documentation-guidelines}
+
+- Document NSQL/SNSQL elements in all-caps in code examples and documentation
+- Explain the capitalization convention in NSQL/SNSQL syntax documentation
+- Use consistent capitalization in all syntax examples
+
+### For Tools and Editors {#tool-guidelines}
+
+- Configure syntax highlighting to recognize all-caps NSQL/SNSQL elements
+- Develop linting rules to enforce proper capitalization
+- Implement auto-completion suggestions that respect this convention
+
+## Examples
+
+### Mixed R and NSQL Code {#mixed-code}
+
+```r
+# Regular R code
+customer_data <- read_csv("customers.csv")
+
+# NSQL directive
+CREATE df_profile_by_customer AT app_data
+=== CREATE TABLE df_profile_by_customer ===
+CREATE OR REPLACE TABLE df_profile_by_customer (
+  customer_id INTEGER PRIMARY KEY,
+  name VARCHAR
+);
+
+# Back to R code
+result <- dbGetQuery(conn, "SELECT * FROM df_profile_by_customer")
+```
+
+### Four-Part Script Structure {#script-structure}
+
+```r
+# 1. INITIALIZE
+source(file.path("update_scripts", "global_scripts", "00_principles", "sc_initialization_update_mode.R"))
+
+# 2. MAIN
+tryCatch({
+  dbExecute(app_data, create_table_query)
+}, error = function(e) {
+  message("Error in MAIN section: ", e$message)
+})
+
+# 3. TEST
+if (!error_occurred) {
+  tryCatch({
+    table_exists <- nrow(dbGetQuery(app_data, check_query)) > 0
+  }, error = function(e) {
+    message("Error in TEST section: ", e$message)
+  })
+}
+
+# 4. DEINITIALIZE
+tryCatch({
+  dbDisconnect(app_data)
+}, error = function(e) {
+  message("Error in DEINITIALIZE section: ", e$message)
+})
+```
+
+## Related Principles
+
+- **MP072: Cognitive Distinction Principle** - Implements "treat similar things similarly, treat different things differently"
+- **MP024: Natural SQL Language** - Establishes a clear visual syntax for NSQL elements
+- **MP027: Specialized Natural SQL Language** - Distinguishes NSQL from surrounding R code
+- **MP062: NSQL Detailed Specification** - Provides complete NSQL specification
+- **MP068: Language as Index** - Capitalization helps index and identify language constructs
+- **MP070: Type-Prefix Naming** - Complements type prefixes by adding another visual cue
+
+## Implementation Checklist
+
+To apply the capitalization convention:
+
+1. [ ] Use all-caps for NSQL/SNSQL directives
+2. [ ] Use all-caps for section markers (INITIALIZE, MAIN, TEST, DEINITIALIZE)
+3. [ ] Use proper case for regular R code elements
+4. [ ] Document exceptions clearly (constants, environment variables)
+5. [ ] Configure syntax highlighting for capital elements
+6. [ ] Review code for consistency
+7. [ ] Update documentation with convention
+
+## Anti-patterns
+
+### Inconsistent Capitalization {#inconsistent-caps}
+
+```r
+# Bad: Mixed capitalization for NSQL directives
+Create df_profile_by_customer AT app_data  # Should be CREATE
+INITIALIZE section  # Correct
+Main section  # Should be MAIN
+```
+
+### Overuse of Capitals {#overuse}
+
+```r
+# Bad: Using capitals for regular R code
+CUSTOMER_DATA <- read_csv("customers.csv")  # Unless it's a constant
+PROCESS_DATA <- function(x) { ... }  # Should be process_data
+```
+
+### Unclear Convention {#unclear}
+
+```r
+# Bad: No clear distinction between NSQL and R
+create table customer_profile  # Should be CREATE TABLE
+Initialize connection  # Should be INITIALIZE
+```
+
+## Conclusion
+
+The Capitalization Convention helps visually organize code that mixes standard R with NSQL/SNSQL elements. By reserving capital letters primarily for NSQL/SNSQL directives and section markers, we create a more readable and maintainable codebase with clear visual separation between different code elements. This convention reduces cognitive load and makes the code structure immediately apparent to developers.

@@ -1,0 +1,1622 @@
+# ========================================
+# MAMBA Principles Definition (LLM-Friendly Format)
+# Version: 2.1
+# Last Updated: 2025-12-14
+#
+# THIS IS THE SINGLE SOURCE OF TRUTH FOR PRINCIPLES
+#
+# Design Philosophy:
+#   - Single source: All principle metadata in ONE file
+#   - Explicit semantics: Every relationship is spelled out
+#   - Dual representation: CNL + Datalog-like for each rule
+#   - Example-driven: Concrete violations and compliant cases
+#   - Flat structure: No hidden recursion or backtracking
+#
+# Related Files:
+#   - NAVIGATION.md: Human primary entry point (scenario navigation)
+#   - INDEX.md: Overview and recent changes
+#   - MP091_llm_friendly_rule_language.qmd: Language specification
+#
+# Statistics:
+#   - Principles defined: 12 (MP029, MP064, MP108, MP001, DM_R023, SO_R007,
+#                             UI_P004, SO_P002, SO_R013, DM_R041, DEV_R001, DEV_P001)
+#   - Dependencies: 10
+#   - Scenarios: 10
+#   - Coverage: Core architecture, ETL, UI, debugging
+# ========================================
+
+version: "2.1"
+format: "llm-friendly-rules"
+language_spec: "MP091"
+
+# ============================================================
+# SECTION 0: REFERENCE FORMAT & FILE LOCATIONS
+# ============================================================
+reference_format:
+  standard: "{TYPE}{NUMBER}_{snake_case_name}"
+  correct_examples:
+    - "MP029_discrepancy_principle"
+    - "DM_R023_universal_dbi_approach"
+    - "SO_R007_one_function_one_file"
+  deprecated_formats:
+    - pattern: "CH00.MP029"
+      reason: "Do not use chapter prefix"
+    - pattern: "MP029: No Fake Data"
+      reason: "Do not use colon with title"
+    - pattern: "R92"
+      reason: "Always use full domain prefix (DM_R092)"
+
+file_locations:
+  principles_root: "00_principles/"
+  english_principles: "natural/en/part1_principles/"
+  chinese_principles: "natural/zh/part1_principles/"
+  chapter_mapping:
+    CH00: "Fundamental Meta-Principles (MP only)"
+    CH01: "Structure & Organization (SO_P, SO_R)"
+    CH02: "Data Management (DM_P, DM_R)"
+    CH03: "Development Methodology (DEV_P, DEV_R)"
+    CH04: "UI Components (UI_P, UI_R)"
+    CH05: "Testing & Deployment (TD_P, TD_R)"
+  path_template: "natural/en/part1_principles/{CHAPTER}/{principles|rules}/{ID}_{name}.qmd"
+
+# ============================================================
+# SECTION 1: ENTITY DEFINITIONS
+# ============================================================
+entities:
+  - name: Principle
+    attributes: [id, type, name, description, status]
+    description: "A documented rule, guideline, or constraint in the MAMBA system"
+
+  - name: CodeFile
+    attributes: [path, layer, file_type, platform]
+    description: "A source code file in the MAMBA codebase"
+
+  - name: DataLayer
+    attributes: [name, phase, purpose]
+    description: "A layer in the data processing pipeline"
+
+  - name: Scenario
+    attributes: [name, description, complexity]
+    description: "A development situation that requires principle guidance"
+
+  - name: Function
+    attributes: [name, file_path, layer, purpose]
+    description: "An R function in the codebase"
+
+# ============================================================
+# SECTION 2: RELATION DEFINITIONS
+# ============================================================
+relations:
+  - name: requires
+    signature: "Principle requires Principle"
+    description: "The first principle depends on the second principle being satisfied"
+
+  - name: applies_to
+    signature: "Principle applies_to Scenario"
+    description: "The principle is relevant when working in this scenario"
+
+  - name: conflicts_with
+    signature: "Principle conflicts_with Principle"
+    description: "The two principles cannot both be fully satisfied simultaneously"
+
+  - name: in_layer
+    signature: "Function in_layer DataLayer"
+    description: "The function belongs to the specified data layer"
+
+  - name: uses_function
+    signature: "CodeFile uses_function Function"
+    description: "The code file calls or references the function"
+
+# ============================================================
+# SECTION 3: DATA LAYERS (Domain Knowledge)
+# ============================================================
+data_layers:
+  - name: raw_data
+    phase: "0IM"
+    purpose: "Original data as extracted from external sources"
+    allowed_operations: ["extract", "preserve_structure", "add_metadata"]
+    prohibited_operations: ["transform", "calculate", "aggregate"]
+
+  - name: staged_data
+    phase: "1ST"
+    purpose: "Data with standardized encoding and fixed structural issues"
+    allowed_operations: ["standardize_encoding", "fix_dates", "validate"]
+    prohibited_operations: ["business_calculation", "aggregation"]
+
+  - name: transformed_data
+    phase: "2TR"
+    purpose: "Schema-standardized data with structural JOINs"
+    allowed_operations: ["type_conversion", "join_reference", "denormalize"]
+    prohibited_operations: ["business_logic", "aggregation"]
+
+  - name: derived_data
+    phase: "DRV"
+    purpose: "Business-level calculations and aggregations"
+    allowed_operations: ["calculate", "aggregate", "apply_business_rules"]
+    input_requirement: "Must consume from transformed_data layer"
+
+  - name: app_data
+    phase: "APP"
+    purpose: "Application-ready data for UI consumption"
+    source: "derived_data or transformed_data"
+
+# ============================================================
+# SECTION 4: PRINCIPLE DEFINITIONS
+# ============================================================
+principles:
+
+  # ----------------------------------------------------------
+  # MP029: Discrepancy Principle (No Fake Data)
+  # ----------------------------------------------------------
+  - id: MP029
+    type: meta_principle
+    name: discrepancy_principle
+    display_name: "No Fake Data"
+    one_liner: "Never generate fake data; only use real data from actual sources"
+    file_path: "CH00_fundamental_principles/04_data_management/MP029_discrepancy_principle.qmd"
+
+    rule_natural: |
+      If a data object X is used in any production code or analysis,
+      then X must NOT be generated, fabricated, or simulated.
+      X must come from a real data source such as a database, API, or data file.
+      The only exception is for unit tests that explicitly test edge cases.
+
+    rule_formal: |
+      RULE MP029_CHECK:
+      FOR ALL data_object X:
+      IF used_in_production(X)
+      THEN NOT is_generated(X)
+      AND NOT is_fabricated(X)
+      AND has_real_source(X)
+
+      EXCEPTION:
+      IF context_is_unit_test()
+      AND tests_edge_case(X)
+      THEN is_generated(X) IS ALLOWED
+
+    applies_to:
+      - data_operation
+      - etl_development
+      - testing
+      - analysis
+
+    violations:
+      - "Using rnorm(), runif(), or sample() to generate test data in production code"
+      - "Hardcoding data values directly in source code"
+      - "Creating synthetic customer records for demos"
+      - "Using placeholder values like 'test_user' or 'dummy_data'"
+
+    compliant:
+      - "Using tbl2() to read data from database"
+      - "Using read_csv() or read_excel() to load real data files"
+      - "Querying API endpoints to fetch actual data"
+      - "Using database fixtures with real anonymized data for tests"
+
+  # ----------------------------------------------------------
+  # MP064: ETL-Derivation Separation
+  # ----------------------------------------------------------
+  - id: MP064
+    type: meta_principle
+    name: etl_derivation_separation
+    display_name: "ETL-Derivation Separation"
+    one_liner: "ETL handles pure data preparation; Derivation handles business logic"
+    file_path: "CH00_fundamental_principles/04_data_management/MP064_etl_derivation_separation.qmd"
+
+    rule_natural: |
+      If a function F is located in an ETL directory or has ETL in its filename,
+      then F must NOT contain any business logic or business calculations.
+      F must only perform data extraction, transformation, and loading operations.
+      All business logic must be placed in Derivation (DRV) scripts.
+
+    rule_formal: |
+      RULE MP064_ETL_CHECK:
+      FOR ALL function F:
+      IF in_directory(F, "ETL/")
+      OR has_pattern(filename(F), "*_ETL_*")
+      THEN NOT has_business_logic(F)
+      AND NOT performs_aggregation(F)
+      AND NOT calculates_metrics(F)
+
+      RULE MP064_DRV_CHECK:
+      FOR ALL function F:
+      IF has_business_logic(F)
+      THEN in_directory(F, "DRV/")
+      OR has_pattern(filename(F), "*_D*")
+
+    applies_to:
+      - etl_development
+      - data_pipeline
+      - derivation_development
+
+    requires:
+      - MP029  # Data must be real before we separate ETL from DRV
+
+    violations:
+      - "Calculating RFM scores in an ETL script"
+      - "Computing customer lifetime value in a _2TR.R file"
+      - "Aggregating sales by customer segment in ETL layer"
+      - "Applying business rules for customer classification in ETL"
+
+    compliant:
+      - "ETL script only does SELECT, JOIN, and FILTER operations"
+      - "ETL script standardizes date formats and encoding"
+      - "Business calculations are in drv_customer_metrics.R"
+      - "Aggregations are in DRV/platform/platform_D01_01.R"
+
+  # ----------------------------------------------------------
+  # DM_R023: Universal DBI Approach
+  # ----------------------------------------------------------
+  - id: DM_R023
+    type: rule
+    name: universal_dbi_approach
+    display_name: "Universal DBI"
+    one_liner: "Use tbl2() instead of dplyr::tbl() for all database access"
+    file_path: "CH02_data_management/rules/DM_R023_universal_dbi_approach.qmd"
+
+    rule_natural: |
+      If you need to access a database table in any R code,
+      then you must use the tbl2() function from global_scripts.
+      You must NOT use dplyr::tbl() directly.
+      tbl2() provides consistent handling of database connections and error handling.
+
+    rule_formal: |
+      RULE DM_R023_CHECK:
+      FOR ALL code_file C:
+      IF needs_database_table_access(C)
+      THEN uses_function(C, "tbl2")
+      AND NOT uses_function(C, "dplyr::tbl")
+      AND NOT uses_function(C, "tbl")
+
+    applies_to:
+      - database_connection
+      - data_access
+      - etl_development
+      - derivation_development
+
+    requires:
+      - MP029  # tbl2 ensures data comes from real source
+
+    violations:
+      - "Using dplyr::tbl(con, 'customers') directly"
+      - "Using tbl(con, 'orders') without the tbl2 wrapper"
+      - "Directly constructing SQL without using the access pattern"
+
+    compliant:
+      - "tbl2(con, 'customers') %>% filter(active == TRUE)"
+      - "Using tbl2() in all database access code"
+      - "Source global_scripts/02_db_utils/fn_tbl2.R before database operations"
+
+  # ----------------------------------------------------------
+  # SO_R007: One Function One File
+  # ----------------------------------------------------------
+  - id: SO_R007
+    type: rule
+    name: one_function_one_file
+    display_name: "One Function One File"
+    one_liner: "Each function should be in its own file named fn_{function_name}.R"
+    file_path: "CH01_structure_organization/rules/SO_R007_one_function_one_file.qmd"
+
+    rule_natural: |
+      If you create a new function in the MAMBA codebase,
+      then the function must be placed in its own file.
+      The file must be named fn_{function_name}.R where function_name matches the function.
+      Multiple functions should NOT be defined in the same file.
+
+    rule_formal: |
+      RULE SO_R007_CHECK:
+      FOR ALL function F:
+      IF is_defined_in(F, file)
+      THEN filename(file) EQUALS "fn_" + name(F) + ".R"
+      AND count_functions_in(file) EQUALS 1
+
+    applies_to:
+      - function_creation
+      - code_organization
+      - refactoring
+
+    violations:
+      - "Defining helper functions inside another function file"
+      - "Creating utils.R with multiple utility functions"
+      - "Naming a function file without the fn_ prefix"
+
+    compliant:
+      - "fn_calculate_rfm.R contains only calculate_rfm()"
+      - "fn_validate_customer.R contains only validate_customer()"
+      - "Each function has exactly one file, named correctly"
+
+  # ----------------------------------------------------------
+  # UI_P004: Component N-Tuple Pattern
+  # ----------------------------------------------------------
+  - id: UI_P004
+    type: principle
+    name: component_ntuple_pattern
+    display_name: "Component N-Tuple Pattern"
+    one_liner: "Every UI component must have UI, Server, and Defaults parts"
+    file_path: "CH04_ui_components/principles/UI_P004_component_ntuple_pattern.qmd"
+
+    rule_natural: |
+      If you create a Shiny UI component,
+      then you must create three files for the component.
+      The UI function goes in componentNameUI.R.
+      The Server function goes in componentNameServer.R.
+      The Defaults specification goes in componentNameDefaults.R.
+      All three must use the same component name prefix.
+
+    rule_formal: |
+      RULE UI_P004_CHECK:
+      FOR ALL ui_component C:
+      IF is_shiny_component(C)
+      THEN exists_file(name(C) + "UI.R")
+      AND exists_file(name(C) + "Server.R")
+      AND exists_file(name(C) + "Defaults.R")
+
+    applies_to:
+      - ui_development
+      - shiny_component_creation
+
+    violations:
+      - "Creating a component with only UI and Server, missing Defaults"
+      - "Using inconsistent names like customerUI.R and customerModuleServer.R"
+      - "Putting UI and Server in the same file"
+
+    compliant:
+      - "customerDNA/customerDNAUI.R, customerDNAServer.R, customerDNADefaults.R"
+      - "All three files exist with matching prefixes"
+
+  # ----------------------------------------------------------
+  # MP108: ETL Phase Sequence
+  # ----------------------------------------------------------
+  - id: MP108
+    type: meta_principle
+    name: etl_phase_sequence
+    display_name: "ETL Phase Sequence"
+    one_liner: "ETL must follow strict 0IM → 1ST → 2TR phase sequence"
+    file_path: "CH00_fundamental_principles/04_data_management/MP108_etl_phase_sequence.qmd"
+
+    rule_natural: |
+      If you are developing ETL scripts,
+      then you must follow the three-phase sequence.
+      Phase 0IM (Import) comes first and handles raw data extraction.
+      Phase 1ST (Staging) comes second and handles standardization.
+      Phase 2TR (Transform) comes third and handles schema normalization.
+      Scripts must be named with the phase indicator.
+
+    rule_formal: |
+      RULE MP108_SEQUENCE:
+      FOR ALL etl_pipeline P:
+      IF has_phase(P, "1ST")
+      THEN has_completed_phase(P, "0IM")
+
+      IF has_phase(P, "2TR")
+      THEN has_completed_phase(P, "1ST")
+
+      FOR ALL etl_script S:
+      filename(S) MATCHES "{platform}_ETL{datatype}_{phase}.R"
+      WHERE phase IN ["0IM", "1ST", "2TR"]
+
+    applies_to:
+      - etl_development
+      - data_pipeline
+
+    requires:
+      - MP064  # Builds on ETL-Derivation separation
+
+    violations:
+      - "Skipping 1ST phase and going directly from 0IM to 2TR"
+      - "Running 2TR before 1ST is complete"
+      - "Mixing phases in a single script"
+
+    compliant:
+      - "cbz_ETL01_0IM.R runs first"
+      - "cbz_ETL01_1ST.R runs after 0IM completes"
+      - "cbz_ETL01_2TR.R runs after 1ST completes"
+
+  # ----------------------------------------------------------
+  # MP001: Axiomatization System
+  # ----------------------------------------------------------
+  - id: MP001
+    type: meta_principle
+    name: axiomatization_system
+    display_name: "Axiomatization System"
+    one_liner: "Principles form a formal axiomatized system with explicit relationships and dependencies"
+    file_path: "CH00_fundamental_principles/01_general_principles/MP001_axiomatization_system.qmd"
+
+    rule_natural: |
+      The MAMBA principles system is organized as a formal axiomatization.
+      Principles are classified into levels: Meta-Principles (MP), Principles (P), and Rules (R).
+      Meta-Principles define fundamental concepts and architecture.
+      Principles provide implementation guidance.
+      Rules specify concrete implementation patterns.
+      Each principle must document its relationships (derives_from, influences, implements).
+
+    rule_formal: |
+      RULE MP001_CLASSIFICATION:
+      FOR ALL principle X:
+      type(X) IN ["meta_principle", "principle", "rule"]
+
+      IF type(X) EQUALS "meta_principle"
+      THEN chapter(X) EQUALS "CH00"
+
+      IF type(X) IN ["principle", "rule"]
+      THEN chapter(X) IN ["CH01", "CH02", "CH03", "CH04", "CH05"]
+
+      RULE MP001_PRIORITY:
+      priority("meta_principle") > priority("principle") > priority("rule")
+
+    applies_to:
+      - principle_creation
+      - architecture_design
+      - documentation
+
+    violations:
+      - "Creating a rule in CH00 (fundamental chapter)"
+      - "Not documenting principle dependencies"
+      - "Mixing principle levels without clear hierarchy"
+
+    compliant:
+      - "MP principles only in CH00_fundamental_principles/"
+      - "SO_P principles in CH01_structure_organization/"
+      - "All principles have derives_from and influences metadata"
+
+  # ----------------------------------------------------------
+  # SO_P002: Script Separation
+  # ----------------------------------------------------------
+  - id: SO_P002
+    type: principle
+    name: script_separation
+    display_name: "Script Separation"
+    one_liner: "Update scripts orchestrate; global_scripts contain core functionality"
+    file_path: "CH01_structure_organization/principles/SO_P002_script_separation.qmd"
+
+    rule_natural: |
+      Update scripts should be simple orchestration files.
+      They should focus on WHAT to do, not HOW to do it.
+      All complex logic must be in global_scripts as reusable functions.
+      Update scripts call functions from global_scripts.
+      Update scripts should be readable as workflow documentation.
+
+    rule_formal: |
+      RULE SO_P002_UPDATE_SCRIPTS:
+      FOR ALL script S:
+      IF in_directory(S, "update_scripts/")
+      AND NOT in_directory(S, "global_scripts/")
+      THEN complexity(S) EQUALS "low"
+      AND contains_function_definitions(S) EQUALS FALSE
+      AND calls_global_functions(S) EQUALS TRUE
+
+      RULE SO_P002_GLOBAL_SCRIPTS:
+      FOR ALL function F:
+      IF is_reusable(F)
+      THEN defined_in_directory(F, "global_scripts/")
+
+    applies_to:
+      - project_organization
+      - code_structure
+      - script_development
+
+    violations:
+      - "Defining complex functions in update scripts"
+      - "Copy-pasting similar logic across multiple update scripts"
+      - "Update script with >100 lines of business logic"
+
+    compliant:
+      - "Update script sources init, calls global functions, sources deinit"
+      - "All reusable functions in global_scripts/"
+      - "Update script reads like a workflow specification"
+
+  # ----------------------------------------------------------
+  # SO_R013: Initialization Imports Only
+  # ----------------------------------------------------------
+  - id: SO_R013
+    type: rule
+    name: initialization_imports_only
+    display_name: "Initialization Imports Only"
+    one_liner: "Initialization files only import and configure; no function definitions"
+    file_path: "CH01_structure_organization/rules/SO_R013_initialization_imports_only.qmd"
+
+    rule_natural: |
+      Initialization files (sc_initialization_*.R) must only do:
+      Import libraries, source utility files, set environment variables, initialize resources.
+      Initialization files must NOT define new functions or business logic.
+      All functions must be in dedicated fn_*.R files.
+      This prevents duplicate function definitions and hidden dependencies.
+
+    rule_formal: |
+      RULE SO_R013_CHECK:
+      FOR ALL file F:
+      IF filename(F) MATCHES "sc_initialization_*.R"
+      OR filename(F) MATCHES "*_initialization_*.R"
+      THEN contains_function_definitions(F) EQUALS FALSE
+      AND purpose(F) IN ["import", "configure", "source"]
+
+    applies_to:
+      - initialization_scripts
+      - project_setup
+      - code_organization
+
+    requires:
+      - SO_R007  # One function one file
+
+    violations:
+      - "Defining dbConnect_from_list() inside initialization file"
+      - "Adding helper functions to sc_initialization_update_mode.R"
+      - "Business logic in initialization scripts"
+
+    compliant:
+      - "Initialization only sources fn_*.R files"
+      - "All functions in dedicated files under global_scripts/"
+      - "Initialization sets environment variables and loads packages"
+
+  # ----------------------------------------------------------
+  # DM_R041: ETL Directory Structure
+  # ----------------------------------------------------------
+  - id: DM_R041
+    type: rule
+    name: etl_directory_structure
+    display_name: "ETL Directory Structure"
+    one_liner: "All ETL/DRV scripts must be in mandatory hierarchical directory structure"
+    file_path: "CH02_data_management/rules/DM_R041_etl_directory_structure.qmd"
+
+    rule_natural: |
+      No ETL or DRV scripts may exist in the root update_scripts directory.
+      ETL scripts must be in ETL/{platform}/ directories.
+      DRV scripts must be in DRV/{platform}/ directories.
+      Orchestration scripts must be in orchestration/ directory.
+      Each platform (cbz, amz, eby) has its own subdirectory.
+
+    rule_formal: |
+      RULE DM_R041_NO_ROOT:
+      FOR ALL script S:
+      IF is_etl_script(S) OR is_drv_script(S)
+      THEN NOT in_directory(S, "update_scripts/")
+
+      RULE DM_R041_ETL_LOCATION:
+      FOR ALL script S:
+      IF filename(S) MATCHES "*_ETL_*"
+      THEN in_directory(S, "ETL/{platform}/")
+
+      RULE DM_R041_DRV_LOCATION:
+      FOR ALL script S:
+      IF filename(S) MATCHES "*_DRV*" OR filename(S) MATCHES "*_D[0-9]*"
+      THEN in_directory(S, "DRV/{platform}/")
+
+    applies_to:
+      - etl_development
+      - project_organization
+      - data_pipeline
+
+    requires:
+      - MP064  # ETL-Derivation separation
+      - MP108  # ETL phase sequence
+
+    violations:
+      - "cbz_ETL_sales_0IM.R in update_scripts/ root"
+      - "amz_DRV01_customer.R in update_scripts/ root"
+      - "ETL script without platform subdirectory"
+
+    compliant:
+      - "ETL/cbz/cbz_ETL_sales_0IM.R"
+      - "DRV/amz/amz_DRV01_customer.R"
+      - "orchestration/run_full_pipeline.R"
+
+  # ----------------------------------------------------------
+  # DEV_R001: Apply Functions Over Loops
+  # ----------------------------------------------------------
+  - id: DEV_R001
+    type: rule
+    name: apply_over_loops
+    display_name: "Apply Over Loops"
+    one_liner: "Use lapply() and apply family functions instead of explicit for loops"
+    file_path: "CH03_development_methodology/rules/DEV_R001_apply_over_loops.qmd"
+
+    rule_natural: |
+      When iterating over data structures in R,
+      prefer lapply(), sapply(), vapply(), mapply() over for loops.
+      This follows R's functional and vectorized programming paradigm.
+      Use for loops only when: complex state management, early termination needed,
+      or explicit index access required.
+
+    rule_formal: |
+      RULE DEV_R001_CHECK:
+      FOR ALL code_block C:
+      IF has_iteration(C)
+      AND NOT needs_state_management(C)
+      AND NOT needs_early_termination(C)
+      THEN uses_apply_family(C)
+      AND NOT uses_for_loop(C)
+
+    applies_to:
+      - r_development
+      - data_processing
+      - refactoring
+
+    violations:
+      - "result <- c(); for(i in 1:n) result <- c(result, f(i))"
+      - "Using for loop to transform each element of a list"
+      - "Growing vectors inside loops"
+
+    compliant:
+      - "result <- lapply(items, transform_function)"
+      - "result <- sapply(values, function(x) if(x > 0) x else 0)"
+      - "vapply(list_of_vectors, mean, numeric(1))"
+
+  # ----------------------------------------------------------
+  # DEV_P001: Debug Principles
+  # ----------------------------------------------------------
+  - id: DEV_P001
+    type: principle
+    name: debug_principles
+    display_name: "Debug Principles"
+    one_liner: "Debugging requires visibility, isolation, reproducibility, and documentation"
+    file_path: "CH03_development_methodology/principles/DEV_P001_debug_principles.qmd"
+
+    rule_natural: |
+      Debugging must be systematic.
+      Visibility: Use consistent logging with levels (ERROR, WARN, INFO, DEBUG).
+      Isolation: Test components at boundaries; use mocking.
+      Reproducibility: Control random seeds; capture environment context.
+      Documentation: Document issues, steps to reproduce, root cause, and resolution.
+
+    rule_formal: |
+      RULE DEV_P001_VISIBILITY:
+      FOR ALL function F:
+      IF is_complex(F)
+      THEN has_logging(F)
+      AND logging_includes(F, ["entry", "exit", "errors"])
+
+      RULE DEV_P001_DOCUMENTATION:
+      FOR ALL bug_fix B:
+      has_documentation(B, "issue_statement")
+      AND has_documentation(B, "reproduction_steps")
+      AND has_documentation(B, "root_cause")
+      AND has_documentation(B, "resolution")
+
+    applies_to:
+      - debugging
+      - troubleshooting
+      - development_methodology
+
+    violations:
+      - "No logging in complex data processing functions"
+      - "Fixing bug without documenting root cause"
+      - "Cannot reproduce issue due to missing context"
+
+    compliant:
+      - "Functions have log_debug() calls at key points"
+      - "Bug fixes include CHANGELOG entry with root cause"
+      - "Test cases capture reproduction steps"
+
+  # ----------------------------------------------------------
+  # MP110: Security Credentials Management
+  # ----------------------------------------------------------
+  - id: MP110
+    type: meta_principle
+    name: security_credentials_management
+    display_name: "Security Credentials Management"
+    one_liner: "Zero-tolerance policy: credentials MUST NEVER appear in source code"
+    file_path: "CH00_fundamental_principles/07_security/MP110_security_credentials_management.qmd"
+    criticality: "MAXIMUM"
+    enforcement: "MANDATORY - NO EXCEPTIONS"
+
+    rule_natural: |
+      If any file F is part of the source code repository,
+      then F must NOT contain any credentials, API keys, passwords, tokens, or secrets.
+      All secrets must be stored in environment variables or secure secret managers.
+      The only exception is placeholder examples clearly labeled as fake.
+      This rule has NO exceptions and applies to all file types.
+
+    rule_formal: |
+      RULE MP110_NO_CREDENTIALS:
+      FOR ALL file F:
+      IF is_in_repository(F)
+      THEN NOT contains_password(F)
+      AND NOT contains_api_key(F)
+      AND NOT contains_token(F)
+      AND NOT contains_certificate(F)
+      AND NOT contains_private_key(F)
+
+      RULE MP110_ENV_VARS:
+      FOR ALL credential C:
+      IF is_required_by_application(C)
+      THEN stored_in_environment_variable(C)
+      OR stored_in_secret_manager(C)
+
+      RULE MP110_GITIGNORE:
+      FOR ALL repository R:
+      gitignore_contains(R, ".env")
+      AND gitignore_contains(R, "*.key")
+      AND gitignore_contains(R, "*_credentials.json")
+
+    applies_to:
+      - all_development
+      - configuration
+      - deployment
+      - code_review
+
+    violations:
+      - "api_key <- 'sk-proj-abcd1234...'"
+      - "password: 'actual_password_here' in YAML config"
+      - "Committing .env file to Git repository"
+      - "Base64 encoded secrets in source files"
+      - "Commented-out credentials (even if marked as fake)"
+
+    compliant:
+      - "api_key <- Sys.getenv('OPENAI_API_KEY')"
+      - "password: '${PGPASSWORD}' as environment variable reference"
+      - ".env in .gitignore with .env.example committed"
+      - "Using Posit Connect Variable Sets for deployment secrets"
+
+    violation_response:
+      immediate:
+        - "Revoke the exposed credential within 1 hour"
+        - "Remove secret from current branch"
+        - "Generate new credentials"
+        - "Alert security team"
+      cleanup:
+        - "Use git filter-branch or BFG to remove from history"
+        - "Force push cleaned repository"
+        - "Rotate all related credentials"
+
+  # ----------------------------------------------------------
+  # MP111: Data Privacy Protection
+  # ----------------------------------------------------------
+  - id: MP111
+    type: meta_principle
+    name: data_privacy_protection
+    display_name: "Data Privacy Protection"
+    one_liner: "PII and sensitive data must be protected through encryption, anonymization, and access control"
+    file_path: "CH00_fundamental_principles/07_security/MP111_data_privacy_protection.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If data D contains personally identifiable information (PII) or sensitive business data,
+      then D must be protected throughout its entire lifecycle.
+      Protection includes: classification by sensitivity level, encryption at rest and in transit,
+      anonymization for analytics, access control by role, and audit logging.
+      Data minimization must be applied: only collect what is necessary.
+      GDPR rights (access, deletion, portability) must be supported.
+
+    rule_formal: |
+      RULE MP111_CLASSIFICATION:
+      FOR ALL data D:
+      IF contains_pii(D)
+      THEN has_sensitivity_level(D)
+      AND sensitivity_level(D) IN ["public", "internal", "confidential", "highly_sensitive"]
+
+      RULE MP111_ENCRYPTION:
+      FOR ALL data D:
+      IF sensitivity_level(D) IN ["confidential", "highly_sensitive"]
+      THEN encrypted_at_rest(D)
+      AND encrypted_in_transit(D)
+
+      RULE MP111_MINIMIZATION:
+      FOR ALL data_collection C:
+      FOR ALL field F in C:
+      has_business_justification(F)
+
+      RULE MP111_ACCESS_CONTROL:
+      FOR ALL pii_data D:
+      FOR ALL user U:
+      IF accesses(U, D)
+      THEN has_permission(U, type(D))
+      AND is_logged(access_event(U, D))
+
+      RULE MP111_GDPR_RIGHTS:
+      FOR ALL customer C:
+      can_request_access(C)
+      AND can_request_deletion(C)
+      AND can_request_export(C)
+
+    applies_to:
+      - data_handling
+      - database_design
+      - analytics
+      - customer_data
+      - compliance
+
+    requires:
+      - MP110  # Credentials protection is prerequisite for data privacy
+
+    violations:
+      - "Storing SSN, credit card in plain text"
+      - "Collecting unnecessary PII (full address when only region needed)"
+      - "No access control on customer data tables"
+      - "Missing consent tracking for data collection"
+      - "Analytics using non-anonymized customer data"
+
+    compliant:
+      - "PII fields encrypted with AES-256"
+      - "Customer ID hashed for analytics (anonymization)"
+      - "Access control matrix defining role permissions"
+      - "Consent log table tracking all user permissions"
+      - "Automated retention policy deleting expired data"
+
+    data_sensitivity_levels:
+      level_1_public:
+        examples: ["marketing materials", "product catalogs"]
+        protection: "basic integrity checks"
+      level_2_internal:
+        examples: ["business metrics", "aggregated analytics"]
+        protection: "access control, audit logging"
+      level_3_confidential:
+        examples: ["customer transactions", "financial records"]
+        protection: "encryption at rest, access control, audit trails"
+      level_4_highly_sensitive:
+        examples: ["SSN", "credit cards", "health records", "government IDs"]
+        protection: "end-to-end encryption, zero-knowledge, strict access control"
+
+  # ----------------------------------------------------------
+  # MP112: Access Control and Authorization
+  # ----------------------------------------------------------
+  - id: MP112
+    type: meta_principle
+    name: access_control_authorization
+    display_name: "Access Control Authorization"
+    one_liner: "All access must be controlled through RBAC with least privilege and complete audit trails"
+    file_path: "CH00_fundamental_principles/07_security/MP112_access_control_authorization.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If a user U attempts to access any resource R with action A,
+      then U must be authenticated with valid credentials,
+      and U must have explicit authorization for action A on resource R,
+      and the access event must be logged in an immutable audit trail.
+      Authorization follows Role-Based Access Control (RBAC) with least privilege.
+      No user may have more permissions than necessary for their role.
+      Sensitive resources require multi-factor authentication (MFA).
+
+    rule_formal: |
+      RULE MP112_AUTHENTICATION:
+      FOR ALL access_attempt A:
+      IF user_attempts_access(U, R, action)
+      THEN is_authenticated(U)
+      AND has_valid_session(U)
+
+      RULE MP112_AUTHORIZATION:
+      FOR ALL access_attempt A:
+      IF user_attempts_access(U, R, action)
+      THEN has_permission(role(U), R, action)
+      AND is_logged(access_event(U, R, action))
+
+      RULE MP112_LEAST_PRIVILEGE:
+      FOR ALL user U:
+      FOR ALL permission P in permissions(U):
+      is_necessary_for_role(P, role(U))
+
+      RULE MP112_MFA:
+      FOR ALL access_attempt A:
+      IF sensitivity(R) IN ["confidential", "highly_sensitive"]
+      OR role(U) IN ["admin", "super_admin"]
+      THEN mfa_verified(U)
+
+      RULE MP112_NO_SELF_ESCALATION:
+      FOR ALL user U:
+      NOT can_modify_own_permissions(U)
+
+    applies_to:
+      - authentication
+      - authorization
+      - user_management
+      - api_security
+      - shiny_applications
+
+    requires:
+      - MP110  # Credentials must be secure for auth to work
+      - MP111  # Access control protects data privacy
+
+    violations:
+      - "Granting admin role to all users by default"
+      - "No authentication check before database access"
+      - "User can modify their own role/permissions"
+      - "No audit log of access events"
+      - "Sensitive data accessible without MFA"
+
+    compliant:
+      - "RBAC with 5+ role levels (guest, viewer, analyst, manager, admin)"
+      - "authorize_resource_access() called before every data access"
+      - "Immutable audit log of all authentication and authorization events"
+      - "MFA required for admin actions and sensitive data"
+      - "Automatic session timeout after 30 minutes idle"
+
+    role_hierarchy:
+      super_admin: { level: 0, description: "System administration only" }
+      admin: { level: 1, description: "Application administration" }
+      data_manager: { level: 2, description: "Data management and configuration" }
+      analyst: { level: 3, description: "Data analysis and reporting" }
+      viewer: { level: 4, description: "Read-only access" }
+      guest: { level: 5, description: "Minimal public access" }
+
+  # ----------------------------------------------------------
+  # MP113: Secure Communication Protocols
+  # ----------------------------------------------------------
+  - id: MP113
+    type: meta_principle
+    name: secure_communication
+    display_name: "Secure Communication"
+    one_liner: "All communications must be encrypted using TLS 1.2+ with proper certificate validation"
+    file_path: "CH00_fundamental_principles/07_security/MP113_secure_communication.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If a system component C communicates with another component or external service,
+      then the communication must be encrypted using TLS 1.2 or higher.
+      HTTPS must be enforced for all web traffic with no fallback to HTTP.
+      Database connections must use SSL/TLS mode 'require' or higher.
+      API communications must use HTTPS with certificate verification.
+      Weak cipher suites (NULL, EXPORT, DES, RC4, MD5) are forbidden.
+
+    rule_formal: |
+      RULE MP113_TLS_VERSION:
+      FOR ALL connection C:
+      IF is_network_communication(C)
+      THEN tls_version(C) >= "1.2"
+      AND NOT uses_protocol(C, ["SSL2", "SSL3", "TLS1.0", "TLS1.1"])
+
+      RULE MP113_HTTPS:
+      FOR ALL web_traffic T:
+      uses_https(T)
+      AND has_hsts_header(T)
+      AND NOT allows_http_fallback(T)
+
+      RULE MP113_DATABASE:
+      FOR ALL database_connection D:
+      ssl_mode(D) IN ["require", "verify-ca", "verify-full"]
+      AND ssl_enabled(D)
+
+      RULE MP113_CERTIFICATES:
+      FOR ALL certificate C:
+      NOT is_expired(C)
+      AND key_size(C) >= 2048
+      AND NOT uses_weak_algorithm(C, ["sha1", "md5"])
+
+    applies_to:
+      - web_traffic
+      - database_connections
+      - api_communications
+      - internal_services
+      - email
+
+    requires:
+      - MP110  # Credentials for certificates must be secure
+
+    violations:
+      - "Using HTTP instead of HTTPS for any endpoint"
+      - "Database connection without sslmode='require'"
+      - "API calls without certificate verification (ssl_verifypeer = FALSE)"
+      - "Using TLS 1.0 or TLS 1.1"
+      - "Self-signed certificates in production without pinning"
+
+    compliant:
+      - "All web traffic over HTTPS with HSTS header"
+      - "PostgreSQL connection with sslmode='require'"
+      - "httr requests with config(ssl_verifypeer = TRUE, ssl_verifyhost = 2)"
+      - "TLS 1.3 preferred, TLS 1.2 minimum"
+      - "Certificate rotation scheduled before expiry"
+
+  # ----------------------------------------------------------
+  # MP114: Input Validation and Sanitization
+  # ----------------------------------------------------------
+  - id: MP114
+    type: meta_principle
+    name: input_validation_sanitization
+    display_name: "Input Validation Sanitization"
+    one_liner: "All input must be validated and sanitized to prevent injection attacks"
+    file_path: "CH00_fundamental_principles/07_security/MP114_input_validation_sanitization.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If any input I is received from users, APIs, files, or external systems,
+      then I must be validated for type, format, range, and business rules,
+      and I must be sanitized before processing or storage.
+      SQL queries must use parameterized queries; string concatenation is forbidden.
+      HTML output must be encoded to prevent XSS attacks.
+      System commands must never include user input directly.
+      File paths must be validated to prevent traversal attacks.
+
+    rule_formal: |
+      RULE MP114_VALIDATION:
+      FOR ALL input I:
+      IF received_from_external_source(I)
+      THEN is_validated(I, "type")
+      AND is_validated(I, "format")
+      AND is_validated(I, "range")
+      AND is_sanitized(I)
+
+      RULE MP114_SQL_INJECTION:
+      FOR ALL sql_query Q:
+      IF contains_user_input(Q)
+      THEN uses_parameterized_query(Q)
+      AND NOT uses_string_concatenation(Q)
+
+      RULE MP114_XSS:
+      FOR ALL html_output O:
+      IF contains_user_data(O)
+      THEN is_html_encoded(O)
+      AND has_csp_header(O)
+
+      RULE MP114_COMMAND_INJECTION:
+      FOR ALL system_command C:
+      NOT contains_user_input(C)
+      OR (is_whitelisted_command(C) AND is_sanitized_args(C))
+
+      RULE MP114_PATH_TRAVERSAL:
+      FOR ALL file_path P:
+      IF derived_from_user_input(P)
+      THEN is_normalized(P)
+      AND is_within_allowed_directory(P)
+      AND NOT contains_pattern(P, "..")
+
+    applies_to:
+      - user_input
+      - api_requests
+      - file_uploads
+      - database_queries
+      - command_execution
+
+    violations:
+      - "paste0('SELECT * FROM users WHERE id = ', user_input)"
+      - "system(paste('ls', user_input))"
+      - "htmlOutput without htmltools::htmlEscape()"
+      - "file.path(base_dir, '../../../etc/passwd')"
+      - "No validation on file upload type/size"
+
+    compliant:
+      - "dbGetQuery(con, 'SELECT * FROM users WHERE id = ?', params = list(user_id))"
+      - "system2('ls', args = sanitized_args, env = 'PATH=/usr/bin')"
+      - "tags$div(htmltools::htmlEscape(user_content))"
+      - "validate_file_path() with normalized path check"
+      - "File upload with magic number validation and size limits"
+
+  # ----------------------------------------------------------
+  # MP115: Audit Logging and Monitoring
+  # ----------------------------------------------------------
+  - id: MP115
+    type: meta_principle
+    name: audit_logging_monitoring
+    display_name: "Audit Logging Monitoring"
+    one_liner: "All security events must be logged in tamper-proof audit trails with real-time monitoring"
+    file_path: "CH00_fundamental_principles/07_security/MP115_audit_logging_monitoring.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If a security-relevant event E occurs in the system,
+      then E must be logged with sufficient detail for forensic analysis.
+      Logs must include: timestamp, event type, user ID, IP address, action, result.
+      Logs must be stored in tamper-proof audit trails with integrity protection.
+      Real-time monitoring must detect anomalies and trigger alerts.
+      Log retention must comply with regulatory requirements (2-7 years).
+      Incident response procedures must be integrated with monitoring.
+
+    rule_formal: |
+      RULE MP115_LOGGING:
+      FOR ALL security_event E:
+      is_logged(E)
+      AND has_field(E, "timestamp")
+      AND has_field(E, "event_type")
+      AND has_field(E, "user_id")
+      AND has_field(E, "ip_address")
+      AND has_field(E, "action")
+      AND has_field(E, "result")
+      AND has_hash(E)
+
+      RULE MP115_INTEGRITY:
+      FOR ALL audit_log L:
+      is_encrypted(L)
+      AND has_chain_hash(L)
+      AND is_immutable(L)
+
+      RULE MP115_MONITORING:
+      FOR ALL system S:
+      has_anomaly_detection(S)
+      AND has_alert_routing(S)
+      AND has_incident_response(S)
+
+      RULE MP115_RETENTION:
+      FOR ALL log_category C:
+      retention_days(C) >= minimum_required(C)
+      WHERE minimum_required("security_logs") = 730
+      AND minimum_required("audit_logs") = 2555
+
+    applies_to:
+      - authentication_events
+      - authorization_events
+      - data_access_events
+      - configuration_changes
+      - security_incidents
+
+    requires:
+      - MP112  # Access control generates authorization events to log
+
+    violations:
+      - "No logging of failed login attempts"
+      - "Logs without user identification"
+      - "Mutable log files without integrity protection"
+      - "No real-time alerts for critical security events"
+      - "Logs deleted before retention period ends"
+
+    compliant:
+      - "JSON-formatted security logs with SHA-256 chain hashing"
+      - "SIEM integration sending logs in real-time"
+      - "Automated anomaly detection for impossible travel, brute force"
+      - "7-year retention for audit logs, encrypted at rest"
+      - "Incident response workflow triggered by CRITICAL alerts"
+
+  # ----------------------------------------------------------
+  # MP116: Dependency and Vulnerability Management
+  # ----------------------------------------------------------
+  - id: MP116
+    type: meta_principle
+    name: dependency_vulnerability_management
+    display_name: "Dependency Vulnerability Management"
+    one_liner: "All dependencies must be scanned, updated, and managed through a complete vulnerability lifecycle"
+    file_path: "CH00_fundamental_principles/07_security/MP116_dependency_vulnerability_management.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If a system S uses external dependencies (packages, libraries, containers),
+      then S must maintain a complete dependency inventory (SBOM),
+      and all dependencies must be continuously scanned for vulnerabilities,
+      and security patches must be applied according to severity SLAs,
+      and supply chain integrity must be verified (signatures, checksums, sources).
+      Critical vulnerabilities must be patched within 24 hours.
+      High vulnerabilities within 7 days. Medium within 30 days.
+
+    rule_formal: |
+      RULE MP116_INVENTORY:
+      FOR ALL system S:
+      has_sbom(S)
+      AND sbom_is_current(S)
+      AND sbom_includes_all_dependencies(S)
+
+      RULE MP116_SCANNING:
+      FOR ALL dependency D in system S:
+      is_scanned_for_vulnerabilities(D)
+      AND scan_frequency(D) <= 24_hours
+
+      RULE MP116_PATCHING:
+      FOR ALL vulnerability V in dependency D:
+      IF severity(V) == "CRITICAL"
+      THEN time_to_patch(V) <= 24_hours
+      IF severity(V) == "HIGH"
+      THEN time_to_patch(V) <= 7_days
+      IF severity(V) == "MEDIUM"
+      THEN time_to_patch(V) <= 30_days
+
+      RULE MP116_SUPPLY_CHAIN:
+      FOR ALL dependency D:
+      has_verified_signature(D)
+      AND has_verified_checksum(D)
+      AND source_is_trusted(D)
+
+    applies_to:
+      - r_packages
+      - python_packages
+      - npm_packages
+      - docker_images
+      - system_libraries
+
+    violations:
+      - "No dependency scanning in CI/CD pipeline"
+      - "CRAN package with known CVE still in use after 30 days"
+      - "No SBOM (Software Bill of Materials) maintained"
+      - "Packages installed from unverified sources"
+      - "Dependencies not pinned to specific versions"
+
+    compliant:
+      - "Weekly automated vulnerability scans with Trivy/Grype"
+      - "SBOM generated in CycloneDX format with each release"
+      - "Packages installed from CRAN/PyPI with checksum verification"
+      - "Automated dependency update PRs with security patches"
+      - "Zero-day response plan with virtual patching capability"
+
+    patch_sla:
+      critical: "24 hours"
+      high: "7 days"
+      medium: "30 days"
+      low: "90 days"
+
+  # ----------------------------------------------------------
+  # MP117: Backup and Disaster Recovery
+  # ----------------------------------------------------------
+  - id: MP117
+    type: meta_principle
+    name: backup_disaster_recovery
+    display_name: "Backup Disaster Recovery"
+    one_liner: "All critical data must have 3-2-1 backups with tested recovery procedures"
+    file_path: "CH00_fundamental_principles/07_security/MP117_backup_disaster_recovery.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If data D is classified as critical or important to business operations,
+      then D must have automated backups following the 3-2-1 rule,
+      and recovery procedures must be documented with defined RTO/RPO,
+      and backups must be tested regularly (at least quarterly),
+      and disaster recovery plans must exist for all failure scenarios.
+      3-2-1 Rule: 3 copies, 2 different media types, 1 offsite.
+
+    rule_formal: |
+      RULE MP117_321_RULE:
+      FOR ALL critical_data D:
+      count(backup_copies(D)) >= 3
+      AND count(distinct_media_types(D)) >= 2
+      AND has_offsite_copy(D)
+
+      RULE MP117_RTO_RPO:
+      FOR ALL system S:
+      has_defined_rto(S)
+      AND has_defined_rpo(S)
+      AND is_achievable(rto(S))
+      AND is_achievable(rpo(S))
+
+      RULE MP117_TESTING:
+      FOR ALL backup B:
+      is_tested_quarterly(B)
+      AND last_test_successful(B)
+      AND recovery_time_within_rto(B)
+
+      RULE MP117_DR_PLAN:
+      FOR ALL failure_scenario F:
+      has_documented_recovery_procedure(F)
+      AND has_responsible_team(F)
+      AND is_tested_annually(F)
+
+    applies_to:
+      - databases
+      - file_systems
+      - configurations
+      - application_state
+      - user_data
+
+    violations:
+      - "No automated backup schedule configured"
+      - "Backups only stored on same server as production"
+      - "Never tested backup restoration"
+      - "No defined RTO/RPO for critical systems"
+      - "No disaster recovery plan for ransomware attack"
+
+    compliant:
+      - "Daily incremental + weekly full backups with pg_dump"
+      - "Local NAS + AWS S3 Glacier for offsite storage"
+      - "Quarterly backup restoration tests with documented results"
+      - "RTO: 1 hour for critical, RPO: 15 minutes for transactional"
+      - "DR playbook for server failure, ransomware, natural disaster"
+
+    recovery_objectives:
+      critical_systems:
+        rto: "15 minutes"
+        rpo: "0 minutes (real-time replication)"
+      core_applications:
+        rto: "1 hour"
+        rpo: "15 minutes"
+      standard_services:
+        rto: "4 hours"
+        rpo: "1 hour"
+
+  # ----------------------------------------------------------
+  # MP118: Secure Development Practices
+  # ----------------------------------------------------------
+  - id: MP118
+    type: meta_principle
+    name: development_security_practices
+    display_name: "Development Security Practices"
+    one_liner: "Security must be integrated into every phase of development through DevSecOps"
+    file_path: "CH00_fundamental_principles/07_security/MP118_development_security_practices.qmd"
+    criticality: "CRITICAL"
+    enforcement: "MANDATORY"
+
+    rule_natural: |
+      If code C is being developed for any MAMBA system,
+      then C must be developed following secure coding standards,
+      and C must pass automated security testing (SAST, DAST, SCA),
+      and C must undergo security-focused code review,
+      and developers must complete security training,
+      and threat modeling must be performed for significant features.
+      No code may be merged without passing security gates.
+
+    rule_formal: |
+      RULE MP118_SECURE_CODING:
+      FOR ALL code C:
+      follows_secure_coding_standards(C)
+      AND no_hardcoded_secrets(C)
+      AND uses_parameterized_queries(C)
+      AND validates_all_inputs(C)
+
+      RULE MP118_SECURITY_TESTING:
+      FOR ALL pull_request PR:
+      passes_sast_scan(PR)
+      AND passes_dependency_check(PR)
+      AND passes_secret_scan(PR)
+      AND passes_security_unit_tests(PR)
+
+      RULE MP118_CODE_REVIEW:
+      FOR ALL merge_request MR:
+      has_peer_review(MR, count >= 2)
+      AND IF contains_security_changes(MR)
+      THEN has_security_team_review(MR)
+
+      RULE MP118_TRAINING:
+      FOR ALL developer D:
+      has_completed_security_training(D)
+      AND training_is_current(D, within = 1_year)
+
+    applies_to:
+      - all_development
+      - code_review
+      - ci_cd_pipeline
+      - deployment
+
+    requires:
+      - MP110  # Credentials management
+      - MP114  # Input validation
+
+    violations:
+      - "Merging code without security scan in CI/CD"
+      - "Skipping code review for 'urgent' fixes"
+      - "Developers without security training writing auth code"
+      - "No threat modeling for new API endpoints"
+      - "Disabling security checks in pipeline"
+
+    compliant:
+      - "GitHub Actions with TruffleHog + Semgrep + SonarCloud"
+      - "Minimum 2 reviewers with security checklist"
+      - "Quarterly OWASP Top 10 training for all developers"
+      - "STRIDE threat modeling for new features"
+      - "Security champions program in each team"
+
+    devsecops_pipeline:
+      pre_commit: ["secret_scanning", "linting"]
+      build: ["sast_scan", "dependency_check", "license_check"]
+      test: ["security_tests", "dast_scan", "integration_tests"]
+      deploy: ["environment_scan", "config_check", "runtime_protection"]
+
+# ============================================================
+# SECTION 5: DEPENDENCIES (Explicit Graph)
+# ============================================================
+dependencies:
+  - from: DM_R023
+    to: MP029
+    reason: "tbl2() ensures data comes from real database sources, supporting no-fake-data"
+
+  - from: MP108
+    to: MP064
+    reason: "ETL phase sequence implements the ETL side of ETL-Derivation separation"
+
+  - from: UI_P004
+    to: SO_R007
+    reason: "Component pattern extends one-function-one-file to UI organization"
+
+  - from: DM_R041
+    to: MP064
+    reason: "Directory structure physically enforces ETL-Derivation separation"
+
+  - from: DM_R041
+    to: MP108
+    reason: "Directory structure supports ETL phase sequence organization"
+
+  - from: SO_R013
+    to: SO_R007
+    reason: "Initialization importing requires functions in separate files"
+
+  - from: SO_P002
+    to: SO_R007
+    reason: "Script separation depends on having reusable functions in global_scripts"
+
+  - from: DEV_R001
+    to: MP001
+    reason: "Apply-over-loops implements functional programming paradigm from axioms"
+
+  - from: DEV_P001
+    to: MP001
+    reason: "Debug principles derive from systematic approach defined in axiomatization"
+
+# ============================================================
+# SECTION 6: SCENARIO MAPPINGS
+# ============================================================
+scenarios:
+
+  building_etl:
+    description: "Developing ETL (Extract-Transform-Load) pipelines"
+    complexity: moderate
+    must_read:
+      - MP064  # ETL-Derivation separation
+      - MP108  # ETL phase sequence
+      - MP029  # No fake data
+      - DM_R041  # Directory structure
+    optional:
+      - DM_R023  # If accessing databases
+    checklist:
+      - "Is the script in the ETL/{platform}/ directory?"
+      - "Does the filename follow {platform}_ETL{datatype}_{phase}.R?"
+      - "Is there NO business logic in the ETL script?"
+      - "Are phases executed in order: 0IM → 1ST → 2TR?"
+      - "Is no script in the root update_scripts/ directory?"
+
+  building_derivation:
+    description: "Creating Derivation scripts for business logic"
+    complexity: moderate
+    must_read:
+      - MP064  # ETL-Derivation separation
+      - MP029  # No fake data
+      - DM_R023  # Database access pattern
+      - DM_R041  # Directory structure
+    checklist:
+      - "Is the script in the DRV/{platform}/ directory?"
+      - "Does it consume data from ETL output (transformed_data)?"
+      - "Is business logic clearly separated from data movement?"
+      - "Am I using tbl2() for database access?"
+
+  database_work:
+    description: "Any work involving database connections and queries"
+    complexity: simple
+    must_read:
+      - MP029  # No fake data
+      - DM_R023  # Use tbl2()
+    checklist:
+      - "Am I using tbl2() instead of dplyr::tbl()?"
+      - "Is the data coming from a real source?"
+
+  creating_ui_component:
+    description: "Developing Shiny UI components"
+    complexity: moderate
+    must_read:
+      - UI_P004  # Component N-tuple pattern
+      - SO_R007  # One function one file
+    checklist:
+      - "Do I have all three files: UI, Server, Defaults?"
+      - "Are the file names consistent?"
+      - "Is each file focused on one function?"
+
+  function_creation:
+    description: "Creating new R functions"
+    complexity: simple
+    must_read:
+      - SO_R007  # One function one file
+    checklist:
+      - "Is the file named fn_{function_name}.R?"
+      - "Is there only one function in the file?"
+
+  project_setup:
+    description: "Setting up project structure and initialization"
+    complexity: moderate
+    must_read:
+      - SO_P002  # Script separation
+      - SO_R013  # Initialization imports only
+      - DM_R041  # Directory structure
+    checklist:
+      - "Are update_scripts and global_scripts properly separated?"
+      - "Does initialization only import and configure?"
+      - "Are ETL/DRV/orchestration directories created?"
+
+  debugging:
+    description: "Troubleshooting and fixing issues"
+    complexity: varies
+    must_read:
+      - DEV_P001  # Debug principles
+      - MP029  # No fake data (for test data)
+    optional:
+      - DEV_R001  # If refactoring loops
+    checklist:
+      - "Have I added logging at key points?"
+      - "Can I reproduce the issue?"
+      - "Have I documented the root cause?"
+      - "Will I update CHANGELOG with the fix?"
+
+  r_optimization:
+    description: "Optimizing R code performance"
+    complexity: simple
+    must_read:
+      - DEV_R001  # Apply over loops
+    checklist:
+      - "Am I using apply family instead of for loops?"
+      - "Am I avoiding growing vectors inside loops?"
+      - "Have I considered vectorized operations?"
+
+  understanding_principles:
+    description: "Learning how the principles system works"
+    complexity: simple
+    must_read:
+      - MP001  # Axiomatization system
+    checklist:
+      - "Do I understand MP vs P vs R hierarchy?"
+      - "Do I know which chapter each type belongs to?"
+      - "Can I find the .qmd file for a specific principle?"
+
+# ============================================================
+# SECTION 7: PRIORITY ORDER (Conflict Resolution)
+# ============================================================
+priority_order:
+  - level: 1
+    type: meta_principle
+    prefix: "MP"
+    description: "System architecture constraints. Highest priority. Cannot be overridden."
+    examples: ["MP029", "MP064", "MP108"]
+
+  - level: 2
+    type: principle
+    prefix: ["SO_P", "DM_P", "DEV_P", "UI_P", "TD_P"]
+    description: "Implementation guidelines. High priority. Override rules when conflicting."
+    examples: ["UI_P004", "DEV_P001"]
+
+  - level: 3
+    type: rule
+    prefix: ["SO_R", "DM_R", "DEV_R", "UI_R", "TD_R"]
+    description: "Specific implementation patterns. Normal priority."
+    examples: ["DM_R023", "SO_R007"]
+
+conflict_resolution: |
+  When two principles conflict in a specific situation:
+
+  1. Check priority levels: Higher level (lower number) wins.
+     MP > P > R
+
+  2. If same level, check dependencies:
+     If A requires B, then B takes precedence in the conflicting aspect.
+
+  3. If still ambiguous, apply the principle that:
+     - Has more specific applicability to the current scenario
+     - Was created/modified more recently
+
+  4. Document the resolution decision in code comments.
+
+# ============================================================
+# SECTION 8: IMPLEMENTATION STATUS
+# ============================================================
+implementation_status:
+  fully_implemented:
+    - "MP029_discrepancy_principle"
+    - "DM_R023_universal_dbi_approach"
+    - "SO_R007_one_function_one_file"
+
+  partially_implemented:
+    - "MP064_etl_derivation_separation"
+    - "MP108_etl_phase_sequence"
+    - "UI_P004_component_ntuple_pattern"
+
+  not_yet_implemented:
+    - "MP117_backup_disaster_recovery"
+    - "MP116_dependency_vulnerability_management"
+
+# ============================================================
+# SECTION 9: GLOSSARY (Canonical Definitions)
+# ============================================================
+glossary:
+  meta_principle:
+    definition: "A system architecture constraint that cannot be violated"
+    test: "If violated, the entire system design fails or becomes inconsistent"
+    identifier_pattern: "MP###"
+
+  principle:
+    definition: "An implementation guideline at the layer or domain level"
+    test: "If violated, specific functionality becomes incorrect or unmaintainable"
+    identifier_pattern: "{DOMAIN}_P###"
+
+  rule:
+    definition: "A specific implementation pattern that can be mechanically verified"
+    test: "Can be checked by code review or automated linting"
+    identifier_pattern: "{DOMAIN}_R###"
+
+  etl:
+    definition: "Extract-Transform-Load: Data preparation without business logic"
+    phases: ["0IM", "1ST", "2TR"]
+    constraint: "No business calculations allowed"
+
+  derivation:
+    definition: "Business logic layer that consumes ETL output"
+    constraint: "Must consume from transformed_data layer"
+    allowed: "Calculations, aggregations, business rules"
+
+  tbl2:
+    definition: "The MAMBA wrapper function for database table access"
+    location: "global_scripts/02_db_utils/fn_tbl2.R"
+    replaces: "dplyr::tbl()"
+
+# ============================================================
+# END OF FILE
+# ============================================================
