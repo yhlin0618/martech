@@ -4,13 +4,12 @@
 #' caches it in the provided SQLite connection as `df_product_line_profile`.
 #' Follows R119 Memory-Resident Parameters Rule.
 #'
-#' As of DM_R054 v2.1 (2026-04-19), `meta_data.duckdb` is the EXCLUSIVE runtime
-#' source. There is NO CSV fallback: the CSV at
+#' As of DM_R054 v2.1 (2026-04-19), `meta_data.duckdb` is the primary runtime
+#' source. DM_R054 v2.1.1 adds: when that file is absent (e.g. Posit Connect +
+#' Supabase), rows are read from PostgreSQL table `df_product_line_profile` via
+#' [dbConnectAppData()]. There is NO CSV runtime fallback: the CSV at
 #' `data/app_data/parameters/scd_type1/df_product_line.csv` is a bootstrap seed
-#' consumed ONLY by the producer ETL (`all_ETL_meta_init_0IM.R`). Any runtime
-#' caller that needs `df_product_line` must go through this function, which
-#' either reads `meta_data.duckdb` or raises `stop()` with an actionable
-#' message naming the bootstrap ETL.
+#' consumed ONLY by the producer ETL (`all_ETL_meta_init_0IM.R`).
 #'
 #' @param conn A DBI connection object (typically SQLite) to store the
 #'   `df_product_line_profile` table for the app's in-memory lookup.
@@ -40,46 +39,68 @@ load_product_lines <- function(
                    db_path_list$meta_data else NULL,
   csv_path = NULL
 ) {
-  # DM_R054 v2.1: no-fallback runtime contract.
+  # DM_R054 v2.1 / v2.1.1 — DuckDB primary; Supabase profile table when absent.
   actionable <- paste0(
-    "Cannot load product lines — meta_data.duckdb is required (DM_R054 v2.1, no fallback).\n",
+    "Cannot load product lines — need meta_data.duckdb OR Supabase df_product_line_profile (DM_R054 v2.1.1).\n",
     "  path checked: ",
-    if (is.null(meta_data_path)) "(db_path_list$meta_data not set — APP_MODE autoinit must populate it; DM_R054 v2.1 Section 8)"
+    if (is.null(meta_data_path)) "(db_path_list$meta_data not set — file absent)"
     else meta_data_path, "\n",
-    "Fix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` ",
-    "to bootstrap meta_data.duckdb from the CSV seed."
+    "Local fix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` ",
+    "to bootstrap meta_data.duckdb from the CSV seed.",
+    "\nConnect fix: set SUPABASE_DB_* and ensure `df_product_line_profile` exists in app_data DB."
   )
 
-  if (is.null(meta_data_path) || !nzchar(meta_data_path) || !file.exists(meta_data_path)) {
-    stop(actionable, call. = FALSE)
-  }
+  required_fields <- c(
+    "product_line_name_english",
+    "product_line_name_chinese",
+    "product_line_id"
+  )
 
-  if (!is.null(csv_path)) {
-    message("⇢ load_product_lines: ignoring csv_path argument (DM_R054 v2.1: ",
-            "runtime MUST NOT read CSV seeds). Source = meta_data.duckdb at ",
-            meta_data_path)
-  }
+  meta_ok <- !is.null(meta_data_path) && nzchar(meta_data_path) &&
+    file.exists(meta_data_path)
 
-  message("⇢ Loading product lines from canonical meta_data.duckdb: ",
-          meta_data_path)
-  meta_con <- DBI::dbConnect(duckdb::duckdb(), meta_data_path, read_only = TRUE)
-  on.exit(try(DBI::dbDisconnect(meta_con, shutdown = TRUE), silent = TRUE),
-          add = TRUE)
-  if (!("df_product_line" %in% DBI::dbListTables(meta_con))) {
-    stop(
-      "meta_data.duckdb exists but contains no df_product_line table.\n",
-      "  path: ", meta_data_path, "\n",
-      "Fix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` ",
-      "to (re)bootstrap metadata tables from the CSV seed.",
-      call. = FALSE
+  if (!meta_ok) {
+    supabase_ok <- nzchar(Sys.getenv("SUPABASE_DB_HOST", "")) &&
+      nzchar(Sys.getenv("SUPABASE_DB_PASSWORD", ""))
+    if (!supabase_ok || !exists("dbConnectAppData", mode = "function", inherits = TRUE)) {
+      stop(actionable, call. = FALSE)
+    }
+    message(
+      "⇢ load_product_lines: no meta_data.duckdb — reading df_product_line_profile ",
+      "from app_data DB (DM_R054 v2.1.1)"
     )
+    pg_con <- dbConnectAppData(
+      config_path = "app_config.yaml",
+      verbose = isTRUE(getOption("app.verbose", FALSE))
+    )
+    on.exit(try(DBI::dbDisconnect(pg_con), silent = TRUE), add = TRUE)
+    product_lines <- DBI::dbReadTable(pg_con, "df_product_line_profile")
+    product_lines <- as.data.frame(product_lines)[, required_fields, drop = FALSE]
+  } else {
+    if (!is.null(csv_path)) {
+      message("⇢ load_product_lines: ignoring csv_path argument (DM_R054 v2.1: ",
+              "runtime MUST NOT read CSV seeds). Source = meta_data.duckdb at ",
+              meta_data_path)
+    }
+
+    message("⇢ Loading product lines from canonical meta_data.duckdb: ",
+            meta_data_path)
+    meta_con <- DBI::dbConnect(duckdb::duckdb(), meta_data_path, read_only = TRUE)
+    on.exit(try(DBI::dbDisconnect(meta_con, shutdown = TRUE), silent = TRUE),
+            add = TRUE)
+    if (!("df_product_line" %in% DBI::dbListTables(meta_con))) {
+      stop(
+        "meta_data.duckdb exists but contains no df_product_line table.\n",
+        "  path: ", meta_data_path, "\n",
+        "Fix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` ",
+        "to (re)bootstrap metadata tables from the CSV seed.",
+        call. = FALSE
+      )
+    }
+    product_lines <- DBI::dbReadTable(meta_con, "df_product_line")
   }
-  product_lines <- DBI::dbReadTable(meta_con, "df_product_line")
 
   # --- Validate schema ---------------------------------------------------
-  required_fields <- c("product_line_name_english",
-                       "product_line_name_chinese",
-                       "product_line_id")
   missing_fields <- setdiff(required_fields, names(product_lines))
   if (length(missing_fields) > 0) {
     stop("product_lines source missing required fields: ",

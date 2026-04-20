@@ -56,49 +56,23 @@ if (is.null(app_configs$platforms)) {
   app_configs$platforms <- list()
 }
 
-# DM_R054 v2.1: runtime MUST read metadata from meta_data.duckdb (no CSV
-# fallback). APP_MODE autoinit() populates db_path_list$meta_data — see
-# sc_Rprofile.R APP_MODE branch.
-.dm_r054_meta_err <- function(table_name) {
-  stop(
-    "Shiny startup cannot load ", table_name, " — meta_data.duckdb is required ",
-    "(DM_R054 v2.1, no CSV fallback).\n",
-    "  db_path_list$meta_data: ",
-    if (exists("db_path_list", inherits = TRUE) && !is.null(db_path_list$meta_data))
-      db_path_list$meta_data else "(not set — APP_MODE autoinit did not populate it)",
-    "\nFix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` ",
-    "from the company root to bootstrap meta_data.duckdb.",
-    call. = FALSE
-  )
-}
+# DM_R054 v2.1.1: metadata from meta_data.duckdb when present; else PostgreSQL
+# app_data (see sc_Rprofile.R APP_MODE branch + fn_load_df_platform_metadata.R).
 
 if (!exists("df_platform", inherits = TRUE)) {
-  # Spec §7: df_platform has no canonical reader helper yet; direct
-  # dbReadTable from meta_data.duckdb is permitted until fn_load_platforms()
-  # is introduced.
-  if (!exists("db_path_list", inherits = TRUE) || is.null(db_path_list$meta_data) ||
-      !file.exists(db_path_list$meta_data)) {
-    .dm_r054_meta_err("df_platform")
-  }
-  .meta_con <- DBI::dbConnect(duckdb::duckdb(), db_path_list$meta_data, read_only = TRUE)
-  if (!("df_platform" %in% DBI::dbListTables(.meta_con))) {
-    try(DBI::dbDisconnect(.meta_con, shutdown = TRUE), silent = TRUE)
-    .dm_r054_meta_err("df_platform")
-  }
-  df_platform <- DBI::dbReadTable(.meta_con, "df_platform")
-  try(DBI::dbDisconnect(.meta_con, shutdown = TRUE), silent = TRUE)
+  df_platform <- load_df_platform_metadata()
 }
 
 if (!exists("df_product_line", inherits = TRUE)) {
-  # Spec §7: df_product_line MUST reach meta_data.duckdb through
-  # fn_load_product_lines (single canonical reader with schema validation).
-  if (!exists("db_path_list", inherits = TRUE) || is.null(db_path_list$meta_data)) {
-    .dm_r054_meta_err("df_product_line")
-  }
   .scratch_con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   df_product_line <- load_product_lines(
-    conn           = .scratch_con,
-    meta_data_path = db_path_list$meta_data
+    conn = .scratch_con,
+    meta_data_path = if (exists("db_path_list", inherits = TRUE) &&
+      !is.null(db_path_list$meta_data)) {
+      db_path_list$meta_data
+    } else {
+      NULL
+    }
   )
   try(DBI::dbDisconnect(.scratch_con), silent = TRUE)
 }
