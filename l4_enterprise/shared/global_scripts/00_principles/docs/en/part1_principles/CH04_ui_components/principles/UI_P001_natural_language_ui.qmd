@@ -1,0 +1,238 @@
+---
+title: "UI_P001: Natural Language UI"
+subtitle: "User interfaces must display only natural language text and meaningful numbers"
+chapter: "CH04"
+category: "principle"
+number: "UI_P001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI組件法 (UI Components Law)"
+article-number: "第1條"
+related_to:
+  - "CH04.UI_R034: UI Text Standardization"
+  - "CH04.UI_R036: Available Locales"
+  - "CH01.SO_P005: Case Sensitivity Principle"
+  - "CH00.MP012: Company Centered Design"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**UI組件法第1條（自然語言使用者介面）**
+
+本條規定使用者介面必須只向終端使用者顯示自然語言文字和有意義的數字，絕不顯示技術識別符、代碼或內部表示。所有技術值在呈現前必須轉換為人類可讀的形式。
+
+:::{.callout-important}
+## 核心原則
+使用者介面必須只顯示自然語言文字和有意義的數字，絕不向終端使用者顯示技術識別符、代碼或內部表示。
+:::
+
+# 第一項：基本原理 {#rationale}
+
+## 第一款：實施理由 {#implementation-reasons}
+
+此原則確保：
+
+1. **使用者理解**：使用者無需技術知識即可理解所有顯示的資訊
+2. **文化相關性**：文字以使用者的語言和文化背景呈現
+3. **專業外觀**：UI 保持優雅、專業的外觀
+4. **認知效率**：使用者處理有意義的術語比代碼或 ID 更快
+5. **減少錯誤**：清晰的標籤減少使用者輸入錯誤和困惑
+
+# 第二項：實作指導原則 {#implementation}
+
+## 第一款：文字顯示 {#text-display}
+
+### 識別符處理
+
+絕不直接顯示原始 ID 或代碼：
+
+:::{.panel-tabset}
+
+### 錯誤做法
+```
+Category 001
+Product PROD_392
+User ID u_9a42f8
+Status ST_PROC
+```
+
+### 正確做法
+```
+Office Supplies
+Laser Printer HP-5200
+John Smith
+Processing
+```
+
+:::
+
+### 語言處理
+
+以使用者選擇的語言顯示文字：
+
+- 儲存所有面向使用者文字的翻譯
+- 使用特定地區的日期、數字和貨幣格式
+- 當翻譯缺失時提供備用方案
+
+### 技術術語
+
+技術術語只在以下情況下出現：
+
+:::{.callout-note}
+## 技術術語使用條件
+- 使用者熟悉的產業標準術語
+- 首次介紹時附有解釋
+- 對使用者任務必要
+:::
+
+## 第二款：數字呈現 {#number-presentation}
+
+### ID 處理
+
+除非是有意義的面向使用者識別符，否則絕不顯示內部 ID 值：
+
+- ❌ 錯誤：User ID "u_9a42f8" 或 Category ID "000"
+- ✅ 正確：Order Number "ORD-29385"（當對使用者有意義時）
+
+### 代碼替換
+
+用有意義的文字替換內部代碼：
+
+- ❌ 錯誤：Type "TYP_A"
+- ✅ 正確：Type "Standard"
+
+### 格式化
+
+根據使用者的地區格式化數字：
+
+- 適當的小數和千位分隔符
+- 貨幣符號在正確位置
+- 單位顯示適當的符號
+
+# 第三項：實作模式 {#implementation-pattern}
+
+## 第一款：核心模式 {#core-pattern}
+
+始終將儲存值與顯示值分離：
+
+```r
+# 核心模式：將儲存與顯示分離
+picker_input(
+  inputId = "category",
+  label = "Category",
+  # 儲存值：內部代碼/ID
+  choices = setNames(
+    # 要儲存的值（不向使用者顯示）
+    c("000", "001", "002", "003"),
+    # 顯示文字（使用者看到的）
+    c("All Categories", "Electronics", "Home Goods", "Office Supplies")
+  ),
+  selected = "000"
+)
+```
+
+## 第二款：語言相依顯示 {#language-dependent}
+
+```r
+# 語言相依顯示
+category_labels <- if (language == "zh_TW.UTF-8") {
+  c("所有產品", "電子產品", "家居用品", "辦公用品")
+} else {
+  c("All Categories", "Electronics", "Home Goods", "Office Supplies")
+}
+
+picker_input(
+  inputId = "category",
+  label = translate("Category"),
+  choices = setNames(
+    c("000", "001", "002", "003"),  # 內部值
+    category_labels  # 語言特定顯示值
+  ),
+  selected = "000"
+)
+```
+
+# 第四項：例外情況 {#exceptions}
+
+## 第一款：允許顯示 ID 的罕見情況 {#rare-cases}
+
+:::{.callout-note}
+## 例外情況
+1. **技術支援**：只在幫助/除錯視圖中顯示 ID
+2. **參考號碼**：專為參考設計的公開 ID（例如，訂單 #12345）
+3. **開發者工具**：僅供開發者/管理員使用的內部工具
+:::
+
+# 第五項：實作範例 {#example}
+
+## 第一款：產品類別選擇與翻譯 {#product-category}
+
+```r
+# 帶有適當翻譯的產品類別下拉選單
+product_category_input <- function() {
+  # 取得產品資料
+  product_data <- config$parameters$product_line
+  
+  # 根據使用者語言決定使用哪個語言欄位
+  display_column <- if (exists("language") && language == "zh_TW.UTF-8" && 
+                        "product_line_name_chinese" %in% names(product_data)) {
+    "product_line_name_chinese"
+  } else {
+    "product_line_name_english"
+  }
+  
+  # 創建儲存/顯示映射
+  choices <- setNames(
+    # 儲存值（不向使用者顯示）
+    sprintf("%03d", seq_len(nrow(product_data)) - 1),
+    # 顯示值（以適當語言向使用者顯示）
+    product_data[[display_column]]
+  )
+  
+  # 創建輸入
+  shinyWidgets::pickerInput(
+    inputId = "product_category",
+    label = translate("Product Category"),
+    choices = choices,
+    selected = names(choices)[1],  # 第一個產品（全部）
+    width = "100%"
+  )
+}
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 自然語言 UI 檢查清單
+
+實作 UI 時，確認：
+
+- [ ] 所有 ID 和代碼已轉換為自然語言
+- [ ] 文字以使用者選擇的語言顯示
+- [ ] 數字根據地區適當格式化
+- [ ] 儲存值與顯示值分離
+- [ ] 技術術語有適當解釋
+- [ ] 翻譯缺失時有備用方案
+- [ ] 貨幣符號位置正確
+- [ ] 日期格式符合地區慣例
+- [ ] 參考號碼對使用者有意義
+- [ ] 除錯視圖與正常視圖分離
+:::
+
+# 結論 {#conclusion}
+
+自然語言 UI 原則確保所有使用者介面元素以使用者能理解的方式呈現資訊。透過將技術識別符轉換為有意義的文字、適當地格式化數字，並支援多語言顯示，我們創建了更易於使用、更專業且更不容易出錯的介面。
+
+---
+
+*依據：UI組件法第1條*  
+*相關：[UI_R034 UI 文字標準化](../rules/UI_R034_ui_text_standardization.qmd)、[UI_R036 可用地區設定](../rules/UI_R036_available_locales.qmd)*

@@ -1,0 +1,603 @@
+---
+rule_id: DM_R047
+title: "Multi-Platform Data Synchronization Rule"
+chapter: "CH02_data_management"
+type: "rule"
+version: "1.0"
+created: "2025-11-14"
+last_updated: "2025-11-14"
+status: "active"
+tags: ["multi-platform", "synchronization", "data-consistency", "schema", "deployment"]
+related_principles: ["DM_R046", "MP135", "R120", "MP102", "MP029"]
+---
+
+# DM_R047: Multi-Platform Data Synchronization Rule
+
+## Purpose
+
+Ensure complete data structure consistency across all production platforms (CBZ, EBY, ALL) to enable seamless platform switching in UI components without errors or missing functionality.
+
+## Problem Statement
+
+**Discovered Issue (2025-11-14)**:
+
+When implementing DM_R046 (Display Name Metadata), only CBZ platform was updated:
+- **CBZ**: 695 rows with display_name fields ✅
+- **EBY**: 180 rows WITHOUT display_name fields ❌
+- **Result**: UI platform switching caused errors due to schema mismatch
+
+**Root Cause**:
+- DRV scripts executed independently per platform
+- No enforced synchronization mechanism
+- Manual updates prone to missing platforms
+
+**User Impact**:
+- Platform switching in UI components failed
+- Inconsistent user experience across platforms
+- Data integrity concerns
+
+## Solution (DM_R047)
+
+### Core Requirement
+
+**MANDATORY**: All data structure changes (Schema, fields, metadata) MUST be applied simultaneously to ALL production platforms.
+
+### Platform Scope
+
+**Production Platforms** (as of 2025-11-14):
+1. **cbz**: Cyberbiz platform data
+2. **eby**: eBay platform data
+3. **all**: Merged cross-platform data (future)
+
+**Non-Production Platforms** (not subject to DM_R047):
+- Test databases
+- Development sandboxes
+- Staging environments (unless specified)
+
+### Synchronization Requirements
+
+#### 1. Schema Consistency
+
+**Definition**: All platforms must have identical column structure.
+
+**Verification**:
+```r
+# All platforms must have exactly the same columns
+cbz_cols <- dbListFields(con, "df_cbz_poisson_analysis_all")
+eby_cols <- dbListFields(con, "df_eby_poisson_analysis_all")
+
+stopifnot(setequal(cbz_cols, eby_cols))  # Must be TRUE
+```
+
+**Required Metadata Columns** (DM_R046 compliance):
+- `display_name`: User-friendly label
+- `display_name_en`: English name
+- `display_name_zh`: Traditional Chinese name
+- `display_category`: Variable category
+- `display_description`: Brief explanation
+
+**Type B Metadata Columns** (MP135 v2.0 compliance):
+- `computed_at`: Timestamp when DRV ran
+- `data_version`: Latest date in input data
+
+#### 2. Data Version Synchronization
+
+**Definition**: All platforms should use compatible data versions when structural changes occur.
+
+**Pattern**:
+```r
+# DRV version must be synchronized across platforms
+DRV_VERSION <- "v4.0_TypeB_DM_R047"  # Same across all platforms
+
+# Document in each platform's DRV script
+analysis_version = DRV_VERSION  # CBZ and EBY must match
+```
+
+**Version Update Triggers**:
+- Schema changes (new columns, renamed columns)
+- Metadata enrichment (DM_R046, R120)
+- Analytics classification changes (MP135)
+- Statistical algorithm updates
+
+#### 3. Deployment Atomicity
+
+**Definition**: All platform updates must complete successfully before deployment.
+
+**Enforcement**:
+```r
+# In deployment scripts
+platforms_ready <- c(
+  check_platform_ready("cbz"),
+  check_platform_ready("eby")
+)
+
+if (!all(platforms_ready)) {
+  stop("DEPLOYMENT BLOCKED: Not all platforms ready. Run update_all_platforms.R")
+}
+```
+
+### Implementation Patterns
+
+#### Pattern 1: Wrapper Script (Recommended)
+
+Create a universal update script that processes all platforms:
+
+**File**: `scripts/update_scripts/DRV/update_all_platforms_poisson.R`
+
+```r
+#!/usr/bin/env Rscript
+# ==============================================================================
+# Universal Platform Poisson Update Script
+# Principle: DM_R047 - Multi-Platform Data Synchronization
+# ==============================================================================
+
+platforms <- c("cbz", "eby")  # Update as platforms are added
+
+cat("═══════════════════════════════════════════════════════════════════\n")
+cat("Universal Platform Update - Poisson Analysis (DM_R047)\n")
+cat("═══════════════════════════════════════════════════════════════════\n\n")
+
+success_count <- 0
+failed_platforms <- c()
+
+for (platform in platforms) {
+  script_path <- sprintf(
+    "scripts/update_scripts/DRV/%s/%s_DRV_product_line_poisson.R",
+    platform, platform
+  )
+
+  cat(sprintf("\n[%d/%d] Updating Platform: %s\n",
+              which(platforms == platform), length(platforms),
+              toupper(platform)))
+  cat("───────────────────────────────────────────────────────────────────\n")
+
+  if (!file.exists(script_path)) {
+    warning(sprintf("Script not found: %s", script_path))
+    failed_platforms <- c(failed_platforms, platform)
+    next
+  }
+
+  tryCatch({
+    source(script_path)
+    success_count <- success_count + 1
+    cat(sprintf("✅ %s update complete\n", toupper(platform)))
+  }, error = function(e) {
+    warning(sprintf("❌ %s update failed: %s",
+                    toupper(platform), conditionMessage(e)))
+    failed_platforms <- c(failed_platforms, platform)
+  })
+}
+
+cat("\n═══════════════════════════════════════════════════════════════════\n")
+cat("Update Summary\n")
+cat("═══════════════════════════════════════════════════════════════════\n")
+cat(sprintf("Total platforms: %d\n", length(platforms)))
+cat(sprintf("Successful: %d\n", success_count))
+cat(sprintf("Failed: %d\n", length(failed_platforms)))
+
+if (length(failed_platforms) > 0) {
+  cat("\nFailed platforms:\n")
+  for (p in failed_platforms) {
+    cat(sprintf("  - %s\n", p))
+  }
+  stop("SYNCHRONIZATION INCOMPLETE - Review errors above")
+}
+
+cat("\n✅ All platforms synchronized successfully (DM_R047 compliant)\n")
+cat("═══════════════════════════════════════════════════════════════════\n")
+```
+
+**Usage**:
+```bash
+# Instead of running individual platform scripts:
+# Rscript scripts/update_scripts/DRV/cbz/cbz_DRV_product_line_poisson.R
+# Rscript scripts/update_scripts/DRV/eby/eby_DRV_product_line_poisson.R
+
+# Run this instead:
+Rscript scripts/update_scripts/DRV/update_all_platforms_poisson.R
+```
+
+#### Pattern 2: Platform Loop Within Script
+
+Add platform iteration inside each DRV script:
+
+```r
+# At the top of DRV script
+PLATFORMS <- c("cbz", "eby")
+
+for (platform in PLATFORMS) {
+  # Process each platform with same logic
+  cat(sprintf("\n=== Processing Platform: %s ===\n", toupper(platform)))
+
+  # Platform-specific table names
+  input_table <- sprintf("df_%s_sales_complete_time_series", platform)
+  output_table <- sprintf("df_%s_poisson_analysis_all", platform)
+
+  # Shared processing logic...
+}
+```
+
+**Trade-off**: Less modular, but ensures synchronization by design.
+
+#### Pattern 3: Verification Utility
+
+Create automated consistency checks:
+
+**File**: `scripts/global_scripts/04_utils/fn_verify_platform_consistency.R`
+
+```r
+#' Verify Multi-Platform Schema Consistency (DM_R047)
+#'
+#' @param con DBI connection to app_data.duckdb
+#' @param table_base_name Base name of tables (e.g., "poisson_analysis")
+#' @param platforms Character vector of platform_ids (default: c("cbz", "eby"))
+#' @param required_metadata Character vector of required metadata columns
+#' @return List with validation results
+fn_verify_platform_consistency <- function(
+  con,
+  table_base_name = "poisson_analysis",
+  platforms = c("cbz", "eby"),
+  required_metadata = c("computed_at", "data_version", "display_name",
+                        "display_name_en", "display_name_zh",
+                        "display_category", "display_description")
+) {
+
+  cat("═══════════════════════════════════════════════════════════════════\n")
+  cat("DM_R047: Multi-Platform Consistency Verification\n")
+  cat("═══════════════════════════════════════════════════════════════════\n\n")
+
+  # Get schema for each platform
+  platform_schemas <- list()
+  for (platform in platforms) {
+    table_name <- sprintf("df_%s_%s_all", platform, table_base_name)
+
+    if (!dbExistsTable(con, table_name)) {
+      warning(sprintf("Table not found: %s", table_name))
+      return(list(valid = FALSE, error = sprintf("Missing table: %s", table_name)))
+    }
+
+    platform_schemas[[platform]] <- dbListFields(con, table_name)
+  }
+
+  # Check schema consistency
+  reference_schema <- platform_schemas[[platforms[1]]]
+  mismatches <- list()
+
+  for (i in 2:length(platforms)) {
+    platform <- platforms[i]
+    current_schema <- platform_schemas[[platform]]
+
+    if (!setequal(reference_schema, current_schema)) {
+      missing_in_current <- setdiff(reference_schema, current_schema)
+      extra_in_current <- setdiff(current_schema, reference_schema)
+
+      mismatches[[platform]] <- list(
+        missing = missing_in_current,
+        extra = extra_in_current
+      )
+    }
+  }
+
+  if (length(mismatches) > 0) {
+    cat("❌ SCHEMA MISMATCH DETECTED\n\n")
+
+    for (platform in names(mismatches)) {
+      cat(sprintf("Platform: %s\n", toupper(platform)))
+
+      if (length(mismatches[[platform]]$missing) > 0) {
+        cat("  Missing columns:\n")
+        for (col in mismatches[[platform]]$missing) {
+          cat(sprintf("    - %s\n", col))
+        }
+      }
+
+      if (length(mismatches[[platform]]$extra) > 0) {
+        cat("  Extra columns:\n")
+        for (col in mismatches[[platform]]$extra) {
+          cat(sprintf("    + %s\n", col))
+        }
+      }
+      cat("\n")
+    }
+
+    return(list(
+      valid = FALSE,
+      error = "Schema mismatch between platforms",
+      mismatches = mismatches
+    ))
+  }
+
+  # Check required metadata columns
+  missing_metadata <- list()
+
+  for (platform in platforms) {
+    schema <- platform_schemas[[platform]]
+    missing <- setdiff(required_metadata, schema)
+
+    if (length(missing) > 0) {
+      missing_metadata[[platform]] <- missing
+    }
+  }
+
+  if (length(missing_metadata) > 0) {
+    cat("❌ MISSING REQUIRED METADATA\n\n")
+
+    for (platform in names(missing_metadata)) {
+      cat(sprintf("Platform: %s\n", toupper(platform)))
+      cat("  Missing metadata columns:\n")
+      for (col in missing_metadata[[platform]]) {
+        cat(sprintf("    - %s\n", col))
+      }
+      cat("\n")
+    }
+
+    return(list(
+      valid = FALSE,
+      error = "Missing required metadata columns",
+      missing_metadata = missing_metadata
+    ))
+  }
+
+  # Success
+  cat("✅ All platforms have consistent schemas\n")
+  cat(sprintf("   Platforms verified: %s\n", paste(toupper(platforms), collapse=", ")))
+  cat(sprintf("   Column count: %d\n", length(reference_schema)))
+  cat(sprintf("   Metadata columns: %d/%d present\n",
+              length(required_metadata), length(required_metadata)))
+
+  # Row counts
+  cat("\nData volume:\n")
+  for (platform in platforms) {
+    table_name <- sprintf("df_%s_%s_all", platform, table_base_name)
+    row_count <- dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM %s", table_name))$n
+    cat(sprintf("  %s: %s rows\n", toupper(platform), format(row_count, big.mark=",")))
+  }
+
+  cat("\n═══════════════════════════════════════════════════════════════════\n")
+
+  return(list(
+    valid = TRUE,
+    platforms = platforms,
+    column_count = length(reference_schema),
+    schema = reference_schema
+  ))
+}
+```
+
+**Usage in DRV scripts**:
+```r
+# At the end of DRV processing (VALIDATION phase)
+source("scripts/global_scripts/04_utils/fn_verify_platform_consistency.R")
+
+validation <- fn_verify_platform_consistency(
+  con = con_app,
+  table_base_name = "poisson_analysis",
+  platforms = c("cbz", "eby")
+)
+
+if (!validation$valid) {
+  stop("DM_R047 VIOLATION: ", validation$error)
+}
+```
+
+### Enforcement Mechanisms
+
+#### 1. Pre-Deployment Checks
+
+**Add to deployment scripts**:
+```r
+# In deploy_auto.R or deploy_now.R
+source("scripts/global_scripts/04_utils/fn_verify_platform_consistency.R")
+
+# Connect to database
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+
+# Verify all critical tables
+critical_tables <- c("poisson_analysis", "customer_segmentation", "product_analysis")
+
+for (table_base in critical_tables) {
+  validation <- fn_verify_platform_consistency(con, table_base)
+
+  if (!validation$valid) {
+    dbDisconnect(con, shutdown = TRUE)
+    stop(sprintf("DEPLOYMENT BLOCKED - DM_R047 violation in %s: %s",
+                 table_base, validation$error))
+  }
+}
+
+dbDisconnect(con, shutdown = TRUE)
+
+cat("✅ All platforms synchronized - Proceeding with deployment\n")
+```
+
+#### 2. Documentation Requirements
+
+**CHANGELOG Entry Template**:
+
+When making structural changes, CHANGELOG must include:
+
+```markdown
+## [Date] - DM_R047 Compliance: [Feature Name]
+
+### Platforms Updated
+- ✅ CBZ: [table_name] updated with [change description]
+- ✅ EBY: [table_name] updated with [change description]
+- ⚠️ ALL: Not applicable / To be implemented
+
+### Schema Changes
+- Added columns: `column1`, `column2`
+- Modified columns: `column3` (type change)
+- Removed columns: None
+
+### Verification
+```bash
+Rscript scripts/global_scripts/04_utils/fn_verify_platform_consistency.R
+```
+Result: ✅ All platforms consistent (26 columns, 7 metadata fields)
+
+### Migration Path
+1. Run: `update_all_platforms_poisson.R`
+2. Verify: Schema consistency check passed
+3. Deploy: No special migration needed (backward compatible)
+
+### Breaking Changes
+None (fully backward compatible)
+```
+
+#### 3. CI/CD Integration (Future)
+
+```yaml
+# .github/workflows/verify-platforms.yml
+name: Verify Multi-Platform Consistency
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/update_scripts/DRV/**/*.R'
+      - 'data/app_data/*.duckdb'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Install dependencies
+        run: |
+          install.packages(c("DBI", "duckdb", "dplyr"))
+
+      - name: Verify Platform Consistency
+        run: |
+          source("scripts/global_scripts/04_utils/fn_verify_platform_consistency.R")
+          validation <- fn_verify_platform_consistency(
+            con = dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb"),
+            platforms = c("cbz", "eby")
+          )
+          if (!validation$valid) {
+            stop("DM_R047 VIOLATION")
+          }
+```
+
+## Exception Handling
+
+### When Platform-Specific Differences Are Acceptable
+
+**Case 1: Platform-Specific Features**
+
+Some platforms may have unique features not applicable to others:
+
+```r
+# Document in table schema comments
+# cbz_exclusive_columns: c("seller_mambatek", "location_台中")
+# eby_exclusive_columns: c("ebay_seller_rating", "shipping_international")
+
+# Store in separate tables, NOT mixed with shared schema
+# df_cbz_exclusive_features (separate from df_cbz_poisson_analysis_all)
+# df_eby_exclusive_features (separate from df_eby_poisson_analysis_all)
+```
+
+**Rule**: Shared analysis tables (like `poisson_analysis_all`) MUST be synchronized. Platform-specific features go in separate tables.
+
+### When Updates Can Be Delayed
+
+**Acceptable Delay Conditions**:
+1. Platform is in maintenance mode (documented)
+2. Platform data pipeline is broken (ISSUE created)
+3. Platform is being deprecated (migration plan exists)
+
+**Documentation Required**:
+```markdown
+# In ISSUE tracker
+## ISSUE_XXX: EBY Platform Update Delayed
+
+**Reason**: EBY data pipeline broken since 2025-11-10
+**Impact**: EBY platform cannot be updated with DM_R046 display names
+**Workaround**: UI disables EBY platform selection
+**Resolution**: Fix EBY pipeline (ISSUE_YYY), then run update_all_platforms.R
+**ETA**: 2025-11-20
+```
+
+## Verification Checklist
+
+Before deploying any DRV updates:
+
+- [ ] All production platforms processed (cbz, eby)
+- [ ] Schema consistency verified (`fn_verify_platform_consistency()`)
+- [ ] Required metadata columns present (DM_R046, MP135)
+- [ ] Data version synchronized across platforms
+- [ ] CHANGELOG entry created with DM_R047 compliance section
+- [ ] UI platform switching tested (no errors)
+- [ ] Metadata banner displays correctly for all platforms
+- [ ] No ISSUE tracker entries for blocked platforms
+
+## Examples
+
+### Example 1: Adding Display Names (2025-11-14)
+
+**Problem**: CBZ updated with DM_R046, EBY missing display names
+
+**Solution**:
+1. Updated `eby_DRV_product_line_poisson.R` with display name enrichment
+2. Ran EBY DRV: `Rscript scripts/update_scripts/DRV/eby/eby_DRV_product_line_poisson.R`
+3. Verified consistency: `fn_verify_platform_consistency()`
+4. Result: ✅ Both platforms now have 26 columns with display names
+
+**CHANGELOG**:
+```markdown
+## 2025-11-14 - DM_R047 Compliance: Display Name Synchronization
+
+### Platforms Updated
+- ✅ CBZ: Already had display names (v4.0_TypeB)
+- ✅ EBY: Added display names (v1.0_TypeB_DM_R047)
+
+### Schema Changes
+- Added columns: display_name, display_name_en, display_name_zh, display_category, display_description
+
+### Verification
+Result: ✅ All platforms consistent (26 columns, 7 metadata fields)
+```
+
+### Example 2: Adding R120 Metadata (Future)
+
+**Planned**: Add predictor range metadata (min, max, is_binary, is_categorical)
+
+**DM_R047 Compliance Plan**:
+1. Create wrapper: `update_all_platforms_R120_enrichment.R`
+2. Update both: `cbz_DRV_enrich_R120_metadata_v2.R` and `eby_DRV_enrich_R120_metadata_v2.R`
+3. Run wrapper to process all platforms
+4. Verify: `fn_verify_platform_consistency()` with updated required_metadata
+5. Deploy only after all platforms pass
+
+## Related Principles
+
+- **DM_R046**: Variable Display Name Metadata (what we synchronize)
+- **MP135 v2.0**: Analytics Temporal Classification (Type B metadata)
+- **R120**: Variable Range Metadata (future enhancement)
+- **MP102**: Complete Metadata (analysis_date, version, platform)
+- **MP029**: No Fake Data (all platforms use real data)
+
+## Summary
+
+**DM_R047 in One Sentence**:
+> All data structure changes MUST be applied simultaneously to ALL production platforms (cbz, eby) to ensure UI platform switching works without errors.
+
+**Key Mechanisms**:
+1. **Wrapper Scripts**: Process all platforms in one command
+2. **Verification Utilities**: Automated consistency checks
+3. **Pre-Deployment Validation**: Block deployment if platforms unsynchronized
+4. **Documentation**: CHANGELOG must document all platform updates
+
+**Consequences of Violation**:
+- UI platform switching fails
+- User experience degrades
+- Data integrity questions
+- Emergency hotfix required
+
+**Prevention**:
+- Always use `update_all_platforms_*.R` wrappers
+- Never update only one platform
+- Run verification before deployment
+- Document exceptions in ISSUE tracker

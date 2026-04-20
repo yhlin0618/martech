@@ -1,0 +1,2012 @@
+# ========================================
+# CH02: Data Management Principles
+# Version: 1.1
+# Last Updated: 2026-01-26
+#
+# Contains: DM_P001-DM_P007 (7 principles) + DM_R001-DM_R058,DM_R060-DM_R062 (61 rules)
+# Total: 67 principles
+# ========================================
+
+chapter: "CH02_data"
+description: "Data Management Principles and Rules"
+principle_count: 68
+
+principles:
+
+  # ====================
+  # DM_P PRINCIPLES (6)
+  # ====================
+
+  - id: DM_P001
+    type: principle
+    name: data_integrity
+    display_name: "Data Integrity"
+    one_liner: "Ensure data accuracy, completeness, and consistency throughout lifecycle"
+    file_path: "CH02_data_management/principles/DM_P001_data_integrity.qmd"
+
+    rule_natural: |
+      All data operations must preserve integrity:
+      - Validate data on entry and exit
+      - Use constraints and checks
+      - Document data transformations
+      - Maintain audit trails
+
+    rule_formal: |
+      RULE DM_P001_INTEGRITY:
+      FOR ALL data_operation O on dataset D:
+      preserves_accuracy(O, D)
+      AND preserves_completeness(O, D)
+      AND is_documented(O)
+
+    violations:
+      - "Modifying data without validation"
+      - "Silent data truncation"
+    compliant:
+      - "Validation before database insert"
+      - "Logging all data transformations"
+
+  - id: DM_P002
+    type: principle
+    name: data_visualization
+    display_name: "Data Visualization"
+    one_liner: "Visualizations must accurately represent underlying data"
+    file_path: "CH02_data_management/principles/DM_P002_data_visualization.qmd"
+
+    rule_natural: |
+      All visualizations must truthfully represent data:
+      - Axes must start from meaningful values
+      - Scale must not distort perception
+      - Labels must be clear and accurate
+      - Color choices must be accessible
+
+    rule_formal: |
+      RULE DM_P002_VISUALIZATION:
+      FOR ALL visualization V of dataset D:
+      accurately_represents(V, D)
+      AND has_clear_labels(V)
+      AND uses_appropriate_scale(V)
+
+    violations:
+      - "Truncated Y-axis to exaggerate trends"
+      - "Missing axis labels"
+    compliant:
+      - "Full-range axis with clear tick marks"
+      - "Legend with all categories"
+
+  - id: DM_P003
+    type: principle
+    name: dual_id_format
+    display_name: "Dual ID Format"
+    one_liner: "Support both natural keys and surrogate keys for flexibility"
+    file_path: "CH02_data_management/principles/DM_P003_dual_id_format.qmd"
+
+    rule_natural: |
+      Data entities should support dual identification:
+      - Natural key: Human-readable identifier (e.g., product_code)
+      - Surrogate key: System-generated integer ID
+      - Both must be maintained consistently
+      - Natural key for display, surrogate for joins
+
+    rule_formal: |
+      RULE DM_P003_DUAL_ID:
+      FOR ALL entity E:
+      has_natural_key(E) AND has_surrogate_key(E)
+      AND bijection(natural_key(E), surrogate_key(E))
+
+    violations:
+      - "Using only auto-increment ID without natural key"
+      - "Inconsistent ID mapping"
+    compliant:
+      - "product_code (natural) + product_id (surrogate)"
+      - "customer_email (natural) + customer_id (surrogate)"
+
+  - id: DM_P004
+    type: principle
+    name: dual_parameter_sources
+    display_name: "Dual Parameter Sources"
+    one_liner: "Support parameters from both config files and database"
+    file_path: "CH02_data_management/principles/DM_P004_dual_parameter_sources.qmd"
+
+    rule_natural: |
+      Application parameters can come from two sources:
+      - Config files (YAML): Static, version-controlled settings
+      - Database tables: Dynamic, runtime-modifiable settings
+      - Config takes precedence unless explicitly overridden
+      - Document which parameters come from which source
+
+    rule_formal: |
+      RULE DM_P004_PARAM_SOURCES:
+      FOR ALL parameter P:
+      source(P) IN {"config", "database"}
+      AND IF conflict(P) THEN use(config_value(P))
+
+    violations:
+      - "Hard-coded parameters in code"
+      - "Undocumented parameter sources"
+    compliant:
+      - "app_config.yaml for static settings"
+      - "settings table for user preferences"
+
+  - id: DM_P005
+    type: principle
+    name: row_aligned_tables
+    display_name: "Row-Aligned Tables"
+    one_liner: "Related tables must maintain row alignment for consistency"
+    file_path: "CH02_data_management/principles/DM_P005_row_aligned_tables.qmd"
+
+    rule_natural: |
+      When tables represent the same entities from different perspectives:
+      - Row count must match
+      - Row order must be consistent
+      - IDs must align one-to-one
+      - Used for feature matrices and derived tables
+
+    rule_formal: |
+      RULE DM_P005_ROW_ALIGNED:
+      FOR ALL table_pair (T1, T2) where is_aligned(T1, T2):
+      nrow(T1) EQUALS nrow(T2)
+      AND row_order(T1) EQUALS row_order(T2)
+
+    violations:
+      - "Feature table with different row count than base table"
+      - "Mismatched ID sequences"
+    compliant:
+      - "df_customer and df_customer_features with same row order"
+
+  - id: DM_P006
+    type: principle
+    name: integer_id_consistency
+    display_name: "Integer ID Consistency"
+    one_liner: "All IDs must be stored and used as integers consistently"
+    file_path: "CH02_data_management/principles/DM_P006_integer_id_consistency.qmd"
+
+    rule_natural: |
+      ID columns must maintain integer type throughout:
+      - Store as INTEGER in database
+      - Parse as integer in R (as.integer())
+      - Avoid character coercion
+      - Join operations use integer comparison
+
+    rule_formal: |
+      RULE DM_P006_INT_ID:
+      FOR ALL id_column C:
+      type(C) EQUALS INTEGER
+      AND all_operations_preserve_type(C)
+
+    violations:
+      - "ID stored as VARCHAR"
+      - "ID coerced to character for string concat"
+    compliant:
+      - "customer_id INTEGER PRIMARY KEY"
+      - "as.integer(id) before joins"
+
+  - id: DM_P007
+    type: principle
+    parent: MP150  # Transparency Principle
+    name: information_flow_transparency
+    display_name: "Information Flow Transparency"
+    one_liner: "Make data flow visible and traceable"
+    file_path: "CH02_data_management/principles/DM_P007_information_flow_transparency.qmd"
+    migrated_from: MP053  # Reclassified from meta-principle to principle (2026-02-28)
+
+    rule_natural: |
+      Data flow is transparent:
+      - Document data lineage
+      - Trace transformations
+      - Log data movements
+      - Audit trail maintained
+
+    rule_formal: |
+      RULE DM_P007_TRANSPARENT:
+      data_flow is documented
+      AND traceable
+      AND logged
+      AND auditable
+
+    violations:
+      - "Hidden data transformations"
+      - "No data lineage"
+    compliant:
+      - "Documented data pipeline"
+
+  # ====================
+  # DM_R RULES (47)
+  # ====================
+
+  - id: DM_R001
+    type: rule
+    name: data_frame_creation_strategy
+    display_name: "Data Frame Creation Strategy"
+    one_liner: "Use consistent patterns for creating data frames"
+    file_path: "CH02_data_management/rules/DM_R001_data_frame_creation_strategy.qmd"
+
+    rule_natural: |
+      Data frames should be created using consistent patterns:
+      - Use tibble() for new data frames
+      - Use tbl2() for database queries
+      - Avoid repeated rbind() in loops
+      - Pre-allocate when size is known
+
+    rule_formal: |
+      RULE DM_R001_DF_CREATE:
+      FOR ALL data_frame df:
+      IF from_database THEN use_tbl2()
+      ELSE use_tibble()
+      AND NOT in_loop(rbind(df, row))
+
+    violations:
+      - "Using data.frame() instead of tibble()"
+      - "Growing df with rbind in loop"
+    compliant:
+      - "tibble(col1 = vals1, col2 = vals2)"
+      - "pre-allocate then assign rows"
+
+  - id: DM_R002
+    type: rule
+    name: universal_data_access
+    display_name: "Universal Data Access"
+    one_liner: "Use standardized data access patterns across all code"
+    file_path: "CH02_data_management/rules/DM_R002_universal_data_access.qmd"
+
+    rule_natural: |
+      All database access must use the universal pattern:
+      - Use tbl2() function for all table access
+      - Never use dplyr::tbl() directly
+      - Consistent connection handling
+      - Automatic schema detection
+
+    rule_formal: |
+      RULE DM_R002_ACCESS:
+      FOR ALL table_access T:
+      uses(T, "tbl2()")
+      AND NOT uses(T, "dplyr::tbl()")
+
+    violations:
+      - "dplyr::tbl(con, 'table')"
+      - "Direct SQL without tbl2"
+    compliant:
+      - "tbl2(con, 'df_customer')"
+
+  - id: DM_R003
+    type: rule
+    name: database_access_tbl
+    display_name: "Database Access via tbl"
+    one_liner: "Use tbl() pattern for lazy database queries"
+    file_path: "CH02_data_management/rules/DM_R003_database_access_tbl.qmd"
+
+    rule_natural: |
+      Database queries should use lazy evaluation:
+      - Use tbl() for deferred execution
+      - Chain dplyr verbs for query building
+      - collect() only when data needed in memory
+      - Minimize data transfer
+
+    rule_formal: |
+      RULE DM_R003_TBL:
+      FOR ALL query Q:
+      starts_with(Q, tbl())
+      AND collect_called_last(Q)
+
+    violations:
+      - "SELECT * INTO memory first, filter later"
+      - "Collecting before filtering"
+    compliant:
+      - "tbl() %>% filter() %>% collect()"
+
+  - id: DM_R004
+    type: rule
+    name: data_storage_organization
+    display_name: "Data Storage Organization"
+    one_liner: "Organize data files in standardized directories"
+    file_path: "CH02_data_management/rules/DM_R004_data_storage_organization.qmd"
+
+    rule_natural: |
+      Data files must be organized by purpose:
+      - data/raw/ for original unmodified data
+      - data/processed/ for cleaned data
+      - data/app_data/ for application-specific data
+      - data/temp/ for temporary files (auto-cleaned)
+
+    rule_formal: |
+      RULE DM_R004_STORAGE:
+      FOR ALL data_file F:
+      in_appropriate_directory(F, purpose(F))
+      AND follows_naming_convention(F)
+
+    violations:
+      - "Data files in project root"
+      - "Mixing raw and processed in same folder"
+    compliant:
+      - "data/raw/customers_2024.csv"
+      - "data/processed/df_customer_cleaned.parquet"
+
+  - id: DM_R005
+    type: rule
+    name: id_relationship_validation
+    display_name: "ID Relationship Validation"
+    one_liner: "Validate ID relationships before joins"
+    file_path: "CH02_data_management/rules/DM_R005_id_relationship_validation.qmd"
+
+    rule_natural: |
+      Before joining tables, validate ID relationships:
+      - Check for orphan records
+      - Verify expected cardinality (1:1, 1:N, N:M)
+      - Log unmatched records
+      - Document relationship assumptions
+
+    rule_formal: |
+      RULE DM_R005_ID_VALIDATE:
+      BEFORE join(T1, T2) on key K:
+      validate_cardinality(T1.K, T2.K)
+      AND check_orphans(T1.K, T2.K)
+
+    violations:
+      - "Joining without checking for missing keys"
+      - "Silent loss of rows in inner join"
+    compliant:
+      - "anti_join() check before join"
+      - "Logging unmatched records"
+
+  - id: DM_R006
+    type: rule
+    name: cross_platform_data_structure
+    display_name: "Cross-Platform Data Structure"
+    one_liner: "Data structures must be consistent across platforms"
+    file_path: "CH02_data_management/rules/DM_R006_cross_platform_data_structure.qmd"
+
+    rule_natural: |
+      When data exists on multiple platforms (cbz, eby, amz):
+      - Same column names and types
+      - Same table structures
+      - Platform-agnostic processing logic
+      - Only platform-specific code in ETL
+
+    rule_formal: |
+      RULE DM_R006_CROSS_PLATFORM:
+      FOR ALL table T across platforms P1, P2:
+      schema(T, P1) EQUALS schema(T, P2)
+
+    violations:
+      - "Different column names per platform"
+      - "Platform-specific logic in derivation"
+    compliant:
+      - "Unified df_customer schema across platforms"
+
+  - id: DM_R007
+    type: rule
+    name: multiple_selection_delimiter
+    display_name: "Multiple Selection Delimiter"
+    one_liner: "Use comma delimiter for multiple values in single field"
+    file_path: "CH02_data_management/rules/DM_R007_multiple_selection_delimiter.qmd"
+
+    rule_natural: |
+      When storing multiple selections in one field:
+      - Use comma (,) as delimiter
+      - No spaces around delimiter
+      - Use consistent ordering
+      - Consider normalization for complex cases
+
+    rule_formal: |
+      RULE DM_R007_DELIMITER:
+      FOR ALL multi_value_field F:
+      delimiter(F) EQUALS ","
+      AND no_spaces_around_delimiter(F)
+
+    violations:
+      - "Using pipe | or semicolon ; as delimiter"
+      - "Inconsistent spacing: 'a, b,c'"
+    compliant:
+      - "'option1,option2,option3'"
+
+  - id: DM_R008
+    type: rule
+    name: platform_id_reference
+    display_name: "Platform ID Reference"
+    one_liner: "Use platform_ids consistently for multi-platform data"
+    file_path: "CH02_data_management/rules/DM_R008_platform_id_reference.qmd"
+
+    rule_natural: |
+      Platform identification must be consistent:
+      - Use standard codes: cbz, eby, amz
+      - Platform column named 'platform_id'
+      - Always lowercase
+      - Validate against allowed values
+
+    rule_formal: |
+      RULE DM_R008_PLATFORM_ID:
+      FOR ALL platform_reference P:
+      P IN {"cbz", "eby", "amz"}
+      AND is_lowercase(P)
+
+    violations:
+      - "Using 'CBZ' or 'Cyberbiz'"
+      - "Inconsistent platform naming"
+    compliant:
+      - "platform_id = 'cbz'"
+
+  - id: DM_R009
+    type: rule
+    name: special_id_conventions
+    display_name: "Special ID Conventions"
+    one_liner: "Reserve specific ID values for special purposes"
+    file_path: "CH02_data_management/rules/DM_R009_special_id_conventions.qmd"
+
+    rule_natural: |
+      Special IDs have reserved meanings:
+      - 0: ALL category (aggregate)
+      - -1: Unknown/Unspecified
+      - NULL: Missing data
+      - Document any domain-specific conventions
+
+    rule_formal: |
+      RULE DM_R009_SPECIAL_ID:
+      id_value(0) MEANS "all_category"
+      id_value(-1) MEANS "unknown"
+      id_value(NULL) MEANS "missing"
+
+    violations:
+      - "Using 0 as valid product ID"
+      - "Using -1 for valid data"
+    compliant:
+      - "product_id = 0 for ALL products aggregate"
+
+  - id: DM_R010
+    type: rule
+    name: filtering_logic_patterns
+    display_name: "Filtering Logic Patterns"
+    one_liner: "Use consistent patterns for data filtering"
+    file_path: "CH02_data_management/rules/DM_R010_filtering_logic_patterns.qmd"
+
+    rule_natural: |
+      Apply consistent filtering patterns:
+      - Use dplyr::filter() for row selection
+      - Use %in% for multiple value matching
+      - Handle NA explicitly
+      - Chain filters logically
+
+    rule_formal: |
+      RULE DM_R010_FILTER:
+      FOR ALL filter operation F:
+      uses_dplyr_filter(F)
+      AND handles_na_explicitly(F)
+
+    violations:
+      - "Using subset() instead of filter()"
+      - "Ignoring NA in filters"
+    compliant:
+      - "filter(col %in% values | is.na(col))"
+
+  - id: DM_R011
+    type: rule
+    name: unified_tbl_data_access
+    display_name: "Unified tbl Data Access"
+    one_liner: "Use tbl() as the unified interface for database tables"
+    file_path: "CH02_data_management/rules/DM_R011_unified_tbl_data_access.qmd"
+
+    rule_natural: |
+      All database table access through unified interface:
+      - tbl() function wraps all database access
+      - Consistent syntax regardless of database type
+      - Automatic connection management
+      - Schema-aware table resolution
+
+    rule_formal: |
+      RULE DM_R011_UNIFIED:
+      FOR ALL table_access:
+      interface = tbl()
+      AND works_on_all_db_types()
+
+    violations:
+      - "Different access patterns per database"
+      - "Direct SQL string queries"
+    compliant:
+      - "tbl(con, 'table_name') for all databases"
+
+  - id: DM_R012
+    type: rule
+    name: tbl_pattern_rationale
+    display_name: "tbl Pattern Rationale"
+    one_liner: "Understanding why tbl pattern is preferred"
+    file_path: "CH02_data_management/rules/DM_R012_tbl_pattern_rationale.qmd"
+
+    rule_natural: |
+      The tbl pattern provides benefits:
+      - Lazy evaluation (query optimization)
+      - Consistent dplyr interface
+      - Database-agnostic code
+      - Automatic SQL translation
+
+    rule_formal: |
+      RULE DM_R012_RATIONALE:
+      tbl_pattern PROVIDES [
+        lazy_evaluation,
+        consistent_interface,
+        database_agnostic,
+        auto_sql_translation
+      ]
+
+    violations:
+      - "Fetching entire table then filtering in R"
+    compliant:
+      - "tbl() %>% filter() %>% collect() pattern"
+
+  - id: DM_R013
+    type: rule
+    name: dplyr_usage
+    display_name: "dplyr Usage Standards"
+    one_liner: "Follow dplyr best practices for data manipulation"
+    file_path: "CH02_data_management/rules/DM_R013_dplyr_usage.qmd"
+
+    rule_natural: |
+      Use dplyr consistently:
+      - Pipe operator %>% for chaining
+      - mutate() for adding/modifying columns
+      - select() for column selection
+      - Avoid mixing base R and dplyr syntax
+
+    rule_formal: |
+      RULE DM_R013_DPLYR:
+      FOR ALL data_manipulation M:
+      uses_dplyr_verbs(M)
+      AND uses_pipe_operator(M)
+      AND NOT mixes_base_r(M)
+
+    violations:
+      - "df$newcol <- value instead of mutate()"
+      - "Mixing $ notation with pipes"
+    compliant:
+      - "df %>% mutate(newcol = value)"
+
+  - id: DM_R014
+    type: rule
+    name: tbl2_enhanced_data_access
+    display_name: "tbl2 Enhanced Data Access"
+    one_liner: "Use tbl2() for enhanced database table access"
+    file_path: "CH02_data_management/rules/DM_R014_tbl2_enhanced_data_access.qmd"
+
+    rule_natural: |
+      tbl2() provides enhanced features over tbl():
+      - Automatic df_ prefix handling
+      - Schema detection
+      - Connection validation
+      - Consistent error messages
+
+    rule_formal: |
+      RULE DM_R014_TBL2:
+      FOR ALL database_access D:
+      uses(D, "tbl2()")
+      AND benefits_from_enhanced_features(D)
+
+    violations:
+      - "Using raw tbl() instead of tbl2()"
+    compliant:
+      - "tbl2(con, 'customer')"
+
+  - id: DM_R015
+    type: rule
+    name: dynamic_combined_id_pattern
+    display_name: "Dynamic Combined ID Pattern"
+    one_liner: "Create combined IDs dynamically for multi-key scenarios"
+    file_path: "CH02_data_management/rules/DM_R015_dynamic_combined_id_pattern.qmd"
+
+    rule_natural: |
+      For composite keys, create combined IDs:
+      - Format: key1_key2_key3
+      - Use underscore separator
+      - Create at data entry point
+      - Maintain throughout pipeline
+
+    rule_formal: |
+      RULE DM_R015_COMBINED_ID:
+      FOR composite_key (K1, K2, K3):
+      combined_id = concat(K1, "_", K2, "_", K3)
+      AND created_at_entry_point()
+
+    violations:
+      - "Different ID formats at different stages"
+    compliant:
+      - "paste(platform, customer_id, sep='_')"
+
+  - id: DM_R016
+    type: rule
+    name: lowercase_natural_key
+    display_name: "Lowercase Natural Key"
+    one_liner: "Natural keys must be lowercase for consistency"
+    file_path: "CH02_data_management/rules/DM_R016_lowercase_natural_key.qmd"
+
+    rule_natural: |
+      All natural keys should be lowercase:
+      - Convert on input
+      - Store in lowercase
+      - Compare case-insensitively
+      - Display can be formatted differently
+
+    rule_formal: |
+      RULE DM_R016_LOWERCASE:
+      FOR ALL natural_key K:
+      stored_value(K) = tolower(K)
+
+    violations:
+      - "Mixed case natural keys"
+      - "Case-sensitive key comparisons"
+    compliant:
+      - "product_code = tolower(input_code)"
+
+  - id: DM_R017
+    type: rule
+    name: memory_resident_parameters
+    display_name: "Memory-Resident Parameters"
+    one_liner: "Keep frequently accessed parameters in memory"
+    file_path: "CH02_data_management/rules/DM_R017_memory_resident_parameters.qmd"
+
+    rule_natural: |
+      Frequently used parameters should be cached:
+      - Load at initialization
+      - Store in environment or reactive values
+      - Refresh on demand
+      - Document cache lifetime
+
+    rule_formal: |
+      RULE DM_R017_MEMORY:
+      FOR ALL parameter P where is_frequent(P):
+      load_at_init(P)
+      AND cache_in_memory(P)
+
+    violations:
+      - "Re-reading config file for each access"
+      - "Database query for every parameter lookup"
+    compliant:
+      - "params <- load_config() at startup"
+
+  - id: DM_R018
+    type: rule
+    name: filter_variable_naming
+    display_name: "Filter Variable Naming"
+    one_liner: "Name filter variables with filter_ prefix"
+    file_path: "CH02_data_management/rules/DM_R018_filter_variable_naming.qmd"
+
+    rule_natural: |
+      Variables used for filtering should be named:
+      - filter_{what} for filter values
+      - selected_{what} for UI selections
+      - Avoid generic names like 'x' or 'val'
+
+    rule_formal: |
+      RULE DM_R018_FILTER_NAME:
+      FOR ALL filter_variable V:
+      name(V) MATCHES "filter_*" OR "selected_*"
+
+    violations:
+      - "x <- input$product"
+      - "val <- c('a', 'b')"
+    compliant:
+      - "filter_product <- input$product"
+      - "selected_categories <- input$category"
+
+  - id: DM_R019
+    type: rule
+    name: id_extraction_guidelines
+    display_name: "ID Extraction Guidelines"
+    one_liner: "Extract IDs using consistent patterns"
+    file_path: "CH02_data_management/rules/DM_R019_id_extraction_guidelines.qmd"
+
+    rule_natural: |
+      When extracting IDs from data:
+      - Use pull() for single column extraction
+      - Use unique() to remove duplicates
+      - Convert to appropriate type
+      - Handle NULL/NA explicitly
+
+    rule_formal: |
+      RULE DM_R019_EXTRACT:
+      FOR ID extraction:
+      pattern = data %>% pull(id_col) %>% unique()
+      AND type_convert_if_needed()
+
+    violations:
+      - "data$id without unique()"
+      - "Ignoring type conversion"
+    compliant:
+      - "data %>% pull(id) %>% unique() %>% as.integer()"
+
+  - id: DM_R020
+    type: rule
+    name: unified_product_id
+    display_name: "Unified Product ID"
+    one_liner: "Use unified product ID format across platforms"
+    file_path: "CH02_data_management/rules/DM_R020_unified_product_id.qmd"
+
+    rule_natural: |
+      Product IDs must be unified:
+      - Format: platform_originalID
+      - Stored in unified_product_id column
+      - Original ID preserved in platform_product_id
+      - Enables cross-platform analysis
+
+    rule_formal: |
+      RULE DM_R020_UNIFIED_PRODUCT:
+      unified_product_id = concat(platform, "_", original_id)
+      AND preserves_original_id()
+
+    violations:
+      - "Using platform-specific IDs directly"
+      - "Losing original ID information"
+    compliant:
+      - "unified_product_id = 'cbz_12345'"
+
+  - id: DM_R021
+    type: rule
+    name: integer_id_type_conversion
+    display_name: "Integer ID Type Conversion"
+    one_liner: "Convert IDs to integer type explicitly"
+    file_path: "CH02_data_management/rules/DM_R021_integer_id_type_conversion.qmd"
+
+    rule_natural: |
+      IDs must be converted to integers:
+      - Use as.integer() explicitly
+      - Handle conversion failures gracefully
+      - Log invalid values
+      - Apply at data entry point
+
+    rule_formal: |
+      RULE DM_R021_INT_CONVERT:
+      FOR ALL id_value V:
+      IF should_be_integer(V)
+      THEN V = as.integer(V)
+      AND handle_na_result()
+
+    violations:
+      - "Leaving ID as character after read"
+      - "Silent NA coercion"
+    compliant:
+      - "id <- as.integer(raw_id)"
+
+  - id: DM_R022
+    type: rule
+    name: platform_numbering_convention
+    display_name: "Platform Numbering Convention"
+    one_liner: "Assign consistent numeric codes to platforms"
+    file_path: "CH02_data_management/rules/DM_R022_platform_numbering_convention.qmd"
+
+    rule_natural: |
+      Platforms have assigned numeric codes:
+      - cbz = 1
+      - eby = 2
+      - amz = 3
+      - Use for ordered operations
+      - Character code for display
+
+    rule_formal: |
+      RULE DM_R022_PLATFORM_NUM:
+      platform_number("cbz") = 1
+      platform_number("eby") = 2
+      platform_number("amz") = 3
+
+    violations:
+      - "Using inconsistent platform numbers"
+    compliant:
+      - "platform_num <- case_when(platform == 'cbz' ~ 1, ...)"
+
+  - id: DM_R023
+    type: rule
+    name: universal_dbi_approach
+    display_name: "Universal DBI Approach"
+    version: "1.2"
+    last_modified: "2026-04-13"
+    one_liner: "MANDATORY: Use tbl2() for all database reads; raw SQL reads with ? placeholders are forbidden (DuckDB/PostgreSQL incompatible)"
+    file_path: "CH02_data_management/rules/DM_R023_universal_dbi_approach.qmd"
+
+    rule_natural: |
+      Database reads SHALL use tbl2() + dplyr verbs. Raw SQL reads are forbidden.
+
+      Core requirement (callout-critical in the .qmd):
+      - tbl2() is the canonical read interface — it delegates to dplyr::tbl() + dbplyr
+      - DBI::dbGetQuery() with SELECT SHALL NOT be used for reads
+      - DBI::dbGetQuery() with `?` positional placeholders SHALL NEVER be introduced
+        (DuckDB accepts it, PostgreSQL rejects it — this is how MAMBA #365 broke)
+      - dbGetQuerySafe() is DEPRECATED (2026-04-13), target removal 2026-07-13
+
+      Exactly three exceptions (Section 6 of the .qmd):
+      1. Writes (INSERT/UPDATE/CREATE/DROP/ALTER) — use DBI::dbExecute() + raw SQL
+      2. Driver-specific introspection (PRAGMA, information_schema, EXPLAIN) —
+         wrap in helper functions under 02_db_utils/, never raw SQL inline
+      3. Transitional dbGetQuerySafe() callers during deprecation window
+
+      Enforcement:
+      - .claude/hooks/check-tbl2-compliance.sh — advisory PreToolUse hook
+      - Detects DBI::dbGetQuery(.*SELECT and dbGetQuerySafe( patterns in new code
+
+    rule_formal: |
+      RULE DM_R023_UNIVERSAL_DBI v1.2:
+      FOR ALL database_read_access:
+        use_tbl2()
+        AND NOT use_dplyr_tbl_directly()
+        AND NOT use_raw_sql_select()
+        AND NOT use_dbGetQuery_with_placeholders()
+
+      FOR ALL database_write_access:
+        use_dbExecute()
+        (dbExecuteSafe wrapper NOT provided — YAGNI)
+
+      FOR ALL driver_specific_introspection:
+        use_helper_function_under_02_db_utils()
+        AND NOT use_raw_pragma_inline()
+
+      TRANSITIONAL dbGetQuerySafe:
+        status = deprecated_since("2026-04-13")
+        target_removal = "2026-07-13"
+
+    violations:
+      - "dplyr::tbl(con, 'table') for reads — use tbl2() instead"
+      - "dbGetQuery(con, 'SELECT * FROM x')"
+      - "dbGetQuery(con, sql, params = list(...)) with ? placeholder"
+      - "dbGetQuerySafe(con, sql, params) in new code"
+      - "PRAGMA or information_schema raw SQL inline in Shiny/derivation/utils"
+    compliant:
+      - "tbl2(con, 'customer') %>% filter(status == 'active') %>% collect()"
+      - "tbl2(con, dbplyr::in_schema('public', 'customer')) %>% collect()"
+      - "DBI::dbExecute(con, 'INSERT INTO cache VALUES (?, ?)', params = list(id, val))"
+
+    related_issues:
+      - "#369 (unify-cross-driver-query-layer Spectra change)"
+      - "#365 (MAMBA PostgreSQL deployment recovery — triggering incident)"
+
+  - id: DM_R024
+    type: rule
+    name: list_column_handling
+    display_name: "List Column Handling"
+    one_liner: "Handle list columns properly in data frames"
+    file_path: "CH02_data_management/rules/DM_R024_list_column_handling.qmd"
+
+    rule_natural: |
+      List columns require special handling:
+      - Use unnest() to expand
+      - Use nest() to create
+      - Handle NULL elements
+      - Consider JSON serialization for storage
+
+    rule_formal: |
+      RULE DM_R024_LIST_COL:
+      FOR ALL list_column L:
+      IF expanding THEN unnest(L)
+      IF storing THEN serialize_to_json(L)
+
+    violations:
+      - "Direct storage of list columns in database"
+      - "Ignoring NULL elements"
+    compliant:
+      - "mutate(col = map_chr(list_col, toJSON))"
+
+  - id: DM_R025
+    type: rule
+    name: type_conversion_r_duckdb
+    display_name: "Type Conversion R-DuckDB"
+    one_liner: "Handle type conversions between R and DuckDB correctly"
+    file_path: "CH02_data_management/rules/DM_R025_type_conversion_r_duckdb.qmd"
+
+    rule_natural: |
+      R and DuckDB type mappings:
+      - INTEGER <-> integer
+      - DOUBLE <-> numeric
+      - VARCHAR <-> character
+      - BOOLEAN <-> logical
+      - DATE <-> Date
+      - Explicit conversion when needed
+
+    rule_formal: |
+      RULE DM_R025_TYPE_MAP:
+      type_mapping = {
+        R_integer -> DuckDB_INTEGER,
+        R_numeric -> DuckDB_DOUBLE,
+        R_character -> DuckDB_VARCHAR,
+        R_logical -> DuckDB_BOOLEAN,
+        R_Date -> DuckDB_DATE
+      }
+
+    violations:
+      - "Implicit type coercion"
+      - "Storing Date as string"
+    compliant:
+      - "as.Date(date_col) before storage"
+
+  - id: DM_R026
+    type: rule
+    name: json_serialization_strategy
+    display_name: "JSON Serialization Strategy"
+    one_liner: "Use JSON for complex data serialization"
+    file_path: "CH02_data_management/rules/DM_R026_json_serialization_strategy.qmd"
+
+    rule_natural: |
+      Complex R objects stored as JSON:
+      - Use jsonlite::toJSON() for serialization
+      - Use jsonlite::fromJSON() for deserialization
+      - Store in VARCHAR column
+      - Include auto_unbox = TRUE for scalars
+
+    rule_formal: |
+      RULE DM_R026_JSON:
+      serialize = toJSON(obj, auto_unbox = TRUE)
+      deserialize = fromJSON(json_str)
+      storage_type = VARCHAR
+
+    violations:
+      - "Using R's serialize() for database storage"
+      - "Inconsistent JSON formatting"
+    compliant:
+      - "toJSON(list_obj, auto_unbox = TRUE)"
+
+  - id: DM_R027
+    type: rule
+    name: etl_schema_validation
+    display_name: "ETL Schema Validation"
+    one_liner: "Validate data schema at ETL boundaries"
+    file_path: "CH02_data_management/rules/DM_R027_etl_schema_validation.qmd"
+
+    rule_natural: |
+      ETL must validate schemas:
+      - Check column names match expected
+      - Verify data types
+      - Validate required columns present
+      - Log schema mismatches
+
+    rule_formal: |
+      RULE DM_R027_SCHEMA:
+      FOR ALL etl_output O:
+      validate_columns(O, expected_columns)
+      AND validate_types(O, expected_types)
+
+    violations:
+      - "ETL without schema validation"
+      - "Silent column drops"
+    compliant:
+      - "stopifnot(all(required_cols %in% names(df)))"
+
+  - id: DM_R028
+    type: rule
+    name: etl_data_type_separation
+    display_name: "ETL Data Type Separation"
+    one_liner: "Separate ETL by data type (IM, ST, TR)"
+    file_path: "CH02_data_management/rules/DM_R028_etl_data_type_separation.qmd"
+
+    rule_natural: |
+      ETL scripts organized by data type:
+      - IM (Import): Raw data ingestion
+      - ST (Structure): Data structuring
+      - TR (Transform): Business transformations
+      - Each type has separate scripts
+
+    rule_formal: |
+      RULE DM_R028_DATA_TYPE:
+      etl_types = {IM, ST, TR}
+      FOR ALL etl_script S:
+      data_type(S) IN etl_types
+
+    violations:
+      - "Mixing import and transform in one script"
+      - "Undefined data type prefix"
+    compliant:
+      - "cbz_ETL01_0IM.R, cbz_ETL01_1ST.R, cbz_ETL01_2TR.R"
+
+  - id: DM_R035
+    type: rule
+    name: script_placement_rule
+    display_name: "Script Placement Rule"
+    one_liner: "Place scripts in correct directories based on purpose"
+    file_path: "CH02_data_management/rules/DM_R035_script_placement_rule.qmd"
+
+    rule_natural: |
+      Scripts must be in appropriate directories:
+      - ETL scripts in update_scripts/ETL/
+      - Derivation scripts in update_scripts/DRV/
+      - Utility functions in global_scripts/
+      - Never mix purposes in directories
+
+    rule_formal: |
+      RULE DM_R035_PLACEMENT:
+      FOR ALL script S:
+      IF is_etl(S) THEN in_dir(S, "ETL/")
+      IF is_drv(S) THEN in_dir(S, "DRV/")
+      IF is_util(S) THEN in_dir(S, "global_scripts/")
+
+    violations:
+      - "ETL script in root directory"
+      - "Derivation in ETL folder"
+    compliant:
+      - "update_scripts/ETL/cbz/cbz_ETL01_0IM.R"
+
+  - id: DM_R036
+    type: rule
+    name: etl_return_values
+    display_name: "ETL Return Values"
+    one_liner: "ETL functions must return standardized values"
+    file_path: "CH02_data_management/rules/DM_R036_etl_return_values.qmd"
+
+    rule_natural: |
+      ETL functions return consistent values:
+      - Return list with status, row_count, errors
+      - Success: list(status = 'success', rows = n)
+      - Failure: list(status = 'error', message = msg)
+      - Always return, never print only
+
+    rule_formal: |
+      RULE DM_R036_RETURN:
+      FOR ALL etl_function F:
+      return_type(F) = list(status, rows, errors)
+
+    violations:
+      - "Printing result instead of returning"
+      - "Inconsistent return structures"
+    compliant:
+      - "return(list(status='success', rows=nrow(df)))"
+
+  - id: DM_R037
+    type: rule
+    name: company_specific_etl_naming
+    display_name: "ETL Import Source Naming Rule"
+    one_liner: "Config-driven import: source_type/version in app_config.yaml, standard filenames"
+    file_path: "CH02_data_management/rules/DM_R037_company_specific_etl_naming.qmd"
+
+    rule_natural: |
+      ETL import scripts (0IM) use standard naming without suffix:
+      - Pattern: {platform}_ETL_{datatype}_0IM.R
+      - Source type/version in app_config.yaml > platforms.{platform}.etl_sources.{datatype}
+      - Each 0IM reads profile from config at initialization
+      - Input Source Documentation: all available data sources MUST be catalogued
+        in schema_registry.yaml under input_sources (Section 6)
+      - Google Sheets tabs: document tab_name, tab_category, etl_source_key
+      - Rawdata files: document rawdata_pattern or rawdata_path, etl_source_key
+      - Unmapped sources marked with etl_source_key: "unmapped"
+
+    rule_formal: |
+      RULE DM_R037_ETL_NAME:
+      etl_filename = "{platform}_ETL_{datatype}_0IM.R"
+      source_profile IN app_config.yaml > etl_sources.{datatype}
+      platform IN {cbz, eby, amz}
+
+      RULE DM_R037_SOURCE_DOC:
+      FOR ALL company C:
+      schema_registry.yaml CONTAINS input_sources(C)
+      AND FOR ALL data_source S in C:
+      S HAS {source_type, etl_source_key, description, status}
+      AND etl_source_key(S) IN keys(etl_sources) OR "unmapped"
+
+    violations:
+      - "0IM script with ___SUFFIX in new code"
+      - "No input_sources section in schema_registry.yaml"
+      - "Unmapped tab without documentation"
+    compliant:
+      - "amz_ETL_sales_0IM.R (reads config for source_type)"
+      - "schema_registry.yaml with input_sources.google_sheets and input_sources.rawdata"
+
+  - id: DM_R038
+    type: rule
+    name: company_suffix_scope_limitation
+    display_name: "Company Suffix Scope Limitation"
+    one_liner: "Company suffix only in ETL, not in derivations"
+    file_path: "CH02_data_management/rules/DM_R038_company_suffix_scope_limitation.qmd"
+
+    rule_natural: |
+      Company suffix usage rules:
+      - ETL scripts: MUST have company prefix
+      - Derivation scripts: NO company prefix
+      - Derivations are platform-agnostic
+      - Company-specific logic only in ETL
+
+    rule_formal: |
+      RULE DM_R038_SUFFIX_SCOPE:
+      IF is_etl_script(S) THEN has_company_prefix(S)
+      IF is_derivation_script(S) THEN NOT has_company_prefix(S)
+
+    violations:
+      - "cbz_drv_customer.R with company prefix"
+    compliant:
+      - "drv_01_customer_rfm.R without prefix"
+
+  - id: DM_R039
+    type: rule
+    name: database_connection_pattern
+    display_name: "Database Connection Pattern"
+    one_liner: "Use standardized database connection pattern"
+    file_path: "CH02_data_management/rules/DM_R039_database_connection_pattern.qmd"
+
+    rule_natural: |
+      Database connections follow pattern:
+      - Use dbConnect_universal() from 01_db/
+      - Connection stored in 'con' variable
+      - Close connection in on.exit()
+      - Handle connection errors gracefully
+
+    rule_formal: |
+      RULE DM_R039_CONNECTION:
+      con = dbConnect_universal()
+      on.exit(dbDisconnect(con))
+      handle_errors()
+
+    violations:
+      - "Direct dbConnect() without wrapper"
+      - "Unclosed connections"
+    compliant:
+      - "con <- dbConnect_universal(); on.exit(dbDisconnect(con))"
+
+  - id: DM_R040
+    type: rule
+    name: structural_join_pattern
+    display_name: "Structural Join Pattern"
+    one_liner: "Use structural joins for dimension tables"
+    file_path: "CH02_data_management/rules/DM_R040_structural_join_pattern.qmd"
+
+    rule_natural: |
+      Structural joins for dimension data:
+      - left_join() to preserve all rows from main table
+      - inner_join() only when filtering intended
+      - Check join result row count
+      - Document expected cardinality
+
+    rule_formal: |
+      RULE DM_R040_STRUCT_JOIN:
+      FOR dimension_join:
+      use_left_join() to preserve_rows
+      verify_row_count_after_join()
+
+    violations:
+      - "inner_join() losing rows unintentionally"
+      - "No row count verification"
+    compliant:
+      - "left_join(fact, dim, by='id') %>% verify_rows()"
+
+  - id: DM_R041
+    type: rule
+    name: etl_directory_structure
+    display_name: "ETL Directory Structure"
+    one_liner: "Organize ETL scripts in platform-specific directories"
+    file_path: "CH02_data_management/rules/DM_R041_etl_directory_structure.qmd"
+
+    rule_natural: |
+      ETL directory structure:
+      - update_scripts/ETL/{platform}/ for ETL
+      - update_scripts/DRV/{platform}/ for derivations
+      - Platform: cbz, eby, amz
+      - Orchestration scripts at ETL/ root
+
+    rule_formal: |
+      RULE DM_R041_STRUCTURE:
+      etl_path = "update_scripts/ETL/{platform}/"
+      drv_path = "update_scripts/DRV/{platform}/"
+      platform IN {cbz, eby, amz}
+
+    violations:
+      - "ETL scripts in project root"
+      - "Missing platform subdirectory"
+    compliant:
+      - "update_scripts/ETL/cbz/cbz_ETL01_0IM.R"
+
+  - id: DM_R042
+    type: rule
+    name: drv_sequential_numbering
+    display_name: "DRV Sequential Numbering"
+    one_liner: "Number derivation scripts sequentially"
+    file_path: "CH02_data_management/rules/DM_R042_drv_sequential_numbering.qmd"
+
+    rule_natural: |
+      Derivation script numbering:
+      - Format: drv_{nn}_{description}.R
+      - nn: two-digit sequential number
+      - Numbers indicate execution order
+      - Gaps allowed for future insertions
+
+    rule_formal: |
+      RULE DM_R042_DRV_NUMBER:
+      drv_filename = "drv_" + sprintf("%02d", n) + "_" + description + ".R"
+      n < m implies execution_order(n) < execution_order(m)
+
+    violations:
+      - "drv_customer.R without number"
+      - "Non-sequential numbering"
+    compliant:
+      - "drv_01_customer_base.R, drv_02_customer_rfm.R"
+
+  - id: DM_R043
+    type: rule
+    name: predictor_data_classification
+    display_name: "Predictor Data Classification"
+    one_liner: "Classify predictor variables by data type"
+    file_path: "CH02_data_management/rules/DM_R043_predictor_data_classification.qmd"
+
+    rule_natural: |
+      Predictor variables classified by type:
+      - Categorical: discrete values, use factor
+      - Numeric: continuous values, use numeric
+      - Ordinal: ordered categories, use ordered factor
+      - Document classification decisions
+
+    rule_formal: |
+      RULE DM_R043_PREDICTOR:
+      FOR ALL predictor P:
+      classification(P) IN {categorical, numeric, ordinal}
+      AND type_consistent_with_class(P)
+
+    violations:
+      - "Categorical stored as numeric"
+      - "Missing classification metadata"
+    compliant:
+      - "factor(category, levels = c('low', 'high'))"
+
+  - id: DM_R044
+    type: rule
+    name: derivation_implementation_standard
+    display_name: "Derivation Implementation Standard"
+    one_liner: "Follow FIVE-PART structure with autoinit/autodeinit"
+    file_path: "CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd"
+
+    rule_natural: |
+      Derivation scripts MUST follow FIVE-PART structure:
+
+      HEADER (required):
+        #####
+        # DERIVATION: {Name}
+        # VERSION: {X.Y}
+        # PLATFORM: {cbz|amz|eby|all}
+        # GROUP: D{nn}
+        # SEQUENCE: {seq}
+        # PURPOSE: {description}
+        # CONSUMES: {input tables}
+        # PRODUCES: {output tables}
+        # PRINCIPLE: DM_R044, MP064, {others}
+        #####
+        #{platform}_D{group}_{sequence}
+
+      PART 1: INITIALIZE
+        - source("scripts/global_scripts/22_initializations/sc_Rprofile.R")
+        - autoinit()  # MANDATORY - environment setup
+        - library() statements
+        - Initialize tracking: error_occurred, test_passed, rows_processed, start_time
+
+      PART 2: MAIN
+        - Wrap in tryCatch({ ... }, error = function(e) { error_occurred <<- TRUE })
+        - Validate inputs
+        - Load data via tbl2()
+        - Apply business logic
+        - Write outputs
+
+      PART 3: TEST
+        - Wrap in tryCatch()
+        - Verify output exists
+        - Validate structure
+        - Check business rules
+        - Set test_passed <- TRUE on success
+
+      PART 4: SUMMARIZE
+        - Calculate execution_time
+        - Create summary_report list
+        - Print formatted summary
+
+      PART 5: DEINITIALIZE
+        - Close database connections (only those created by script)
+        - autodeinit()  # MANDATORY - must be LAST statement
+
+    rule_formal: |
+      RULE DM_R044_DRV_FIVE_PART:
+      derivation_structure = [
+        HEADER(derivation, version, platform, group, sequence, purpose, consumes, produces, principle),
+        PART_1_INITIALIZE(autoinit, libraries, tracking_vars),
+        PART_2_MAIN(tryCatch_wrapper, validate, load, logic, write),
+        PART_3_TEST(tryCatch_wrapper, verify, validate, check),
+        PART_4_SUMMARIZE(execution_time, summary_report, print),
+        PART_5_DEINITIALIZE(close_connections, autodeinit)
+      ]
+
+      INVARIANT: autoinit() in PART 1, autodeinit() as LAST statement in PART 5
+      INVARIANT: PART 2 and PART 3 wrapped in tryCatch()
+
+    violations:
+      - "Missing autoinit() or autodeinit()"
+      - "No five-part structure"
+      - "MAIN or TEST without tryCatch wrapper"
+      - "Missing standard header fields"
+      - "autodeinit() not at end of script"
+    compliant:
+      - "Five-part structure with autoinit/autodeinit"
+      - "All sections wrapped appropriately"
+      - "Standard header with all fields"
+
+  - id: DM_R045
+    type: rule
+    name: database_file_naming_standard
+    display_name: "Database File Naming Standard"
+    one_liner: "Name database files according to purpose"
+    file_path: "CH02_data_management/rules/DM_R045_database_file_naming_standard.qmd"
+
+    rule_natural: |
+      Database file naming:
+      - app_data.duckdb for application data
+      - local_data.duckdb for local development
+      - {company}_data.duckdb for company-specific
+      - All in data/ directory
+
+    rule_formal: |
+      RULE DM_R045_DB_NAME:
+      db_filename matches pattern:
+        "app_data.duckdb" |
+        "local_data.duckdb" |
+        "{company}_data.duckdb"
+
+    violations:
+      - "database.db without clear purpose"
+      - "Database file in project root"
+    compliant:
+      - "data/app_data/app_data.duckdb"
+
+  - id: DM_R046
+    type: rule
+    name: variable_display_name_metadata
+    display_name: "Variable Display Name Metadata"
+    one_liner: "Maintain display names for variables"
+    file_path: "CH02_data_management/rules/DM_R046_variable_display_name_metadata.qmd"
+
+    rule_natural: |
+      Variables have metadata:
+      - Internal name: snake_case
+      - Display name: Human-readable
+      - Stored in metadata table
+      - Used for UI labels
+
+    rule_formal: |
+      RULE DM_R046_DISPLAY:
+      FOR ALL variable V:
+      has_internal_name(V)
+      AND has_display_name(V)
+      AND mapping_in_metadata_table()
+
+    violations:
+      - "Using internal names in UI"
+      - "No metadata table"
+    compliant:
+      - "variable_metadata table with display names"
+
+  - id: DM_R047
+    type: rule
+    name: multi_platform_synchronization
+    display_name: "Multi-Platform Synchronization"
+    one_liner: "Synchronize data changes across all platforms"
+    file_path: "CH02_data_management/rules/DM_R047_multi_platform_synchronization.qmd"
+
+    rule_natural: |
+      Data structure changes must sync:
+      - Apply to ALL platforms simultaneously
+      - Use migration scripts
+      - Verify consistency after
+      - Document changes
+
+    rule_formal: |
+      RULE DM_R047_SYNC:
+      FOR ALL schema_change C:
+      apply_to_all_platforms(C)
+      AND verify_consistency()
+
+    violations:
+      - "Schema change on one platform only"
+      - "Inconsistent column names across platforms"
+    compliant:
+      - "Migration script for all platforms"
+
+  - id: DM_R052
+    type: rule
+    name: cross_platform_product_identification
+    display_name: "Cross-Platform Product Identification"
+    one_liner: "Use surrogate key pattern for M:N product-to-platform mappings"
+    file_path: "CH02_data_management/rules/DM_R052_cross_platform_product_identification.qmd"
+
+    rule_natural: |
+      Cross-platform product identification uses surrogate keys:
+      - product_mapping_id: Auto-incremented surrogate key
+      - sku: Company internal SKU (natural key part 1)
+      - eby_item_id: eBay item number (natural key part 2)
+      - Supports M:N relationships (one SKU → multiple eBay IDs)
+      - Source priority for deduplication when merging
+      - Maintains product line and category metadata
+
+    rule_formal: |
+      RULE DM_R052_CROSS_PLATFORM_ID:
+      FOR product_mapping table:
+        primary_key = product_mapping_id (surrogate, INTEGER)
+        natural_key = (sku, eby_item_id) (composite)
+        relationship = M:N (sku ↔ eby_item_id)
+
+      schema = {
+        product_mapping_id: INTEGER PRIMARY KEY,
+        sku: VARCHAR NOT NULL,
+        eby_item_id: VARCHAR,
+        product_name: VARCHAR,
+        product_category: VARCHAR,
+        product_line: VARCHAR,
+        source: VARCHAR NOT NULL,
+        created_at: TIMESTAMP
+      }
+
+    violations:
+      - "Using only SKU as unique key (ignores M:N)"
+      - "Hardcoding platform-specific logic in derivations"
+      - "No source tracking for data origin"
+    compliant:
+      - "Surrogate key + composite natural key"
+      - "Source column for priority-based deduplication"
+      - "Platform-agnostic derivation queries"
+
+  - id: DM_R053
+    type: rule
+    name: multi_source_etl_priority_pattern
+    display_name: "Multi-Source ETL Priority Pattern"
+    one_liner: "Use source naming and priority ordering for multi-source data integration"
+    file_path: "CH02_data_management/rules/DM_R053_multi_source_etl_priority_pattern.qmd"
+
+    rule_natural: |
+      When integrating data from multiple sources:
+
+      1. Source Naming Convention:
+         - Prefix indicates source type: excel_, google_sheet_, api_, manual_
+         - Suffix adds specificity: google_sheet_sku_eby, google_sheet_inventory
+         - Company-specific sources use company code: cbz_erp, eby_api
+
+      2. Priority Ordering:
+         - Alphabetically later sources override earlier ones
+         - Example: google_sheet_sku_eby > google_sheet > excel
+         - Implement via: arrange(desc(source)) %>% group_by(key) %>% slice_head(n=1)
+
+      3. Dynamic Column Mapping:
+         - Use janitor::clean_names() for standardization
+         - Pattern-based column discovery with regex
+         - Never hardcode column names from external sources
+
+      4. Company-Specific Configuration:
+         - Source definitions in app_config.yaml
+         - Priority order configurable per company
+         - Column mappings defined in config, not code
+
+    rule_formal: |
+      RULE DM_R053_MULTI_SOURCE_PRIORITY:
+
+      source_naming:
+        pattern = "{type}_{specificity}"
+        type IN {excel, google_sheet, api, manual, erp}
+
+      priority_resolution:
+        FOR duplicate_key K across sources S1, S2:
+        IF alphabetical_order(S2) > alphabetical_order(S1)
+        THEN use_value_from(S2)
+
+      column_mapping:
+        standardize = janitor::clean_names(df)
+        find_column = grep(pattern, names(df))
+        NOT hardcode_names()
+
+      configuration:
+        sources IN app_config.yaml
+        priority_order IN app_config.yaml
+        column_patterns IN app_config.yaml
+
+    violations:
+      - "Hardcoded column names like 'eBay Item Number'"
+      - "Fixed priority order in code instead of config"
+      - "No source column to track data origin"
+      - "Using last-write-wins without explicit priority"
+    compliant:
+      - "Dynamic column discovery with regex patterns"
+      - "Source priority via arrange(desc(source))"
+      - "Configuration-driven source definitions"
+      - "Company-specific priority in app_config.yaml"
+
+  - id: DM_R054
+    type: rule
+    name: metadata_table_storage_pattern
+    display_name: "Metadata Table Storage Pattern"
+    one_liner: "Metadata tables live EXCLUSIVELY in meta_data.duckdb (the 7th layer, non-rebuildable, survives app_data rebuild)"
+    file_path: "CH02_data_management/rules/DM_R054_metadata_table_storage_pattern.qmd"
+
+    version_history:
+      - "v1.0 (2025-12-26): metadata → app_data.duckdb"
+      - "v2.0 (2026-04-19): REVISED — metadata → meta_data.duckdb (7th layer, non-rebuildable, survives app_data rebuild). Motivation: #422 + spectra change metadata-to-meta-data-duckdb. v1 had an operational blind spot: app_data.duckdb is rebuildable (DM_R061), so `rm app_data.duckdb` would destroy metadata as side effect."
+      - "v2.1 (2026-04-19): ADDENDUM — (a) Runtime MAY NOT read CSV seeds; (b) Readers SHALL reach meta_data.duckdb through fn_load_product_lines; (c) APP_MODE autoinit() SHALL populate db_path_list$meta_data. Motivation: #424 + spectra change dm-r054-v2-migration-complete. Closes the gap between v2's spec and runtime reality (legacy writers + CSV fallback)."
+
+    rule_natural: |
+      Metadata tables (reference, lookup, mapping, dictionary data like
+      df_platform and df_product_line) MUST live in meta_data.duckdb —
+      a dedicated non-rebuildable DB parallel to raw_data.duckdb.
+
+      Metadata MUST NOT be written to:
+      - app_data.duckdb (rebuildable, would destroy metadata on rebuild)
+      - any of the 6-layer ETL files (raw / staged / transformed /
+        processed / cleansed)
+
+      Each metadata table has exactly ONE canonical physical location;
+      no duplication across DBs.
+
+      meta_data.duckdb is "the 7th layer" — parallel to the 6-layer
+      transaction flow, not through it:
+
+        raw (0IM, non-rebuildable)
+           ↓
+        staged → transformed → processed → cleansed → app_data
+                (all rebuildable)
+
+        meta_data.duckdb  (parallel, non-rebuildable; survives rebuilds)
+
+      Canonical metadata tables include:
+      - df_platform (platform dictionary, sourced from app_config.yaml)
+      - df_product_line (sourced from df_product_line.csv seed)
+      - df_product_mapping (cross-platform ID mapping)
+      - df_category_hierarchy (category tree)
+      - df_customer_labels (segment labels)
+      - df_variable_metadata (UI display names)
+      - df_config_* (application configs)
+      - df_*___COMPANY suffix diagnostic artefacts (preserved per DM_R037 v3.0)
+
+      Reader pattern: direct connection OR DuckDB ATTACH (for cross-DB JOIN).
+      Quote the path with DBI::dbQuoteString() (never raw sprintf) and reference
+      attached tables via dbplyr::in_schema() (never "schema.table" string literal,
+      DM_R023 v1.2):
+        attach_sql <- paste0("ATTACH DATABASE ",
+                             DBI::dbQuoteString(con, db_path_list$meta_data),
+                             " AS meta (READ_ONLY)")
+        dbExecute(con, attach_sql)
+        tbl2(con, dbplyr::in_schema("meta", "df_platform")) %>% collect()
+
+      Producer contract: exactly one ETL script owns metadata production
+      (e.g., all_ETL_meta_init_0IM.R), declares CONSUMES/PRODUCES per MP140,
+      idempotent, leaves __COMPANY-suffixed diagnostic tables untouched.
+
+      v2.1 runtime contract (addendum):
+
+      1. Runtime MAY NOT read CSV seeds. CSV files at
+         data/app_data/parameters/scd_type1/*.csv are bootstrap inputs
+         consumed ONLY by the producer ETL (all_ETL_meta_init_0IM.R).
+         Every other code path (Shiny entry, UPDATE_MODE init, DRV, ETL
+         consumers) MUST read meta_data.duckdb — there is no CSV fallback.
+
+      2. Readers SHALL reach meta_data.duckdb through fn_load_product_lines.
+         Direct DBI::dbReadTable(meta_con, "df_product_line") from non-
+         library scripts is forbidden. Cross-DB JOINs via ATTACH still OK
+         inside SQL, but any in-memory R assignment of df_product_line
+         uses fn_load_product_lines (single schema-validation point).
+
+      3. APP_MODE autoinit() SHALL populate db_path_list$meta_data.
+         Previously only db_path_list$app_data was set in APP_MODE;
+         without meta_data path, runtime readers hit the no-fallback
+         stop() and Shiny fails to start. UPDATE_MODE already populates
+         all paths via pipeline init and is unaffected.
+
+    rule_formal: |
+      RULE DM_R054_METADATA_STORAGE (v2):
+
+      data_partition (by rebuildability, DM_R061):
+        non_rebuildable = {raw_data, meta_data}
+        rebuildable     = {staged, transformed, processed, cleansed, app_data}
+
+      metadata_classification:
+        metadata = {reference, lookup, mapping, dictionary, config tables}
+
+      storage_rule:
+        FOR EVERY metadata table M:
+          M SHALL live EXCLUSIVELY in meta_data.duckdb
+          M SHALL NOT exist in app_data.duckdb
+          M SHALL NOT flow through 6-layer ETL
+
+      single_canonical_location:
+        FOR EVERY metadata table M:
+          EXISTS exactly one physical location(M) = meta_data.duckdb
+
+      rebuild_safety:
+        FOR EVERY operation O in {rm app_data, tar_destroy(app_data),
+                                   make run FORCE=1}:
+          O SHALL NOT modify or delete meta_data.duckdb
+
+      producer_contract:
+        EVERY metadata table M has exactly one producer ETL
+        producer declares CONSUMES + PRODUCES (MP140)
+        producer is idempotent
+        producer SHALL NOT drop tables it does not own (e.g. __COMPANY suffix)
+
+      reader_contract:
+        reader SHALL access meta_data.duckdb at canonical path (DM_R062)
+        reader MAY use direct connection OR DuckDB ATTACH
+        reader SHALL NOT read from app_data.table for metadata tables
+
+      // v2.1 addendum (2026-04-19)
+
+      runtime_csv_seed_rule:
+        FOR EVERY process P in runtime(Shiny | UPDATE_MODE | DRV | ETL-consumer):
+          P SHALL NOT read metadata CSV seed files
+        ONLY all_ETL_meta_init_0IM.R MAY read metadata CSV seeds (bootstrap)
+        no fallback path exists: meta_data.duckdb missing → stop()
+
+      canonical_reader_rule:
+        FOR EVERY runtime consumer C of df_product_line:
+          C SHALL call fn_load_product_lines(conn, meta_data_path = ..., ...)
+          C SHALL NOT open a direct connection and call DBI::dbReadTable
+                   for df_product_line outside fn_load_product_lines
+        CROSS-DB JOIN via ATTACH permitted in SQL; in-memory R assignment
+                   of df_product_line MUST route through fn_load_product_lines
+
+      app_mode_autoinit_rule:
+        IN APP_MODE:
+          autoinit() SHALL populate db_path_list$meta_data
+                     := file.path(project_root, db_paths$databases$meta_data)
+        UPDATE_MODE pipeline init already populates all 6+1 DB paths (unchanged)
+
+    violations:
+      - "Writing metadata to app_data.duckdb (v1 pattern, now forbidden)"
+      - "Duplicating same metadata table across app_data and meta_data"
+      - "Metadata going through 6-layer ETL (raw → staged → ...)"
+      - "Adding fallback branches to read metadata from multiple paths"
+      - "Producer ETL dropping __COMPANY diagnostic tables it does not own"
+      - "Runtime reader silently falling back to CSV when meta_data.duckdb missing (v2.1 §6)"
+      - "Non-library script calling DBI::dbReadTable(meta_con, 'df_product_line') directly, bypassing fn_load_product_lines (v2.1 §7)"
+      - "APP_MODE autoinit() loading only app_data path, leaving db_path_list$meta_data NULL (v2.1 §8)"
+      - "Shiny entry doing read.csv('.../df_product_line.csv') at startup (v2.1 §6)"
+    compliant:
+      - "all_ETL_meta_init_0IM.R writes df_platform + df_product_line to meta_data.duckdb (single canonical producer)"
+      - "DRV script reads metadata via ATTACH DATABASE 'meta_data.duckdb' AS meta"
+      - "rm app_data.duckdb → make run: app_data rebuilt from upstream, meta_data untouched"
+      - "Removing duplicate df_platform from app_data.duckdb (canonical remains in meta_data)"
+      - "Shiny entry calls fn_load_product_lines(conn, meta_data_path = db_path_list$meta_data) (v2.1 §7)"
+      - "APP_MODE autoinit() populates db_path_list$meta_data alongside app_data (v2.1 §8)"
+      - "Producer ETL is the ONLY caller of read.csv('.../df_product_line.csv'); all other code paths read meta_data.duckdb (v2.1 §6)"
+
+    dependencies:
+      - "MP064"   # ETL-Derivation Separation — metadata is outside both
+      - "DM_R061" # Rebuildability — metadata belongs to non-rebuildable partition
+      - "DM_R062" # Canonical path enforcement — no fallback branches
+      - "MP140"   # Pipeline orchestration — producer declares PRODUCES
+      - "MP029"   # No fake information — canonical location is fact
+
+    metadata:
+      revised: "2026-04-19"
+      revised_by: "spectra changes metadata-to-meta-data-duckdb (v2) + dm-r054-v2-migration-complete (v2.1)"
+      motivation_issue: "#422 (v2) / #424 (v2.1)"
+      breaking_change: true
+      migration_guide: "See spectra changes metadata-to-meta-data-duckdb (v2 foundation) and dm-r054-v2-migration-complete (v2.1 runtime cleanup) for step-by-step migration"
+
+  - id: DM_R060
+    type: rule
+    name: etl_independence_requirements
+    display_name: "ETL Independence Requirements"
+    one_liner: "ETL scripts must be independently runnable"
+    file_path: "CH02_data_management/rules/DM_R040_etl_independence_requirements.qmd"
+    note: "Renumbered from DM_R040 to DM_R060 to resolve ID collision with DM_R040 (Structural Join Pattern) and DM_R055 (App Data Aggregation Preference). QMD file retains old filename."
+
+    rule_natural: |
+      Each ETL script must be independent:
+      - Self-contained execution
+      - Own initialization
+      - Clear input/output contract
+      - No hidden dependencies
+
+    rule_formal: |
+      RULE DM_R060_INDEPENDENCE:
+      FOR ALL etl_script S:
+      is_self_contained(S)
+      AND has_own_init(S)
+      AND documents_io(S)
+
+    violations:
+      - "ETL relying on global state"
+      - "Undocumented dependencies"
+    compliant:
+      - "Standalone script with all deps sourced"
+
+  - id: DM_R057
+    type: rule
+    name: unit_suffix_column_naming
+    display_name: "Unit Suffix Column Naming"
+    one_liner: "Include unit suffix in column names when values contain specific units"
+    file_path: "CH02_data_management/rules/DM_R057_unit_suffix_column_naming.qmd"
+
+    rule_natural: |
+      When a column contains values with specific units, include unit suffix:
+      - Time: _secs, _minutes, _hours, _days, _weeks, _months, _years
+      - Size: _bytes, _kb, _mb, _gb
+      - Ratio: _pct, _ratio, _bps
+      - Currency: _usd, _twd, _jpy
+      - MANDATORY for difftime conversions
+      - Prevents unit confusion and ambiguity
+
+    rule_formal: |
+      RULE DM_R057_UNIT_SUFFIX:
+      FOR ALL column C with unit U:
+      column_name(C) = base_name + "_" + unit_suffix(U)
+
+      unit_suffix_mapping = {
+        seconds -> "secs",
+        minutes -> "minutes",
+        hours -> "hours",
+        days -> "days",
+        bytes -> "bytes",
+        percentage -> "pct"
+      }
+
+      MANDATORY: difftime_conversion REQUIRES unit_suffix
+
+    violations:
+      - "as.numeric(difftime(...)) without unit suffix"
+      - "processing_time without _secs or _minutes"
+      - "file_size without _bytes or _mb"
+    compliant:
+      - "execution_time_secs = as.numeric(difftime(..., units='secs'))"
+      - "customer_tenure_days"
+      - "file_size_bytes"
+
+  - id: DM_R058
+    type: rule
+    name: product_line_id_semantics
+    display_name: "Product Line ID Semantics"
+    one_liner: "Define product_line_id field semantics and 'all' handling"
+    file_path: "CH02_data_management/rules/DM_R058_product_line_id_semantics.qmd"
+
+    rule_natural: |
+      product_line_id is a categorical identifier with three naming layers (v2):
+      - UI Layer: product_line_id_chosen (user-selected value in sidebar, cfg$filters$product_line_id_chosen)
+      - Slice Layer: product_line_id_sliced (DRV pre-computed data slice, cfg$filters$product_line_id_sliced)
+      - DB Layer: product_line_id_filter (DuckDB WHERE column)
+      - ETL Source: product_line_id (original column, unchanged)
+      Data flow: chosen → sometimes equals sliced, sometimes equals filter
+      Special value 'all' represents aggregate across all lines
+      Works with platform_id in hierarchical relationship
+      Position components read cfg$filters$product_line_id_chosen
+      Micro/Poisson components prefer product_line_id_sliced, fallback to product_line_id_chosen
+
+    rule_formal: |
+      RULE DM_R058_PRODUCT_LINE:
+      product_line_id is categorical identifier
+
+      naming_layers = {
+        ui_layer -> filters.product_line_id_chosen,
+        slice_layer -> filters.product_line_id_sliced,
+        db_layer -> product_line_id_filter,
+        etl_source -> product_line_id
+      }
+
+      data_flow:
+        product_line_id_chosen -> product_line_id_sliced | product_line_id_filter
+
+      value_domain = {
+        "all" -> meta_value (aggregate),
+        "PL001", "PL002", ... -> specific lines
+      }
+
+      hierarchy:
+        platform_id > product_line_id
+
+      drv_handling:
+        IF script.header.ALL_SUPPORT THEN allow "all"
+        IF script.header.FORBIDS_ALL THEN reject "all"
+
+    violations:
+      - "Using 'all' without ALL_SUPPORT declaration"
+      - "Missing product_line_id in standardized output"
+      - "No validation for invalid product_line_id values"
+      - "Shiny component reading bare cfg$filters$product_line_id (must use _chosen or _sliced)"
+      - "Using cfg$product_line_id instead of cfg$filters$product_line_id_chosen"
+    compliant:
+      - "Header declares ALL_SUPPORT: product_line_id"
+      - "Validates product_line_id parameter"
+      - "Supports both 'all' and specific values"
+      - "Position components read cfg$filters$product_line_id_chosen"
+      - "Micro/Poisson components prefer product_line_id_sliced, fallback to product_line_id_chosen"
+
+  - id: DM_R059
+    type: rule
+    name: drv_output_schema_contract
+    display_name: "DRV Output Schema Contract"
+    one_liner: "DRV output tables must have identical schema across all backends"
+    file_path: "CH02_data_management/rules/DM_R059_drv_output_schema_contract.qmd"
+
+    rule_natural: |
+      DRV output schema must be a cross-backend contract:
+      - Each DRV output table has ONE canonical column name set
+      - Canonical names are the single source of truth
+      - No aliases or compatibility shims in final DRV output
+      - All downstream consumers (UI components, APIs) use canonical names only
+      - ensure_dna_fields() style alias functions are migration aids, not permanent solutions
+
+      Canonical naming conventions for DRV columns:
+      - Raw metrics: short lowercase (cai, clv, cri, be2, pcv, ni)
+      - ECDF-derived scores: dna_{dimension}_score (dna_r_score, dna_f_score, dna_m_score)
+      - Raw dimension values: {dimension}_value (r_value, f_value, m_value)
+      - Status/category: {concept}_status or {concept}_segment (nes_status, dna_segment)
+      - Filter dimensions: {dimension}_filter (product_line_id_filter)
+      - Counts: {noun} or {noun}_count (times, ni)
+      - Temporal: {metric}_mean or {metric}_median (ipt_mean)
+
+      Optional columns (may not exist in all backends):
+      - Components must check column existence before use
+      - Use dbListFields() or tryCatch() pattern
+      - Provide graceful fallback when column absent
+
+    rule_formal: |
+      RULE DM_R059_SCHEMA_CONTRACT:
+      FOR EACH drv_output_table T:
+        T.schema MUST BE identical across {DuckDB, Supabase, any_future_backend}
+        T.columns = canonical_names ONLY (no aliases)
+
+      NAMING_CONVENTION:
+        raw_metric -> lowercase_short: cai, clv, cri, be2, pcv
+        ecdf_score -> dna_{dim}_score: dna_r_score, dna_f_score, dna_m_score
+        raw_value -> {dim}_value: r_value, f_value, m_value
+        status -> {concept}_status: nes_status
+        filter -> {dim}_filter: product_line_id_filter
+
+      OPTIONAL_COLUMN_HANDLING:
+        IF column MAY NOT exist in backend:
+          consumer MUST check existence BEFORE use
+          consumer MUST provide graceful fallback
+
+      ALIAS_DEPRECATION:
+        ensure_dna_fields() alias pattern -> DEPRECATED
+        New code MUST NOT create column aliases
+        Existing aliases -> migrate to canonical names
+
+    violations:
+      - "Creating alias columns (e.g., both cai and cai_value)"
+      - "Component SQL using non-canonical names"
+      - "Assuming optional column exists without check"
+      - "Different column names in DuckDB vs Supabase for same data"
+    compliant:
+      - "DRV writes canonical names only (cai, not cai_value)"
+      - "Component uses canonical name in SQL SELECT"
+      - "Optional columns checked with dbListFields() before use"
+      - "Schema identical across all configured backends"
+
+  - id: DM_R061
+    type: rule
+    name: database_rebuildability_classification
+    display_name: "Database Rebuildability Classification"
+    one_liner: "Every DuckDB must be classified as rebuildable (derived) or non-rebuildable (raw data)"
+    file_path: "CH02_data_management/rules/DM_R061_database_rebuildability_classification.qmd"
+    derived_from: MP064
+
+    rule_natural: |
+      Every DuckDB file must be classified as rebuildable or non-rebuildable.
+      Non-rebuildable: contains raw data (raw_data.duckdb) — delete = data loss.
+      Rebuildable: derived from upstream (staged, transformed, processed, cleansed,
+      app_data) — re-run pipeline to restore.
+      Rebuild chain: raw -> staged -> transformed -> processed -> cleansed -> app_data.
+      If a rebuildable DB has schema drift, re-run pipeline — do not manually patch.
+
+    rule_formal: |
+      RULE DM_R061_REBUILDABILITY:
+      FOR ALL duckdb files D in data pipeline:
+        classify(D) IN {REBUILDABLE, NON_REBUILDABLE}
+      NON_REBUILDABLE: raw_data.duckdb, external source files
+      REBUILDABLE: staged, transformed, processed, cleansed, app_data
+      ON schema_drift(D) WHERE rebuildable(D): rerun_pipeline(upstream(D))
+
+    violations:
+      - "Hesitating to rebuild app_data because 'it might lose data'"
+      - "Manually patching a derived table instead of re-running pipeline"
+      - "Deleting raw_data.duckdb thinking it can be regenerated"
+    compliant:
+      - "Schema upgrade: modify DDL, re-run D00 + D01_04, data regenerated"
+      - "Corrupted cleansed_data: re-run D01_02 from transformed_data"
+      - "raw_data backed up separately, never deleted"
+
+    dependencies:
+      - "MP064"   # ETL-Derivation Separation defines the 6-layer chain
+      - "MP154"   # Side Effect Defense — rebuilding derived data is deterministic
+
+    metadata:
+      created: "2026-03-30"
+      triggered_by: "QEF_DESIGN p_alive schema upgrade — concern about data loss during rebuild"
+
+  - id: DM_R062
+    type: rule
+    name: canonical_db_path_enforcement
+    display_name: "Canonical DB Path Enforcement"
+    one_liner: "DB files SHALL live at paths declared in db_paths.yaml; move misplaced files, do NOT add code fallbacks"
+    file_path: "CH02_data_management/rules/DM_R062_canonical_db_path_enforcement.qmd"
+    derived_from: MP029
+
+    rule_natural: |
+      Every .duckdb file must reside at the path declared in db_paths.yaml
+      (databases: or domain: section). If a file is found at a non-canonical
+      location, MOVE the file to the canonical path — do NOT change code to
+      accommodate the wrong location. autoinit() and the pipeline-smart-cache
+      helper both report missing when canonical path is empty, even if copies
+      exist elsewhere. Archive misplaced files to data/archived/wrong_location/.
+
+    rule_formal: |
+      RULE DM_R062_CANONICAL_PATH:
+      FOR EVERY .duckdb file D declared in db_paths.yaml:
+        expected_path(D) := file.path(project_root, db_paths_yaml[D])
+        IF NOT file.exists(expected_path(D)):
+          STOP with actionable message (see autoinit-failfast-policy)
+      WHEN misplaced(D) detected:
+        MOVE D to expected_path(D)  # canonical
+        ARCHIVE old_path TO data/archived/wrong_location/<name>_YYYYMMDD.duckdb
+      FORBID: add fallback branches in sc_Rprofile.R or any helper
+
+    violations:
+      - "Adding `if-else` in sc_Rprofile.R to try multiple DB path candidates"
+      - "Editing db_paths.yaml to point to a non-canonical location where a stale copy lives"
+      - "Deleting both copies of a misplaced file without archiving"
+    compliant:
+      - "QEF_DESIGN had raw_data.duckdb at data/ root; moved to data/archived/wrong_location/"
+      - "Helper reports missing → user moves file or runs ETL; code unchanged"
+      - "New DB layer added: updated db_paths.yaml + ETL PRODUCES, no other changes"
+
+    dependencies:
+      - "MP029"   # No fake information — data location is fact, not assumption
+      - "DM_R028" # ETL Data Type Separation — canonical 6-layer structure
+      - "DM_R056" # Mode-Specific DB Paths — paths defined in db_paths.yaml
+      - "SO_P018" # Directory Governance — no ad-hoc file locations
+
+    metadata:
+      created: "2026-04-19"
+      triggered_by: "#421 autoinit-failfast-smart-cache debugging — QEF_DESIGN raw_data.duckdb found at data/ root, canonical is data/local_data/raw_data.duckdb"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: DM_R061
+    to: MP064
+    reason: "Rebuildability classification follows the 6-layer ETL-Derivation architecture"
+
+  - from: DM_R061
+    to: MP154
+    reason: "Rebuilding derived data is safe because the pipeline is deterministic"
+
+  - from: DM_R062
+    to: MP029
+    reason: "Canonical path enforcement refuses to 'assume' files can live elsewhere"
+
+  - from: DM_R062
+    to: DM_R028
+    reason: "Canonical paths are the 6-layer ETL structure defined by DM_R028"
+
+  - from: DM_R062
+    to: DM_R056
+    reason: "db_paths.yaml is the source of truth for canonical paths"
+
+  - from: DM_R023
+    to: DM_R002
+    reason: "tbl2 implements universal data access pattern"
+
+  - from: DM_R014
+    to: DM_R023
+    reason: "tbl2 enhanced features build on universal DBI"
+
+  - from: DM_R041
+    to: DM_R028
+    reason: "Directory structure supports data type separation"
+
+  - from: DM_R044
+    to: DM_R041
+    reason: "Derivation standard requires directory structure"
+
+  - from: DM_R052
+    to: DM_P003
+    reason: "Cross-platform ID implements dual ID format principle"
+
+  - from: DM_R053
+    to: DM_R052
+    reason: "Multi-source priority pattern supports cross-platform ID merging"
+
+  - from: DM_R053
+    to: DM_R027
+    reason: "Multi-source ETL requires schema validation at boundaries"
+
+  - from: DM_R054
+    to: DM_R045
+    reason: "Metadata storage pattern uses app_data.duckdb naming standard"
+
+  - from: DM_R054
+    to: DM_R052
+    reason: "Product mapping table follows metadata storage pattern"
+
+  - from: DM_R054
+    to: DM_R004
+    reason: "Metadata storage extends data organization to database selection"
+
+  - from: DM_R057
+    to: DM_R025
+    reason: "Unit suffixes clarify numeric conversions and difftime units"

@@ -1,0 +1,261 @@
+---
+title: "DM_R022: Platform ID Convention"
+subtitle: "Defines the three-letter platform_id system for consistent platform identification across the precision marketing system, implementing MP092's platform_id standard"
+chapter: "CH02"
+category: "rule"
+number: "DM_R022"
+date-created: "2025-04-06"
+date-modified: "2025-08-27"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 22
+  title: "Platform ID Convention"
+related_to:
+  - "MP092: Platform ID Standard"
+  - "MP001: Primitive Terms and Definitions"
+  - "MP078: Object Naming Convention"
+  - "DM_R008: Platform ID Reference Rule"
+  - "D01: DNA Analysis Derivation Flow"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 22: Platform ID Convention {#overview}
+
+**Data Management Law Article 22 (Platform ID Convention)**
+
+This rule implements MP092's three-letter platform_id standard, providing the official mapping between platform_ids and sales/marketing platforms across the precision marketing system.
+
+:::{.callout-critical}
+## Core Requirement
+All platform references must use three-letter codes as defined in MP092. Numeric platform IDs are strictly prohibited. Platform-specific scripts, derivations, and analyses must include the appropriate three-letter platform_id to clearly identify which platform the data originates from or pertains to.
+
+Note: Directory numbering (DD_name format like 04_utils) remains unchanged as it serves organizational purposes, not platform identification.
+:::
+
+# Section 1: Platform ID Mapping {#platform-code-mapping}
+
+## Subsection 1: Platform Dictionary {#platform-dictionary}
+
+The following mapping establishes the official three-letter codes for all platforms:
+
+| Platform ID | Platform Name | Description | Migration from |
+|--------------|---------------|-------------|----------------|
+| **amz** | Amazon | Amazon marketplace | (was: 01) |
+| **web** | Official Website | Company's own e-commerce website | (was: 02) |
+| **ret** | Retail Store | Physical retail store locations | (was: 03) |
+| **dst** | Distributor | Third-party distributor channels | (was: 04) |
+| **soc** | Social Media | Social media marketplaces | (was: 05) |
+| **eby** | eBay | eBay marketplace platform | (was: 06) |
+| **cbz** | Cyberbiz | Cyberbiz e-commerce platform | (was: 07) |
+| **all** | All Platforms | Multi-platform integrated analysis | (was: 09) |
+
+## Subsection 2: Code Format Requirements {#code-format-requirements}
+
+Platform IDs must strictly follow MP092 standards:
+
+1. **Three-Letter Codes Only**:
+   - Exactly 3 lowercase letters: `eby`, `cbz`, `amz`
+   - No numeric IDs allowed
+   - No uppercase variations
+   
+2. **Consistent Usage**:
+   - Same code in all contexts (database, scripts, config, UI)
+   - No alternate representations
+
+# Section 2: Platform ID Usage Rules {#platform-code-usage-rules}
+
+## Subsection 1: Derivation Scripts {#derivation-scripts}
+
+Derivation scripts should include the platform_id:
+
+```
+D01_amz_XX: Step description (Amazon)
+D01_eby_XX: Step description (eBay)
+D01_all_XX: Multi-platform step
+```
+
+Where:
+- `D01`: Represents the derivation type
+- `amz/eby/all`: Three-letter platform_id
+- `XX`: Represents the sequential step number
+
+## Subsection 2: Script Filenames {#script-filenames}
+
+Scripts that process platform-specific data must use three-letter platform_ids:
+
+```
+update_amz_sales_data.R     # For Amazon
+update_web_sales_data.R     # For Official Website
+process_eby_customers.R     # For eBay
+analyze_all_platforms.R     # Multi-platform analysis
+```
+
+Naming pattern:
+- Action verb (update, process, analyze)
+- Platform ID (amz, web, eby, all)
+- Data type (sales, customers, products)
+- File extension (.R, .py, .sql)
+
+## Subsection 3: Table Naming {#table-naming}
+
+Database tables must use three-letter platform_ids:
+
+```sql
+-- Correct: Using platform_ids
+eby_sales_data          -- eBay sales
+cbz_customer_data       -- Cyberbiz customers
+all_platform_summary    -- Multi-platform data
+
+-- Incorrect: Using numeric prefixes
+-- p01_sales_data       -- WRONG: numeric ID
+-- p07_customer_data    -- WRONG: numeric ID
+```
+
+## Subsection 4: Code Comments and Documentation {#code-comments-documentation}
+
+Use three-letter codes consistently in all documentation:
+
+```r
+# Process eby sales data from the raw import
+# Transform cbz customer records to standard format
+# Aggregate all platform data for reporting
+```
+
+## Subsection 5: Multi-Platform Analysis {#multi-platform-analysis}
+
+For analyses that integrate data from multiple platforms, use the `all` code:
+
+```
+D01_all_XX: Multi-platform integration step
+analyze_all_platforms.R
+all_platform_dashboard.R
+```
+
+## Subsection 6: Platform Selection in User Interfaces {#platform-selection-ui}
+
+UI elements should display user-friendly names but use three-letter codes as values:
+
+```r
+selectInput("platform", "Select Platform", 
+  choices = list(
+    "eBay" = "eby",
+    "Cyberbiz" = "cbz",
+    "Amazon" = "amz",
+    "Official Website" = "web",
+    "All Platforms" = "all"
+  )
+)
+
+# Handle selection
+selected_platform <- input$platform  # Returns: "eby", "cbz", etc.
+```
+
+# Section 3: Code Consistency Requirements {#code-consistency}
+
+## Subsection 1: Universal Application {#universal-application}
+
+Three-letter codes provide consistency across all system layers:
+
+1. **Configuration Files**: All YAML/JSON configs use the same codes
+2. **Database Schemas**: Tables and columns use consistent codes
+3. **Script Naming**: Files use the same platform_ids
+4. **API Endpoints**: REST/GraphQL APIs use three-letter codes
+5. **Logging Systems**: All logs reference platforms by code
+6. **User Interfaces**: Internal values always use codes
+
+## Subsection 2: Platform ID Validation {#platform-code-validation}
+
+All platform_ids must be validated:
+
+```r
+# Platform ID validation
+valid_platform_ids <- c("eby", "cbz", "amz", "web", 
+                         "ret", "dst", "soc", "all")
+
+validate_platform <- function(code) {
+  if (!code %in% valid_platform_ids) {
+    stop(paste("Invalid platform_id:", code))
+  }
+  return(TRUE)
+}
+```
+
+# Section 4: Adding New Platforms {#adding-new-platforms}
+
+## Subsection 1: New Platform Registration {#platform-registration}
+
+When adding a new platform to the system:
+
+1. Create a unique three-letter code (must not conflict with existing codes)
+2. Update this rule file with the new platform entry
+3. Add to app_config.yaml platform definitions
+4. Document the data structure specific to the new platform
+5. Update validation functions to include the new code
+
+## Subsection 2: Reserved Codes {#reserved-codes}
+
+- **all**: Multi-platform operations
+- **xxx**: Unknown platform (error handling)
+- **tbd**: To be determined (development placeholder)
+- **n/a**: Not applicable (special cases)
+
+# Section 5: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: Migration from Numeric IDs {#migration-from-numeric}
+
+All existing numeric platform IDs must be migrated to three-letter codes:
+
+```r
+# Migration mapping (temporary - remove after migration)
+numeric_to_code <- list(
+  "1" = "amz", "2" = "web", "3" = "ret",
+  "4" = "dst", "5" = "soc", "6" = "eby",
+  "7" = "cbz", "9" = "all"
+)
+```
+
+## Subsection 2: Compliance Checks {#compliance-checks}
+
+Regular audits must verify:
+
+1. **No numeric IDs remain** in any code or configuration
+2. **All platform_ids are valid** three-letter codes
+3. **Consistent usage** across all system components
+4. **Migration complete** for legacy systems
+
+```bash
+# Compliance check script
+grep -r "platform_id.*[0-9]" . && echo "WARNING: Numeric IDs found"
+grep -r "platform.*==.*[0-9]" . && echo "WARNING: Numeric comparisons found"
+```
+
+# Section 6: Benefits {#benefits}
+
+## Subsection 1: System Benefits {#system-benefits}
+
+1. **Human Readability**: Three-letter codes are self-documenting
+2. **Consistency**: Single system across all components
+3. **Maintainability**: Easier to understand and modify
+4. **Type Safety**: String type prevents numeric errors
+5. **Future-Proof**: Easy to add new platforms
+
+## Subsection 2: Development Benefits {#development-benefits}
+
+1. **Faster Development**: No need to look up numeric mappings
+2. **Reduced Errors**: Clear, unambiguous platform references
+3. **Better Debugging**: Platform IDs visible in logs and errors
+4. **Simplified Testing**: Easy to mock and test platform-specific logic
+
+---
+
+*Based on: Data Management Law Article 22*  
+*Implements: [MP092 Platform ID Standard](../../CH00_fundamental_principles/04_data_management/MP092_platform_id_standard.qmd)*  
+*Related to: [DM_R008 Platform ID Reference Rule](DM_R008_platform_id_reference.qmd)*

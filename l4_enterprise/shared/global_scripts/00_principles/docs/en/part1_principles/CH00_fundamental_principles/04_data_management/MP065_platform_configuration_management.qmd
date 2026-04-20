@@ -1,0 +1,523 @@
+---
+title: "MP065: Platform Configuration Management"
+subtitle: "All platform definitions must be centrally managed through app_config.yaml with comprehensive metadata, providing a single source of truth for platform identification, configuration, and capabilities across the entire system"
+chapter: "CH00"
+category: "meta_principle"
+number: "MP065"
+date-created: "2025-08-27"
+date-modified: "2025-12-30"
+author: "Claude"
+type: "meta_principle"
+related_to:
+  - "MP052: Data Source Hierarchy"
+  - "MP017: Config Driven UI Composition"
+  - "MP092: Platform ID Standard"
+  - "MP122: Quad-Track Subrepo Architecture"
+  - "MP142: Configuration-Driven Pipeline"
+  - "DM_R008: Platform ID Reference Rule"
+  - "SO_R005: App YAML Configuration"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 65: Platform Configuration Management {#overview}
+
+**Fundamental Data Management Meta-Principle 65 (Platform Configuration Management)**
+
+This meta-principle establishes that all platform definitions must be centrally managed through the app_config.yaml file, providing comprehensive metadata for each platform and serving as the single source of truth for platform information across the system.
+
+:::{.callout-important}
+## Core Principle
+Platform configuration is the foundation of multi-platform data management. Every platform must be defined in app_config.yaml by its three-letter code and status. Standard metadata (e.g., platform names and product_id_coding) is maintained in the platform dictionary and can be overridden in app_config.yaml when needed. This centralized approach ensures consistency, maintainability, and clarity across all system components.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Current Challenges {#current-challenges}
+
+The current minimal platform definition creates several problems:
+
+1. **Ambiguity**: Platform IDs like "cbz" lack clear meaning
+2. **Scattered Information**: Platform details spread across multiple files
+3. **Inconsistency**: Different components may interpret platforms differently
+4. **Maintenance Burden**: No central place to update platform information
+5. **Discovery Issues**: New developers cannot easily understand available platforms
+
+## Subsection 2: Benefits of Centralization {#benefits-centralization}
+
+Centralizing platform configuration in app_config.yaml provides:
+
+1. **Single Source of Truth**: One authoritative location for all platform information
+2. **Self-Documentation**: Configuration becomes self-explanatory
+3. **Version Control**: Changes tracked in one location
+4. **Validation**: Easier to validate platform configurations
+5. **Extensibility**: New platforms easily added with full metadata
+
+# Section 2: Platform Configuration Structure {#configuration-structure}
+
+## Subsection 1: Required Platform Metadata {#required-metadata}
+
+Each platform in app_config.yaml must include at least the platform_id (three-letter code) and status. Additional metadata is recommended and can be sourced from the platform dictionary:
+
+```yaml
+platforms:
+  eby:
+    platform_id: "eby"      # 3-letter platform_id (lowercase, optional if key is platform_id)
+    name: "eBay"            # Official platform name
+    description: "eBay marketplace platform for auction and fixed-price sales"
+    status: "active"        # active/inactive/testing
+    product_id_coding: "ebay_item_number"
+    data_sources:
+      sales: "eby_sales_dta"
+      customers: "eby_customer_dta"
+      products: "eby_product_catalog"
+    api_config:
+      endpoint: "${EBAY_API_ENDPOINT}"
+      auth_type: "oauth2"
+    features:
+      - "auction_sales"
+      - "fixed_price"
+      - "international_shipping"
+```
+
+Standard platform metadata is defined in:
+
+- `scripts/global_scripts/30_global_data/parameters/scd_type1/df_platform.csv`
+
+app_config.yaml should list enabled platforms and override or extend metadata when needed.
+
+## Subsection 2: Special Platform Definitions {#special-platforms}
+
+Special platforms require additional metadata:
+
+```yaml
+platforms:
+  all:
+    platform_id: "all"
+    name: "All Platforms"
+    description: "Cross-platform aggregation for unified analysis"
+    status: "active"
+    type: "virtual"         # Indicates non-physical platform
+    aggregates: ["eby", "cbz", "amz", "web"]  # Platforms included
+    
+  mpt:
+    platform_id: "mpt"
+    name: "Multi-Platform"
+    description: "Multi-platform integration and comparison"
+    status: "active"
+    type: "analytical"      # For analytical purposes only
+```
+
+## Subsection 3: Platform Configuration Schema {#configuration-schema}
+
+The complete platform configuration schema:
+
+```yaml
+platforms:
+  <platform_id>:
+    platform_id: string    # Required: 3-letter lowercase identifier (optional if key is platform_id)
+    name: string           # Recommended: Official platform name
+    description: string    # Recommended: Platform purpose and characteristics
+    status: enum           # Required: active|inactive|testing|deprecated
+    type: enum             # Optional: physical|virtual|analytical
+    product_id_coding: string  # Optional: Product ID naming convention
+    data_sources:          # Optional (recommended for physical platforms)
+      sales: string
+      customers: string
+      products: string
+      reviews: string    # Optional
+      inventory: string  # Optional
+    api_config:         # Optional: API configuration
+      endpoint: string
+      auth_type: string
+      rate_limit: integer
+    features: [string]  # Optional: Platform-specific features
+    region: string     # Optional: Geographic region
+    currency: string   # Optional: Primary currency
+    timezone: string   # Optional: Platform timezone
+    aggregates: [code] # Required for virtual platforms
+    deprecated_codes: [string]  # Optional: Previous codes
+```
+
+# Section 3: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Configuration Loading {#configuration-loading}
+
+Platform configuration must be loaded at application initialization:
+
+```r
+# Load platform configuration from app_config.yaml
+load_platform_config <- function(config_path = NULL) {
+  if (is.null(config_path)) {
+    config_path <- if (exists("CONFIG_PATH", inherits = TRUE)) CONFIG_PATH else "app_config.yaml"
+  }
+  config <- yaml::read_yaml(config_path)
+  
+  # Validate platform configuration
+  platforms <- config$platforms
+  if (is.null(platforms)) {
+    stop("No platforms defined in app_config.yaml")
+  }
+  
+  # Support minimal list of codes
+  if (is.character(platforms)) {
+    platforms <- lapply(platforms, function(code) list(code = code, status = "active"))
+    names(platforms) <- vapply(platforms, function(p) p$code, character(1))
+  }
+
+  # Create platform lookup table
+  platform_by_code <- list()
+  if (!is.null(names(platforms)) && any(nzchar(names(platforms)))) {
+    for (code in names(platforms)) {
+      platform <- platforms[[code]]
+      if (is.null(platform$code)) platform$code <- code
+      if (is.null(platform$code) || is.null(platform$status)) {
+        stop("Platform missing required fields: ", platform$code)
+      }
+      if ("id" %in% names(platform)) {
+        stop("Numeric platform IDs are prohibited in app_config.yaml (DM_R008)")
+      }
+      platform_by_code[[platform$code]] <- platform
+    }
+  } else {
+    for (platform in platforms) {
+      if (is.null(platform$code) || is.null(platform$status)) {
+        stop("Platform missing required fields: ", platform$code)
+      }
+      if ("id" %in% names(platform)) {
+        stop("Numeric platform IDs are prohibited in app_config.yaml (DM_R008)")
+      }
+      platform_by_code[[platform$code]] <- platform
+    }
+  }
+  
+  # Store globally for application use
+  assign("PLATFORM_CONFIG", platform_by_code, envir = .GlobalEnv)
+  assign("PLATFORM_BY_CODE", platform_by_code, envir = .GlobalEnv)
+  
+  return(platform_by_code)
+}
+```
+
+## Subsection 2: Platform Resolution {#platform-resolution}
+
+All components must resolve platforms through the central configuration:
+
+```r
+# Get platform information by code
+get_platform <- function(identifier) {
+  if (exists("PLATFORM_BY_CODE") && identifier %in% names(PLATFORM_BY_CODE)) {
+    return(PLATFORM_BY_CODE[[identifier]])
+  }
+
+  warning("Unknown platform identifier: ", identifier)
+  return(NULL)
+}
+
+# Get active platforms only
+get_active_platforms <- function() {
+  if (!exists("PLATFORM_CONFIG")) {
+    stop("Platform configuration not loaded")
+  }
+  
+  Filter(function(p) p$status == "active", PLATFORM_CONFIG)
+}
+```
+
+## Subsection 3: ETL Script Platform Reference {#etl-platform-reference}
+
+ETL and derivation scripts must reference platforms from configuration:
+
+```r
+# ETL script example
+run_platform_etl <- function(platform_id) {
+  # Get platform configuration
+  platform <- get_platform(platform_id)
+  if (is.null(platform)) {
+    stop("Invalid platform_id: ", platform_id)
+  }
+  
+  # Use platform configuration for data sources
+  sales_table <- platform$data_sources$sales
+  if (!is.null(sales_table)) {
+    sales_data <- tbl2(con, sales_table)
+    # Process sales data...
+  }
+}
+```
+
+## Subsection 4: Platform Execution Scope Control {#platform-execution-scope-control}
+
+Platform definitions are global metadata, while execution scope is project-specific. Because `update_scripts/` is a shared subrepo across projects, platform directories and scripts must remain intact even if a project does not run them. Project scope is controlled in the pipeline configuration (MP142), not by deleting or archiving scripts.
+
+**Rule:** Keep the platform catalog complete; control which platforms run via `app_config.yaml` pipeline overrides and the generated `_targets_config.yaml`.
+
+```yaml
+# app_config.yaml (Company scope)
+platforms:
+  cbz:
+    name: "Cyberbiz"
+    status: "active"
+  eby:
+    name: "eBay"
+    status: "active"
+  amz:
+    name: "Amazon"
+    status: "active"
+
+pipeline:
+  platforms:
+    cbz: { enabled: true }
+    eby: { enabled: true }
+    amz: { enabled: false } # Not executed for this project
+```
+
+# Section 4: Migration Path {#migration-path}
+
+## Subsection 1: From Minimal to Full Configuration {#minimal-to-full}
+
+Migration from minimal platform definition:
+
+**Legacy (deprecated):**
+```yaml
+platform:
+  - cbz
+  - eby
+```
+
+**Target (comprehensive):**
+```yaml
+platforms:
+  cbz:
+    name: "Cyberbiz"
+    description: "Cyberbiz e-commerce platform for Taiwan market"
+    status: "active"
+    data_sources:
+      sales: "cbz_sales_dta"
+      customers: "cbz_customer_dta"
+      products: "cbz_product_catalog"
+    region: "TW"
+    currency: "TWD"
+    timezone: "Asia/Taipei"
+    
+  eby:
+    name: "eBay"
+    description: "eBay global marketplace platform"
+    status: "active"
+    data_sources:
+      sales: "eby_sales_dta"
+      customers: "eby_customer_dta"
+      products: "eby_product_catalog"
+    features:
+      - "auction_sales"
+      - "buy_it_now"
+    region: "GLOBAL"
+    currency: "USD"
+```
+
+## Subsection 2: Backward Compatibility {#backward-compatibility}
+
+Support both old and new format during transition:
+
+```r
+# Function to handle both formats
+get_platform_list <- function(config) {
+  # New format
+  if (!is.null(config$platforms)) {
+    platforms <- config$platforms
+    if (is.character(platforms)) {
+      return(platforms)
+    }
+    if (!is.null(names(platforms)) && any(nzchar(names(platforms)))) {
+      return(names(platforms))
+    }
+    return(vapply(platforms, function(p) p$code, character(1)))
+  }
+  
+  # Old format
+  if (!is.null(config$platform)) {
+    warning("Using deprecated 'platform' field. Please migrate to 'platforms' structure.")
+    return(config$platform)
+  }
+  
+  return(list())
+}
+```
+
+# Section 5: Validation Rules {#validation-rules}
+
+## Subsection 1: Configuration Validation {#configuration-validation}
+
+Platform configurations must pass these validations:
+
+1. **Unique IDs**: Each platform_id must be unique
+2. **Valid Status**: Status must be one of: active, inactive, testing, deprecated
+3. **ID Format**: platform_id values must be 3 lowercase letters
+4. **Required Fields**: platform_id and status must be present
+5. **No Numeric IDs**: numeric platform IDs are prohibited in app_config.yaml (DM_R008)
+6. **Virtual Platform Rules**: Virtual platforms must have aggregates field
+7. **Data Source Validation**: When provided, data_sources should be complete for active physical platforms
+
+## Subsection 2: Validation Implementation {#validation-implementation}
+
+```r
+validate_platform_config <- function(platforms) {
+  platform_ids <- character()
+  
+  for (platform in platforms) {
+    # Check required fields
+    required <- c("platform_id", "status")
+    missing <- setdiff(required, names(platform))
+    if (length(missing) > 0) {
+      stop("Platform ", platform$platform_id, " missing required fields: ", 
+           paste(missing, collapse = ", "))
+    }
+
+    if ("id" %in% names(platform)) {
+      stop("Numeric platform IDs are prohibited in app_config.yaml (DM_R008)")
+    }
+    
+    # Check code format
+    if (!grepl("^[a-z]{3}$", platform$platform_id)) {
+      stop("Invalid platform_id format: ", platform$platform_id)
+    }
+    
+    # Check for duplicates
+    if (platform$platform_id %in% platform_ids) {
+      stop("Duplicate platform_id: ", platform$platform_id)
+    }
+    
+    platform_ids <- c(platform_ids, platform$platform_id)
+    
+    # Validate status
+    valid_statuses <- c("active", "inactive", "testing", "deprecated")
+    if (!(platform$status %in% valid_statuses)) {
+      stop("Invalid platform status: ", platform$status)
+    }
+    
+    # Validate virtual platforms
+    if (!is.null(platform$type) && platform$type == "virtual") {
+      if (is.null(platform$aggregates)) {
+        stop("Virtual platform must have aggregates: ", platform$platform_id)
+      }
+    }
+  }
+  
+  return(TRUE)
+}
+```
+
+# Section 6: Documentation Requirements {#documentation-requirements}
+
+## Subsection 1: Platform Documentation {#platform-documentation}
+
+Each platform must be documented with:
+
+1. **Business Context**: Why this platform is integrated
+2. **Data Flow**: How data flows from platform to system
+3. **Update Frequency**: How often data is refreshed
+4. **Special Considerations**: Platform-specific quirks or requirements
+5. **Contact Information**: Platform API support or internal SME
+
+## Subsection 2: Change Log {#change-log}
+
+Platform changes must be logged:
+
+```yaml
+# In app_config.yaml or separate platform_changelog.yaml
+platform_changes:
+  - date: "2025-08-27"
+    change: "Added comprehensive platform metadata"
+    platforms_affected: ["cbz", "eby"]
+    author: "Claude"
+    
+  - date: "2025-08-15"
+    change: "Added new platform: Shopee"
+    platforms_affected: ["shp"]
+    author: "System Admin"
+```
+
+# Section 7: Integration Points {#integration-points}
+
+## Subsection 1: UI Components {#ui-components}
+
+UI components must read platform information from configuration:
+
+```r
+# Generate platform selector from configuration
+create_platform_selector <- function(input_id, include_all = TRUE) {
+  platforms <- get_active_platforms()
+  
+  choices <- list()
+  if (include_all) {
+    all_platform <- get_platform("all")
+    if (!is.null(all_platform)) {
+      choices[["All Platforms"]] <- "all"
+    }
+  }
+  
+  for (platform in platforms) {
+    if (platform$type != "virtual") {
+      choices[[platform$name]] <- platform$code
+    }
+  }
+  
+  selectInput(input_id, "Select Platform", choices = choices)
+}
+```
+
+## Subsection 2: Data Pipeline Integration {#data-pipeline}
+
+Data pipelines must reference platform configuration:
+
+```r
+# ETL pipeline platform awareness
+run_etl_for_platform <- function(platform_id) {
+  platform <- get_platform(platform_id)
+  
+  # Log platform processing
+  log_info("Starting ETL for platform: ", platform$name, 
+           " (", platform$code, ")")
+  
+  # Use platform-specific configurations
+  if (!is.null(platform$api_config)) {
+    # Configure API connection
+    setup_api_connection(platform$api_config)
+  }
+  
+  # Process each data source
+  for (source_name in names(platform$data_sources)) {
+    table_name <- platform$data_sources[[source_name]]
+    process_data_source(source_name, table_name, platform)
+  }
+}
+```
+
+# Section 8: Benefits and Impact {#benefits-impact}
+
+## Subsection 1: System Benefits {#system-benefits}
+
+1. **Clarity**: Platform purposes and relationships immediately clear
+2. **Maintainability**: Single location for all platform updates
+3. **Consistency**: Uniform platform handling across system
+4. **Discoverability**: New developers quickly understand available platforms
+5. **Extensibility**: Easy to add new platforms with full context
+6. **Traceability**: Clear audit trail of platform changes
+
+## Subsection 2: Development Benefits {#development-benefits}
+
+1. **Reduced Errors**: Validated configuration prevents mistakes
+2. **Faster Development**: No need to search for platform information
+3. **Better Testing**: Easy to mock platform configurations
+4. **Clear Dependencies**: Platform requirements explicit
+5. **Simplified Debugging**: Platform issues easier to trace
+
+---
+
+*Based on: Fundamental Data Management Principles*  
+*Related to: [MP052 Data Source Hierarchy](MP052_data_source_hierarchy.qmd)*  

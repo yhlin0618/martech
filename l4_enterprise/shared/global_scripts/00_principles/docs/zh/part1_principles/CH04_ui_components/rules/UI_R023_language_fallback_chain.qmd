@@ -1,0 +1,296 @@
+---
+title: "UI_R023: Language Fallback Chain"
+subtitle: "Defines the fallback behavior when translations are missing for the requested language"
+chapter: "CH04"
+category: "rule"
+number: "UI_R023"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article-number:
+  number: 23
+  title: "Language Fallback Chain"
+related_to:
+  - "UI_P012: Multi-Language UI Support"
+  - "UI_R022: UI Text Translation Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 23: Language Fallback Chain {#overview}
+
+**UI Components Law Article 23 (Language Fallback Chain)**
+
+This rule defines the fallback behavior when a translation is not available in the requested language. The system must gracefully degrade to related languages and ultimately to English, ensuring the UI never displays empty or broken text.
+
+:::{.callout-important}
+## Core Rule
+When a translation is missing, fall back through the chain: zh_CN -> zh_TW -> en. Never display empty text or cause errors due to missing translations.
+:::
+
+# Section 1: Fallback Chain Definition {#fallback-definition}
+
+## Subsection 1: Language Fallback Order {#fallback-order}
+
+**Fallback Priority:**
+
+| Requested | Fallback 1 | Fallback 2 | Final |
+|-----------|------------|------------|-------|
+| zh_CN     | zh_TW      | en_us      | Original text |
+| zh_TW     | -          | en_us      | Original text |
+| en_us     | -          | -          | Original text |
+
+**Rationale:**
+
+- zh_CN (Simplified Chinese) can fall back to zh_TW (Traditional Chinese) because they share the same meaning with different character forms
+- All languages ultimately fall back to English (en_us) as the primary key
+- If English key itself is not in dictionary, return the original text unchanged
+
+## Subsection 2: Implementation {#implementation}
+
+**Fallback Logic in Translation Function:**
+
+```r
+create_translate_function <- function(dictionary, target_lang) {
+
+  function(text) {
+    if (is.null(text) || !nzchar(text)) return(text)
+
+    # Try to find in dictionary
+    idx <- match(text, dictionary$en_us)
+
+    # Not in dictionary - return original
+    if (is.na(idx)) return(text)
+
+    # Get translation for target language
+    translation <- dictionary[[target_lang]][idx]
+
+    # Fallback chain for zh_CN
+    if (target_lang == "zh_cn" &&
+        (is.na(translation) || !nzchar(translation))) {
+      translation <- dictionary$zh_tw[idx]
+    }
+
+    # Final fallback to English (original text)
+    if (is.na(translation) || !nzchar(translation)) {
+      return(text)
+    }
+
+    translation
+  }
+}
+```
+
+# Section 2: Graceful Degradation {#graceful-degradation}
+
+## Subsection 1: System Unavailability {#system-unavailable}
+
+**When Translation System is Unavailable:**
+
+```r
+initialize_ui_translation <- function() {
+
+  # Check for required dependencies
+  if (!exists("app_configs") || is.null(app_configs$language)) {
+    message("[Translation] app_configs not available, using identity")
+    return(identity)
+  }
+
+  # Check for dictionary file
+  dict_path <- get_dictionary_path()
+  if (!file.exists(dict_path)) {
+    message("[Translation] Dictionary file not found: ", dict_path)
+    return(identity)
+  }
+
+  # Try to read dictionary
+  tryCatch({
+    dict <- read.csv(dict_path, fileEncoding = "UTF-8-BOM",
+                     stringsAsFactors = FALSE)
+    create_translate_function(dict, get_target_language())
+  }, error = function(e) {
+    message("[Translation] Error reading dictionary: ", e$message)
+    identity
+  })
+}
+```
+
+## Subsection 2: Empty Translation Handling {#empty-handling}
+
+**Empty Value Detection:**
+
+```r
+# Empty values in CSV are treated as "not translated"
+# The following are all considered empty:
+# - NA
+# - ""
+# - "   " (whitespace only)
+
+is_empty_translation <- function(value) {
+  is.na(value) || !nzchar(trimws(value))
+}
+```
+
+**Example Dictionary with Gaps:**
+
+```csv
+en_us,zh_tw,zh_cn
+Submit,送出,提交
+Cancel,取消,取消
+Loading,載入中,
+Advanced Settings,進階設定,
+```
+
+In this example:
+- "Loading" in zh_CN will fall back to "載入中" (zh_TW)
+- "Advanced Settings" in zh_CN will fall back to "進階設定" (zh_TW)
+
+# Section 3: Error Prevention {#error-prevention}
+
+## Subsection 1: Never Fail Silently {#never-fail}
+
+**Logging Pattern:**
+
+```r
+translate <- function(text) {
+  translation <- lookup(text)
+
+  # Log when fallback is used (debug mode only)
+  if (getOption("mamba.debug", FALSE)) {
+    if (is.null(translation) || !nzchar(translation)) {
+      message(sprintf("[Translation] Missing: '%s' in %s",
+                     text, target_lang))
+    }
+  }
+
+  # Always return something usable
+  if (is.null(translation) || !nzchar(translation)) {
+    return(text)
+  }
+  translation
+}
+```
+
+## Subsection 2: Startup Validation {#startup-validation}
+
+**Optional Dictionary Validation:**
+
+```r
+validate_dictionary <- function(dict) {
+  issues <- list()
+
+  # Check for duplicate keys
+  dupes <- dict$en_us[duplicated(dict$en_us)]
+  if (length(dupes) > 0) {
+    issues$duplicates <- dupes
+    message("[Translation] Warning: Duplicate keys found: ",
+            paste(dupes, collapse = ", "))
+  }
+
+  # Check for empty primary keys
+  empty_keys <- which(is.na(dict$en_us) | !nzchar(dict$en_us))
+  if (length(empty_keys) > 0) {
+    issues$empty_keys <- empty_keys
+    message("[Translation] Warning: Empty keys at rows: ",
+            paste(empty_keys, collapse = ", "))
+  }
+
+  invisible(issues)
+}
+```
+
+# Section 4: Testing Patterns {#testing-patterns}
+
+## Subsection 1: Fallback Testing {#fallback-testing}
+
+**Test Cases:**
+
+```r
+test_fallback_chain <- function() {
+  # Setup test dictionary
+  test_dict <- data.frame(
+    en_us = c("Hello", "Goodbye", "Submit"),
+    zh_tw = c("你好", "再見", "送出"),
+    zh_cn = c("你好", "", ""),  # Empty means fallback
+    stringsAsFactors = FALSE
+  )
+
+  # Test zh_CN with fallback
+  translate_cn <- create_translate_function(test_dict, "zh_cn")
+
+  stopifnot(translate_cn("Hello") == "你好")      # Has zh_CN
+
+  stopifnot(translate_cn("Goodbye") == "再見")    # Falls back to zh_TW
+  stopifnot(translate_cn("Submit") == "送出")     # Falls back to zh_TW
+  stopifnot(translate_cn("Unknown") == "Unknown") # Not in dict
+
+  message("All fallback tests passed")
+}
+```
+
+# Section 5: Violations and Compliance {#violations-compliance}
+
+## Subsection 1: Violations {#violations}
+
+**Common Violations:**
+
+```r
+# VIOLATION: Throwing error on missing translation
+if (is.null(translation)) {
+  stop("Translation not found!")  # Never throw
+}
+
+# VIOLATION: Returning empty string
+if (!nzchar(translation)) {
+  return("")  # Never return empty
+}
+
+# VIOLATION: No fallback chain
+translation <- dict$zh_cn[idx]
+return(translation)  # Missing fallback to zh_TW
+```
+
+## Subsection 2: Compliant Examples {#compliant}
+
+**Correct Implementation:**
+
+```r
+# COMPLIANT: Proper fallback chain
+translation <- dict$zh_cn[idx]
+if (is_empty_translation(translation)) {
+  translation <- dict$zh_tw[idx]  # Fallback to zh_TW
+}
+if (is_empty_translation(translation)) {
+  return(text)  # Fallback to original English
+}
+return(translation)
+
+# COMPLIANT: Identity function as safe default
+translate <- identity  # Safe before initialization
+
+# COMPLIANT: Graceful handling
+tryCatch(
+  initialize_ui_translation(),
+  error = function(e) identity
+)
+```
+
+# Section 6: Principle Relationships {#principle-relationships}
+
+This rule:
+
+1. **Implements UI_P012 (Multi-Language UI Support)** fallback behavior
+2. **Works With UI_R022 (UI Text Translation Pattern)** for initialization
+3. **Ensures UI_P001 (Natural Language UI)** by never showing broken text
+
+---
+
+*Based on: UI Components Law Article 23*
+*Implements: [UI_P012 Multi-Language UI Support](../principles/UI_P012_multi_language_ui_support.qmd)*

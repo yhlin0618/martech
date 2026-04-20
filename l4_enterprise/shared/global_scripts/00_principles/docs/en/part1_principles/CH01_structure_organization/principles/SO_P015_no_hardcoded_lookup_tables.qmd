@@ -1,0 +1,271 @@
+---
+title: "SO_P015: No Hardcoded Lookup Tables"
+subtitle: "All mapping tables, translation tables, and lookup dictionaries must be externalized to database or configuration files"
+chapter: "CH01"
+category: "principle"
+number: "SO_P015"
+date-created: "2025-12-14"
+date-modified: "2025-12-14"
+author: "Claude"
+type: "principle"
+law: "Structure & Organization Law"
+article-number:
+  number: 15
+  title: "No Hardcoded Lookup Tables Principle"
+derives_from:
+  - "MP137: No Hardcoded Project-Specific Content"
+related_to:
+  - "SO_P010: Config-Driven Customization"
+  - "MP098: Generality Over Specificity"
+  - "DM_R046: Variable Display Name Metadata"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 15: No Hardcoded Lookup Tables {#overview}
+
+**Structure & Organization Law Article 15 (No Hardcoded Lookup Tables Principle)**
+
+All lookup tables, mapping tables, and translation dictionaries MUST be stored in databases (populated via ETL from external sources) or configuration files. Defining such mappings directly in source code is PROHIBITED.
+
+:::{.callout-important}
+## Core Concept
+Lookup tables and mappings are **data**, not **code**. They should be managed as data assets, editable by domain experts without developer intervention, and version-controlled separately from application logic.
+:::
+
+# Section 1: Prohibited Patterns {#prohibited-patterns}
+
+## Subsection 1: Inline Mapping Definitions
+
+The following patterns are **explicitly prohibited**:
+
+```r
+# PROHIBITED: Language/translation mappings
+weekday_map <- list(
+  monday = list(zh = "星期一", en = "Monday"),
+  tuesday = list(zh = "星期二", en = "Tuesday"),
+  wednesday = list(zh = "星期三", en = "Wednesday")
+)
+
+# PROHIBITED: Product attribute mappings
+turbo_compressor_map <- list(
+  high_flow = list(zh = "高流量設計", en = "High-flow"),
+  inducer_diameter = list(zh = "入口直徑", en = "Inducer Diameter (mm)")
+)
+
+# PROHIBITED: Category code mappings
+category_codes <- list(
+  "electronics" = 1001,
+  "clothing" = 2001,
+  "home" = 3001
+)
+
+# PROHIBITED: Status label mappings
+status_labels <- c(
+  "active" = "啟用中",
+  "inactive" = "已停用",
+  "pending" = "待處理"
+)
+```
+
+## Subsection 2: Why These Are Prohibited
+
+| Issue | Consequence |
+|-------|-------------|
+| **Non-reusable** | Code becomes project-specific |
+| **Hard to update** | Requires code deployment for content changes |
+| **No version control** | Data changes mixed with code changes |
+| **No domain expert access** | Only developers can modify |
+| **Testing complexity** | Different mappings require code changes |
+
+# Section 2: Correct Patterns {#correct-patterns}
+
+## Subsection 1: Database-Driven Pattern (Preferred)
+
+```r
+# CORRECT: Read mappings from database
+fn_get_display_name <- function(predictor, locale, con) {
+  result <- tbl2(con, "df_variable_metadata") %>%
+    filter(predictor_pattern == !!predictor) %>%
+    collect()
+
+  if (nrow(result) > 0) {
+    return(if (locale == "zh_TW") result$display_name_zh[1]
+           else result$display_name_en[1])
+  }
+
+  return(predictor)  # Fallback to technical name
+}
+```
+
+**Database table structure:**
+
+```sql
+CREATE TABLE df_variable_metadata (
+  predictor_pattern VARCHAR PRIMARY KEY,
+  display_name_zh VARCHAR,
+  display_name_en VARCHAR,
+  display_category VARCHAR,
+  value_type VARCHAR,
+  possible_values TEXT
+);
+```
+
+## Subsection 2: ETL from External Source
+
+```yaml
+# config/metadata_sources.yaml
+metadata_turbo:
+  sheet_id: "1DADOOtwUuWqB3azFPmTcFSDunyACx_RsNpKlGoL2ta4"
+  sheet_name: "metadata_Turbo"
+  target_table: "df_metadata_turbo"
+```
+
+```r
+# ETL script reads config and populates database
+config <- yaml::read_yaml("config/metadata_sources.yaml")
+df_metadata <- googlesheets4::read_sheet(
+  config$metadata_turbo$sheet_id,
+  sheet = config$metadata_turbo$sheet_name
+)
+dbWriteTable(con, config$metadata_turbo$target_table, df_metadata, overwrite = TRUE)
+```
+
+## Subsection 3: Configuration File Pattern (For Small, Static Mappings)
+
+```yaml
+# config/status_labels.yaml
+status_labels:
+  - code: "active"
+    label_zh: "啟用中"
+    label_en: "Active"
+  - code: "inactive"
+    label_zh: "已停用"
+    label_en: "Inactive"
+```
+
+```r
+# Read at initialization
+config <- yaml::read_yaml("config/status_labels.yaml")
+# Use config$status_labels in application
+```
+
+# Section 3: Migration Strategy {#migration-strategy}
+
+## Subsection 1: For Existing Hardcoded Tables
+
+When encountering hardcoded lookup tables in existing code:
+
+1. **Phase 1: Database Priority**
+   - Add database query as primary source
+   - Keep hardcoded as fallback with deprecation warning
+
+2. **Phase 2: External Source**
+   - Create Google Sheet or other external source
+   - Implement ETL to populate database
+
+3. **Phase 3: Remove Hardcoded**
+   - Once database is authoritative, remove fallback
+   - Add validation to ensure database is populated
+
+## Subsection 2: Example Migration
+
+```r
+# MIGRATION PHASE 1: Database priority with fallback
+fn_get_weekday_name <- function(day, locale, con) {
+  # Try database first
+  if (!is.null(con)) {
+    result <- tryCatch({
+      tbl2(con, "df_weekday_names") %>%
+        filter(day_code == !!day) %>%
+        collect()
+    }, error = function(e) NULL)
+
+    if (!is.null(result) && nrow(result) > 0) {
+      return(if (locale == "zh_TW") result$name_zh[1] else result$name_en[1])
+    }
+  }
+
+  # DEPRECATED: Fallback to hardcoded (remove in Phase 3)
+  warning("Using deprecated hardcoded weekday mapping. Migrate to database.")
+  legacy_map <- list(monday = list(zh = "星期一", en = "Monday"))
+  if (day %in% names(legacy_map)) {
+    return(if (locale == "zh_TW") legacy_map[[day]]$zh else legacy_map[[day]]$en)
+  }
+
+  return(day)
+}
+```
+
+# Section 4: Enforcement {#enforcement}
+
+## Subsection 1: Code Review Checklist
+
+- [ ] No `list()` definitions containing translation pairs
+- [ ] No `c()` vectors with named elements for mappings
+- [ ] No inline category/status code definitions
+- [ ] All lookups reference database or config files
+
+## Subsection 2: Static Analysis Patterns
+
+Flag files containing:
+- `list(.* = list(zh = .*, en = .*))` patterns
+- `_map <- list()` variable assignments
+- Multiple translation pairs in same block
+
+# Section 5: Exceptions {#exceptions}
+
+## Subsection 1: Allowed Inline Definitions
+
+The following are **permitted** as they are universal and language-agnostic:
+
+```r
+# ALLOWED: Universal constants (not project-specific)
+HTTP_STATUS_CODES <- list(
+  OK = 200,
+  NOT_FOUND = 404,
+  SERVER_ERROR = 500
+)
+
+# ALLOWED: Mathematical constants
+DAYS_IN_WEEK <- 7
+MONTHS_IN_YEAR <- 12
+
+# ALLOWED: R system constants
+NA_TYPES <- c(NA, NA_character_, NA_integer_, NA_real_)
+```
+
+The distinction: **Universal constants** are the same across all projects; **lookup tables** vary by context.
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## No Hardcoded Lookup Tables Checklist
+
+**Before Writing New Code:**
+- [ ] Identify if mapping data varies by project/client
+- [ ] If yes, plan database or config externalization
+- [ ] Define ETL source (Google Sheets, CSV, API)
+
+**During Code Review:**
+- [ ] Check for inline mapping definitions
+- [ ] Verify database tables exist for lookups
+- [ ] Confirm config files are properly loaded
+
+**Legacy Code Migration:**
+- [ ] Inventory all hardcoded mappings
+- [ ] Create external source for each
+- [ ] Implement ETL pipeline
+- [ ] Add deprecation warnings to fallbacks
+- [ ] Remove fallbacks after validation
+:::
+
+---
+
+*Derives from: [MP137 No Hardcoded Project-Specific Content](../../CH00_fundamental_principles/03_development_methodology/MP137_no_hardcoded_project_specific_content.qmd)*
+*Related to: [SO_P010 Config-Driven Customization](SO_P010_config_driven_customization.qmd), [DM_R046 Variable Display Name Metadata](../../CH02_data_management/rules/DM_R046_variable_display_name_metadata.qmd)*

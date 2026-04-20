@@ -1,0 +1,205 @@
+---
+title: "SEC_R002: Environment Variable Standards"
+subtitle: "Naming and usage conventions for credential environment variables"
+chapter: "CH07"
+category: "rule"
+number: "SEC_R002"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-rule"
+parent-principle: "MP110"
+enforcement: "REQUIRED"
+severity: "HIGH"
+format:
+  html:
+    toc: true
+    code-fold: true
+---
+
+## Rule Statement
+
+All credentials MUST be accessed through environment variables following standardized naming conventions and secure access patterns.
+
+## Naming Conventions
+
+### Standard Variable Names
+
+```r
+# Database Credentials
+PGHOST          # PostgreSQL host
+PGPORT          # PostgreSQL port
+PGUSER          # PostgreSQL user
+PGPASSWORD      # PostgreSQL password
+PGDATABASE      # PostgreSQL database
+PGSSLMODE       # PostgreSQL SSL mode
+
+# API Keys
+OPENAI_API_KEY  # OpenAI API key (unified name)
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
+GOOGLE_API_KEY
+
+# Application Secrets
+APP_SECRET_KEY
+JWT_SECRET
+ENCRYPTION_KEY
+```
+
+### Naming Rules
+
+1. **UPPERCASE** with underscores
+2. **Prefix** with service name (PG, AWS, OPENAI)
+3. **Suffix** with credential type (KEY, PASSWORD, TOKEN)
+4. **No** special characters except underscore
+
+## Access Patterns
+
+### Basic Access
+
+```r
+# Simple retrieval
+api_key <- Sys.getenv("OPENAI_API_KEY")
+
+# With default value (development only)
+db_host <- Sys.getenv("PGHOST", "localhost")
+```
+
+### Secure Access Function
+
+```r
+# Recommended secure access pattern
+get_required_env <- function(var_name, mask = TRUE) {
+  value <- Sys.getenv(var_name)
+  
+  if (nchar(value) == 0) {
+    stop(sprintf(
+      "Required environment variable '%s' not set", 
+      var_name
+    ))
+  }
+  
+  # Log access (masked)
+  if (mask) {
+    masked <- paste0(substr(value, 1, 4), "***")
+    message(sprintf("Loaded %s: %s", var_name, masked))
+  }
+  
+  return(value)
+}
+
+# Usage
+db_password <- get_required_env("PGPASSWORD")
+api_key <- get_required_env("OPENAI_API_KEY")
+```
+
+## Configuration Files
+
+### .env Template (Safe to commit)
+
+```bash
+# .env.example
+PGHOST=your-database-host
+PGPORT=5432
+PGUSER=your-database-user
+PGPASSWORD=your-database-password
+PGDATABASE=your-database-name
+PGSSLMODE=require
+
+OPENAI_API_KEY=sk-proj-your-key-here
+```
+
+### Loading .env Files
+
+```r
+# Load environment variables from .env
+load_env <- function(env_file = ".env") {
+  if (!file.exists(env_file)) {
+    warning(sprintf("Environment file %s not found", env_file))
+    return(invisible(NULL))
+  }
+  
+  # Parse and set environment variables
+  readLines(env_file) %>%
+    grep("^[^#].*=", ., value = TRUE) %>%
+    strsplit("=", fixed = TRUE) %>%
+    lapply(function(x) {
+      Sys.setenv(x[1] = x[2])
+    })
+  
+  message(sprintf("Loaded environment from %s", env_file))
+}
+```
+
+## Validation Requirements
+
+### Pre-flight Checks
+
+```r
+# Validate all required variables at startup
+validate_environment <- function() {
+  required_vars <- c(
+    "PGHOST", "PGPORT", "PGUSER", 
+    "PGPASSWORD", "PGDATABASE",
+    "OPENAI_API_KEY"
+  )
+  
+  missing <- character()
+  for (var in required_vars) {
+    if (nchar(Sys.getenv(var)) == 0) {
+      missing <- c(missing, var)
+    }
+  }
+  
+  if (length(missing) > 0) {
+    stop(sprintf(
+      "Missing required environment variables: %s",
+      paste(missing, collapse = ", ")
+    ))
+  }
+  
+  message("All required environment variables present")
+}
+
+# Run at application startup
+validate_environment()
+```
+
+## Platform-Specific Configurations
+
+### Posit Connect
+
+```r
+# Set variables in Posit Connect UI or via API
+# Create Variable Sets for different environments
+```
+
+### Docker
+
+```dockerfile
+# Pass environment variables to container
+ENV PGHOST=${PGHOST}
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
+```
+
+### Local Development
+
+```bash
+# Export in shell profile
+export OPENAI_API_KEY="sk-proj-development-key"
+export PGPASSWORD="local-dev-password"
+```
+
+## Security Best Practices
+
+1. **Never** log actual credential values
+2. **Always** validate presence at startup
+3. **Use** different keys for dev/staging/production
+4. **Rotate** credentials regularly
+5. **Monitor** environment variable access
+
+## Related Rules
+
+- SEC_R001: No Hardcoded Credentials
+- SEC_R003: Credential Rotation Requirements
+- SEC_R004: Secret Storage Patterns

@@ -1,0 +1,131 @@
+# D01 DNA Analysis - Implementation Rules
+# =========================================
+# Binding contract between D01 documentation and code.
+
+derivation_id: D01
+title: "DNA Analysis Module"
+description: "Customer DNA behavioral analysis and app handoff"
+
+derivation_steps:
+  d01_00:
+    title: "Consume ETL Output"
+    type: "conceptual"
+    layer: "3PR"
+    responsibility: "Read standardized sales output from ETL"
+    implementation: "Read transformed_data.df_{platform}_sales___standardized"
+
+  d01_01:
+    title: "Customer Aggregation"
+    type: "conceptual"
+    layer: "3PR"
+    responsibility: "Aggregate customer/date and customer-level base tables"
+    implementation: "Produce sales_by_customer_by_date and sales_by_customer"
+
+  d01_02:
+    title: "Customer Features + DNA"
+    type: "concrete"
+    layer: "3PR+4CL"
+    responsibility: "Compute customer metrics and run DNA"
+    must_call: "analysis_dna()"
+    function_location: "scripts/global_scripts/04_utils/fn_analysis_dna.R"
+    input_tables:
+      - "processed_data.df_{platform}_sales_by_customer"
+      - "processed_data.df_{platform}_sales_by_customer_by_date"
+    output_tables:
+      - "processed_data.df_{platform}_customer_rfm"
+      - "cleansed_data.df_dna_by_customer___cleansed"
+
+  d01_03:
+    title: "Customer Profile"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "Create customer profile attributes"
+    input_table: "transformed_data.df_{platform}_sales___standardized"
+    output_table: "cleansed_data.df_profile_by_customer___cleansed"
+
+  d01_04:
+    title: "App Views"
+    type: "concrete"
+    layer: "5NM"
+    responsibility: "Normalize cleansed outputs to app_data"
+    input_tables:
+      - "cleansed_data.df_dna_by_customer___cleansed"
+      - "cleansed_data.df_profile_by_customer___cleansed"
+    output_tables:
+      - "app_data.df_dna_by_customer"
+      - "app_data.df_profile_by_customer"
+      - "app_data.df_segments_by_customer"
+
+  d01_05:
+    title: "Final Validation"
+    type: "concrete"
+    layer: "N/A"
+    responsibility: "Validate app_data output contracts"
+    input_tables:
+      - "app_data.df_dna_by_customer"
+      - "app_data.df_profile_by_customer"
+      - "app_data.df_segments_by_customer"
+    output: "execution_status"
+
+  d01_06:
+    title: "Execution Orchestration"
+    type: "orchestration"
+    layer: "N/A"
+    responsibility: "Run D01_00 through D01_05 in sequence"
+    constraint: "No direct business computations"
+    pattern: "DM_R044 Five-Part Structure"
+
+enforcement:
+  rule: "Each D01 step must implement only its documented responsibility"
+
+  violations:
+    - pattern: "DNA logic outside D01_02"
+      severity: "critical"
+      action: "Refactor DNA logic into D01_02 via analysis_dna()"
+
+    - pattern: "Profile creation outside D01_03"
+      severity: "high"
+      action: "Refactor profile logic into D01_03"
+
+    - pattern: "App table normalization outside D01_04"
+      severity: "high"
+      action: "Refactor app normalization into D01_04"
+
+platform_implementations:
+  cbz:
+    d01_02: "update_scripts/DRV/cbz/cbz_D01_02.R"
+    d01_03: "update_scripts/DRV/cbz/cbz_D01_03.R"
+    d01_04: "update_scripts/DRV/cbz/cbz_D01_04.R"
+    d01_05: "update_scripts/DRV/cbz/cbz_D01_05.R"
+    d01_06: "update_scripts/DRV/cbz/cbz_D01_06.R"
+
+  amz:
+    d01_02: "update_scripts/DRV/amz/amz_D01_02.R"
+    d01_03: "update_scripts/DRV/amz/amz_D01_03.R"
+    d01_04: "update_scripts/DRV/amz/amz_D01_04.R"
+    d01_05: "update_scripts/DRV/amz/amz_D01_05.R"
+    d01_06: "update_scripts/DRV/amz/amz_D01_06.R"
+
+  eby:
+    d01_02: "update_scripts/DRV/eby/eby_D01_02.R"
+    d01_03: "update_scripts/DRV/eby/eby_D01_03.R"
+    d01_04: "update_scripts/DRV/eby/eby_D01_04.R"
+    d01_05: "update_scripts/DRV/eby/eby_D01_05.R"
+    d01_06: "update_scripts/DRV/eby/eby_D01_06.R"
+
+  all:
+    d01_06: "update_scripts/DRV/all/all_D01_06.R"
+    note: "Cross-platform orchestration"
+
+related_principles:
+  - id: "MP064"
+    title: "ETL-Derivation Separation"
+    relevance: "D01 is derivation-only"
+
+  - id: "DM_R044"
+    title: "Derivation Implementation Standard"
+    relevance: "Five-part script structure"
+
+  - id: "SO_R007"
+    title: "One Function One File"
+    relevance: "analysis_dna() single-source contract"

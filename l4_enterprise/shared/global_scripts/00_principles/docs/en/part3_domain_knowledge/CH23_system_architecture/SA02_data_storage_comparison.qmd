@@ -1,0 +1,188 @@
+---
+title: "SA02: Data Storage Architecture Comparison"
+subtitle: "DuckDB vs Parquet vs Supabase for Shiny App Deployment"
+date: "2026-01-26"
+categories: [system-architecture, database, deployment]
+---
+
+## Overview
+
+When deploying R Shiny applications to cloud platforms like Posit Connect, choosing the right data storage architecture is critical for performance, maintainability, and cost.
+
+This document compares three common approaches:
+
+1. **DuckDB** - Embedded analytical database
+2. **Parquet** - Columnar file format
+3. **Supabase** - Cloud PostgreSQL service
+
+## Comparison Matrix
+
+| Aspect | DuckDB (Local) | Parquet (Local) | Supabase (Cloud) |
+|--------|----------------|-----------------|------------------|
+| **Query Speed** | Excellent | Excellent | Good (network latency) |
+| **Network Latency** | None | None | 200-500ms per query |
+| **File Size** | Large (~100MB+) | Small (compressed) | N/A |
+| **Posit Connect Limit** | May exceed | Usually fits | No limit |
+| **Data Updates** | Requires redeploy | Requires redeploy | Instant |
+| **Multi-App Sharing** | Separate copies | Separate copies | Single source |
+| **Cold Start** | Fast | Fast | Connection overhead |
+| **Cost** | Free | Free | Free tier limited |
+| **Complexity** | Low | Low | Medium |
+
+## Detailed Analysis
+
+### DuckDB (Embedded Database)
+
+**Pros:**
+
+- Zero network latency
+- Full SQL support with excellent analytics performance
+- Single file deployment
+- Works offline
+
+**Cons:**
+
+- Large file size may exceed deployment limits
+- Git LFS files not pulled on Posit Connect
+- Each app needs its own copy
+- Data updates require redeployment
+
+**Best for:** Local development, small datasets (<50MB)
+
+### Parquet (Columnar Files)
+
+**Pros:**
+
+- Excellent compression (often 10x smaller than CSV)
+- Columnar storage = fast column selection
+- DuckDB reads Parquet natively
+- Can split into multiple small files
+
+**Cons:**
+
+- Data updates require redeployment
+- No real-time queries
+- Need to manage multiple files
+
+**Best for:** Read-heavy analytics, infrequent data updates
+
+```r
+# Example: Reading specific columns from Parquet
+library(arrow)
+df <- read_parquet("data/customers.parquet",
+                   col_select = c("id", "name", "score"))
+```
+
+### Supabase (Cloud PostgreSQL)
+
+**Pros:**
+
+- No file size limits
+- Instant data updates without redeployment
+- Multiple apps share single data source
+- Built-in auth, storage, edge functions
+- Automatic backups
+
+**Cons:**
+
+- Network latency (200-500ms per query)
+- Requires internet connection
+- Free tier: 500MB, 7-day inactivity pause
+- Paid tier cost
+
+**Best for:** Production apps, frequent data updates, multi-app architectures
+
+```r
+# Example: Connecting to Supabase
+conn <- dbConnectSupabase()
+df <- dbGetQuery(conn, "SELECT id, name, score FROM customers")
+```
+
+## Mitigation Strategies
+
+### For Supabase Network Latency
+
+Use caching to eliminate repeated query latency:
+
+```r
+library(memoise)
+
+load_data_cached <- memoise::memoise(
+  function(conn, query) {
+    dbGetQuery(conn, query)
+  },
+  cache = cachem::cache_disk("cache/", max_age = 21600)  # 6 hours
+)
+```
+
+**Result:**
+- First query: ~500ms (network)
+- Subsequent queries: <50ms (cache)
+
+### For Large DuckDB Files
+
+Split into multiple Parquet files:
+
+```r
+# Export DuckDB tables to Parquet
+tables <- c("customers", "orders", "products")
+for (tbl in tables) {
+  df <- dbGetQuery(con, sprintf("SELECT * FROM %s", tbl))
+  arrow::write_parquet(df, sprintf("data/%s.parquet", tbl))
+}
+```
+
+## Decision Framework
+
+```
+                    ┌─────────────────────────┐
+                    │ Data updates frequently?│
+                    └───────────┬─────────────┘
+                               │
+              ┌────────────────┴────────────────┐
+              │ Yes                             │ No
+              ▼                                 ▼
+    ┌─────────────────┐              ┌─────────────────┐
+    │ Use Supabase    │              │ File size >50MB?│
+    │ + Caching Layer │              └────────┬────────┘
+    └─────────────────┘                       │
+                                 ┌────────────┴────────────┐
+                                 │ Yes                     │ No
+                                 ▼                         ▼
+                       ┌─────────────────┐      ┌─────────────────┐
+                       │ Use Parquet     │      │ Use DuckDB      │
+                       │ (split files)   │      │ (single file)   │
+                       └─────────────────┘      └─────────────────┘
+```
+
+## MAMBA Platform Decision
+
+For the MAMBA Enterprise Platform, we chose **Supabase + Caching**:
+
+| Factor | Our Situation | Decision Driver |
+|--------|---------------|-----------------|
+| Data size | ~124K rows | Exceeds Posit Connect limits |
+| Update frequency | Weekly | Supabase avoids redeploys |
+| Multiple apps | Yes (future) | Single data source |
+| Already invested | Paid Supabase | Leverage existing infra |
+
+### Implementation
+
+1. **SQL-level optimization**: Select only needed columns
+2. **Caching layer**: 6-hour `memoise` cache
+3. **Lazy loading**: Components load on-demand
+
+**Result:** <5 second startup, <500ms tab switching
+
+## Related Principles
+
+- **P77**: Performance Optimization
+- **DM_R023**: Universal DBI Approach
+- **DM_R056**: Posit Connect Deployment Assets
+
+## References
+
+- [DuckDB Documentation](https://duckdb.org/docs/)
+- [Apache Arrow/Parquet](https://arrow.apache.org/)
+- [Supabase Documentation](https://supabase.com/docs)
+- [Posit Connect Deployment](https://docs.posit.co/connect/)

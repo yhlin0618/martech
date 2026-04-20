@@ -1,0 +1,648 @@
+---
+title: "MP099: Real-Time Progress Reporting"
+date: "2025-08-28"
+author: "Claude Code (Principle Debugger)"
+categories: ["Meta-Principles", "Development Methodology", "User Experience"]
+tags: ["progress-reporting", "debugging", "user-feedback", "real-time", "monitoring"]
+---
+
+## Meta-Principle Statement
+
+**All long-running operations in MAMBA framework must provide real-time progress feedback to enable effective debugging, monitoring, and user experience.**
+
+## Core Requirements
+
+### 1. Progress Indicators for Loops and Iterations
+
+**REQUIRE**: Any loop processing more than 10 items or taking more than 5 seconds must include progress reporting.
+
+```r
+# ✅ CORRECT: Progress reporting in API pagination
+while (has_more && page <= max_pages) {
+  message(sprintf("  Fetching %s page %d/%d...", endpoint, page, max_pages))
+  # ... API call logic ...
+  if (page %% 5 == 0 || !has_more) {
+    message(sprintf("  Progress: %d/%d pages completed (%.1f%%)", 
+                    page-1, max_pages, (page-1)/max_pages*100))
+  }
+}
+
+# ❌ INCORRECT: Silent loop with no progress feedback  
+for (i in 1:1000) {
+  # ... processing with no feedback ...
+}
+```
+
+### 2. Time Estimates and ETA Calculations
+
+**REQUIRE**: Operations expected to take more than 30 seconds must provide time estimates.
+
+```r
+# ✅ CORRECT: Time tracking with ETA
+start_time <- Sys.time()
+total_items <- length(file_list)
+
+for (i in seq_along(file_list)) {
+  # ... processing ...
+  
+  if (i %% 10 == 0 || i == total_items) {
+    elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+    avg_time_per_item <- elapsed / i
+    eta_seconds <- avg_time_per_item * (total_items - i)
+    
+    message(sprintf("  Progress: %d/%d files (%.1f%%) | Elapsed: %.1fs | ETA: %.1fs",
+                    i, total_items, i/total_items*100, elapsed, eta_seconds))
+  }
+}
+```
+
+### 3. Database Operation Progress
+
+**REQUIRE**: Database operations on large datasets must report progress and row counts.
+
+```r
+# ✅ CORRECT: Database operation with progress
+message("MAIN: Writing sales data to raw_data database...")
+start_time <- Sys.time()
+
+tryCatch({
+  dbWriteTable(raw_data, "df_cbz_sales_raw", df_sales_raw, overwrite = TRUE)
+  
+  # Verify and report results
+  final_count <- dbGetQuery(raw_data, "SELECT COUNT(*) as count FROM df_cbz_sales_raw")$count
+  elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+  
+  message(sprintf("MAIN: ✅ Successfully wrote %d records to df_cbz_sales_raw (%.2fs)",
+                  final_count, elapsed))
+}, error = function(e) {
+  message(sprintf("MAIN: ❌ Database write failed after %.2fs: %s", 
+                  as.numeric(Sys.time() - start_time, units = "secs"), e$message))
+  stop(e)
+})
+```
+
+### 4. API Call Rate Limiting Feedback
+
+**REQUIRE**: API calls with rate limiting must provide visual feedback about delays.
+
+```r
+# ✅ CORRECT: Rate limiting with user feedback
+apply_rate_limit <- function(delay_seconds, operation_name) {
+  if (delay_seconds > 0.1) {  # Only show for noticeable delays
+    message(sprintf("  ⏱️  Rate limiting: waiting %.2fs before %s...", 
+                    delay_seconds, operation_name))
+    Sys.sleep(delay_seconds)
+    message(sprintf("  ✅ Rate limit delay completed, continuing %s", operation_name))
+  } else {
+    Sys.sleep(delay_seconds)
+  }
+}
+
+# Usage in API loop
+apply_rate_limit(rate_limit_delay, "next API call")
+```
+
+### 5. Error Context with Step Identification
+
+**REQUIRE**: Errors must include specific step identification and progress context.
+
+```r
+# ✅ CORRECT: Error reporting with context
+tryCatch({
+  message(sprintf("MAIN: Step 3/5 - Processing order line items (%d orders)...", 
+                  nrow(df_orders_raw)))
+  
+  # ... processing logic ...
+  
+}, error = function(e) {
+  error_context <- sprintf(
+    "MAIN ERROR in Step 3/5 (Processing line items): %s\n  Context: %d orders being processed\n  Current order index: %d\n  Time elapsed: %.2fs", 
+    e$message, nrow(df_orders_raw), current_index, as.numeric(Sys.time() - step_start_time, units = "secs")
+  )
+  main_error <<- list(message = error_context, step = "line_item_processing")
+  message(error_context)
+})
+```
+
+## Real-Time Console Monitoring Implementation
+
+### Claude Code Integration Pattern
+
+**NEW**: For AI-assisted debugging and monitoring, use shell-based real-time output capture:
+
+```bash
+# Shell command with forced line buffering for real-time output
+stdbuf -oL -eL Rscript script.R 2>&1 | tee scripts/global_scripts/00_principles/CHANGELOG/monitoring/monitor.log
+
+# Parameters:
+# -oL: Line buffer stdout
+# -eL: Line buffer stderr  
+# 2>&1: Combine stderr with stdout
+# tee: Save to file while displaying
+```
+
+### R Script Monitoring Function
+
+```r
+# Monitor R script execution with real-time feedback
+monitor_r_script <- function(script_path, 
+                           monitor_interval = 1,
+                           stop_on_error = TRUE) {
+  
+  require(processx)
+  
+  # Create log file in CHANGELOG monitoring directory
+  log_dir <- "scripts/global_scripts/00_principles/CHANGELOG/monitoring"
+  dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
+  log_file <- file.path(log_dir, paste0(
+    "monitor_", basename(script_path), "_",
+    format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"
+  ))
+  
+  message("🚀 Starting monitored execution: ", script_path)
+  message("📝 Log file: ", log_file)
+  message("⏱️  Monitoring every ", monitor_interval, " second(s)")
+  
+  # Start R process with output capture
+  p <- processx::process$new(
+    command = "Rscript",
+    args = script_path,
+    stdout = "|",
+    stderr = "|",
+    echo_cmd = TRUE
+  )
+  
+  # Monitor loop
+  error_detected <- FALSE
+  warning_count <- 0
+  start_time <- Sys.time()
+  
+  while (p$is_alive() || p$poll_io(0)["output"] == "ready") {
+    
+    # Read output
+    output <- p$read_output_lines(n = 1000)
+    errors <- p$read_error_lines(n = 1000)
+    
+    # Process and color-code output
+    if (length(output) > 0) {
+      for (line in output) {
+        # Write to log
+        cat(line, "\n", file = log_file, append = TRUE)
+        
+        # Color coding for console
+        if (grepl("✅|SUCCESS", line, ignore.case = TRUE)) {
+          cat("\033[32m", line, "\033[0m\n", sep = "")  # Green
+        } else if (grepl("⚠️|WARNING", line, ignore.case = TRUE)) {
+          cat("\033[33m", line, "\033[0m\n", sep = "")  # Yellow
+          warning_count <- warning_count + 1
+        } else if (grepl("❌|ERROR|Failed", line, ignore.case = TRUE)) {
+          cat("\033[31m", line, "\033[0m\n", sep = "")  # Red
+          error_detected <- TRUE
+          
+          # Specific error detection
+          if (grepl("rapi_register_df|std::exception", line)) {
+            message("\n🔴 CRITICAL: DuckDB registration error detected!")
+          }
+        } else {
+          cat(line, "\n")
+        }
+      }
+    }
+    
+    # Process error output
+    if (length(errors) > 0) {
+      for (line in errors) {
+        cat("STDERR: ", line, "\n", file = log_file, append = TRUE)
+        cat("\033[31mERROR: ", line, "\033[0m\n", sep = "")
+      }
+      
+      if (any(grepl("rapi_register_df|Conflicting lock", errors))) {
+        message("\n🔴 DETECTED: DuckDB error - check database connections!")
+        error_detected <- TRUE
+      }
+    }
+    
+    # Stop on error if requested
+    if (error_detected && stop_on_error) {
+      message("\n⛔ Stopping due to error detection")
+      p$kill()
+      break
+    }
+    
+    # Wait for next check
+    Sys.sleep(monitor_interval)
+  }
+  
+  # Return monitoring results
+  list(
+    log_file = log_file,
+    error_detected = error_detected,
+    warning_count = warning_count,
+    duration = difftime(Sys.time(), start_time, units = "secs")
+  )
+}
+```
+
+### Bash Shell Monitoring Script
+
+```bash
+#!/bin/bash
+# fn_run_r_monitored.sh - Real-time R script monitoring
+
+monitor_r() {
+    local script="$1"
+    local log_dir="scripts/global_scripts/00_principles/CHANGELOG/monitoring"
+    
+    mkdir -p "$log_dir"
+    
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local log_file="$log_dir/$(basename "$script" .R)_${timestamp}.log"
+    
+    echo "🚀 Starting monitored execution: $script"
+    echo "📝 Log file: $log_file"
+    echo "════════════════════════════════════════"
+    
+    # Run with forced line buffering
+    stdbuf -oL -eL Rscript "$script" 2>&1 | \
+    tee "$log_file" | \
+    while IFS= read -r line; do
+        # Color code output
+        if [[ "$line" =~ (✅|SUCCESS|successfully) ]]; then
+            printf "\033[32m%s\033[0m\n" "$line"  # Green
+        elif [[ "$line" =~ (⚠️|WARNING|warning) ]]; then
+            printf "\033[33m%s\033[0m\n" "$line"  # Yellow
+        elif [[ "$line" =~ (❌|ERROR|Failed|exception) ]]; then
+            printf "\033[31m%s\033[0m\n" "$line"  # Red
+            
+            # Specific error detection
+            if [[ "$line" =~ rapi_register_df ]]; then
+                echo "🔴 CRITICAL: DuckDB registration error!"
+            elif [[ "$line" =~ "Conflicting lock" ]]; then
+                echo "🔴 CRITICAL: DuckDB file lock detected!"
+            fi
+        else
+            echo "$line"
+        fi
+    done
+    
+    local exit_code=${PIPESTATUS[0]}
+    echo "════════════════════════════════════════"
+    echo "📊 Exit code: $exit_code"
+    echo "📝 Log saved: $log_file"
+    
+    return $exit_code
+}
+```
+
+### Claude Code Agent Integration
+
+For AI agents (like principle-debugger) to monitor R scripts in real-time:
+
+```bash
+# 1. Start background execution with monitoring
+stdbuf -oL -eL Rscript scripts/update_scripts/cbz_ETL01_0IM.R 2>&1 | tee scripts/global_scripts/00_principles/CHANGELOG/monitoring/etl/etl.log &
+
+# 2. AI agent checks output every second using BashOutput tool
+# Can use filter parameter for specific errors:
+BashOutput bash_id filter="ERROR|Failed|exception|rapi_register_df"
+
+# 3. React to errors immediately
+if [[ output contains "rapi_register_df" ]]; then
+  echo "Detected DuckDB error - initiating debugging protocol"
+fi
+```
+
+## Implementation Patterns
+
+### Pattern 1: Progress Bar for File Processing
+
+```r
+# Enhanced file import with progress reporting
+import_files_with_progress <- function(file_paths, operation_name = "file processing") {
+  total_files <- length(file_paths)
+  start_time <- Sys.time()
+  
+  message(sprintf("MAIN: Starting %s for %d files...", operation_name, total_files))
+  
+  results <- list()
+  for (i in seq_along(file_paths)) {
+    file_start <- Sys.time()
+    
+    tryCatch({
+      # Process file
+      result <- process_file(file_paths[i])
+      results[[i]] <- result
+      
+      # Progress reporting
+      file_elapsed <- as.numeric(Sys.time() - file_start, units = "secs")
+      total_elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+      avg_time_per_file <- total_elapsed / i
+      eta_seconds <- avg_time_per_file * (total_files - i)
+      
+      message(sprintf("  [%d/%d] ✅ %s (%.2fs) | Total: %.2fs | ETA: %.2fs",
+                      i, total_files, basename(file_paths[i]), 
+                      file_elapsed, total_elapsed, eta_seconds))
+      
+    }, error = function(e) {
+      file_elapsed <- as.numeric(Sys.time() - file_start, units = "secs")
+      message(sprintf("  [%d/%d] ❌ Failed: %s (%.2fs) - %s",
+                      i, total_files, basename(file_paths[i]), 
+                      file_elapsed, e$message))
+      results[[i]] <- NULL
+    })
+  }
+  
+  total_elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+  success_count <- sum(!sapply(results, is.null))
+  
+  message(sprintf("MAIN: %s completed - %d/%d successful (%.2fs total)",
+                  operation_name, success_count, total_files, total_elapsed))
+  
+  return(results)
+}
+```
+
+### Pattern 2: API Pagination with Enhanced Progress
+
+```r
+# Enhanced API pagination with comprehensive progress reporting
+fetch_all_pages_with_progress <- function(endpoint, per_page = 50, max_pages = NULL) {
+  message(sprintf("MAIN: Starting paginated fetch from %s...", endpoint))
+  start_time <- Sys.time()
+  
+  all_data <- list()
+  page <- 1
+  has_more <- TRUE
+  total_records <- 0
+  
+  while (has_more) {
+    page_start <- Sys.time()
+    
+    # Show progress with context
+    if (is.null(max_pages)) {
+      message(sprintf("  📄 Fetching page %d (%d records so far)...", page, total_records))
+    } else {
+      progress_pct <- min((page-1) / max_pages * 100, 100)
+      message(sprintf("  📄 Fetching page %d/%d (%.1f%% | %d records so far)...", 
+                      page, max_pages, progress_pct, total_records))
+    }
+    
+    tryCatch({
+      # Rate limiting with feedback
+      apply_rate_limit(rate_limit_delay, sprintf("page %d fetch", page))
+      
+      # Make API call
+      result <- cbz_api_call(endpoint, params = list(page = page, per_page = per_page))
+      
+      page_elapsed <- as.numeric(Sys.time() - page_start, units = "secs")
+      
+      if (!is.null(result) && is.data.frame(result) && nrow(result) > 0) {
+        all_data[[page]] <- result
+        total_records <- total_records + nrow(result)
+        
+        # Detailed page completion message
+        message(sprintf("  ✅ Page %d completed: %d records (%.2fs) | Total: %d records",
+                        page, nrow(result), page_elapsed, total_records))
+        
+        # Check for last page
+        if (nrow(result) < per_page) {
+          message(sprintf("  🏁 Last page detected (partial page: %d < %d)", 
+                          nrow(result), per_page))
+          has_more <- FALSE
+        }
+        
+        # Check max pages limit
+        if (!is.null(max_pages) && page >= max_pages) {
+          message(sprintf("  ⚠️ Max pages limit reached (%d/%d)", page, max_pages))
+          has_more <- FALSE
+        }
+      } else {
+        message(sprintf("  📭 Empty page %d - ending pagination", page))
+        has_more <- FALSE
+      }
+      
+      page <- page + 1
+      
+    }, error = function(e) {
+      page_elapsed <- as.numeric(Sys.time() - page_start, units = "secs")
+      message(sprintf("  ❌ Page %d failed after %.2fs: %s", page, page_elapsed, e$message))
+      has_more <- FALSE
+    })
+  }
+  
+  # Final summary
+  total_elapsed <- as.numeric(Sys.time() - start_time, units = "secs")
+  pages_fetched <- length(all_data)
+  avg_time_per_page <- if (pages_fetched > 0) total_elapsed / pages_fetched else 0
+  
+  message(sprintf("MAIN: ✅ Pagination completed - %d pages, %d total records (%.2fs | avg %.2fs/page)",
+                  pages_fetched, total_records, total_elapsed, avg_time_per_page))
+  
+  # Combine data
+  if (length(all_data) > 0) {
+    combined_data <- bind_rows(all_data)
+    message(sprintf("  📊 Combined dataset: %d rows × %d columns", 
+                    nrow(combined_data), ncol(combined_data)))
+    return(combined_data)
+  } else {
+    message("  📭 No data retrieved from any pages")
+    return(data.frame())
+  }
+}
+```
+
+### Pattern 3: Memory Usage Monitoring
+
+```r
+# Memory monitoring for large operations
+monitor_memory_usage <- function(operation_name, threshold_mb = 100) {
+  gc_info <- gc()
+  memory_mb <- sum(gc_info[, "(Mb)"])
+  
+  if (memory_mb > threshold_mb) {
+    message(sprintf("  💾 Memory usage: %.1f MB during %s (threshold: %.1f MB)", 
+                    memory_mb, operation_name, threshold_mb))
+    
+    if (memory_mb > threshold_mb * 2) {
+      message("  ⚠️ High memory usage detected, running garbage collection...")
+      gc(verbose = FALSE)
+      post_gc <- sum(gc()[, "(Mb)"])
+      message(sprintf("  🧹 After GC: %.1f MB (saved %.1f MB)", 
+                      post_gc, memory_mb - post_gc))
+    }
+  }
+}
+```
+
+## Benefits
+
+### 1. Enhanced Debugging Experience
+- **Real-Time Error Detection**: Errors caught immediately as they occur
+- **AI-Assisted Monitoring**: Claude Code agents can monitor and react to issues
+- **Early Problem Detection**: Issues identified before completion
+- **Error Context**: Clear understanding of where failures occur
+- **Performance Analysis**: Time bottlenecks become visible
+
+### 2. Improved User Experience
+- **Reduced Anxiety**: Users know system is working
+- **Better Planning**: ETA allows for scheduling
+- **Professional Feel**: System appears responsive and well-designed
+
+### 3. Operational Monitoring
+- **Performance Baselines**: Historical timing data for optimization
+- **Capacity Planning**: Understanding of resource requirements
+- **SLA Compliance**: Meeting user expectation for response times
+
+### 4. Development Efficiency
+- **Faster Debugging**: Issues located immediately, not after full execution
+- **Performance Optimization**: Bottlenecks identified during development
+- **Quality Assurance**: Real-time validation of system behavior
+
+## Architecture Integration
+
+### With R113 (Four-Part Script Structure)
+- **INITIALIZE**: Setup progress tracking variables and start timers
+- **MAIN**: Implement detailed progress reporting throughout execution
+- **TEST**: Report verification progress and results summary
+- **DEINITIALIZE**: Final timing and resource cleanup reports
+
+### With MP064 (ETL-Derivation Separation)
+- **ETL Phase**: Progress on data extraction, transformation, and loading
+- **Derivation Phase**: Progress on business logic and calculation steps
+
+### With Error Handling
+- Progress context included in all error messages
+- Step identification for precise error location
+- Time elapsed before error occurrence
+
+## Real-Time Monitoring Best Practices
+
+### 1. Output Buffering Control
+
+```r
+# Force immediate output in R scripts
+options(warn = 1)  # Print warnings immediately
+
+# Use message() instead of print() for progress
+message("Progress update")  # Goes to stderr, not buffered
+
+# Flush output explicitly
+flush.console()
+```
+
+### 2. Error Detection Patterns
+
+```r
+# Standard error patterns to monitor
+error_patterns <- list(
+  duckdb = "rapi_register_df|std::exception|Conflicting lock",
+  memory = "cannot allocate|out of memory",
+  api = "401|403|404|500|timeout",
+  file = "cannot open|does not exist|permission denied"
+)
+
+# Include pattern-specific error messages
+detect_error_type <- function(message) {
+  for (type in names(error_patterns)) {
+    if (grepl(error_patterns[[type]], message, ignore.case = TRUE)) {
+      return(list(
+        type = type,
+        pattern = error_patterns[[type]],
+        action = get_error_action(type)
+      ))
+    }
+  }
+  return(list(type = "unknown", pattern = NA, action = "log"))
+}
+```
+
+### 3. Performance Monitoring Integration
+
+```r
+# Track performance metrics during execution
+track_performance <- function(operation_name, code_block) {
+  start_time <- Sys.time()
+  start_memory <- gc()[2, "(Mb)"]
+  
+  message(sprintf("⏱️  Starting: %s", operation_name))
+  
+  result <- tryCatch({
+    eval(code_block)
+  }, error = function(e) {
+    elapsed <- difftime(Sys.time(), start_time, units = "secs")
+    message(sprintf("❌ %s failed after %.2fs: %s", 
+                    operation_name, elapsed, e$message))
+    stop(e)
+  })
+  
+  end_memory <- gc()[2, "(Mb)"]
+  elapsed <- difftime(Sys.time(), start_time, units = "secs")
+  memory_used <- end_memory - start_memory
+  
+  message(sprintf("✅ %s completed in %.2fs (%.1f MB used)",
+                  operation_name, elapsed, memory_used))
+  
+  return(result)
+}
+```
+
+## Compliance Validation
+
+```r
+# Check if script follows MP099
+validate_progress_reporting <- function(script_path) {
+  content <- readLines(script_path)
+  
+  # Check for required progress indicators
+  has_loop_progress <- any(grepl("message.*page|message.*progress|message.*%", content, ignore.case = TRUE))
+  has_time_tracking <- any(grepl("Sys\\.time|elapsed|ETA|eta", content, ignore.case = TRUE))
+  has_step_identification <- any(grepl("Step \\d|Phase \\d|stage", content, ignore.case = TRUE))
+  
+  progress_indicators <- sum(grepl("message\\(|cat\\(", content))
+  
+  compliance_score <- sum(c(has_loop_progress, has_time_tracking, has_step_identification)) / 3
+  
+  list(
+    compliant = compliance_score >= 0.6,
+    score = compliance_score,
+    progress_indicators = progress_indicators,
+    has_loop_progress = has_loop_progress,
+    has_time_tracking = has_time_tracking,
+    has_step_identification = has_step_identification
+  )
+}
+```
+
+## Related Principles
+
+- **R113**: Four-part Update Script Structure - Provides framework for progress integration
+- **MP064**: ETL-Derivation Separation - Defines phases needing progress reporting
+- **MP092**: Platform ID Standard - Ensures consistent progress message formatting
+- **MP031/MP033**: Resource Management - Progress reporting during initialization/cleanup
+
+## Changelog
+
+### 2025-08-28: Monitoring Log Location Update
+- Changed monitoring log location from "logs/monitoring/" to "scripts/global_scripts/00_principles/CHANGELOG/monitoring/"
+- Created subdirectory structure for different monitoring types (etl/, api/, database/)
+- Aligned monitoring logs with CHANGELOG for better system history tracking
+- Updated all examples and code snippets to reflect new paths
+
+### 2025-08-28: Real-Time Monitoring Enhancement
+- Added shell-based real-time output capture using `stdbuf`
+- Integrated Claude Code agent monitoring capabilities
+- Added specific error detection patterns for DuckDB and other common errors
+- Created bash and R monitoring functions for immediate feedback
+- Enhanced with performance tracking and memory monitoring
+
+### 2025-08-28: Initial Creation
+- Established core requirements for real-time progress reporting
+- Defined implementation patterns for common scenarios
+- Created compliance validation framework
+- Integrated with existing MAMBA principles
+
+---
+
+**Implementation Priority**: HIGH - Essential for debugging and user experience
+**Validation Required**: All new ETL and long-running scripts
+**Performance Impact**: Minimal (< 1% overhead for progress reporting)

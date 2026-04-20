@@ -1,0 +1,242 @@
+# ========================================
+# CH07: User Experience Principles
+# Version: 1.1
+# Last Updated: 2026-03-02
+#
+# Contains: UX_P001, UX_P002 (2 principles) + UX_R001 (1 rule)
+# Total: 3 principles
+# ========================================
+
+chapter: "CH07_ux"
+description: "User Experience Principles"
+principle_count: 3
+
+principles:
+
+  # ====================
+  # UX_P PRINCIPLES (2)
+  # ====================
+
+  - id: UX_P001
+    type: principle
+    name: lazy_initialization
+    display_name: "Lazy Initialization Principle"
+    one_liner: "Load only what is immediately needed at startup; defer everything else to first use"
+    file_path: "CH08_user_experience/principles/UX_P001_lazy_initialization.qmd"
+
+    rule_natural: |
+      Application startup must minimize load time:
+      - Classify packages as startup-essential vs runtime-deferred
+      - Source only core infrastructure at startup (db, config, utils)
+      - Defer UI component sourcing to first activation
+      - Prevent double-sourcing via registry pattern
+      - Target startup time: < 15 seconds
+
+    rule_formal: |
+      RULE UX_P001_LAZY_INIT:
+      FOR startup_phase:
+        LOAD ONLY startup_essential_packages
+        SOURCE ONLY core_infrastructure_dirs
+        DEFER component_sourcing TO first_use
+      FOR ALL source_calls:
+        USE source_once() TO prevent_double_loading
+      MEASURE startup_time < 15_seconds
+
+    violations:
+      - "Loading all 28 packages at startup via library()"
+      - "Recursively sourcing all 327 files in autoinit()"
+      - "Union file re-sourcing files already loaded by init"
+      - "No measurement of startup time impact"
+    compliant:
+      - "startup: shiny, bs4Dash, DBI, duckdb, dplyr only"
+      - "ensure_package('plotly') in component server"
+      - "source_once() in union files"
+      - "Startup time measured and tracked"
+
+    three_aspects:
+      package_loading:
+        description: "Distinguish startup-essential vs runtime packages"
+        startup_essential:
+          - "shiny"
+          - "bs4Dash"
+          - "DBI"
+          - "duckdb"
+          - "dplyr"
+        runtime_deferred:
+          - "arrow"
+          - "plotly"
+          - "readxl"
+          - "janitor"
+          - "openxlsx"
+        pattern: "ensure_package() — load on first use"
+
+      file_sourcing:
+        description: "On-demand component loading"
+        startup_dirs:
+          - "01_db"
+          - "02_db_utils"
+          - "03_config"
+          - "04_utils"
+        deferred_dirs:
+          - "10_rshinyapp_components"
+        pattern: "source_component() with source guard"
+
+      double_source_prevention:
+        description: "Prevent same file being sourced twice"
+        problem: "autoinit() and union files both source same components"
+        solution: "source_once() with canonical path registry"
+        utility_file: "04_utils/fn_source_once.R"
+
+  - id: UX_P002
+    type: principle
+    name: fast_query_rendering
+    display_name: "Fast Query Rendering Principle"
+    one_liner: "Every user-facing query must render within 3 seconds; use tiered caching to achieve this"
+    file_path: "CH08_user_experience/principles/UX_P002_fast_query_rendering.qmd"
+
+    rule_natural: |
+      Pre-compute First, No Silent Fallback:
+      - DEFAULT to Tier 1: Pre-computed DRV tables (~50ms) — compute at pipeline time
+      - Tier 2: SQL-level aggregation (~500ms) — only when runtime input is unpredictable
+      - Tier 3: Memoised queries (~50ms cache hit) — add-on layer wrapping Tier 2
+      - Tier 4: Raw query — only for config/reference tables < 1000 rows
+      - Each function implements exactly ONE tier — no fallback chains
+      - Missing pre-computed tables must raise an error, not silently degrade
+      - Verify required pre-computed tables exist at App startup
+      - Show loading indicators for queries > 1 second
+      - Use Shiny bindCache() for reactive outputs
+
+    rule_formal: |
+      RULE UX_P002_FAST_QUERY:
+      FOR ALL user_facing_queries:
+        MEASURE render_time < 3_seconds
+      FOR ALL data_access_functions:
+        IMPLEMENT exactly_one_tier
+        FORBID fallback_chains (tier1 -> tier2 -> tier3)
+      FOR data THAT can_be_precomputed:
+        REQUIRE tier_1 (precomputed_drv)
+      FOR query WITH unpredictable_runtime_input:
+        USE tier_2 (sql_aggregation)
+      FOR query WITH render_time > 1_second:
+        REQUIRE loading_indicator
+      AT app_startup:
+        VERIFY all_required_precomputed_tables_exist
+        ON missing: STOP with_explicit_error("Run: make run")
+
+    violations:
+      - "Raw dbGetQuery() on tables with 100k+ rows at render time"
+      - "Function with fallback chain: tries pre-computed, falls back to SQL, then R"
+      - "Missing pre-computed table silently degrades to slower computation path"
+      - "Computing aggregations at render time that could be pre-computed in DRV"
+      - "No loading spinner for queries taking > 1 second"
+      - "No startup verification for required pre-computed tables"
+    compliant:
+      - "Each function implements ONE tier: load_rsv_classified() reads, or stop()"
+      - "Pre-computed tables from D01_07 verified at startup"
+      - "SQL-level COUNT/SUM/AVG for runtime-dependent aggregations"
+      - "bindCache(input$platform, input$date_range) on reactive outputs"
+      - "shinycssloaders::withSpinner() on data-heavy outputs"
+
+    tiered_caching:
+      tier_1_precomputed:
+        description: "Heavy aggregations computed at DRV time"
+        latency: "~50ms"
+        examples:
+          - "df_dna_plot_data (ECDF curves)"
+          - "df_dna_category_counts (distribution counts)"
+          - "df_dna_summary_stats (summary statistics)"
+        when: "Data changes only at pipeline execution time"
+
+      tier_2_sql_aggregation:
+        description: "Push computation to DuckDB SQL engine"
+        latency: "~500ms"
+        pattern: "SELECT aggregate_fn() FROM table GROUP BY ... WHERE ..."
+        when: "Aggregation depends on user-selected runtime filters"
+
+      tier_3_memoised:
+        description: "Disk-based cache with automatic expiration"
+        latency: "~50ms on cache hit"
+        tools:
+          - "memoise::memoise() + cachem::cache_disk()"
+          - "Shiny bindCache()"
+        when: "Same parameters called repeatedly within/across sessions"
+
+      tier_4_raw:
+        description: "Direct dbGetQuery without caching"
+        latency: "Variable (can be 2-15s for large tables)"
+        when: "Small tables (< 1000 rows) or one-time queries only"
+
+    existing_infrastructure:
+      utility_file: "04_utils/fn_cached_data_access.R"
+      drv_script: "update_scripts/DRV/all_D01_07.R"
+      precomputed_tables:
+        - "df_dna_plot_data"
+        - "df_dna_category_counts"
+        - "df_dna_summary_stats"
+
+  # ====================
+  # UX_R RULES (1)
+  # ====================
+
+  - id: UX_R001
+    type: rule
+    name: single_click_navigation
+    display_name: "Single-Click Navigation"
+    one_liner: "All drill-down, return, and navigation actions use single-click — never double-click"
+    file_path: "CH07_ux/rules/UX_R001_single_click_navigation.qmd"
+
+    rule_natural: |
+      All user navigation actions — drill-down, return to parent, tab switching,
+      filter selection — must use single-click. Double-click is never required.
+      This applies to interactive visualizations (maps, charts) as well as UI controls.
+
+    rule_formal: |
+      RULE UX_R001_SINGLE_CLICK_NAV:
+      FOR ALL navigation actions A in the dashboard:
+        A MUST be triggered by single-click
+        A MUST NOT require double-click
+
+    violations:
+      - "plotly_doubleclick required to return from drill-down view"
+      - "Double-click on chart to see details"
+    compliant:
+      - "plotly_click on US -> drill to states; plotly_click on states -> return to world"
+      - "Single-click tab switching, filter selection"
+
+    metadata:
+      created: "2026-03-14"
+      triggered_by: "Issue #351 — state map return originally required double-click"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: UX_P002
+    to: UX_P001
+    reason: "UX_P001 optimizes startup time; UX_P002 optimizes runtime query time"
+
+external_dependencies:
+  - from: UX_P001
+    to: MP048
+    reason: "Lazy init optimizes the execution order of Universal Initialization"
+
+  - from: UX_P001
+    to: DEV_P014
+    reason: "Applies general performance optimization to startup phase"
+
+  - from: UX_P001
+    to: DEV_P021
+    reason: "Complements runtime acceleration with startup acceleration"
+
+  - from: UX_P002
+    to: MP064
+    reason: "Pre-computation happens in DRV phase, not at render time"
+
+  - from: UX_P002
+    to: DEV_P014
+    reason: "Applies performance optimization to runtime queries"
+
+  - from: UX_P002
+    to: DEV_P021
+    reason: "Tiered caching is a runtime acceleration technique"

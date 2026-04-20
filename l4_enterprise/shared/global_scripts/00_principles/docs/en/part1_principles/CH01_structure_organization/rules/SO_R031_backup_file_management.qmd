@@ -1,0 +1,281 @@
+---
+title: "SO_R031: Backup File Management Rule"
+subtitle: "Standards for backup file retention, naming, and automatic archiving"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, backup, archiving, maintenance]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Rule Statement
+
+All backup files must follow standardized naming conventions, be retained for a maximum of 7 days in their original location, then automatically archived to a designated archive directory. Backup files older than 30 days in archives should be compressed.
+
+## Backup Retention Policy
+
+### Retention Timeline
+
+| Phase | Duration | Location | Action |
+|-------|----------|----------|--------|
+| Active | 0-7 days | Original directory | Retain as-is |
+| Archive | 8-30 days | CHANGELOG/archive/backups_YYYYMM/ | Move to archive |
+| Compressed | 31+ days | CHANGELOG/archive/backups_YYYYMM/ | Compress to .tar.gz |
+
+### Automatic Cleanup Schedule
+
+- **Daily**: Identify backup files > 7 days old in project directories
+- **Weekly**: Move identified files to monthly archive folders
+- **Monthly**: Compress backup archives > 30 days old
+
+## Backup Naming Convention
+
+### Format
+
+```
+original_filename.backup_YYYYMMDD_HHMMSS
+```
+
+### Requirements
+
+1. **Original Filename**: Preserve the original filename (with extension)
+2. **Backup Suffix**: Use `.backup_` as the separator
+3. **Timestamp**: Use YYYYMMDD_HHMMSS format
+4. **Case**: All lowercase
+
+### Examples
+
+```
+# CORRECT Examples
+app.R.backup_20251130_143022
+app_config.yaml.backup_20251130_090000
+fn_calculate_metrics.R.backup_20251128_235959
+
+# INCORRECT Examples (PROHIBITED)
+app.R.backup_drv_20251113_121104        # Extra descriptor in backup suffix
+APP.R.BACKUP_20251130                    # Uppercase, missing time
+app_backup_20251130.R                    # Wrong position of backup marker
+app.R.bak                                # Non-standard suffix
+```
+
+## Archive Directory Structure
+
+### Location
+
+```
+CHANGELOG/archive/backups_YYYYMM/
+```
+
+### Structure
+
+```
+CHANGELOG/
+└── archive/
+    └── backups_202511/
+        ├── app.R.backup_20251101_143022
+        ├── app.R.backup_20251105_091500
+        ├── fn_utils.R.backup_20251108_170000
+        └── README.md                       # Archive manifest
+```
+
+### Archive Manifest (README.md)
+
+Each monthly backup archive must contain a README.md:
+
+```markdown
+# Backup Archive - November 2025
+
+## Summary
+- Total files: 47
+- Date range: 2025-11-01 to 2025-11-30
+- Total size: 2.3 MB
+
+## File Categories
+- R scripts: 32
+- YAML configs: 8
+- Markdown docs: 7
+
+## Notable Backups
+- 2025-11-13: Major DRV system migration
+- 2025-11-15: Database schema update
+
+## Archive Date
+2025-12-01
+```
+
+## Automatic Cleanup Implementation
+
+### Daily Cleanup Script
+
+```bash
+#!/bin/bash
+# daily_backup_cleanup.sh
+# Run via cron: 0 2 * * * /path/to/daily_backup_cleanup.sh
+
+PROJECT_ROOT="/path/to/MAMBA"
+CHANGELOG_DIR="$PROJECT_ROOT/scripts/global_scripts/00_principles/CHANGELOG"
+ARCHIVE_DIR="$CHANGELOG_DIR/archive"
+LOG_FILE="$CHANGELOG_DIR/backup_cleanup.log"
+CURRENT_MONTH=$(date +%Y%m)
+
+# Create archive directory if not exists
+mkdir -p "$ARCHIVE_DIR/backups_$CURRENT_MONTH"
+
+echo "=== Backup Cleanup: $(date) ===" >> "$LOG_FILE"
+
+# Find backup files older than 7 days
+find "$PROJECT_ROOT" -name "*.backup_*" -type f -mtime +7 | while read file; do
+    filename=$(basename "$file")
+
+    # Skip if already in archive
+    if [[ "$file" == *"/archive/"* ]]; then
+        continue
+    fi
+
+    echo "Archiving: $file" >> "$LOG_FILE"
+    mv "$file" "$ARCHIVE_DIR/backups_$CURRENT_MONTH/$filename"
+done
+
+echo "Cleanup complete." >> "$LOG_FILE"
+```
+
+### Monthly Compression Script
+
+```bash
+#!/bin/bash
+# monthly_backup_compress.sh
+# Run via cron: 0 3 1 * * /path/to/monthly_backup_compress.sh
+
+ARCHIVE_DIR="/path/to/MAMBA/scripts/global_scripts/00_principles/CHANGELOG/archive"
+LOG_FILE="$ARCHIVE_DIR/../compression.log"
+CURRENT_MONTH=$(date +%Y%m)
+
+echo "=== Monthly Compression: $(date) ===" >> "$LOG_FILE"
+
+# Find backup directories older than 30 days (not current or previous month)
+for dir in "$ARCHIVE_DIR"/backups_*; do
+    if [ -d "$dir" ]; then
+        dir_month=$(basename "$dir" | sed 's/backups_//')
+
+        # Skip current and previous month
+        if [ "$dir_month" -ge "$((CURRENT_MONTH - 1))" ]; then
+            continue
+        fi
+
+        # Check if already compressed
+        if [ -f "$dir.tar.gz" ]; then
+            continue
+        fi
+
+        echo "Compressing: $dir" >> "$LOG_FILE"
+        tar -czf "$dir.tar.gz" -C "$ARCHIVE_DIR" "$(basename $dir)"
+        rm -rf "$dir"
+        echo "Compressed: $dir.tar.gz" >> "$LOG_FILE"
+    fi
+done
+
+echo "Compression complete." >> "$LOG_FILE"
+```
+
+## Cleanup Logging
+
+### Log Format
+
+```
+=== Backup Cleanup: 2025-11-30 02:00:01 ===
+Archiving: /MAMBA/app.R.backup_20251123_143022
+Archiving: /MAMBA/fn_utils.R.backup_20251122_091500
+Cleanup complete.
+```
+
+### Log Location
+
+```
+CHANGELOG/backup_cleanup.log
+```
+
+## Special Considerations
+
+### 1. Critical Backup Exemptions
+
+Some backups may need extended retention:
+
+```yaml
+# backup_exemptions.yaml
+exemptions:
+  - pattern: "*.backup_pre_major_release"
+    retention_days: 90
+  - pattern: "database_schema.*.backup_*"
+    retention_days: 365
+```
+
+### 2. Backup During Active Development
+
+During active development sprints:
+
+- Increase daily cleanup threshold to 14 days
+- Create sprint-specific archive folders
+- Document any exemptions
+
+### 3. Emergency Recovery
+
+For emergency backup recovery:
+
+```bash
+# Find specific backup
+find /path/to/CHANGELOG/archive -name "*.backup_*" | xargs grep -l "pattern"
+
+# Restore from archive
+cp /path/to/CHANGELOG/archive/backups_202511/file.backup_20251115_120000 ./file
+```
+
+## Rationale
+
+### 1. Prevent Backup Accumulation
+
+Without active management:
+- Backup files multiply over time
+- Root directories become cluttered
+- Disk space is wasted on old backups
+
+### 2. Maintain Organized History
+
+The archiving strategy:
+- Preserves backups for recovery needs
+- Organizes by month for easy navigation
+- Compresses old archives to save space
+
+### 3. Enable Automated Maintenance
+
+Automation ensures:
+- Consistent enforcement without manual effort
+- Predictable cleanup schedule
+- Logged actions for audit purposes
+
+## Relationship to Other Principles
+
+- **SO_R006 (Archiving Standard)**: Extends archiving concepts to backup files
+- **SO_R022 (Temporary File Handling)**: Complements temporary file cleanup
+- **SO_R030 (Operational Documentation Location)**: Coordinates with document placement rules
+- **MP012 (Change Tracking)**: Backup archives support change history
+
+## Implementation Checklist
+
+- [ ] Backup naming convention enforced (lowercase, proper suffix)
+- [ ] Daily cleanup script installed and scheduled
+- [ ] Monthly compression script installed and scheduled
+- [ ] Archive directory structure created
+- [ ] Cleanup logging enabled
+- [ ] Exemption configuration documented (if needed)
+- [ ] Team trained on backup naming requirements
+- [ ] Recovery procedures documented and tested
+
+## Conclusion
+
+The Backup File Management Rule establishes a systematic approach to handling backup files, preventing uncontrolled accumulation while preserving historical backups for recovery purposes. Through standardized naming, defined retention periods, and automated archiving, this rule ensures backup files remain manageable and organized. The 7-day active retention, monthly archiving, and 30-day compression timeline balances accessibility needs with storage efficiency.

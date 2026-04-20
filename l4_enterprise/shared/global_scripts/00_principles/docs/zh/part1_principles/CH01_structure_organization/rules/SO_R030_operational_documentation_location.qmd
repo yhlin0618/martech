@@ -1,0 +1,209 @@
+---
+title: "SO_R030: 操作文檔位置標準"
+subtitle: "所有操作文檔必須放置在 CHANGELOG 中，並使用日期前綴的小寫命名"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, documentation, structure, changelog]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+所有操作文檔（實施報告、除錯報告、修復報告、測試報告和策略文檔）必須放置在 `CHANGELOG/` 目錄中，並使用日期前綴的小寫命名。操作文檔絕不允許放在專案根目錄中。
+
+## 強制位置
+
+```
+scripts/global_scripts/00_principles/CHANGELOG/
+```
+
+## 命名慣例
+
+### 格式
+
+```
+YYYY-MM-DD_descriptive_name.md
+```
+
+### 要求
+
+1. **日期前綴**：使用檔案創建日期作為前綴（YYYY-MM-DD）
+2. **命名風格**：小寫加底線（snake_case）
+3. **檔案副檔名**：Markdown 文檔使用 `.md`
+4. **描述性名稱**：使用清晰、有意義的名稱來描述文檔內容
+
+### 範例
+
+```
+# 正確範例
+2025-11-30_root_directory_cleanup_analysis.md
+2025-11-13_critical_poisson_filter_fix.md
+2025-10-03_deployment_fix_report.md
+2025-09-28_database_migration_strategy.md
+
+# 錯誤範例（禁止）
+ROOT_DIRECTORY_CLEANUP_ANALYSIS.md          # 缺少日期，大寫
+CRITICAL_FIX_SUMMARY_2025-11-13.md          # 大寫，日期不是前綴
+debug_report.md                              # 缺少日期前綴
+2025-11-30-descriptive-name.md              # 使用連字符而非底線
+```
+
+## 涵蓋的文檔類型
+
+### 1. 實施報告
+
+描述已完成實施、功能或變更的文檔。
+
+```
+2025-11-30_feature_x_implementation.md
+2025-11-30_api_integration_complete.md
+```
+
+### 2. 除錯報告
+
+記錄除錯會議、調查和發現的文檔。
+
+```
+2025-11-30_memory_leak_investigation.md
+2025-11-30_connection_timeout_debug.md
+```
+
+### 3. 修復報告
+
+描述錯誤修復、補丁和更正的文檔。
+
+```
+2025-11-30_authentication_bug_fix.md
+2025-11-30_data_validation_correction.md
+```
+
+### 4. 測試報告
+
+記錄測試結果、驗證成果和品質保證發現的文檔。
+
+```
+2025-11-30_integration_test_results.md
+2025-11-30_performance_benchmark_report.md
+```
+
+### 5. 策略文檔
+
+概述計劃、策略和架構決策的文檔。
+
+```
+2025-11-30_migration_strategy.md
+2025-11-30_scaling_architecture_plan.md
+```
+
+## 禁止的位置
+
+以下位置禁止放置操作文檔：
+
+### 專案根目錄
+
+```
+# 禁止 - 絕不在此放置操作文檔
+/MAMBA/IMPLEMENTATION_REPORT.md                    # 錯誤！
+/MAMBA/DEBUG_REPORT_2025-11-30.md                  # 錯誤！
+/MAMBA/FIX_SUMMARY.md                              # 錯誤！
+```
+
+### 00_principles 根目錄
+
+```
+# 禁止 - 絕不在此放置操作文檔
+/00_principles/AUDIT_REPORT.md                     # 錯誤！
+/00_principles/MIGRATION_GUIDE.md                  # 錯誤！
+```
+
+## 執行機制
+
+### 檢測腳本
+
+```bash
+#!/bin/bash
+# 檢測放錯位置的操作文檔的腳本
+
+MAMBA_ROOT="/path/to/MAMBA"
+
+# 操作文檔的模式
+PATTERNS=(
+    "*_REPORT*.md"
+    "*_FIX*.md"
+    "*_DEBUG*.md"
+    "*_IMPLEMENTATION*.md"
+    "*_STRATEGY*.md"
+    "*_SUMMARY*.md"
+    "*_ANALYSIS*.md"
+)
+
+echo "檢查放錯位置的操作文檔..."
+
+for pattern in "${PATTERNS[@]}"; do
+    # 檢查專案根目錄
+    files=$(find "$MAMBA_ROOT" -maxdepth 1 -name "$pattern" -type f 2>/dev/null)
+    if [ -n "$files" ]; then
+        echo "違規：在專案根目錄發現符合 $pattern 的放錯位置檔案："
+        echo "$files"
+    fi
+done
+```
+
+## 理由
+
+### 1. 整潔的根目錄
+
+將操作文檔移出根目錄：
+- 保持對核心專案檔案（app.R、manifest.json）的關注
+- 防止文檔雜亂堆積
+- 讓專案結構對新開發者一目了然
+
+### 2. 有組織的歷史記錄
+
+將文檔放在帶日期前綴的 CHANGELOG 中：
+- 創建自然的時間順序排列
+- 便於瀏覽專案歷史
+- 支援審計和合規要求
+
+### 3. 一致的命名
+
+使用小寫加底線：
+- 避免跨系統的大小寫敏感問題
+- 與現有 CHANGELOG 命名慣例相符
+- 提高可讀性和一致性
+
+### 4. 可發現性
+
+日期前綴命名確保：
+- 文檔按時間順序顯示
+- 易於按日期範圍過濾
+- 清楚顯示文檔的年齡和相關性
+
+## 與其他原則的關係
+
+- **MP012（變更追蹤）**：實施變更追蹤的文檔要求
+- **SO_R029（CHANGELOG 組織）**：將 CHANGELOG 規則擴展到操作文檔
+- **SO_R006（歸檔標準）**：補充已完成操作工作的歸檔
+- **SO_R002（檔案命名慣例）**：將檔案命名標準應用於操作文檔
+
+## 實施檢查清單
+
+- [ ] 所有新操作文檔在 CHANGELOG/ 中創建
+- [ ] 對所有文檔名稱應用日期前綴（YYYY-MM-DD）
+- [ ] 使用小寫加底線命名
+- [ ] 專案根目錄中沒有操作文檔
+- [ ] 00_principles 根目錄中沒有操作文檔
+- [ ] 團隊已接受正確文檔放置培訓
+- [ ] 已實施檢測腳本（可選）
+- [ ] 已添加預提交鉤子以防止違規（可選）
+
+## 結論
+
+操作文檔位置標準通過強制要求所有操作文檔必須存放在 CHANGELOG 目錄中，並使用日期前綴的小寫命名，確保專案結構整潔有序。此規則防止專案根目錄中的文檔雜亂堆積，維持專案歷史的時間順序組織，並支援審計和合規要求。透過檢測腳本和團隊培訓的執行確保在所有開發工作中一致應用。

@@ -1,0 +1,833 @@
+---
+title: "UI_R021: Dual Download Buttons for Statistical Analysis Components"
+subtitle: "Statistical analysis components must provide dual download buttons (full data and significant results) to serve both research-oriented and business-oriented users, ensuring flexibility and efficiency in data access"
+chapter: "CH04"
+category: "rule"
+number: "UI_R021"
+date-created: "2025-11-05"
+date-modified: "2025-11-05"
+author: "principle-revisor"
+type: "rule"
+law: "UI Components Law"
+article-number:
+  number: 21
+  title: "Dual Download Buttons for Statistical Analysis Components"
+implements:
+  - "MP122: Transparency Principle"
+  - "MP114: Input Validation"
+related_to:
+  - "UI_R018: Table Download Button Placement"
+  - "UI_R020: CSV UTF-8 BOM Standard"
+  - "P77: Performance Optimization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 21: Dual Download Buttons for Statistical Analysis Components {#overview}
+
+**UI Components Law Article 21 (Dual Download Buttons for Statistical Analysis Components)**
+
+This rule establishes the mandatory standard for providing dual download functionality in statistical analysis components, enabling users to download both complete datasets and filtered significant results based on their analytical needs.
+
+:::{.callout-important}
+## Core Requirement
+**MANDATORY**: Statistical analysis components that include p-values MUST provide TWO download buttons:
+1. **Download Full Data**: All analysis results with significance markers
+2. **Download Significant Results**: Only statistically significant results (p < 0.05)
+
+Both buttons must be present, properly styled, and positioned side-by-side.
+:::
+
+:::{.callout-tip}
+## Design Philosophy
+This dual-button approach serves two distinct user personas:
+- **Researchers**: Need complete data for comprehensive analysis (including non-significant results)
+- **Business Users**: Need quick access to actionable significant findings for decision-making
+:::
+
+# Section 1: Rationale {#rationale}
+
+The dual download button standard addresses critical user needs identified through ISSUE_246 analysis:
+
+## Subsection 1: User Role Requirements {#user-role-requirements}
+
+### Research-Oriented Users
+- **Need**: Complete datasets for thorough statistical analysis
+- **Use Case**: Publishing research papers, peer review, comprehensive reporting
+- **Data Requirement**: ALL results, including non-significant findings
+- **Why**: Non-significant results are scientifically valuable and prevent publication bias
+
+### Business-Oriented Users
+- **Need**: Quick access to actionable insights
+- **Use Case**: Executive reporting, business decisions, focused action items
+- **Data Requirement**: Only statistically significant results (p < 0.05)
+- **Why**: Time efficiency and focus on findings that warrant business action
+
+## Subsection 2: Design Principles {#design-principles}
+
+### Why Dual Buttons?
+1. **Flexibility**: Accommodates different analytical workflows without forcing manual filtering
+2. **Efficiency**: Business users save time; no need to filter large datasets manually
+3. **Completeness**: Researchers access all data without worrying about missing information
+4. **Transparency**: Clear labeling eliminates ambiguity about data scope
+
+### Why This Order? (Full Left, Significant Right)
+1. **Primary vs Secondary**: Full data is the "primary" source; filtered data is "secondary"
+2. **Cognitive Flow**: Left-to-right progression from broad to narrow aligns with natural thinking
+3. **Visual Hierarchy**: Primary action (blue) on left, secondary action (green) on right
+4. **Consistency**: Matches common UI patterns where broader options precede filtered options
+
+# Section 2: Requirements {#requirements}
+
+## Subsection 1: Core Button Requirements {#core-button-requirements}
+
+Statistical analysis components MUST implement dual download buttons when ANY of the following conditions apply:
+
+### When to Apply This Rule ✅
+- Poisson regression analysis components
+- Linear regression analysis components
+- Statistical hypothesis testing components
+- Any component displaying p-values or statistical significance
+- Components with chi-square tests, t-tests, ANOVA results
+- Time-series analysis with statistical testing
+
+### When NOT to Apply This Rule ❌
+- Simple data tables without statistical tests
+- Visualization-only components (charts, graphs)
+- Descriptive statistics without hypothesis testing
+- Raw data exports (no statistical analysis performed)
+- Configuration or metadata downloads
+
+## Subsection 2: Button Layout Standards {#button-layout-standards}
+
+### Mandatory Layout Configuration
+
+```r
+div(class = "table-control-bar",
+    style = "display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;",
+
+    # Following UI_R021: Dual download buttons for statistical data
+    downloadButton(ns("download_full"),
+                  translate("Download Full Data"),
+                  class = "btn-primary btn-sm",
+                  icon = icon("download")),
+
+    downloadButton(ns("download_significant"),
+                  translate("Download Significant Results"),
+                  class = "btn-success btn-sm",
+                  icon = icon("download")))
+```
+
+### Layout Requirements
+1. **Container**: Use flexbox with `display: flex` and `justify-content: flex-end`
+2. **Spacing**: `gap: 10px` between buttons
+3. **Margin**: `margin-bottom: 15px` to separate from table content
+4. **Positioning**: Both buttons at the right end of the control bar
+
+### Button Style Standards
+| Button Type | Position | Class | Color | Size |
+|-------------|----------|-------|-------|------|
+| Full Data | Left | `btn-primary` | Blue | `btn-sm` |
+| Significant | Right | `btn-success` | Green | `btn-sm` |
+
+**Icon**: Both buttons must use `icon("download")` for consistency
+
+## Subsection 3: Data Content Requirements {#data-content-requirements}
+
+### Full Data Download Requirements
+
+The "Download Full Data" button MUST:
+
+1. **Include ALL Results**: No filtering by p-value or significance
+2. **Add Significance Column**: Include a column marking statistical significance
+3. **Preserve Original Data**: Maintain all original metrics and columns
+4. **Use Significance Markers**:
+   - `***` for p < 0.001
+   - `**` for p < 0.01
+   - `*` for p < 0.05
+   - Empty string for non-significant results
+
+```r
+output$download_full <- downloadHandler(
+  filename = function() {
+    paste0("analysis_full_data_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    data <- analysis_results()  # All data without filtering
+
+    # Add significance column
+    table_data <- data %>%
+      mutate(
+        significance = case_when(
+          is.na(p_value) ~ "",
+          p_value < 0.001 ~ "***",
+          p_value < 0.01 ~ "**",
+          p_value < 0.05 ~ "*",
+          TRUE ~ ""
+        )
+      )
+
+    write_utf8_csv_with_bom(table_data, file)
+  }
+)
+```
+
+### Significant Results Download Requirements
+
+The "Download Significant Results" button MUST:
+
+1. **Filter by p-value**: Include ONLY results where `p_value < 0.05`
+2. **Exclude NA Values**: Remove rows where p-value is missing
+3. **Add Significance Column**: Same markers as full data
+4. **Maintain Data Structure**: Keep all columns from the full dataset
+
+```r
+output$download_significant <- downloadHandler(
+  filename = function() {
+    paste0("analysis_significant_results_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    # Filter for significant results only
+    data <- analysis_results() %>%
+      filter(!is.na(p_value) & p_value < 0.05)
+
+    # Add significance column
+    table_data <- data %>%
+      mutate(
+        significance = case_when(
+          p_value < 0.001 ~ "***",
+          p_value < 0.01 ~ "**",
+          TRUE ~ "*"
+        )
+      )
+
+    write_utf8_csv_with_bom(table_data, file)
+  }
+)
+```
+
+## Subsection 4: File Naming Standards {#file-naming-standards}
+
+### Filename Pattern
+
+```
+[analysis_type]_[data_scope]_[YYYYMMDD].csv
+```
+
+**Examples**:
+- `poisson_regression_full_data_20251105.csv`
+- `poisson_regression_significant_results_20251105.csv`
+- `linear_regression_full_data_20251105.csv`
+- `linear_regression_significant_results_20251105.csv`
+
+**Requirements**:
+1. Use lowercase with underscores
+2. Include analysis type for context
+3. Clearly distinguish "full_data" vs "significant_results"
+4. Always include date in YYYYMMDD format
+5. Use `.csv` extension (with UTF-8 BOM encoding)
+
+# Section 3: Standard Implementation Pattern {#standard-implementation-pattern}
+
+## Subsection 1: Complete UI Layer {#complete-ui-layer}
+
+```r
+# UI Module Function
+poissonAnalysisUI <- function(id) {
+  ns <- NS(id)
+
+  tagList(
+    # Analysis parameters and controls
+    # ...
+
+    # Download control bar - Following UI_R021
+    div(class = "table-control-bar",
+        style = "display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;",
+
+        # Full data download - Primary action (blue)
+        downloadButton(ns("download_full"),
+                      translate("Download Full Data"),
+                      class = "btn-primary btn-sm",
+                      icon = icon("download")),
+
+        # Significant results download - Secondary action (green)
+        downloadButton(ns("download_significant"),
+                      translate("Download Significant Results"),
+                      class = "btn-success btn-sm",
+                      icon = icon("download"))),
+
+    # Results table
+    DTOutput(ns("results_table"))
+  )
+}
+```
+
+## Subsection 2: Complete Server Layer {#complete-server-layer}
+
+```r
+# Server Module Function
+poissonAnalysisServer <- function(id, connection, config) {
+  moduleServer(id, function(input, output, session) {
+
+    # Analysis results reactive
+    analysis_results <- reactive({
+      req(input$feature_selection)
+
+      # Perform Poisson regression analysis
+      perform_poisson_regression(
+        connection = connection,
+        feature = input$feature_selection,
+        # Additional parameters...
+      )
+    })
+
+    # Download Handler: Full Data
+    output$download_full <- downloadHandler(
+      filename = function() {
+        paste0("poisson_analysis_full_data_",
+               format(Sys.Date(), "%Y%m%d"), ".csv")
+      },
+      content = function(file) {
+        # Get all results
+        data <- analysis_results()
+
+        # Validate data exists
+        req(nrow(data) > 0)
+
+        # Prepare table with significance markers
+        table_data <- data %>%
+          mutate(
+            significance = case_when(
+              is.na(p_value) ~ "",
+              p_value < 0.001 ~ "***",
+              p_value < 0.01 ~ "**",
+              p_value < 0.05 ~ "*",
+              TRUE ~ ""
+            )
+          ) %>%
+          select(
+            feature = feature_name,
+            coefficient = coef_estimate,
+            std_error = std_error,
+            p_value = p_value,
+            significance = significance,
+            ci_lower = conf_low,
+            ci_upper = conf_high
+          )
+
+        # Write with UTF-8 BOM encoding (UI_R020)
+        write_utf8_csv_with_bom(table_data, file)
+      }
+    )
+
+    # Download Handler: Significant Results
+    output$download_significant <- downloadHandler(
+      filename = function() {
+        paste0("poisson_analysis_significant_results_",
+               format(Sys.Date(), "%Y%m%d"), ".csv")
+      },
+      content = function(file) {
+        # Get filtered results
+        data <- analysis_results() %>%
+          filter(!is.na(p_value) & p_value < 0.05)
+
+        # Validate significant results exist
+        req(nrow(data) > 0)
+
+        # Prepare table with significance markers
+        table_data <- data %>%
+          mutate(
+            significance = case_when(
+              p_value < 0.001 ~ "***",
+              p_value < 0.01 ~ "**",
+              TRUE ~ "*"
+            )
+          ) %>%
+          select(
+            feature = feature_name,
+            coefficient = coef_estimate,
+            std_error = std_error,
+            p_value = p_value,
+            significance = significance,
+            ci_lower = conf_low,
+            ci_upper = conf_high
+          )
+
+        # Write with UTF-8 BOM encoding (UI_R020)
+        write_utf8_csv_with_bom(table_data, file)
+      }
+    )
+
+    # Display table output
+    output$results_table <- renderDT({
+      data <- analysis_results()
+      req(nrow(data) > 0)
+
+      # Render table with significance markers
+      # ...
+    })
+  })
+}
+```
+
+## Subsection 3: Error Handling and Edge Cases {#error-handling-edge-cases}
+
+### No Results Scenario
+
+```r
+# Handle case where no results exist
+output$download_full <- downloadHandler(
+  filename = function() {
+    paste0("analysis_full_data_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    data <- analysis_results()
+
+    # Validate data exists
+    if (is.null(data) || nrow(data) == 0) {
+      # Write empty CSV with headers only
+      empty_df <- data.frame(
+        message = "No results available for download"
+      )
+      write_utf8_csv_with_bom(empty_df, file)
+      return()
+    }
+
+    # Normal processing...
+  }
+)
+```
+
+### No Significant Results Scenario
+
+```r
+# Handle case where no significant results exist
+output$download_significant <- downloadHandler(
+  filename = function() {
+    paste0("analysis_significant_results_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    data <- analysis_results() %>%
+      filter(!is.na(p_value) & p_value < 0.05)
+
+    # Validate significant results exist
+    if (nrow(data) == 0) {
+      # Write informative message
+      empty_df <- data.frame(
+        message = "No statistically significant results (p < 0.05) found in this analysis"
+      )
+      write_utf8_csv_with_bom(empty_df, file)
+      return()
+    }
+
+    # Normal processing...
+  }
+)
+```
+
+# Section 4: Real-World Examples and Migration {#real-world-examples}
+
+## Subsection 1: Non-Compliant Components Requiring Updates {#non-compliant-components}
+
+The following components were identified in ISSUE_246 as non-compliant:
+
+| Component | Current Status | Missing Button | Required Action |
+|-----------|----------------|----------------|-----------------|
+| `poissonFeatureAnalysis` | Single button | Missing "Download Full Data" | Add full data button on left |
+| `poissonCommentAnalysis` | Single button | Missing "Download Significant Results" | Add significant button on right |
+| `poissonTimeAnalysis` | Single button | Missing "Download Significant Results" | Add significant button on right |
+| `linearRegressionAnalysis` | Single button | Missing "Download Significant Results" | Add significant button on right |
+
+## Subsection 2: Migration Example - Before and After {#migration-example}
+
+### Before: Non-Compliant (Single Button)
+
+```r
+# UI - Only one button
+div(class = "table-control-bar",
+    style = "display: flex; justify-content: flex-end; margin-bottom: 15px;",
+
+    # ❌ VIOLATION: Only one download button
+    downloadButton(ns("download_results"),
+                  translate("Download Results"),
+                  class = "btn-primary btn-sm",
+                  icon = icon("download")))
+
+# Server - Ambiguous data scope
+output$download_results <- downloadHandler(
+  filename = function() {
+    paste0("results_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    # Unclear: is this full data or filtered data?
+    data <- analysis_results()
+    write.csv(data, file, row.names = FALSE)
+  }
+)
+```
+
+**Problems with this approach**:
+1. Users don't know if they're getting complete or filtered data
+2. No option to choose based on their analytical needs
+3. Forces manual filtering for users who need only significant results
+4. Researchers can't be sure if non-significant results are included
+
+### After: Compliant (Dual Buttons)
+
+```r
+# UI - Dual buttons with clear labels
+div(class = "table-control-bar",
+    style = "display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;",
+
+    # ✅ COMPLIANT: Full data button (primary, left)
+    downloadButton(ns("download_full"),
+                  translate("Download Full Data"),
+                  class = "btn-primary btn-sm",
+                  icon = icon("download")),
+
+    # ✅ COMPLIANT: Significant results button (secondary, right)
+    downloadButton(ns("download_significant"),
+                  translate("Download Significant Results"),
+                  class = "btn-success btn-sm",
+                  icon = icon("download")))
+
+# Server - Clear, separate handlers
+# Full data handler
+output$download_full <- downloadHandler(
+  filename = function() {
+    paste0("poisson_analysis_full_data_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    data <- analysis_results() %>%
+      mutate(
+        significance = case_when(
+          is.na(p_value) ~ "",
+          p_value < 0.001 ~ "***",
+          p_value < 0.01 ~ "**",
+          p_value < 0.05 ~ "*",
+          TRUE ~ ""
+        )
+      )
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+
+# Significant results handler
+output$download_significant <- downloadHandler(
+  filename = function() {
+    paste0("poisson_analysis_significant_results_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    data <- analysis_results() %>%
+      filter(!is.na(p_value) & p_value < 0.05) %>%
+      mutate(
+        significance = case_when(
+          p_value < 0.001 ~ "***",
+          p_value < 0.01 ~ "**",
+          TRUE ~ "*"
+        )
+      )
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+```
+
+**Benefits of compliant approach**:
+1. Crystal clear what data each button provides
+2. Users choose based on their specific needs
+3. No manual filtering required
+4. Transparency in data scope and content
+
+# Section 5: Anti-Patterns {#anti-patterns}
+
+## Subsection 1: Common Violations {#common-violations}
+
+### Violation 1: Wrong Button Order
+
+```r
+# ❌ WRONG: Significant button on left, full data on right
+div(class = "table-control-bar",
+    downloadButton(ns("download_significant"), "Download Significant Results",
+                  class = "btn-success btn-sm"),
+    downloadButton(ns("download_full"), "Download Full Data",
+                  class = "btn-primary btn-sm"))
+```
+
+**Why Wrong**: Violates the primary-to-secondary flow; full data should be leftmost
+
+**Correction**: Swap button positions
+
+### Violation 2: Wrong Button Colors
+
+```r
+# ❌ WRONG: Incorrect color assignments
+div(class = "table-control-bar",
+    downloadButton(ns("download_full"), "Download Full Data",
+                  class = "btn-success btn-sm"),  # Should be btn-primary
+    downloadButton(ns("download_significant"), "Download Significant Results",
+                  class = "btn-primary btn-sm"))  # Should be btn-success
+```
+
+**Why Wrong**: Color semantics are violated; blue = primary, green = secondary/success
+
+**Correction**: Use `btn-primary` for full data, `btn-success` for significant results
+
+### Violation 3: Missing Significance Column
+
+```r
+# ❌ WRONG: No significance markers in downloaded data
+output$download_full <- downloadHandler(
+  content = function(file) {
+    data <- analysis_results()
+    # Missing: No significance column added
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+```
+
+**Why Wrong**: Users can't quickly identify significant results in downloaded data
+
+**Correction**: Always add significance column with proper markers
+
+### Violation 4: Inconsistent Filtering Logic
+
+```r
+# ❌ WRONG: Using different p-value thresholds
+output$download_significant <- downloadHandler(
+  content = function(file) {
+    # Wrong threshold (0.01 instead of 0.05)
+    data <- analysis_results() %>%
+      filter(p_value < 0.01)
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+```
+
+**Why Wrong**: Statistical significance threshold must be consistent (p < 0.05)
+
+**Correction**: Always use `p_value < 0.05` as the threshold
+
+### Violation 5: Missing Gap Between Buttons
+
+```r
+# ❌ WRONG: No spacing between buttons
+div(class = "table-control-bar",
+    style = "display: flex; justify-content: flex-end;",  # No gap specified
+    downloadButton(ns("download_full"), "Download Full Data"),
+    downloadButton(ns("download_significant"), "Download Significant Results"))
+```
+
+**Why Wrong**: Buttons appear cramped, poor visual separation
+
+**Correction**: Add `gap: 10px` to the container style
+
+# Section 6: Verification Checklist {#verification-checklist}
+
+## Pre-Implementation Verification
+
+Before implementing dual download buttons, verify:
+
+- [ ] Component performs statistical analysis with p-values
+- [ ] Component falls under "When to Apply" criteria
+- [ ] Component does NOT fall under "When NOT to Apply" criteria
+- [ ] Required utility function `write_utf8_csv_with_bom()` is available
+- [ ] Translation keys are defined for button labels
+
+## UI Layer Checklist
+
+- [ ] Two download buttons are present (full data + significant results)
+- [ ] Buttons are placed side-by-side in correct order (full left, significant right)
+- [ ] Container uses flexbox with `justify-content: flex-end`
+- [ ] Gap is set to `10px` between buttons
+- [ ] Margin bottom is set to `15px` for table separation
+- [ ] Full data button uses `btn-primary` class
+- [ ] Significant results button uses `btn-success` class
+- [ ] Both buttons use `btn-sm` size class
+- [ ] Both buttons include download icon
+- [ ] Button labels use translation function
+- [ ] Module namespace (`ns()`) is properly applied
+
+## Server Layer Checklist: Full Data Handler
+
+- [ ] Handler is named `download_full`
+- [ ] Filename includes analysis type and "full_data"
+- [ ] Filename includes date in YYYYMMDD format
+- [ ] ALL results are included (no filtering by p-value)
+- [ ] Significance column is added with proper markers
+- [ ] Column uses `case_when()` for all significance levels
+- [ ] Non-significant results get empty string ""
+- [ ] Data validation with `req()` or similar
+- [ ] Uses `write_utf8_csv_with_bom()` function (UI_R020)
+- [ ] Column names are clear and descriptive
+
+## Server Layer Checklist: Significant Results Handler
+
+- [ ] Handler is named `download_significant`
+- [ ] Filename includes analysis type and "significant_results"
+- [ ] Filename includes date in YYYYMMDD format
+- [ ] Filters for `p_value < 0.05` only
+- [ ] Filters out NA p-values with `!is.na(p_value)`
+- [ ] Significance column is added (only *, **, ***)
+- [ ] Data validation checks if results exist
+- [ ] Handles empty results gracefully (no error)
+- [ ] Uses `write_utf8_csv_with_bom()` function (UI_R020)
+- [ ] Column structure matches full data handler
+
+## Edge Case Handling Checklist
+
+- [ ] Handles case where no results exist (full data)
+- [ ] Handles case where no significant results exist
+- [ ] Provides informative message for empty downloads
+- [ ] Does not throw errors on empty data
+- [ ] Validates reactive data with `req()` or similar
+- [ ] Tests with various data sizes (0 rows, 1 row, many rows)
+
+## Testing Checklist
+
+- [ ] Both buttons appear correctly in the UI
+- [ ] Buttons maintain correct order at different screen sizes
+- [ ] Button styling matches specification (colors, size)
+- [ ] Full data download includes all results
+- [ ] Significant data download includes only p < 0.05 results
+- [ ] Significance markers are correct in both downloads
+- [ ] Filenames are descriptive and include proper date
+- [ ] CSV files open correctly with UTF-8 encoding
+- [ ] Chinese/special characters display properly (BOM)
+- [ ] Empty results handled gracefully (no errors)
+- [ ] Large datasets download without timeout
+- [ ] Button clicks are responsive (no lag)
+
+# Section 7: Related Standards {#related-standards}
+
+## UI_R018: Table Download Button Placement
+
+This rule governs the POSITION of download buttons, while UI_R021 governs the CONTENT and NUMBER of buttons for statistical components.
+
+**Relationship**: UI_R021 buttons must be positioned according to UI_R018 standards (right-aligned in control bar).
+
+## UI_R020: CSV UTF-8 BOM Standard
+
+All CSV downloads MUST use UTF-8 encoding with BOM to ensure proper display of Chinese characters and special symbols.
+
+**Requirement**: Both download handlers must use `write_utf8_csv_with_bom()` function.
+
+```r
+# Compliant with UI_R020
+write_utf8_csv_with_bom(table_data, file)
+
+# Non-compliant
+write.csv(table_data, file, row.names = FALSE)  # No BOM
+```
+
+## MP114: Input Validation
+
+Download handlers should validate input data before processing.
+
+**Application**: Use `req()` or similar validation in download handlers.
+
+## MP122: Transparency Principle
+
+Users must clearly understand what data they are downloading.
+
+**Application**: Clear button labels and descriptive filenames ensure transparency.
+
+# Section 8: Internationalization (i18n) {#internationalization}
+
+## Translation Keys
+
+Define translation keys for button labels:
+
+```r
+# English (en.yaml)
+download_full_data: "Download Full Data"
+download_significant_results: "Download Significant Results"
+
+# Traditional Chinese (zh-TW.yaml)
+download_full_data: "下載完整數據"
+download_significant_results: "下載顯著結果"
+
+# Simplified Chinese (zh-CN.yaml)
+download_full_data: "下载完整数据"
+download_significant_results: "下载显著结果"
+```
+
+## Usage in Code
+
+```r
+downloadButton(ns("download_full"),
+              translate("download_full_data"),
+              class = "btn-primary btn-sm",
+              icon = icon("download"))
+```
+
+# Section 9: Performance Considerations {#performance-considerations}
+
+## Large Dataset Handling
+
+For components with very large result sets:
+
+1. **Add Progress Indicators**: Show download progress for large files
+2. **Use Streaming**: Consider streaming large CSVs instead of loading all into memory
+3. **Limit Row Count**: Document maximum row limits if applicable
+4. **Async Processing**: Use asynchronous processing for very large downloads
+
+```r
+# Example: Progress indicator for large downloads
+output$download_full <- downloadHandler(
+  filename = function() {
+    paste0("analysis_full_data_", format(Sys.Date(), "%Y%m%d"), ".csv")
+  },
+  content = function(file) {
+    withProgress(message = 'Preparing download...', value = 0, {
+      data <- analysis_results()
+      incProgress(0.5, detail = "Processing data")
+
+      table_data <- data %>%
+        mutate(significance = case_when(...))
+
+      incProgress(0.8, detail = "Writing file")
+      write_utf8_csv_with_bom(table_data, file)
+      incProgress(1)
+    })
+  }
+)
+```
+
+# Section 10: Summary {#summary}
+
+## Key Requirements
+
+1. **Dual Buttons**: Statistical components MUST provide both "Download Full Data" and "Download Significant Results"
+2. **Button Order**: Full data (left, blue) → Significant results (right, green)
+3. **Data Content**: Full data includes ALL results with significance markers; significant data includes only p < 0.05
+4. **Styling**: Use `btn-primary btn-sm` for full, `btn-success btn-sm` for significant
+5. **Spacing**: 10px gap between buttons, 15px margin below control bar
+6. **Encoding**: Use UTF-8 BOM for all CSV downloads (UI_R020)
+7. **Filenames**: Descriptive names with analysis type, scope, and date
+
+## When This Rule Applies
+
+✅ Any component with p-values and statistical significance testing
+
+## Expected Benefits
+
+- **User Flexibility**: Serves both research and business user needs
+- **Time Efficiency**: Business users get pre-filtered data
+- **Data Completeness**: Researchers access all results
+- **Transparency**: Clear labeling eliminates confusion
+- **Consistency**: Standardized approach across all statistical components
+
+---
+
+*Based on: UI Components Law Article 21*
+*Implements: [MP122 Transparency Principle](../../CH00_fundamental_principles/meta_principles/MP122_transparency.qmd), [MP114 Input Validation](../../CH00_fundamental_principles/meta_principles/MP114_input_validation.qmd)*
+*Related to: [UI_R018 Table Download Button Placement](UI_R018_table_download_button_placement.qmd), [UI_R020 CSV UTF-8 BOM Standard](UI_R020_csv_utf8_bom_standard.qmd)*
+
+**Issue Reference**: ISSUE_246 - Statistical Analysis Download Button Inconsistency
+**Last Updated**: 2025-11-05
+**Status**: Enforced - All statistical analysis components must implement dual download buttons

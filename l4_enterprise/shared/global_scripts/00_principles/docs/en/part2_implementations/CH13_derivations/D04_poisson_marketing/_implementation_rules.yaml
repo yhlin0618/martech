@@ -1,0 +1,232 @@
+# D04 Poisson Precision Marketing - Implementation Rules
+# ========================================================
+# This file defines the binding contract between documentation and code.
+# Each derivation step MUST implement ONLY its documented responsibility.
+#
+# Pattern: "Case Law" companion file per MP005 (Statute Law Analogy)
+# Created: 2026-01-01
+
+derivation_id: D04
+title: "Poisson Precision Marketing"
+description: "Poisson regression analysis for product-level marketing insights"
+
+# Step Definitions
+# ================
+# Types:
+#   - conceptual: Describes WHAT to do, not HOW
+#   - concrete: Specifies exact function calls and outputs
+#   - orchestration: Coordinates other steps, no direct computation
+#   - wrapper: Entry point that delegates to concrete steps
+
+derivation_steps:
+  d04_00:
+    title: "Product Dictionary"
+    type: "conceptual"
+    layer: "N/A"
+    responsibility: "Define product categorization for Poisson analysis"
+    note: "Conceptual step - no dedicated script"
+
+  d04_01:
+    title: "Time Label Enrichment"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Enrich time series with human-readable labels"
+    implementation: "Add time_label column to app_data tables"
+    output_table: "df_cbz_poisson_analysis_all (enriched)"
+    output_database: "app_data.duckdb"
+    platform_specific: ["cbz"]
+
+  d04_02:
+    title: "Poisson Analysis Core"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Run univariate Poisson regression on time series data"
+
+    # Implementation Contract
+    must_call: "glm(family = poisson())"
+    function_pattern: "univariate regression per predictor"
+
+    # Input/Output Specification
+    input_table: "df_{platform}_sales_complete_time_series_{product_line}"
+    input_database: "app_data.duckdb"
+    output_table: "df_{platform}_poisson_analysis_{product_line}"
+    intermediate_database: "processed_data.duckdb"
+    final_table: "df_{platform}_poisson_analysis_all"
+    final_database: "app_data.duckdb"
+
+    # Produced fields (per DM_R043)
+    produces:
+      - predictor        # Predictor variable name
+      - coefficient      # GLM coefficient
+      - std_error        # Standard error
+      - z_value          # Z statistic
+      - p_value          # P-value
+      - irr              # Incidence Rate Ratio
+      - predictor_type   # Classification: time_feature/product_attribute/comment_attribute
+      - data_type        # Statistical type: binary/numerical/dummy
+      - source_variable  # Dummy origin variable (for dummy-coded predictors)
+
+    platform_specific: ["cbz", "eby"]
+
+  d04_03:
+    title: "R120 Metadata Enrichment"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Add R120 variable range metadata to Poisson results"
+    implementation: "Enrich with min_value, max_value per predictor"
+    output_table: "df_cbz_poisson_analysis_all (enriched)"
+    output_database: "app_data.duckdb"
+    platform_specific: ["cbz"]
+
+  d04_04:
+    title: "Time Series Expansion"
+    type: "wrapper"
+    layer: "N/A"
+    responsibility: "Trigger time series completion via ETL (CBZ/EBY) or delegate to core steps"
+    implementation: "CBZ and EBY wrappers call ETL time series scripts; ALL wrapper delegates"
+    output_table: "df_{platform}_sales_complete_time_series_{product_line}"
+    output_database: "app_data.duckdb"
+    platform_specific: ["cbz", "eby", "all"]
+    etl_dependencies:
+      - "scripts/update_scripts/ETL/cbz/cbz_ETL_sales_time_series_2TR.R"
+      - "scripts/update_scripts/ETL/eby/eby_ETL_sales_time_series_2TR___MAMBA.R"
+    note: "CBZ and EBY use derived ETL time series scripts; ALL delegates"
+
+  d04_05:
+    title: "Poisson Wrappers"
+    type: "wrapper"
+    layer: "N/A"
+    responsibility: "Entry point for running Poisson analysis pipeline"
+    implementation: "Delegates to D04_04, D04_02, D04_06"
+
+    # Critical Constraint
+    constraint: "NO direct computation - only orchestration"
+    allowed_operations:
+      - "Source platform-specific D04 scripts"
+      - "Coordinate execution order"
+      - "Handle cross-platform aggregation"
+      - "Log progress and errors"
+
+  d04_06:
+    title: "App Data Publishing"
+    type: "concrete"
+    layer: "5NM"
+    responsibility: "Publish analysis results to app_data for UI consumption"
+    implementation: "Merge per-product-line tables into _all table"
+    output_table: "df_{platform}_poisson_analysis_all"
+    output_database: "app_data.duckdb"
+
+  d04_07:
+    title: "Precision Time Series"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Build time series scaffold for precision marketing"
+    output_table: "df_precision_time_series"
+    output_database: "processed_data.duckdb"
+    platform_specific: ["all"]
+
+  d04_08:
+    title: "Precision Poisson Analysis"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Run Poisson analysis on precision marketing features"
+    must_call: "glm(family = poisson())"
+    output_table: "df_precision_poisson_analysis"
+    output_database: "processed_data.duckdb"
+    platform_specific: ["all"]
+
+  d04_09:
+    title: "Feature Preparation"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Aggregate and prepare features for precision analysis"
+    output_table: "df_precision_features"
+    output_database: "processed_data.duckdb"
+    platform_specific: ["all"]
+
+  d04_10:
+    title: "Module Consumers"
+    type: "documentation"
+    layer: "N/A"
+    responsibility: "Document which UI modules consume D04 outputs"
+    note: "No implementation script - documentation only"
+
+# Enforcement Rules
+# =================
+
+enforcement:
+  rule: "Each D_XX script MUST implement ONLY its documented responsibility"
+  principle_reference: "DRY (Don't Repeat Yourself)"
+
+  violations:
+    - pattern: "Poisson regression outside D04_02/D04_08"
+      severity: "critical"
+      action: "Refactor to appropriate D04_0X step"
+
+    - pattern: "Time series expansion in D04_02"
+      severity: "warning"
+      action: "Move to D04_04 or ensure input already expanded"
+
+    - pattern: "Direct IRR calculation without glm()"
+      severity: "critical"
+      action: "Must use glm(family = poisson()) for statistical validity"
+
+    - pattern: "Missing predictor_type classification"
+      severity: "warning"
+      action: "Add DM_R043 compliant classification"
+
+# Platform Scripts
+# ================
+
+platform_implementations:
+  cbz:
+    d04_01: "update_scripts/DRV/cbz/cbz_D04_01.R"
+    d04_02: "update_scripts/DRV/cbz/cbz_D04_02.R"
+    d04_03: "update_scripts/DRV/cbz/cbz_D04_03.R"
+    d04_04: "update_scripts/DRV/cbz/cbz_D04_04.R"
+    d04_05: "update_scripts/DRV/cbz/cbz_D04_05.R"
+    d04_06: "update_scripts/DRV/cbz/cbz_D04_06.R"
+
+  eby:
+    d04_02: "update_scripts/DRV/eby/eby_D04_02.R"
+    d04_04: "update_scripts/DRV/eby/eby_D04_04.R"
+
+  all:
+    d04_04: "update_scripts/DRV/all/all_D04_04.R"
+    d04_05: "update_scripts/DRV/all/all_D04_05.R"
+    d04_06: "update_scripts/DRV/all/all_D04_06.R"
+    d04_07: "update_scripts/DRV/all/all_D04_07.R"
+    d04_08: "update_scripts/DRV/all/all_D04_08.R"
+    d04_09: "update_scripts/DRV/all/all_D04_09.R"
+
+# Related Principles
+# ==================
+
+related_principles:
+  - id: "MP005"
+    title: "Statute Law Analogy"
+    relevance: "This file follows Case Law pattern"
+
+  - id: "MP064"
+    title: "ETL-Derivation Separation"
+    relevance: "Poisson analysis is derivation, not ETL"
+
+  - id: "MP135"
+    title: "Type B Analytics"
+    relevance: "Poisson regression is Type B (inferential) analytics"
+
+  - id: "DM_R043"
+    title: "Predictor Data Classification"
+    relevance: "predictor_type/data_type/source_variable fields"
+
+  - id: "DM_R044"
+    title: "Derivation Implementation Standard"
+    relevance: "Five-Part Structure for scripts"
+
+  - id: "R118"
+    title: "Statistical Significance Documentation"
+    relevance: "p_value and significance thresholds"
+
+  - id: "R120"
+    title: "Variable Range Metadata"
+    relevance: "min_value/max_value for UI sliders"

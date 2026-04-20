@@ -1,0 +1,1184 @@
+# ========================================
+# CH04: UI Components Principles
+# Version: 1.1
+# Last Updated: 2025-12-26
+#
+# Contains: UI_P001-UI_P012 (12 principles) + UI_R001-UI_R024,UI_R025-UI_R028 (28 rules)
+# Total: 40 principles
+# ========================================
+
+chapter: "CH04_ui"
+description: "UI Components Principles and Rules"
+principle_count: 37
+
+principles:
+
+  # ====================
+  # UI_P PRINCIPLES (11)
+  # ====================
+
+  - id: UI_P001
+    type: principle
+    name: natural_language_ui
+    display_name: "Natural Language UI"
+    one_liner: "UI text should use natural language understood by users"
+    file_path: "CH04_ui_components/principles/UI_P001_natural_language_ui.qmd"
+
+    rule_natural: |
+      UI text must be human-friendly:
+      - Use plain language, not technical jargon
+      - Labels match user mental models
+      - Error messages explain what went wrong
+      - Help text provides actionable guidance
+
+    rule_formal: |
+      RULE UI_P001_NATURAL:
+      FOR ALL ui_text T:
+      uses_plain_language(T)
+      AND matches_user_mental_model(T)
+      AND NOT uses_technical_jargon(T)
+
+    violations:
+      - "Label: 'customer_id_filter'"
+      - "Error: 'NULL value in reactive'"
+    compliant:
+      - "Label: 'Select Customer'"
+      - "Error: 'Please select at least one customer'"
+
+  - id: UI_P002
+    type: principle
+    name: complete_input_display
+    display_name: "Complete Input Display"
+    one_liner: "Show all available options to users"
+    file_path: "CH04_ui_components/principles/UI_P002_complete_input_display.qmd"
+
+    rule_natural: |
+      Input controls should show all options:
+      - Display all valid choices
+      - Show current selection clearly
+      - Indicate required vs optional
+      - Provide search for long lists
+
+    rule_formal: |
+      RULE UI_P002_COMPLETE:
+      FOR ALL input_control I:
+      shows_all_options(I)
+      AND indicates_current_selection(I)
+      AND marks_required_fields(I)
+
+    violations:
+      - "Dropdown with partial options"
+      - "No indication of required fields"
+    compliant:
+      - "Complete dropdown with search"
+      - "Required fields marked with *"
+
+  - id: UI_P003
+    type: principle
+    name: sidebar_filtering_only
+    display_name: "Sidebar Filtering Only"
+    one_liner: "Sidebar contains only filtering controls"
+    file_path: "CH04_ui_components/principles/UI_P003_sidebar_filtering_only.qmd"
+
+    rule_natural: |
+      Sidebar design rules:
+      - Only filtering/selection controls
+      - No action buttons in sidebar
+      - No display content in sidebar
+      - Keep sidebar focused and clean
+
+    rule_formal: |
+      RULE UI_P003_SIDEBAR:
+      sidebar contains:
+        filter_inputs
+        selection_inputs
+      NOT contains:
+        action_buttons
+        display_content
+
+    violations:
+      - "Submit button in sidebar"
+      - "Charts in sidebar"
+    compliant:
+      - "Only date pickers, dropdowns in sidebar"
+
+  - id: UI_P004
+    type: principle
+    name: component_ntuple_pattern
+    display_name: "Component N-Tuple Pattern"
+    one_liner: "UI components consist of UI + Server + Defaults triple"
+    file_path: "CH04_ui_components/principles/UI_P004_component_ntuple_pattern.qmd"
+
+    rule_natural: |
+      Each Shiny component has three parts:
+      - UI function: componentNameUI()
+      - Server function: componentNameServer()
+      - Defaults function: componentNameDefaults()
+      - Organized in component folder
+
+    rule_formal: |
+      RULE UI_P004_NTUPLE:
+      component(name) = {
+        UI: name + "UI.R",
+        Server: name + "Server.R",
+        Defaults: name + "Defaults.R"
+      }
+
+    violations:
+      - "UI and server in same file"
+      - "Missing defaults file"
+    compliant:
+      - "customerFilter/customerFilterUI.R"
+      - "customerFilter/customerFilterServer.R"
+      - "customerFilter/customerFilterDefaults.R"
+
+  - id: UI_P005
+    type: principle
+    name: css_over_conditional_controls
+    display_name: "CSS Over Conditional Controls"
+    one_liner: "Use CSS for styling, not conditional rendering"
+    file_path: "CH04_ui_components/principles/UI_P005_css_over_conditional_controls.qmd"
+
+    rule_natural: |
+      Styling approach:
+      - Use CSS classes for visual changes
+      - Avoid conditionalPanel for styling
+      - Keep R code focused on logic
+      - Separate style from structure
+
+    rule_formal: |
+      RULE UI_P005_CSS:
+      FOR styling changes:
+      use CSS_classes
+      NOT conditionalPanel
+      NOT inline_styles
+
+    violations:
+      - "conditionalPanel to hide/show based on style"
+      - "Inline style attributes"
+    compliant:
+      - "addClass/removeClass for state"
+      - "External CSS file"
+
+  - id: UI_P006
+    type: principle
+    name: ui_package_consistency
+    display_name: "UI Package Consistency"
+    one_liner: "Use consistent UI package throughout application"
+    file_path: "CH04_ui_components/principles/UI_P006_ui_package_consistency.qmd"
+
+    rule_natural: |
+      UI package consistency:
+      - Use bs4Dash consistently
+      - Don't mix UI frameworks
+      - Follow package conventions
+      - Use package's built-in components
+
+    rule_formal: |
+      RULE UI_P006_PACKAGE:
+      ui_framework = bs4Dash
+      NOT mix_frameworks
+      use_builtin_components
+
+    violations:
+      - "Mixing shinyWidgets with bs4Dash conflicting styles"
+      - "Custom components when bs4Dash provides"
+    compliant:
+      - "Consistent bs4Dash usage"
+
+  - id: UI_P007
+    type: principle
+    name: search_input_optimization
+    display_name: "Search Input Optimization"
+    one_liner: "Optimize search inputs for performance"
+    file_path: "CH04_ui_components/principles/UI_P007_search_input_optimization.qmd"
+
+    rule_natural: |
+      Search optimization:
+      - Debounce input to reduce updates
+      - Use selectize for large lists
+      - Implement server-side search
+      - Show loading state
+
+    rule_formal: |
+      RULE UI_P007_SEARCH:
+      search_input has:
+        debounce(300ms)
+        server_side_search IF items > 1000
+        loading_indicator
+
+    violations:
+      - "No debounce on search input"
+      - "Client-side search of 10k items"
+    compliant:
+      - "debounce(input, 300)"
+      - "Server-side selectize"
+
+  - id: UI_P008
+    type: principle
+    name: component_composition
+    display_name: "Component Composition"
+    one_liner: "Build complex UI from composable components"
+    file_path: "CH04_ui_components/principles/UI_P008_component_composition.qmd"
+
+    rule_natural: |
+      Component composition approach:
+      - Small, reusable components
+      - Compose into larger structures
+      - Clear component boundaries
+      - Props/parameters for customization
+
+    rule_formal: |
+      RULE UI_P008_COMPOSE:
+      complex_ui = compose(simple_components)
+      components are reusable
+      AND have_clear_interfaces
+
+    violations:
+      - "Monolithic UI functions"
+      - "Copy-pasted UI code"
+    compliant:
+      - "Small components composed together"
+
+  - id: UI_P009
+    type: principle
+    name: single_line_ui_elements
+    display_name: "Single Line UI Elements"
+    one_liner: "Simple UI elements on single line"
+    file_path: "CH04_ui_components/principles/UI_P009_single_line_ui_elements.qmd"
+
+    rule_natural: |
+      UI element formatting:
+      - Simple elements on one line
+      - Complex elements properly indented
+      - Consistent formatting
+      - Easy to scan
+
+    rule_formal: |
+      RULE UI_P009_FORMAT:
+      IF simple_element THEN single_line
+      IF complex_element THEN proper_indentation
+
+    violations:
+      - "textInput spread across 5 lines"
+    compliant:
+      - "textInput('id', 'Label')"
+
+  - id: UI_P010
+    type: principle
+    name: minimal_css_usage
+    display_name: "Minimal CSS Usage"
+    one_liner: "Use minimal custom CSS, prefer framework classes"
+    file_path: "CH04_ui_components/principles/UI_P010_minimal_css_usage.qmd"
+
+    rule_natural: |
+      CSS approach:
+      - Use Bootstrap/bs4Dash classes first
+      - Custom CSS only when necessary
+      - Document custom CSS purpose
+      - Keep CSS organized
+
+    rule_formal: |
+      RULE UI_P010_CSS:
+      prefer framework_classes > custom_css
+      IF custom_css THEN document_purpose
+
+    violations:
+      - "Custom CSS for standard styling"
+      - "Undocumented CSS overrides"
+    compliant:
+      - "Bootstrap utility classes"
+
+  - id: UI_P011
+    type: principle
+    name: hierarchical_navigation
+    display_name: "Hierarchical Navigation"
+    one_liner: "Organize UI with clear navigation hierarchy"
+    file_path: "CH04_ui_components/principles/UI_P011_hierarchical_navigation.qmd"
+
+    rule_natural: |
+      Navigation structure:
+      - Clear hierarchy of pages/tabs
+      - Consistent navigation patterns
+      - Breadcrumbs for deep nesting
+      - Current location indicated
+
+    rule_formal: |
+      RULE UI_P011_NAV:
+      navigation has:
+        clear_hierarchy
+        consistent_patterns
+        location_indicator
+
+    violations:
+      - "Flat navigation with 20 items"
+      - "No indication of current page"
+    compliant:
+      - "Grouped tabs with submenus"
+
+  - id: UI_P012
+    type: principle
+    name: multi_language_ui_support
+    display_name: "Multi-Language UI Support"
+    one_liner: "UI supports multiple languages through dictionary-driven translation"
+    file_path: "CH04_ui_components/principles/UI_P012_multi_language_ui_support.qmd"
+
+    rule_natural: |
+      Multi-language support requirements:
+      - All UI text uses translate() function
+      - Translations stored in CSV dictionary
+      - Language selected via app_config.yaml
+      - Graceful fallback for missing translations
+
+    rule_formal: |
+      RULE UI_P012_I18N:
+      FOR ALL ui_text T:
+      uses_translate_function(T)
+      AND translation_in_dictionary(T)
+
+    violations:
+      - "Hardcoded text labels"
+      - "No translate() wrapper"
+    compliant:
+      - "translate('Customer Profile')"
+      - "Dictionary-driven labels"
+
+  # ====================
+  # UI_R RULES (23)
+  # ====================
+
+  - id: UI_R001
+    type: rule
+    name: ui_server_defaults_ntuple
+    display_name: "UI-Server-Defaults N-Tuple"
+    one_liner: "Components must have UI, Server, and Defaults files"
+    file_path: "CH04_ui_components/rules/UI_R001_ui_server_defaults_ntuple.qmd"
+
+    rule_natural: |
+      Component file structure:
+      - componentUI.R for UI definition
+      - componentServer.R for server logic
+      - componentDefaults.R for default values
+      - All in same folder
+
+    rule_formal: |
+      RULE UI_R001_FILES:
+      component_folder/
+        componentUI.R
+        componentServer.R
+        componentDefaults.R
+
+    violations:
+      - "UI and server combined in one file"
+      - "Defaults hardcoded in UI file"
+    compliant:
+      - "Three separate files per component"
+
+  - id: UI_R002
+    type: rule
+    name: shiny_module_id_handling
+    display_name: "Shiny Module ID Handling"
+    one_liner: "Use NS() for module namespacing"
+    file_path: "CH04_ui_components/rules/UI_R002_shiny_module_id_handling.qmd"
+
+    rule_natural: |
+      Module ID rules:
+      - Use NS(id) in UI functions
+      - Pass id to module server
+      - Don't hardcode IDs
+      - Consistent naming pattern
+
+    rule_formal: |
+      RULE UI_R002_MODULE_ID:
+      moduleUI = function(id) {
+        ns <- NS(id)
+        tagList(element(ns("name")))
+      }
+
+    violations:
+      - "Hard-coded element IDs in modules"
+    compliant:
+      - "ns('elementId') for all IDs"
+
+  - id: UI_R003
+    type: rule
+    name: integrated_component_pattern
+    display_name: "Integrated Component Pattern"
+    one_liner: "Components integrate UI and server seamlessly"
+    file_path: "CH04_ui_components/rules/UI_R003_integrated_component_pattern.qmd"
+
+    rule_natural: |
+      Component integration:
+      - UI and server share same ID pattern
+      - Consistent parameter passing
+      - Clear input/output contract
+      - Documented interface
+
+    rule_formal: |
+      RULE UI_R003_INTEGRATED:
+      component integration:
+        ui = componentUI(id)
+        server = componentServer(id, ...)
+        same_id_used
+
+    violations:
+      - "Mismatched UI/server IDs"
+    compliant:
+      - "callModule(componentServer, 'myComponent')"
+
+  - id: UI_R004
+    type: rule
+    name: hybrid_sidebar_pattern
+    display_name: "Hybrid Sidebar Pattern"
+    one_liner: "Use hybrid sidebar with collapsible sections"
+    file_path: "CH04_ui_components/rules/UI_R004_hybrid_sidebar_pattern.qmd"
+
+    rule_natural: |
+      Sidebar organization:
+      - Group related filters
+      - Collapsible sections
+      - Most used at top
+      - Clear section labels
+
+    rule_formal: |
+      RULE UI_R004_SIDEBAR:
+      sidebar structure:
+        collapsible_sections
+        grouped_filters
+        priority_ordering
+
+    violations:
+      - "Flat list of 20 filters"
+    compliant:
+      - "Grouped, collapsible filter sections"
+
+  - id: UI_R005
+    type: rule
+    name: ui_hierarchy
+    display_name: "UI Hierarchy"
+    one_liner: "Maintain clear UI element hierarchy"
+    file_path: "CH04_ui_components/rules/UI_R005_ui_hierarchy.qmd"
+
+    rule_natural: |
+      UI structure hierarchy:
+      - Page > Section > Card > Content
+      - Consistent nesting levels
+      - Clear visual hierarchy
+      - Proper heading levels
+
+    rule_formal: |
+      RULE UI_R005_HIERARCHY:
+      ui_structure = [page, section, card, content]
+      proper_nesting()
+      visual_hierarchy()
+
+    violations:
+      - "Cards directly in page without section"
+    compliant:
+      - "Page > Row > Box > Content"
+
+  - id: UI_R006
+    type: rule
+    name: defaults_from_triple
+    display_name: "Defaults from Triple"
+    one_liner: "Load component defaults from Defaults file"
+    file_path: "CH04_ui_components/rules/UI_R006_defaults_from_triple.qmd"
+
+    rule_natural: |
+      Default value handling:
+      - Define in componentDefaults.R
+      - Load in UI and Server
+      - Override via parameters
+      - Document default values
+
+    rule_formal: |
+      RULE UI_R006_DEFAULTS:
+      defaults = componentDefaults()
+      ui uses defaults.ui_values
+      server uses defaults.server_values
+
+    violations:
+      - "Hardcoded defaults in UI"
+    compliant:
+      - "defaults <- componentDefaults()"
+
+  - id: UI_R007
+    type: rule
+    name: ui_text_standardization
+    display_name: "UI Text Standardization"
+    one_liner: "Use standardized text for common UI elements"
+    file_path: "CH04_ui_components/rules/UI_R007_ui_text_standardization.qmd"
+
+    rule_natural: |
+      Standard UI text:
+      - "Select" for choosing items
+      - "Submit" for form submission
+      - "Cancel" for cancellation
+      - Consistent button labels
+
+    rule_formal: |
+      RULE UI_R007_TEXT:
+      standard_labels = {
+        select: "Select",
+        submit: "Submit",
+        cancel: "Cancel",
+        save: "Save"
+      }
+
+    violations:
+      - "Pick instead of Select"
+      - "Inconsistent button text"
+    compliant:
+      - "Consistent standard labels"
+
+  - id: UI_R008
+    type: rule
+    name: default_selection_conventions
+    display_name: "Default Selection Conventions"
+    one_liner: "Use consistent default selection patterns"
+    file_path: "CH04_ui_components/rules/UI_R008_default_selection_conventions.qmd"
+
+    rule_natural: |
+      Default selection rules:
+      - First item for single select
+      - None for multi-select
+      - Most recent for dates
+      - Document non-standard defaults
+
+    rule_formal: |
+      RULE UI_R008_DEFAULT_SELECT:
+      single_select default = first_item
+      multi_select default = none
+      date_select default = recent
+
+    violations:
+      - "Random default selection"
+    compliant:
+      - "selected = choices[1]"
+
+  - id: UI_R009
+    type: rule
+    name: enhanced_input_components
+    display_name: "Enhanced Input Components"
+    one_liner: "Use enhanced input components for better UX"
+    file_path: "CH04_ui_components/rules/UI_R009_enhanced_input_components.qmd"
+
+    rule_natural: |
+      Enhanced inputs:
+      - Use selectize for large lists
+      - Use dateRangeInput for date ranges
+      - Use sliderInput for ranges
+      - Add tooltips for guidance
+
+    rule_formal: |
+      RULE UI_R009_ENHANCED:
+      IF list_size > 20 THEN use selectize
+      IF date_range THEN use dateRangeInput
+      add_tooltips_for_guidance
+
+    violations:
+      - "Plain dropdown for 100 items"
+    compliant:
+      - "selectizeInput with search"
+
+  - id: UI_R010
+    type: rule
+    name: component_id_consistency
+    display_name: "Component ID Consistency"
+    one_liner: "Use consistent ID naming across components"
+    file_path: "CH04_ui_components/rules/UI_R010_component_id_consistency.qmd"
+
+    rule_natural: |
+      ID naming pattern:
+      - camelCase for IDs
+      - Descriptive names
+      - Module prefix when needed
+      - Consistent across app
+
+    rule_formal: |
+      RULE UI_R010_ID:
+      id_pattern = camelCase
+      id is descriptive
+      consistent_throughout_app
+
+    violations:
+      - "btn1, btn2 for buttons"
+      - "Mixed snake_case and camelCase"
+    compliant:
+      - "submitButton, filterDateRange"
+
+  - id: UI_R011
+    type: rule
+    name: bs4dash_structure_adherence
+    display_name: "bs4Dash Structure Adherence"
+    one_liner: "Follow bs4Dash structure conventions"
+    file_path: "CH04_ui_components/rules/UI_R011_bs4dash_structure_adherence.qmd"
+
+    rule_natural: |
+      bs4Dash structure:
+      - bs4DashPage as root
+      - bs4DashNavbar for navigation
+      - bs4DashSidebar for sidebar
+      - bs4DashBody for content
+
+    rule_formal: |
+      RULE UI_R011_BS4DASH:
+      page_structure = bs4DashPage(
+        navbar = bs4DashNavbar(),
+        sidebar = bs4DashSidebar(),
+        body = bs4DashBody()
+      )
+
+    violations:
+      - "fluidPage instead of bs4DashPage"
+    compliant:
+      - "Standard bs4Dash page structure"
+
+  - id: UI_R012
+    type: rule
+    name: bs4dash_navbar_navigation
+    display_name: "bs4Dash Navbar Navigation"
+    one_liner: "Use navbar for top-level navigation"
+    file_path: "CH04_ui_components/rules/UI_R012_bs4dash_navbar_navigation.qmd"
+
+    rule_natural: |
+      Navbar usage:
+      - Primary navigation in navbar
+      - Dropdown menus for grouped items
+      - User menu on right
+      - Search if needed
+
+    rule_formal: |
+      RULE UI_R012_NAVBAR:
+      navbar contains:
+        primary_navigation
+        user_menu_right
+        optional_search
+
+    violations:
+      - "Navigation in sidebar only"
+    compliant:
+      - "Primary tabs in navbar"
+
+  - id: UI_R013
+    type: rule
+    name: database_status_display
+    display_name: "Database Status Display"
+    one_liner: "Show database connection status to users"
+    file_path: "CH04_ui_components/rules/UI_R013_database_status_display.qmd"
+
+    rule_natural: |
+      Status display:
+      - Show connection status
+      - Indicate data freshness
+      - Display last update time
+      - Show error state clearly
+
+    rule_formal: |
+      RULE UI_R013_STATUS:
+      ui includes:
+        connection_status_indicator
+        last_update_time
+        error_state_display
+
+    violations:
+      - "No indication of data status"
+    compliant:
+      - "Status badge with last update"
+
+  - id: UI_R014
+    type: rule
+    name: css_organization
+    display_name: "CSS Organization"
+    one_liner: "Organize CSS in structured files"
+    file_path: "CH04_ui_components/rules/UI_R014_css_organization.qmd"
+
+    rule_natural: |
+      CSS organization:
+      - Main CSS in www/styles.css
+      - Component CSS in component folders
+      - Use CSS comments for sections
+      - Follow naming conventions
+
+    rule_formal: |
+      RULE UI_R014_CSS_ORG:
+      css_structure:
+        www/styles.css for global
+        component/component.css for component
+        section_comments
+
+    violations:
+      - "Inline CSS everywhere"
+      - "Unorganized CSS file"
+    compliant:
+      - "Organized CSS with sections"
+
+  - id: UI_R015
+    type: rule
+    name: rshiny_app_templates
+    display_name: "R Shiny App Templates"
+    one_liner: "Use standardized app templates"
+    file_path: "CH04_ui_components/rules/UI_R015_rshiny_app_templates.qmd"
+
+    rule_natural: |
+      App templates:
+      - Use MAMBA app template structure
+      - Follow initialization patterns
+      - Include standard components
+      - Document template usage
+
+    rule_formal: |
+      RULE UI_R015_TEMPLATE:
+      app follows MAMBA_template
+      includes standard_initialization
+      uses standard_components
+
+    violations:
+      - "Custom app structure"
+    compliant:
+      - "MAMBA template with standard structure"
+
+  - id: UI_R016
+    type: rule
+    name: selectize_input_usage
+    display_name: "Selectize Input Usage"
+    one_liner: "Use selectizeInput for searchable dropdowns"
+    file_path: "CH04_ui_components/rules/UI_R016_selectize_input_usage.qmd"
+
+    rule_natural: |
+      Selectize usage:
+      - Use for lists > 10 items
+      - Enable search
+      - Server-side for > 1000 items
+      - Configure placeholder text
+
+    rule_formal: |
+      RULE UI_R016_SELECTIZE:
+      IF choices > 10 THEN use selectizeInput
+      IF choices > 1000 THEN use server-side
+      configure placeholder
+
+    violations:
+      - "selectInput for 100 items"
+    compliant:
+      - "selectizeInput with search enabled"
+
+  - id: UI_R017
+    type: rule
+    name: bs4dash_namespace
+    display_name: "bs4Dash Namespace"
+    one_liner: "Use bs4Dash namespace explicitly"
+    file_path: "CH04_ui_components/rules/UI_R017_bs4dash_namespace.qmd"
+
+    rule_natural: |
+      Namespace usage:
+      - Use bs4Dash:: when needed
+      - Avoid conflicts with other packages
+      - Document namespace choices
+      - Consistent throughout app
+
+    rule_formal: |
+      RULE UI_R017_NS:
+      IF potential_conflict THEN use bs4Dash::function()
+      be_consistent
+
+    violations:
+      - "Ambiguous function calls"
+    compliant:
+      - "bs4Dash::box() when needed"
+
+  - id: UI_R018
+    type: rule
+    name: table_download_button_placement
+    display_name: "Table Download Button Placement"
+    one_liner: "Place download buttons above tables"
+    file_path: "CH04_ui_components/rules/UI_R018_table_download_button_placement.qmd"
+
+    rule_natural: |
+      Download button placement:
+      - Above the table
+      - Right-aligned
+      - Clear icon/label
+      - Consistent position across app
+
+    rule_formal: |
+      RULE UI_R018_DOWNLOAD:
+      download_button placement:
+        above_table
+        right_aligned
+        consistent_position
+
+    violations:
+      - "Download button below table"
+      - "Inconsistent placement"
+    compliant:
+      - "Download button top-right of table"
+
+  - id: UI_R019
+    type: rule
+    name: ai_process_notification
+    display_name: "AI Process Notification"
+    one_liner: "Show progress for AI/long processes"
+    file_path: "CH04_ui_components/rules/UI_R019_ai_process_notification.qmd"
+
+    rule_natural: |
+      AI process feedback:
+      - Show progress for > 2 second operations
+      - Stage-based notifications
+      - Cancellation option if possible
+      - Clear completion message
+
+    rule_formal: |
+      RULE UI_R019_NOTIFY:
+      IF process_time > 2s
+      THEN show_progress()
+      AND show_stage_updates()
+
+    violations:
+      - "No feedback during AI processing"
+      - "Silent waiting"
+    compliant:
+      - "Progress bar with stage updates"
+
+  - id: UI_R020
+    type: rule
+    name: csv_utf8_bom_standard
+    display_name: "CSV UTF-8 BOM Standard"
+    one_liner: "Export CSV with UTF-8 BOM for Excel compatibility"
+    file_path: "CH04_ui_components/rules/UI_R020_csv_utf8_bom_standard.qmd"
+
+    rule_natural: |
+      CSV export rules:
+      - Use UTF-8 encoding
+      - Include BOM for Excel
+      - Handle special characters
+      - Document encoding used
+
+    rule_formal: |
+      RULE UI_R020_CSV:
+      csv_export uses:
+        UTF-8 encoding
+        BOM header
+        proper_escaping
+
+    violations:
+      - "CSV without BOM breaking Excel"
+    compliant:
+      - "write.csv with UTF-8 BOM"
+
+  - id: UI_R021
+    type: rule
+    name: dual_download_buttons_statistical
+    display_name: "Dual Download Buttons Statistical"
+    one_liner: "Provide both summary and detail downloads"
+    file_path: "CH04_ui_components/rules/UI_R021_dual_download_buttons_statistical.qmd"
+
+    rule_natural: |
+      Statistical downloads:
+      - Summary download for overview
+      - Detail download for full data
+      - Clear labels for each
+      - Consistent format
+
+    rule_formal: |
+      RULE UI_R021_DUAL:
+      statistical_table has:
+        download_summary_button
+        download_detail_button
+
+    violations:
+      - "Only raw data download"
+    compliant:
+      - "Both summary and detail options"
+
+  - id: UI_R022
+    type: rule
+    name: ui_text_translation_pattern
+    display_name: "UI Text Translation Pattern"
+    one_liner: "Standard pattern for translating UI text using dictionary"
+    file_path: "CH04_ui_components/rules/UI_R022_ui_text_translation_pattern.qmd"
+
+    rule_natural: |
+      Translation implementation (English-First i18n Architecture):
+      - All code identifiers (variables, columns, functions) MUST be English
+      - All business logic string literals (classification labels, strategy names,
+        customer types, risk levels) MUST be English
+      - Translation happens ONLY at display layer via translate()
+      - Initialize translate() at app startup
+      - Use CSV dictionary for translations
+      - Wrap all UI text with translate()
+      - Handle UTF-8 BOM in dictionary
+      - DT colnames pattern: colnames = unname(sapply(names(show_df), translate))
+      - Classification columns: sapply(df$col, translate) at render time only
+      - CSV exports keep English values (machine-readable)
+
+    rule_formal: |
+      RULE UI_R022_TRANSLATE:
+      FOR ALL ui_text T:
+        wrapped_with(T, "translate()")
+        AND defined_in(T, "dictionary.csv")
+      FOR ALL code_identifier I:
+        language(I) == "English"
+      FOR ALL business_logic_string S:
+        language(S) == "English"
+        AND translate(S) applied ONLY at display_layer
+      NEVER use Chinese/Unicode in code identifiers
+      NEVER use Chinese/Unicode in classification labels or strategy names
+
+    violations:
+      - "Hardcoded 'Submit' button label"
+      - "Direct text without translate()"
+      - "Chinese column names in data.frame: data.frame(`客戶ID` = ...)"
+      - "Chinese variable names: 顧客資料 <- ..."
+      - "Chinese classification labels: customer_type <- '高價值忠實客'"
+      - "Chinese strategy names: strategy <- 'VIP維護'"
+      - "Chinese risk levels: r_level <- '高'"
+    compliant:
+      - "translate('Submit')"
+      - "translate('Customer Profile')"
+      - "English columns + colnames = unname(sapply(names(df), translate))"
+      - "English classification: customer_type <- 'High-Value Loyal'"
+      - "English strategy: strategy <- 'VIP Maintenance', translate at UI"
+      - "CSV export with English values (no translation)"
+
+  - id: UI_R023
+    type: rule
+    name: language_fallback_chain
+    display_name: "Language Fallback Chain"
+    one_liner: "Fallback behavior for missing translations: zh_CN->zh_TW->en"
+    file_path: "CH04_ui_components/rules/UI_R023_language_fallback_chain.qmd"
+
+    rule_natural: |
+      Fallback chain for translations:
+      - zh_CN falls back to zh_TW if empty
+      - All languages fall back to English
+      - Never display empty text
+      - Return identity if system unavailable
+
+    rule_formal: |
+      RULE UI_R023_FALLBACK:
+      IF translation_empty(zh_cn) THEN use(zh_tw)
+      IF translation_empty(zh_tw) THEN use(en_us)
+      NEVER return empty_string
+
+    violations:
+      - "Returning empty string for missing translation"
+      - "Throwing error on missing translation"
+    compliant:
+      - "Graceful fallback to zh_TW then English"
+      - "identity function as safe default"
+
+  - id: UI_R024
+    type: rule
+    name: component_dataflow_logging
+    display_name: "Component Dataflow Logging"
+    one_liner: "Every UI component must log data acquisition details and UI rendering targets"
+    file_path: "CH04_ui_components/rules/UI_R024_component_dataflow_logging.qmd"
+
+    rule_natural: |
+      Every reactive data fetch in a UI component must log:
+      1. On success: record count and column names
+      2. On success: list of UI output IDs that will render this data
+      3. On empty: explicit "No data returned" message
+      4. On error: error message with component prefix
+
+    rule_formal: |
+      RULE UI_R024_DATAFLOW_LOG:
+      FOR EACH reactive_fetch IN component:
+        ON success: message("[name] Loaded N records | cols: ...")
+        ON success: message("[name] UI targets: output1, output2, ...")
+        ON empty:   message("[name] No data returned")
+        ON error:   message("[name] Data load error: {msg}")
+
+    violations:
+      - "Silent data fetch with no logging"
+      - "Missing UI targets list in log"
+      - "Empty result returning NULL without message"
+    compliant:
+      - "Three-line logging: count+cols, UI targets, error handler"
+      - "[componentName] prefix matching actual component ID"
+
+  - id: UI_R025
+    type: rule
+    name: taiwan_traditional_chinese_terminology
+    display_name: "Taiwan Traditional Chinese Terminology"
+    one_liner: "zh_TW translations must use Taiwan-standard vocabulary, never mainland China terms"
+
+    rule_natural: |
+      All zh_TW translations must use Taiwan-standard Traditional Chinese.
+      Some terms are not absolutely prohibited but have different semantic
+      scope in Taiwan vs mainland China. This rule targets mainland-specific
+      usage that doesn't match Taiwan conventions:
+
+      - 數據 (when meaning general "data") → 資料
+        (Taiwan uses 數據 only for numerical data/statistics)
+      - 用戶 (when meaning general "user") → 使用者
+        (Taiwan uses 用戶 mainly for account holders, e.g. bank 用戶)
+      - 激活 → 活化/啟動, 捆綁 → 組合/搭售, 批量 → 批次/大量
+      - 信息 → 資訊, 軟件 → 軟體, 網絡 → 網路
+      - 視頻 → 影片, 反饋 → 回饋
+
+      This applies to ui_terminology.csv, all translate() output,
+      and zh_tw AI prompts in ai_prompts.yaml.
+
+    rule_formal: |
+      RULE UI_R025_TW_TERMINOLOGY:
+      FOR ALL translation T WHERE locale == "zh_TW":
+        uses_taiwan_standard(T)
+      # Terms where mainland usage differs from Taiwan convention:
+      PRC_USAGE    = ["數據(=data)","激活","捆綁","批量","信息",
+                      "軟件","網絡","視頻","用戶(=user)","反饋"]
+      TW_STANDARD  = ["資料","活化","組合","批次","資訊",
+                      "軟體","網路","影片","使用者","回饋"]
+
+    violations:
+      - "zh_TW: AI 數據洞察 (should be AI 資料洞察)"
+      - "zh_TW: 召回激活 (should be 喚回活化)"
+      - "zh_TW: 捆綁銷售 (should be 組合銷售)"
+      - "zh_TW: 批量採購 (should be 大量採購)"
+    compliant:
+      - "zh_TW: AI 資料洞察"
+      - "zh_TW: 喚回活化"
+      - "zh_TW: 組合銷售"
+      - "zh_TW: 大量採購"
+
+  - id: UI_R027
+    type: rule
+    name: column_display_format
+    display_name: "Column/Field Display Name Format"
+    one_liner: "Items with abbreviations display as 中文全稱（英文縮寫）; items without display as pure Chinese"
+
+    rule_natural: |
+      When displaying column names, field labels, KPI titles, or any data
+      labels in zh_TW, apply the following format:
+
+      - Items WITH a recognized English abbreviation or code:
+        Format: 中文全稱（英文縮寫）
+        Examples: 顧客終生價值（CLV）, 主力客（E0）, 瞌睡客（S1）
+
+      - Items WITHOUT a standard abbreviation:
+        Format: Pure Chinese
+        Examples: 平均流失機率, 總營收, 訂單數
+
+      - Chinese comes first because zh_TW is the primary UI language
+      - Abbreviation codes (E0, S1, S2, S3) convey ordering/severity
+        and must be preserved
+      - The format is stored in ui_terminology.csv, not constructed at
+        runtime; business logic remains English (per DEV_R052)
+
+    rule_formal: |
+      RULE UI_R027_COLUMN_FORMAT:
+      FOR ALL display_label L WHERE locale == "zh_TW":
+        IF has_standard_abbreviation(L):
+          format(L) == "中文全稱（英文縮寫）"
+        ELSE:
+          format(L) == "中文全稱"
+      # The format is applied via translate() in ui_terminology.csv
+      # Business logic keys remain in English (DEV_R052)
+
+    violations:
+      - "CLV → CLV (abbreviation only, no Chinese)"
+      - "CLV → 顧客終生價值 (missing abbreviation in parens)"
+      - "CLV → CLV 顧客終生價值 (wrong order: English first)"
+      - "NES E0 → 主力客 (missing E0 code)"
+    compliant:
+      - "CLV → 顧客終生價值（CLV）"
+      - "RFM → 顧客價值分數（RFM）"
+      - "NES E0 → 主力客（E0）"
+      - "NES S1 → 瞌睡客（S1）"
+      - "Total Revenue → 總營收 (no abbreviation, pure Chinese)"
+
+  - id: UI_R028
+    type: rule
+    name: component_filter_exclusivity
+    display_name: "Component Filter Exclusivity"
+    one_liner: "All sidebar filter controls must go through the component's ui$filter — no filter injection at the union/layout level"
+    file_path: "CH04_ui_ux/rules/UI_R028_component_filter_exclusivity.qmd"
+    derived_from: UI_R026
+
+    rule_natural: |
+      Every Shiny component returns exactly two UI parts: filter and display.
+      All sidebar filter controls — including cross-tab filters like country selection —
+      must be delivered through the component's ui$filter mechanism.
+
+      Injecting filter controls outside this architecture (e.g., adding a standalone
+      uiOutput in the union layout) is prohibited. It causes format inconsistency,
+      spurious separators, and display logic duplication.
+
+      If multiple tabs need the same filter (e.g., country selection), each tab's
+      component includes its own instance in ui$filter. Do not extract to a shared
+      union-level filter.
+
+    rule_formal: |
+      RULE UI_R028_FILTER_EXCLUSIVITY:
+      FOR ALL sidebar filter controls F:
+        F MUST be part of some component C's ui$filter
+        F MUST NOT be injected directly into union/layout sidebar
+      COROLLARY:
+        IF F needed on multiple tabs:
+          each tab's component includes F in its own ui$filter
+          NOT: shared F injected at union level
+
+    violations:
+      - "uiOutput('country_filter_sidebar') added directly in union sidebar layout"
+      - "Shared filter renderUI in union with tab-checking logic outside dynamic_filter"
+    compliant:
+      - "Country selectInput inside worldMap's ui_filter tagList"
+      - "Each component that needs country filter has its own instance in ui$filter"
+
+    dependencies:
+      - "UI_R026"  # Sidebar layout hierarchy — this rule simplifies it
+      - "UI_R001"  # UI-Server-Defaults triple — enforces two-part UI contract
+
+    metadata:
+      created: "2026-03-14"
+      triggered_by: "Issue #349 — worldMap sidebar 國家篩選器繞過元件架構"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: UI_R001
+    to: UI_P004
+    reason: "File structure implements N-tuple pattern"
+
+  - from: UI_R002
+    to: UI_P004
+    reason: "ID handling is part of component pattern"
+
+  - from: UI_R011
+    to: UI_P006
+    reason: "bs4Dash structure enforces package consistency"
+
+  - from: UI_R016
+    to: UI_P007
+    reason: "Selectize implements search optimization"
+
+  - from: UI_R022
+    to: UI_P012
+    reason: "Translation pattern implements multi-language support"
+
+  - from: UI_R023
+    to: UI_P012
+    reason: "Fallback chain implements multi-language support"
+
+  - from: UI_R027
+    to: UI_R025
+    reason: "Display format extends Taiwan Chinese terminology standard"
+
+  - from: UI_R027
+    to: UI_R022
+    reason: "Display format is stored in translation dictionary"
+
+  - from: UI_R028
+    to: UI_R001
+    reason: "Filter exclusivity enforces the two-part UI contract (filter + display)"
+
+  - from: UI_R028
+    to: UI_R026
+    reason: "Filter exclusivity simplifies sidebar layout by removing Local Filter layer"
+
+  - from: UI_R025
+    to: UI_R022
+    reason: "Taiwan terminology compliance extends the translation pattern"

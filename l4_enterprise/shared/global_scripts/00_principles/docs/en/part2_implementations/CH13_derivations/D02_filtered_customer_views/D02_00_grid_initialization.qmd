@@ -1,0 +1,132 @@
+---
+
+title: "D02_00: Grid Initialization"
+subtitle: "Create filtered schema for customer view storage"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_00"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D01_dna_analysis"
+outputs_to:
+  - "processed_data.filtered (schema)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_00: Grid Initialization {#overview}
+
+This task creates the filtered schema that will store all virtual views for customer filtering. It establishes the foundation for the multi-dimensional filtering system.
+
+## Schema Creation (NSQL) {#schema-creation}
+
+```nsql
+# D02_00: Create Filtered Schema
+CREATE_SCHEMA D02_00_filtered:
+  SCHEMA_NAME: processed_data.filtered
+  LOCATION: "data/local_data/processed_data.duckdb"
+
+  PURPOSE: "Store virtual filtered views for customer analysis"
+
+  PROPERTIES:
+    storage_type: VIRTUAL  # Views, not materialized tables
+    naming_convention: "df_sales_{source}_{time}_{product}_{state}"
+    access_pattern: READ_ONLY
+
+  ON_EXISTS: SKIP  # Don't recreate if exists
+```
+
+## Prerequisites
+
+| Requirement | Description |
+|-------------|-------------|
+| D01 Complete | Customer DNA profiles must exist |
+| Database Access | Connection to processed_data.duckdb |
+| Write Permission | Ability to create schema |
+
+## Filter Dimension Schema (NSQL) {#filter-schema}
+
+```nsql
+# D02 Filter Dimension Schema Definition
+DEFINE FILTER_DIMENSIONS:
+  time_condition:
+    TYPE: ENUM
+    VALUES: ['now', 'm1year', 'm1quarter', 'm1month', 'm2year', 'ytd']
+    DEFAULT: 'now'
+    DESCRIPTION: "Time range filter for historical data"
+
+  product_line_id_filter:
+    TYPE: INTEGER
+    VALUES: [0, 1, 2, 3, ...]  # 0 = all products
+    DEFAULT: 0
+    DESCRIPTION: "Product line category filter"
+
+  state_filter:
+    TYPE: VARCHAR
+    VALUES: ['ALL', 'CA', 'NY', 'TX', ...]  # ALL = all regions
+    DEFAULT: 'ALL'
+    DESCRIPTION: "Geographic region filter"
+
+  source_filter:
+    TYPE: VARCHAR
+    VALUES: ['amazon', 'ebay', 'retail', 'cbz']
+    DESCRIPTION: "Platform/channel data source"
+
+# Special value handling
+DEFINE SPECIAL_VALUES:
+  time_condition.now: "No time restriction, all historical data"
+  product_line_id_filter.0: "All products across all lines"
+  state_filter.ALL: "All geographic regions combined"
+```
+
+## Schema Properties {#properties}
+
+| Property | Value | Description |
+|----------|-------|-------------|
+| Storage Type | VIRTUAL | Views, not materialized tables |
+| Naming Convention | `df_sales_{source}_{time}_{product}_{state}` | Consistent naming |
+| Access Pattern | READ_ONLY | Views are read-only |
+| On Exists | SKIP | Don't recreate if exists |
+
+## Output Schema Structure
+
+```nsql
+# Schema: processed_data.filtered
+SCHEMA processed_data.filtered:
+  CONTAINS:
+    # Sales views (one per condition combination)
+    df_sales_{condition_key}:
+      COLUMNS: [all columns from source + filter columns]
+      TYPE: VIRTUAL VIEW
+
+    # Customer-centric views (one per condition combination)
+    df_sales_by_customer_{condition_key}:
+      COLUMNS: [customer_id, aggregated metrics, filter columns]
+      TYPE: VIRTUAL VIEW
+```
+
+## Validation (NSQL) {#validation}
+
+```nsql
+# D02_00: Validate Schema Creation
+VALIDATE D02_00:
+  CHECK schema_exists:
+    QUERY: "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'filtered'"
+    ASSERT: COUNT(*) = 1
+    MESSAGE: "Filtered schema must exist"
+
+  ON_SUCCESS: LOG "D02_00 completed: filtered schema created"
+  ON_FAILURE: ABORT "D02_00 failed: could not create schema"
+```
+
+## Related Documentation
+
+- [D02_01_condition_grid.qmd](D02_01_condition_grid.qmd) - Grid generation
+- [index.qmd](index.qmd) - D02 overview

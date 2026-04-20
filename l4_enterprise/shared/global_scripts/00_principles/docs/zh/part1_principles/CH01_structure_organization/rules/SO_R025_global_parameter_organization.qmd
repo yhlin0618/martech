@@ -1,0 +1,185 @@
+---
+title: "SO_R017: 全域參數組織"
+subtitle: "跨多個應用程式共享的全域參數必須在 global_scripts/parameters 中的 Excel 檔案中定義，而應用程式特定的實現則通過其應用程式目錄中的 YAML 配置引用這些全域參數"
+chapter: "CH01"
+category: "rule"
+number: "SO_R017"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 17
+  title: "全域參數組織規則"
+related_to:
+  - "DM_P004: 雙重參數來源"
+  - "IC_R001: 全域腳本同步"
+  - "MP017: 關注點分離"
+  - "SO_P010: 配置驅動的自訂"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十七條：全域參數組織規則 {#overview}
+
+**結構組織法第十七條（全域參數組織規則）**
+
+此規則建立了管理跨應用程式共享參數的標準結構。
+
+:::{.callout-important}
+## 核心規則
+跨多個應用程式共享的全域參數必須在 `global_scripts/parameters` 中的 Excel 檔案中定義，而應用程式特定的實現則通過其應用程式目錄中的 YAML 配置引用這些全域參數。
+:::
+
+# 第一項：實施指導原則 {#implementation}
+
+## 第一款：目錄結構 {#directory-structure}
+
+1. **全域參數位置**
+   ```
+   /update_scripts/global_scripts/parameters/
+   ├── platform.xlsx
+   ├── product_line.xlsx
+   ├── ui_terminology_dictionary.xlsx
+   └── [其他共享參數檔案].xlsx
+   ```
+
+2. **應用程式特定配置位置**
+   ```
+   /precision_marketing_[APP_NAME]/precision_marketing_app/
+   └── app_config.yaml
+   ```
+
+## 第二款：參數檔案職責 {#file-responsibilities}
+
+### 全域參數檔案（Excel）
+- 核心領域實體及其屬性
+- 共享參考資料（產品、平台、地區）
+- 翻譯字典
+- 分類系統
+- 實體關係
+- ID 方案和命名約定
+
+### 應用程式特定配置（YAML）
+- 使用哪些全域參數
+- 如何呈現共享實體
+- 應用程式特定行為和設定
+- 環境配置
+- UI 組件選擇和排列
+- 功能切換和自訂
+
+# 第二項：引用模式 {#reference-pattern}
+
+應用程式特定的 YAML 應引用全域 Excel 檔案：
+
+```yaml
+# 在 app_config.yaml 中
+parameters:
+  global_sources:
+    product_line: "../global_scripts/parameters/product_line.xlsx"
+    platform: "../global_scripts/parameters/platform.xlsx"
+    ui_dictionary: "../global_scripts/parameters/ui_terminology_dictionary.xlsx"
+  
+  display:
+    product_categories:
+      enabled: true
+      default: "000"  # "所有產品"
+      max_visible: 10
+    
+    platforms:
+      enabled: true
+      exclude: ["999"]  # 排除「其他」平台
+```
+
+# 第三項：載入順序 {#loading-sequence}
+
+1. 首先載入全域 Excel 參數
+2. 其次應用應用程式特定的 YAML 配置
+3. 如需要，覆寫環境特定設定
+
+```r
+# 載入順序
+load_configuration <- function() {
+  # 1. 從 Excel 載入全域參數
+  global_params <- load_global_excel_parameters("../global_scripts/parameters/")
+  
+  # 2. 載入應用程式特定的 YAML
+  app_config <- yaml::read_yaml("app_config.yaml")
+  
+  # 3. 合併配置，應用程式特定的優先
+  config <- merge_configurations(global_params, app_config)
+  
+  # 4. 應用任何環境特定的覆寫
+  config <- apply_environment_overrides(config)
+  
+  return(config)
+}
+```
+
+# 第四項：實施範例 {#examples}
+
+## 第一款：全域 Excel 檔案（product_line.xlsx）{#global-excel}
+
+```
+| product_line_id | product_line_name_english | product_line_name_chinese |
+|----------------|--------------------------|---------------------------|
+| 000            | All Products             | 所有產品                   |
+| 001            | Kitchen Tools            | 廚房工具                  |
+| 002            | Cookware                 | 炊具                     |
+| 003            | Small Appliances        | 小家電                    |
+```
+
+## 第二款：應用程式特定 YAML（app_config.yaml）{#app-yaml}
+
+```yaml
+# Kitchen MAMA 應用程式配置
+app:
+  name: "Kitchen MAMA"
+  language: "zh_TW.UTF-8"
+
+# 產品顯示配置
+products:
+  categories:
+    source: "../global_scripts/parameters/product_line.xlsx"
+    visible_categories: ["000", "001", "002"]  # 只顯示這些類別
+    default_category: "000"                    # 預設為「所有產品」
+    order_by: "product_line_id"                # 排序順序
+  
+  # 平台顯示配置
+  platforms:
+    source: "../global_scripts/parameters/platform.xlsx"
+    exclude_platforms: ["004", "005"]          # 隱藏某些平台
+```
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **單一事實來源**：領域實體定義一次，到處使用
+2. **減少重複**：無需維護參考資料的單獨副本
+3. **一致性**：所有應用程式使用相同的核心定義
+4. **靈活性**：應用程式可以自訂如何使用共享參數
+5. **可維護性**：在一個地方更新共享資料，影響所有應用程式
+
+# 第六項：實施檢查清單 {#checklist}
+
+實施全域參數組織時：
+
+1. ☐ 識別共享參數
+2. ☐ 創建 Excel 參數檔案
+3. ☐ 配置 YAML 引用
+4. ☐ 實施載入順序
+5. ☐ 測試參數合併
+6. ☐ 驗證覆寫機制
+7. ☐ 記錄參數結構
+
+---
+
+*基於：結構組織法第十七條*  
+*相關連結：[DM_P004 雙重參數來源](../../CH02_data_management/principles/DM_P004_dual_parameter_sources.qmd), [SO_P010 配置驅動的自訂](../principles/SO_P010_config_driven_customization.qmd)*

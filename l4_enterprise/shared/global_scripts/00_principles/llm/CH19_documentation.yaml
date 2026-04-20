@@ -1,0 +1,734 @@
+# CH19: Documentation
+# Documentation System and Standards
+# Last updated: 2026-03-06
+
+chapter: "CH19_documentation"
+description: "Documentation - Wiki, Changelog, Issue Tracking, and Reporting Standards"
+principle_count: 10
+
+principles:
+  # ============================================================================
+  # DOC_P001: Documentation System Architecture
+  # ============================================================================
+  - id: DOC_P001
+    type: principle
+    name: documentation_system_architecture
+    display_name: "Documentation System Architecture"
+    one_liner: "Wiki for non-tech stakeholders, principles for developers, GitHub Issues for tracking"
+    implements: MP029
+    scope: "all documentation"
+    file_path: "CH19_documentation/principles/DOC_P001_documentation_system_architecture.qmd"
+
+    rule_natural: |
+      The documentation system has three layers:
+      1. GitHub Wiki — for clients and non-technical team members (dashboard guides, terminology glossary)
+      2. Principles system (00_principles/) — for developers and AI agents (rules, patterns, architecture)
+      3. GitHub Issues — for tracking work items (single source of truth for issue tracking)
+      Each layer serves a different audience. Content must NOT be duplicated across layers.
+      Note: the local wiki clone is an independent Git repo, and its published
+      branch remains master. Standard GitHub PR APIs are not available for wiki
+      repos, so review must happen on local feature branches before merging back
+      to master for publication.
+
+    rule_formal: |
+      RULE DOC_P001_documentation_system:
+        LAYER wiki:
+          AUDIENCE non_technical
+          CONTENT dashboard_guides, terminology_glossary
+          LOCATION "https://github.com/kiki830621/ai_martech_global_scripts/wiki"
+          GIT_REPO "git@github.com:kiki830621/ai_martech_global_scripts.wiki.git"
+          LOCAL_CLONE "00_principles/docs/wiki/"
+          PUBLISHED_BRANCH "master"
+          REVIEW_FLOW "local_feature_branch -> local_review -> merge_to_master -> push_master"
+          NOTE "Independent Git repo, listed in .gitignore of global_scripts"
+        LAYER principles:
+          AUDIENCE developers, ai_agents
+          CONTENT architecture_rules, coding_patterns, constraints
+          LOCATION "00_principles/"
+        LAYER issues:
+          AUDIENCE all
+          CONTENT work_items, bugs, feature_requests
+          LOCATION "GitHub Issues (global_scripts repo)"
+          PROHIBITED local_issue_files
+
+    violations:
+      - "Creating local ISSUE_*.md files instead of using GitHub Issues"
+      - "Writing technical implementation details in Wiki pages"
+      - "Duplicating Wiki content in principle files"
+    compliant:
+      - "Wiki: 'RFM 分數 = R+F+M 的加總，範圍 3~15' (non-technical explanation)"
+      - "Principles: 'ECDF percentile: ecdf(all_values)(my_value) → 0~1' (technical spec)"
+      - "GitHub Issues: 'RSV 分類閾值需要調整 #248' (work item)"
+
+  # ============================================================================
+  # DOC_R001: Wiki Link Syntax
+  # ============================================================================
+  - id: DOC_R001
+    type: rule
+    name: wiki_link_syntax
+    display_name: "Wiki Link Syntax"
+    one_liner: "[[Display|Page]] in text, [Display](Page) in tables — NEVER [[Page|Display]]"
+    implements: DOC_P001
+    scope: "GitHub Wiki pages"
+    file_path: "CH19_documentation/rules/DOC_R001_wiki_link_syntax.qmd"
+
+    rule_natural: |
+      GitHub Wiki uses [[Display Text|Page Name]] syntax where the FIRST part is
+      what the user sees and the SECOND part is the target page. This is the
+      opposite of what many people assume. Inside Markdown tables, wiki link
+      syntax cannot be used because the pipe character | conflicts with table
+      column separators. Use standard Markdown links [Display](Page) instead.
+
+    rule_formal: |
+      RULE DOC_R001_wiki_link_syntax:
+        IN general_text:
+          FORMAT "[[{display_text}|{page_name}]]"
+          EXAMPLE "[[RFM|Term-RFM]]"
+          RENDERS_AS link(text="RFM", target="Term-RFM")
+        IN markdown_tables:
+          FORMAT "[{display_text}]({page_name})"
+          EXAMPLE "[RFM](Term-RFM)"
+          REASON pipe_character_conflicts_with_table_separator
+        PROHIBITED:
+          - "[[{page_name}|{display_text}]]"  # reversed order
+          - wiki_links_inside_table_cells
+
+    violations:
+      - "[[Term-RFM|RFM]] — page and display are reversed"
+      - "Using [[RFM|Term-RFM]] inside a table cell — pipe conflicts"
+      - "[[Term-P-alive\\|BG/NBD]] inside tables — escaped pipe still unreliable"
+    compliant:
+      - "[[RFM|Term-RFM]] in regular text or blockquotes"
+      - "[RFM](Term-RFM) inside table cells"
+      - "[[TagPilot]] when display text equals page name"
+
+  # ============================================================================
+  # DOC_R002: Wiki Content Standards
+  # ============================================================================
+  - id: DOC_R002
+    type: rule
+    name: wiki_content_standards
+    display_name: "Wiki Content Standards"
+    one_liner: "Term pages need 5 sections; tab guides need 3 sections"
+    implements: DOC_P001
+    scope: "GitHub Wiki Term-*.md and dashboard guide pages"
+    file_path: "CH19_documentation/rules/DOC_R002_wiki_content_standards.qmd"
+
+    rule_natural: |
+      Every terminology page (Term-*.md) MUST contain exactly 5 sections:
+      definition, mathematical formula, variable descriptions, example, and
+      dashboard location. Every tab description in dashboard guides MUST contain:
+      displayed content, how to use, and business insight (what question it answers).
+      Language must follow UI_R025 (Taiwan Traditional Chinese), with technical
+      terms kept in English. Since the Wiki is for clients and non-technical
+      stakeholders, future rewrites SHOULD strengthen the customer perspective:
+      who should read the page, when to use it, how to read it in 3 steps, and
+      what action to take next. Technical terms such as ECDF, quantile, and
+      BG/NBD should be explained in plain language when exposed.
+
+    rule_formal: |
+      RULE DOC_R002_wiki_content_standards:
+        FOR term_pages("Term-*.md"):
+          REQUIRED_SECTIONS:
+            - definition          # 一句話白話文定義
+            - mathematical_formula # LaTeX 公式（$$ ... $$）
+            - variable_descriptions # 變數說明表格
+            - example              # 具體數字舉例
+            - dashboard_location   # 出現在哪些 tab
+        FOR tab_guides("{Module}.md"):
+          REQUIRED_SECTIONS_PER_TAB:
+            - displayed_content   # KPI、圖表、資料表
+            - how_to_use          # 操作方式
+            - business_insight    # 回答什麼商業問題
+          SHOULD_ADD_PROGRESSIVELY:
+            - target_reader        # 適合誰看
+            - when_to_open         # 什麼情況下打開這頁
+            - next_action          # 看完後建議做什麼
+            - three_step_reading   # 三步驟閱讀法
+            - common_misreadings   # 常見誤讀提醒
+        FOR module_pages("{Module}.md"):
+          SHOULD_ADD_PROGRESSIVELY:
+            - target_reader
+            - when_to_open
+            - next_action
+        FOR term_pages("Term-*.md"):
+          SHOULD_ADD_PROGRESSIVELY:
+            - plain_language_opening
+            - business_meaning_before_formula
+            - reduced_jargon_exposure
+        LANGUAGE:
+          - body_text: "臺灣正體中文 (UI_R025)"
+          - technical_terms: "English (RFM, CLV, IRR, etc.)"
+          - formulas: "LaTeX notation"
+        MATH_MODE:
+          - multi_char_variables: "MUST wrap in \\text{} (e.g., \\text{nrec\\_prob})"
+          - single_letter_subscripts: "use math subscript directly (e.g., n_i)"
+          - acronyms: "MUST wrap in \\text{} (e.g., \\text{MLE}, \\text{CAI})"
+
+    violations:
+      - "Term page missing 'example' section"
+      - "Tab description without 'business insight' explanation"
+      - "Using 營銷 instead of 行銷 (UI_R025 violation)"
+      - "Bare variable name in LaTeX: $$nrec\\_prob$$ without \\text{}"
+    compliant:
+      - "## 定義\n## 數學公式\n## 範例\n## 儀表板中的位置"
+      - "### 看懂重點\n這個 tab 回答：哪些客戶最可能流失？"
+      - "### 這頁適合誰看\n品牌經理、CRM 與老闆都能快速理解"
+      - "$$\\text{nrec\\_prob} = 1 - P(alive)$$"
+
+  # ============================================================================
+  # DOC_R003: Formula Cross-Verification
+  # ============================================================================
+  - id: DOC_R003
+    type: rule
+    name: formula_cross_verification
+    display_name: "Formula Cross-Verification"
+    one_liner: "Wiki formulas MUST match source code — verify before publishing"
+    implements: MP029
+    scope: "GitHub Wiki Term-*.md pages"
+    file_path: "CH19_documentation/rules/DOC_R003_formula_cross_verification.qmd"
+
+    rule_natural: |
+      Every formula in Wiki terminology pages MUST be verified against the
+      actual source code before publishing. This prevents documentation drift
+      where the Wiki shows one formula but the code computes differently.
+
+    rule_formal: |
+      RULE DOC_R003_formula_cross_verification:
+        BEFORE publishing_wiki_formula(F):
+          MUST verify_against_source_code(F)
+        SOURCE_CODE_MAP:
+          - "RFM, NES, IPT, CAI, PCV, CLV, CRI" -> "04_utils/fn_analysis_dna.R"
+          - "P(alive) / BG-NBD" -> "04_utils/fn_analysis_btyd.R"
+          - "DNA segments (M1-M4, F1-F3, R1-R4)" -> "16_derivations/fn_D01_02_core.R"
+          - "RSV classification" -> "10_rshinyapp_components/tagpilot/fn_rsv_classification.R"
+          - "Poisson regression" -> "docs/.../SCHEMA_001_poisson_analysis.R"
+
+    violations:
+      - "Publishing a formula without checking the source code"
+      - "Wiki shows CLV discount rate = 0.1 but code uses 0.9^t / (1+4d)^t"
+      - "Copying formulas from academic papers without verifying implementation matches"
+    compliant:
+      - "Reading fn_analysis_dna.R line 758-770 before updating Term-CLV.md"
+      - "Adding code comments: '# Formula matches Wiki Term-RFM.md'"
+
+  # ============================================================================
+  # DOC_R004: Changelog and Reporting Format
+  # ============================================================================
+  - id: DOC_R004
+    type: rule
+    name: changelog_reporting_format
+    display_name: "Changelog and Reporting Format"
+    one_liner: "Reports in changelog/reports/, issues in GitHub Issues, commits follow [TYPE] format"
+    implements: DOC_P001
+    scope: "all project documentation"
+    file_path: "CH19_documentation/rules/DOC_R004_changelog_reporting_format.qmd"
+
+    rule_natural: |
+      All implementation reports go to changelog/reports/ with date-prefixed filenames.
+      Issue tracking uses GitHub Issues exclusively (no local issue files).
+      Commit messages follow [TYPE] format with optional principle references.
+      Plan Mode archives automatically save to changelog/reports/.
+
+    rule_formal: |
+      RULE DOC_R004_changelog_reporting:
+        REPORTS:
+          LOCATION "changelog/reports/"
+          NAMING_PATTERNS:
+            - "YYYY-MM-DD_PLAN_{topic}.md"          # Plan Mode auto-archive
+            - "YYYY-MM-DD_{description}.md"          # Implementation report
+            - "ADR-NNN_{description}.md"             # Architecture Decision Record
+            - "YYYY-MM-DD_issue-{number}_{desc}.md"  # Issue execution report
+        ISSUE_TRACKING:
+          SOURCE_OF_TRUTH "GitHub Issues (global_scripts repo)"
+          PROHIBITED local_issue_files
+          LABELS:
+            - "company:{COMPANY_CODE}"
+            - "module:{ModuleName}"
+            - "source:suggestion_docs"
+        COMMIT_FORMAT:
+          PATTERN "[TYPE] Brief description"
+          TYPES [ETL, DRV, FIX, FEAT, DOCS, REFACTOR, PRINCIPLE]
+          FOOTER "Principles: {principle_ids}"
+        WIKI_PUBLICATION:
+          LOCAL_REVIEW_REQUIRED true
+          PUBLISHED_BRANCH "master"
+          NOTE "GitHub Wiki repos do not use the normal GitHub PR flow"
+
+    violations:
+      - "Creating changelog/issues/open/new_issue.md"
+      - "Commit message without [TYPE] prefix"
+      - "Report file without date prefix"
+    compliant:
+      - "2026-03-06_issue-248_rsv_threshold_fix.md"
+      - "[FIX] Correct RSV threshold for High Risk\n\nPrinciples: MP029"
+
+  # ============================================================================
+  # DOC_R005: Wiki Math Formula Syntax (KaTeX)
+  # ============================================================================
+  - id: DOC_R005
+    type: rule
+    name: wiki_math_formula_syntax
+    display_name: "Wiki Math Formula Syntax (KaTeX)"
+    one_liner: "Use $ for inline, $$ for block; never put underscores inside \\text{}; never use \\( \\)"
+    implements: DOC_R002
+    scope: "GitHub Wiki Term-*.md pages — all mathematical formulas"
+    file_path: "CH19_documentation/rules/DOC_R005_wiki_math_formula_syntax.qmd"
+
+    rule_natural: |
+      GitHub Wiki renders math formulas using KaTeX, which differs from standard
+      LaTeX in several ways. These rules MUST be followed to avoid rendering errors.
+
+      CRITICAL: GitHub Wiki markdown preprocessor strips single backslash from \_
+      inside $...$ math blocks BEFORE passing to KaTeX. This means:
+        - Writing \_ in .md source → markdown strips \ → KaTeX sees bare _ (subscript) → ERROR
+        - Writing \\_ in .md source → markdown strips one \ → KaTeX sees \_ (literal underscore) → CORRECT
+
+      1. INLINE MATH: Use $x$ — NEVER use \(x\)
+         GitHub Wiki does not support \( \) syntax for inline math.
+
+      2. BLOCK MATH: Use $$ on separate lines — NEVER use \[ \]
+
+      3. UNDERSCORES INSIDE \text{}: NEVER write \text{word_word}
+         \text{} switches to text mode, where _ is illegal.
+         Instead, split into: \text{word}\\_\text{word} (DOUBLE backslash + underscore)
+         Single \_ does NOT work — GitHub markdown consumes the backslash.
+
+      4. SUBSCRIPTS ON \text{}: Write \text{word}_i, NOT \text{word_i}
+         The subscript must be OUTSIDE the \text{} block.
+
+      5. MULTI-WORD VARIABLE NAMES: Each word in its own \text{}, separated by \\_
+         Example: \text{dna}\\_\text{r}\\_\text{score}_i
+
+      6. BLANK LINE BEFORE/AFTER $$: Always leave a blank line before and after
+         $$ block math to prevent Markdown parser interference.
+
+      7. AVOID RARE LATEX COMMANDS: KaTeX supports a subset of LaTeX.
+         Stick to common commands: \frac, \sum, \prod, \text, \times, \cdot,
+         \geq, \leq, \neq, \approx, \in, \rightarrow, \left, \right
+
+    rule_formal: |
+      RULE DOC_R005_wiki_math_formula_syntax:
+        INLINE_MATH:
+          CORRECT "$x$"
+          PROHIBITED "\\(x\\)"       # LaTeX inline syntax — not supported by GitHub Wiki
+          PROHIBITED "\\\\(x\\\\)"   # Escaped variant in YAML/source files
+        BLOCK_MATH:
+          CORRECT |
+            (blank line)
+            $$
+            formula
+            $$
+            (blank line)
+          PROHIBITED "\\[formula\\]"
+        TEXT_WITH_UNDERSCORES:
+          PROHIBITED "\\text{word_word}"
+          REASON "'_' allowed only in math mode"
+          NOTE "GitHub Wiki markdown strips single \\ from \\_ inside $...$"
+          NOTE "Must use DOUBLE backslash: \\\\_  (markdown consumes one \\, KaTeX sees \\_)"
+          CORRECT "\\text{word}\\\\_\\text{word}"
+          EXAMPLES:
+            - WRONG "\\text{time_now}" -> CORRECT "\\text{time}\\\\_\\text{now}"
+            - WRONG "\\text{nrec_prob}" -> CORRECT "\\text{nrec}\\\\_\\text{prob}"
+            - WRONG "\\text{dna_r_score}" -> CORRECT "\\text{dna}\\\\_\\text{r}\\\\_\\text{score}"
+            - WRONG "\\text{p_alive}" -> CORRECT "\\text{p}\\\\_\\text{alive}"
+            - WRONG_ALSO "\\text{time}\\_\\text{now}" REASON "single escape stripped by markdown"
+        SUBSCRIPTS:
+          CORRECT "\\text{score}_i"
+          PROHIBITED "\\text{score_i}"
+        BLANK_LINES:
+          MUST have_blank_line_before_and_after_block_math
+
+    violations:
+      - "\\text{time_now} — underscore inside \\text{} causes KaTeX error"
+      - "\\(i\\) — GitHub Wiki does not render \\( \\) inline math"
+      - "$$ immediately after text without blank line — may not render"
+      - "\\text{dna_r_score}_i — multiple underscores inside \\text{}"
+      - "\\text{time}\\_\\text{now} — single escape; GitHub markdown strips \\, KaTeX sees double subscripts"
+    compliant:
+      - "$i$ for inline math"
+      - "\\text{time}\\\\_\\text{now} — double-escaped underscore survives markdown preprocessing"
+      - "\\text{dna}\\\\_\\text{r}\\\\_\\text{score}_i — each word separate, double-escaped, subscript outside"
+      - "Blank line before $$ and after $$"
+
+  # ============================================================================
+  # DOC_R006: Wiki Synchronization Trigger
+  # ============================================================================
+  - id: DOC_R006
+    type: rule
+    name: wiki_synchronization_trigger
+    display_name: "Wiki Synchronization Trigger"
+    one_liner: "When dashboard code changes, Wiki MUST be updated to match — enforced by PostToolUse hook"
+    implements: DOC_P001
+    scope: "All dashboard component changes, formula changes, terminology changes"
+    file_path: "CH19_documentation/rules/DOC_R006_wiki_synchronization_trigger.qmd"
+
+    rule_natural: |
+      The GitHub Wiki is the ONLY customer-facing documentation that explains what
+      the dashboard does. If the dashboard changes but the Wiki doesn't update,
+      clients and the boss cannot understand the product correctly.
+
+      MANDATORY TRIGGER: When any of the following files are modified, the
+      corresponding Wiki pages MUST be reviewed and updated if affected:
+
+      1. DASHBOARD COMPONENTS (10_rshinyapp_components/)
+         - tagpilot/*          → TagPilot.md (tab descriptions, features)
+         - vitalsigns/*        → VitalSigns.md
+         - position/*          → BrandEdge.md
+         - poisson/*           → InsightForge.md
+         - report/*            → ReportCenter.md
+
+      2. FORMULA FUNCTIONS (04_utils/)
+         - fn_analysis_dna.R   → Term-RFM.md, Term-NES.md, Term-CAI.md,
+                                  Term-PCV.md, Term-CRI.md, Term-CLV.md, Term-IPT.md
+         - fn_analysis_btyd.R  → Term-P-alive.md
+
+      3. CLASSIFICATION LOGIC
+         - fn_rsv_classification.R  → Term-RSV.md
+         - fn_D01_02_core.R         → Term-RFM.md (DNA segments)
+
+      4. CONFIGURATION
+         - marketing_strategies.yaml → Term-Marketing-Strategies.md
+         - ui_terminology.csv        → Glossary.md
+
+      5. APP ASSEMBLY
+         - union_production*.R  → Home.md, _Sidebar.md (if modules added/removed)
+
+      ENFORCEMENT: A PostToolUse hook (check-wiki-sync.sh) automatically detects
+      edits to wiki-sensitive files and outputs a reminder with the specific
+      Wiki pages that may need updating.
+
+      WORKFLOW:
+        1. Hook fires → shows which Wiki pages are affected
+        2. Check if the change affects user-visible behavior or formulas
+        3. If yes → update Wiki pages in docs/wiki/
+        4. Commit Wiki changes separately or bundled with code changes
+
+      WHAT TO UPDATE IN WIKI:
+        - Tab descriptions: if a tab's content, KPIs, or charts changed
+        - Term pages: if a formula, threshold, or classification rule changed
+        - Glossary: if new terms were introduced or existing terms renamed
+        - _Sidebar.md: if new modules or term pages were added
+
+    rule_formal: |
+      RULE DOC_R006_wiki_synchronization_trigger:
+        TRIGGER_MAP:
+          "10_rshinyapp_components/tagpilot/**"     -> ["TagPilot.md"]
+          "10_rshinyapp_components/vitalsigns/**"    -> ["VitalSigns.md"]
+          "10_rshinyapp_components/position/**"      -> ["BrandEdge.md"]
+          "10_rshinyapp_components/poisson/**"       -> ["InsightForge.md"]
+          "10_rshinyapp_components/report/**"        -> ["ReportCenter.md"]
+          "04_utils/fn_analysis_dna.R"               -> ["Term-RFM.md", "Term-NES.md", "Term-CAI.md", "Term-PCV.md", "Term-CRI.md", "Term-CLV.md", "Term-IPT.md"]
+          "04_utils/fn_analysis_btyd.R"              -> ["Term-P-alive.md"]
+          "fn_rsv_classification.R"                  -> ["Term-RSV.md"]
+          "fn_D01_02_core.R"                         -> ["Term-RFM.md"]
+          "marketing_strategies.yaml"                -> ["Term-Marketing-Strategies.md"]
+          "ui_terminology.csv"                       -> ["Glossary.md"]
+          "unions/union_production*.R"               -> ["Home.md", "_Sidebar.md"]
+        ENFORCEMENT:
+          hook_type: PostToolUse
+          hook_script: "check-wiki-sync.sh"
+          behavior: advisory (non-blocking reminder)
+        WORKFLOW:
+          WHEN file_modified MATCHES trigger_map.key
+          THEN remind(trigger_map.value)
+          AND developer MUST check_if_wiki_update_needed
+          IF wiki_update_needed THEN update_wiki_pages
+
+    violations:
+      - "Changed fn_analysis_dna.R formula but did not update Term-RFM.md"
+      - "Added new tab to TagPilot but TagPilot.md still describes old tabs"
+      - "Renamed CLV to '顧客終生價值' in UI but Term-CLV.md still says 'Customer Lifetime Value'"
+      - "Changed RSV thresholds but Term-RSV.md has old threshold values"
+    compliant:
+      - "Modified customerRetention.R → checked VitalSigns.md → updated retention formula description"
+      - "Added new KPI to TagPilot → added section to TagPilot.md → updated _Sidebar.md"
+      - "Changed BTYD model → updated Term-P-alive.md formula and variable descriptions"
+
+  # ============================================================================
+  # DOC_R007: Claude Rules File Writing Convention
+  # ============================================================================
+  - id: DOC_R007
+    type: rule
+    name: claude_rules_writing_convention
+    display_name: "Claude Rules File Writing Convention"
+    one_liner: ".claude/rules/*.md must be brief summaries referencing principle docs, not full content"
+    implements: DOC_P001
+    scope: "All .claude/rules/*.md files"
+    file_path: "CH19_documentation/rules/DOC_R007_claude_rules_writing_convention.qmd"
+
+    rule_natural: |
+      .claude/rules/*.md files are loaded into AI agent context automatically.
+      They must be BRIEF OPERATIONAL SUMMARIES, not full principle documents.
+
+      Each principle section in a rules file should contain:
+      1. Trigger condition (when does this apply?)
+      2. Core constraint in 1-3 sentences
+      3. Key file paths or commands needed immediately
+      4. Reference link to the detailed .qmd principle doc
+
+      Full rationale, comprehensive code examples, edge cases, and exhaustive
+      tables belong in the principle docs (docs/en/part1_principles/).
+
+      Exception: operational content with no principle doc (login credentials,
+      port numbers, test commands) can be detailed directly in the rules file.
+
+    rule_formal: |
+      RULE DOC_R007_claude_rules_writing:
+        FOR_EACH section IN .claude/rules/*.md:
+          max_lines_per_section = 15
+          must_contain = [trigger_condition, core_constraint, reference_link]
+          must_not_contain = [full_code_examples, exhaustive_tables, full_rationale]
+          EXCEPTION: operational_content_without_principle_doc
+
+    violations:
+      - "50+ line section with multiple code examples in rules file"
+      - "Full function table duplicated from principle doc"
+      - "Before/after code comparisons in rules file"
+    compliant:
+      - "3-line summary with link to DEV_R054 .qmd for details"
+      - "Key file paths listed, full API reference in .qmd"
+
+  # ============================================================================
+  # DOC_R008: Wiki Term Page R Code Section Structure
+  # ============================================================================
+  - id: DOC_R008
+    type: rule
+    name: wiki_term_r_code_section
+    display_name: "Wiki Term Page R Code Section Structure"
+    one_liner: "Every Wiki Term page MUST include an R code section with three parts: actual source code excerpt, plain-language explanation, and source file reference"
+    implements: DOC_R002, DOC_R003
+    scope: "GitHub Wiki Term-*.md pages — R code implementation sections"
+    file_path: "CH19_documentation/rules/DOC_R008_wiki_term_r_code_section.qmd"
+
+    rule_natural: |
+      Wiki Term pages serve two audiences: non-technical readers (clients, managers)
+      who need to understand what the system does, and semi-technical readers (data
+      analysts, marketing ops) who need to verify documentation matches implementation.
+
+      Every Wiki Term page MUST end with an "R Code Implementation" section
+      (## R 程式碼實作) containing exactly three parts in this order:
+
+      1. SOURCE CODE EXCERPT: A fenced R code block containing actual code from the
+         production source file, not rewritten or simplified. Include only the lines
+         directly relevant to this indicator's calculation (max ~20 lines).
+
+      2. PLAIN-LANGUAGE EXPLANATION (### 白話解讀): A numbered list of 3-5 items
+         explaining each logical step of the code in non-technical language.
+         Use bold text for step names. Follow UI_R025 (Taiwan Traditional Chinese).
+         If a technical term is unavoidable, provide a parenthetical explanation.
+
+      3. SOURCE FILE REFERENCE: A blockquote pointing to the exact source file.
+         Format: > **程式碼來源**：`{relative_path}`（{section_name} 區塊）
+         Path is relative to global_scripts/.
+
+      PLACEMENT: The R code section must be placed AFTER all existing DOC_R002
+      required sections (definition, formula, variables, example, dashboard location)
+      and BEFORE the end of the file, as the LAST major section. This follows
+      UX_P002 Progressive Disclosure.
+
+      With DOC_R008, Term page required sections expand from 5 to 6:
+      1. Definition (existing), 2. Formula (existing), 3. Variables (existing),
+      4. Example (existing), 5. Dashboard location (existing),
+      6. R code implementation (new — DOC_R008).
+
+      CROSS-REFERENCE WITH SOURCE CODE (DOC_R003):
+      - Read the actual source file before writing the code excerpt
+      - Copy exact code — do not paraphrase or rewrite the logic
+      - If source code changes, the Wiki excerpt MUST be updated (DOC_R006 hook)
+
+    rule_formal: |
+      RULE DOC_R008_wiki_term_r_code_section:
+        FOR term_pages("Term-*.md"):
+          MUST_HAVE_SECTION "## R 程式碼實作":
+            PART_1 source_code_excerpt:
+              FORMAT "fenced R code block (```r ... ```)"
+              CONTENT actual_code_from_source_file
+              PROHIBITED rewritten_or_simplified_code
+              MAX_LINES 20
+              INTRO_LINE "以下是系統實際計算 {INDICATOR} 的核心邏輯（摘錄自 `{source_file}`）："
+            PART_2 plain_language_explanation:
+              HEADING "### 白話解讀"
+              FORMAT "numbered list, 3-5 items (max 7)"
+              ITEM_FORMAT "**{step_name}**：{plain_language_explanation}"
+              LANGUAGE "臺灣正體中文 (UI_R025)"
+              PROHIBITED jargon_without_parenthetical_explanation
+            PART_3 source_file_reference:
+              FORMAT "> **程式碼來源**：`{relative_path}`（{section_name} 區塊）"
+              PATH_BASE "global_scripts/"
+          PLACEMENT:
+            AFTER all_DOC_R002_sections
+            BEFORE end_of_file
+            AS last_major_section
+          DOC_R002_EXPANSION:
+            term_page_required_sections = 6  # was 5, now includes R code section
+
+    violations:
+      - "Term page has R code section but code is rewritten instead of excerpted from source"
+      - "Plain-language explanation uses jargon without parenthetical definition (e.g. 'ECDF' unexplained)"
+      - "Source file reference is missing or points to wrong file"
+      - "Code excerpt is outdated (source file changed but Wiki not updated)"
+      - "R code section placed before the definition or formula sections"
+      - "白話解讀 has more than 7 items"
+    compliant:
+      - "Term-CAI.md: actual code from fn_analysis_dna.R, 5-point 白話解讀, source reference"
+      - "Term-P-alive.md: code from fn_analysis_btyd.R, explains BG/NBD in plain terms, cites source"
+      - "Code excerpt matches current version of source file"
+
+  # ============================================================================
+  # DOC_R009: Principle Triple-Layer Synchronization
+  # ============================================================================
+  - id: DOC_R009
+    type: rule
+    name: principle_triple_layer_sync
+    display_name: "Principle Triple-Layer Synchronization"
+    one_liner: "When any principle is added, modified, or deleted, ALL THREE layers MUST be updated: .qmd → llm/*.yaml → .claude/rules/*.md"
+    implements: DOC_P001, DOC_R007
+    scope: "All principle creation, modification, and deletion operations"
+    file_path: "CH19_documentation/rules/DOC_R009_principle_triple_layer_sync.qmd"
+
+    rule_natural: |
+      The principles system serves three distinct consumers through three layers:
+
+      Layer 1: .qmd files (Source of Truth)
+        - Full Quarto documents for developers reading docs
+        - Contains complete specification with rationale, examples, edge cases
+        - Location: docs/en/part1_principles/{CHAPTER}/rules/{ID}_{name}.qmd
+        - Authority: HIGHEST — all other layers derive from this
+
+      Layer 2: llm/*.yaml (AI-Optimized Index)
+        - Structured YAML for AI agents (LLM context)
+        - Contains id, type, name, one_liner, rule_natural, rule_formal, violations[], compliant[]
+        - Must also update principle_count and hierarchy section
+        - Authority: DERIVED — must match .qmd
+
+      Layer 3: .claude/rules/*.md (Quick Reference)
+        - Brief markdown auto-loaded into every AI conversation
+        - Contains 2-4 line summary with Details: link to .qmd
+        - Must follow DOC_R007 brevity constraints (max 15 lines per section)
+        - Authority: DERIVED — must match .qmd
+
+      TRIGGER: This rule applies whenever a principle is created, modified, deleted,
+      or its relationships change.
+
+      EXECUTION ORDER: .qmd first → llm/*.yaml second → .claude/rules/*.md third.
+      This ensures each derived layer has its source available when being written.
+
+      VERIFICATION: After completing all three updates, verify that all layers agree
+      on id, name, scope, and implements; that principle_count is correct; and that
+      the hierarchy section includes the new principle.
+
+    rule_formal: |
+      RULE DOC_R009_principle_triple_layer_sync:
+        TRIGGER:
+          - principle_created(any MP, P, or R)
+          - principle_modified(id, name, scope, rule_content)
+          - principle_deleted_or_deprecated
+          - principle_relationships_changed(implements, related)
+        THREE_LAYERS:
+          LAYER_1 qmd:
+            LOCATION "docs/en/part1_principles/{CHAPTER}/rules/{ID}_{name}.qmd"
+            AUTHORITY highest
+            CONTENT full_specification
+          LAYER_2 llm_yaml:
+            LOCATION "llm/{chapter}.yaml"
+            AUTHORITY derived
+            UPDATES [principle_entry, principle_count, hierarchy_section]
+          LAYER_3 claude_rules:
+            LOCATION ".claude/rules/{NN}-{topic}.md"
+            AUTHORITY derived
+            CONSTRAINT DOC_R007(max_15_lines_per_section)
+        EXECUTION_ORDER:
+          1: update_qmd       # establish authoritative content
+          2: update_llm_yaml  # extract structured summary
+          3: update_rules_md  # extract operational brief
+        VERIFICATION_CHECKLIST:
+          - qmd_file_exists_with_complete_content
+          - llm_yaml_has_entry_with_matching_id_one_liner_implements
+          - llm_yaml_principle_count_is_correct
+          - llm_yaml_hierarchy_includes_new_principle
+          - rules_md_has_brief_reference_with_details_link
+          - all_three_layers_agree_on_id_name_scope_implements
+        ENFORCEMENT:
+          hook: "check-principle-sync.sh"
+          behavior: advisory
+
+    violations:
+      - "Created .qmd but forgot to update llm/*.yaml — AI agents can't discover the rule"
+      - "Updated llm/*.yaml but not .qmd — YAML content has no authoritative source"
+      - "Updated .qmd and llm/*.yaml but not .claude/rules/*.md — conversational AI agents miss the rule"
+      - "Updated principle_count but forgot to add to hierarchy section"
+      - "Added principle to wrong chapter YAML (e.g., UI rule in CH02_data.yaml)"
+    compliant:
+      - "Created DOC_R008.qmd → added to CH19_documentation.yaml (entry + count + hierarchy) → added 4-line summary to 05-documentation.md"
+      - "Modified DM_R028 scope in .qmd → updated rule_natural in CH02_data.yaml → updated brief in 02-coding.md"
+      - "Deleted deprecated DEV_R010 → removed from CH03_development.yaml (updated count and hierarchy) → removed from 02-coding.md"
+
+# ============================================================================
+# Relationship Hierarchy
+# ============================================================================
+hierarchy:
+  - level: meta_principle
+    id: MP029
+    name: "No Fake Information"
+    description: "Foundation for all documentation accuracy requirements"
+
+  - level: principle
+    id: DOC_P001
+    name: "Documentation System Architecture"
+    description: "Three-layer documentation: Wiki, Principles, GitHub Issues"
+    implements: MP029
+
+  - level: rule
+    id: DOC_R001
+    name: "Wiki Link Syntax"
+    description: "Correct [[Display|Page]] syntax, [Display](Page) in tables"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R002
+    name: "Wiki Content Standards"
+    description: "Required sections for Term pages and tab guides"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R003
+    name: "Formula Cross-Verification"
+    description: "Wiki formulas must match source code"
+    implements: MP029
+
+  - level: rule
+    id: DOC_R004
+    name: "Changelog and Reporting Format"
+    description: "Reports, issue tracking, commit message standards"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R005
+    name: "Wiki Math Formula Syntax (KaTeX)"
+    description: "KaTeX-safe math: $ inline, $$ block, no _ inside \\text{}, no \\( \\)"
+    implements: DOC_R002
+
+  - level: rule
+    id: DOC_R006
+    name: "Wiki Synchronization Trigger"
+    description: "Dashboard code changes trigger mandatory Wiki review — enforced by hook"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R007
+    name: "Claude Rules File Writing Convention"
+    description: ".claude/rules/*.md must be brief summaries referencing principle docs, not contain full content"
+    implements: DOC_P001
+
+  - level: rule
+    id: DOC_R008
+    name: "Wiki Term Page R Code Section Structure"
+    description: "Three-part R code section: source excerpt, plain-language explanation, source file reference"
+    implements: DOC_R002, DOC_R003
+
+  - level: rule
+    id: DOC_R009
+    name: "Principle Triple-Layer Synchronization"
+    description: "When any principle changes, all three layers must be updated: .qmd → llm/*.yaml → .claude/rules/*.md"
+    implements: DOC_P001, DOC_R007

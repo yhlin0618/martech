@@ -1,0 +1,65 @@
+---
+title: "DEV_R055: Semantic Consistency Fallback"
+subtitle: "Use explicit sentinel values when mapping/transformation fails, never NA"
+category: "Rule"
+type: "Rule"
+id: "DEV_R055"
+derived_from: "MP154"
+created: "2026-03-14"
+triggered_by: "Issue #340 — unmapped product_line_id silently replaced with NA"
+---
+
+## Summary
+
+When a mapping, lookup, or transformation operation fails to resolve a value, the fallback **must** use an explicit sentinel value (e.g., `"UNKNOWN"`) that preserves the column's semantic consistency. **Never** allow `NA` to silently replace a valid value.
+
+## Rule
+
+```
+RULE DEV_R055_SEMANTIC_FALLBACK:
+FOR ALL mapping operations M on column C:
+  IF M(value) cannot resolve:
+    C[value] := sentinel_value  # e.g., "UNKNOWN"
+    warning("Column C: N values could not be mapped: {originals}. {resolution_guidance}")
+  NEVER:
+    C[value] := NA              # Silent data loss
+    C[value] := original_value  # Breaks semantic consistency if C is an ID column
+```
+
+## Implementation Pattern
+
+```r
+# CORRECT: Explicit sentinel + warning
+resolved <- ifelse(!is.na(mapped), mapped, "UNKNOWN")
+if (any(resolved == "UNKNOWN")) {
+  warning(sprintf(
+    "MAIN: %d values assigned 'UNKNOWN' (original: %s). Add them to mapping table.",
+    sum(resolved == "UNKNOWN"), paste(unique(originals[resolved == "UNKNOWN"]), collapse = ", ")))
+}
+
+# WRONG: Silent NA
+resolved <- mapped  # NA when no match — silent data loss
+
+# WRONG: Preserve original (breaks ID column semantics)
+resolved <- ifelse(!is.na(mapped), mapped, original_value)  # Mixed IDs and names
+```
+
+## When to Apply
+
+- ETL mapping (product line names → IDs, country codes, category codes)
+- DRV lookups (customer segment assignment, risk tier classification)
+- Any `match()`, named vector lookup, or `left_join()` where missing keys are possible
+
+## Sentinel Value Guidelines
+
+| Column Type | Sentinel | Rationale |
+|-------------|----------|-----------|
+| ID columns (`*_id`) | `"UNKNOWN"` | Downstream joins produce an explicit "UNKNOWN" group |
+| Numeric | `NA_real_` + `warning()` | NA is semantically valid for "no data" in numeric context |
+| Category/Label | `"Uncategorized"` | Visible in charts and tables |
+| Date | `NA` + `warning()` | No sensible sentinel date |
+
+## Relationship
+
+- Implements **MP154** (Side Effect Defense)
+- Complements **MP029** (No Fake Data) — sentinel values are explicit markers, not fabricated data

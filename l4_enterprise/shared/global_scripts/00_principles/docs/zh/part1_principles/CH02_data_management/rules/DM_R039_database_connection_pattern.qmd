@@ -1,0 +1,453 @@
+---
+title: "DM_R039: Database Connection Pattern Rule"
+subtitle: "All ETL and update scripts MUST establish database connections at the END of the INITIALIZE section using dbConnectDuckdb() function with db_path_list paths, ensuring consistent connection management and proper initialization sequence."
+chapter: "CH02"
+category: "rule"
+number: "DM_R039"
+date-created: "2025-08-28"
+date-modified: "2025-08-28"
+author: "Claude Code"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 39
+  title: "Database Connection Pattern Rule"
+related_to:
+  - "MP031: Initialization First"
+  - "DEV_R032: Script Structure Standard Rule"
+  - "MP097: DuckDB Refactoring Standards"
+  - "DM_R023: Universal DBI Approach"
+  - "MP104: ETL Data Flow Separation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 39: Database Connection Pattern Rule {#overview}
+
+**Data Management Law Article 39 (Database Connection Pattern Rule)**
+
+All ETL and update scripts MUST establish database connections at the END of the INITIALIZE section using the `dbConnectDuckdb()` wrapper function with paths from `db_path_list`. This ensures consistent connection management, proper error handling, and centralized path configuration.
+
+:::{.callout-important}
+## Summary
+Database connections MUST be:
+1. Established at the END of INITIALIZE section (after autoinit, libraries, and function sourcing)
+2. Created using `dbConnectDuckdb()` function (NOT direct `DBI::dbConnect`)
+3. Using paths from `db_path_list` global variable
+4. Properly closed in DEINITIALIZE section
+:::
+
+# Section 1: Motivation {#motivation}
+
+This rule addresses critical issues in database connection management:
+
+1. **Inconsistent Connection Patterns** - Scripts connecting at different points cause initialization failures
+2. **Path Management Chaos** - Hard-coded paths instead of centralized configuration
+3. **Missing Error Handling** - Direct DBI connections lack proper error handling
+4. **Resource Leaks** - Connections not properly closed in all code paths
+
+## Architectural Foundation
+
+The rule aligns with core MAMBA principles:
+
+- **MP031**: Initialization First - Proper setup sequence
+- **MP097**: DuckDB Refactoring - Consistent wrapper usage
+- **DM_R023**: Universal DBI - Standardized database access
+- **DEV_R032**: Script Structure - Five-part organization
+
+# Section 2: Implementation {#implementation}
+
+## Subsection 1: INITIALIZE Section Structure {#initialize-structure}
+
+The INITIALIZE section MUST be organized into two logical subsections:
+
+```r
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1.1: Basic Initialization
+# ------------------------------------------------------------------------------
+# Following MP031: Initialization First
+message("INITIALIZE: Setting up environment...")
+
+# Initialize the environment
+autoinit()
+
+# Load required libraries
+library(dplyr)
+library(DBI)
+library(duckdb)
+
+# Set environment variables
+Sys.setenv(TZ = "UTC")
+
+# Source required functions
+source("scripts/global_scripts/02_db_utils/duckdb/fn_dbConnectDuckdb.R")
+
+# ------------------------------------------------------------------------------
+# 1.2: Database Connections
+# ------------------------------------------------------------------------------
+# Following DM_R039: Database Connection Pattern
+message("INITIALIZE: Establishing database connections...")
+
+# Connect to databases using dbConnectDuckdb and db_path_list
+raw_data <- dbConnectDuckdb(db_path_list$raw_data, read_only = FALSE)
+staged_data <- dbConnectDuckdb(db_path_list$staged_data, read_only = FALSE)
+transformed_data <- dbConnectDuckdb(db_path_list$transformed_data, read_only = FALSE)
+
+message("INITIALIZE: ✅ All database connections established")
+```
+
+## Subsection 2: Correct Connection Pattern {#correct-pattern}
+
+### ✅ CORRECT: Using dbConnectDuckdb with db_path_list
+
+```r
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+
+# 1.1: Basic Initialization
+autoinit()
+library(dplyr)
+library(DBI)
+
+# 1.2: Database Connections (END of INITIALIZE)
+# Following DM_R039: Database Connection Pattern
+raw_data <- dbConnectDuckdb(db_path_list$raw_data, read_only = FALSE)
+staged_data <- dbConnectDuckdb(db_path_list$staged_data, read_only = FALSE)
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# Now connections are available for use
+df <- tbl(raw_data, "sales_table") %>% collect()
+```
+
+### ❌ INCORRECT: Direct DBI connection in MAIN
+
+```r
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+autoinit()
+library(dplyr)
+# Missing database connections!
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# ❌ WRONG: Connecting in MAIN section
+raw_data <- DBI::dbConnect(duckdb::duckdb(), "data/local_data/raw_data.duckdb")
+
+# ❌ WRONG: Hard-coded path instead of db_path_list
+# ❌ WRONG: Direct DBI instead of dbConnectDuckdb wrapper
+```
+
+## Subsection 3: The dbConnectDuckdb Function {#dbconnectduckdb-function}
+
+The `dbConnectDuckdb()` wrapper provides essential features:
+
+```r
+# Located in: scripts/global_scripts/02_db_utils/duckdb/fn_dbConnectDuckdb.R
+
+dbConnectDuckdb <- function(db_path, read_only = TRUE) {
+  # Validates path exists
+  # Handles connection errors gracefully
+  # Provides consistent logging
+  # Manages connection pooling
+  # Ensures proper UTF-8 encoding
+  
+  tryCatch({
+    conn <- DBI::dbConnect(
+      duckdb::duckdb(),
+      dbdir = db_path,
+      read_only = read_only
+    )
+    
+    # Set pragmas for consistency
+    DBI::dbExecute(conn, "PRAGMA threads=4")
+    DBI::dbExecute(conn, "PRAGMA memory_limit='4GB'")
+    
+    return(conn)
+  }, error = function(e) {
+    stop("Failed to connect to database: ", db_path, "\n", e$message)
+  })
+}
+```
+
+## Subsection 4: The db_path_list Configuration {#db-path-list}
+
+The `db_path_list` is initialized by `autoinit()` and provides centralized path management:
+
+```r
+# Automatically configured by autoinit() based on environment
+db_path_list <- list(
+  raw_data = "data/local_data/raw_data.duckdb",
+  staged_data = "data/local_data/staged_data.duckdb", 
+  transformed_data = "data/local_data/transformed_data.duckdb",
+  final_data = "data/local_data/final_data.duckdb"
+)
+```
+
+# Section 3: ETL Script Examples {#etl-examples}
+
+## Example 1: Import Phase (0IM)
+
+```r
+# cbz_ETL_customers_0IM.R
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+
+# 1.1: Basic Initialization
+message("INITIALIZE: Starting customer import...")
+autoinit()
+
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+source("scripts/global_scripts/05_etl_utils/cbz/import/fn_fetch_cbz_customers.R")
+
+# 1.2: Database Connections (END of INITIALIZE)
+message("INITIALIZE: Connecting to databases...")
+raw_data <- dbConnectDuckdb(db_path_list$raw_data, read_only = FALSE)
+message("INITIALIZE: ✅ Database ready")
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# Fetch customer data from API
+customers <- fetch_cbz_customers_data()
+
+# Write to raw_data database
+DBI::dbWriteTable(raw_data, "cbz_customers_raw", customers, overwrite = TRUE)
+```
+
+## Example 2: Staging Phase (1ST)
+
+```r
+# cbz_ETL_customers_1ST.R
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+
+# 1.1: Basic Initialization
+autoinit()
+library(dplyr)
+library(tidyr)
+
+# 1.2: Database Connections (END of INITIALIZE)
+raw_data <- dbConnectDuckdb(db_path_list$raw_data, read_only = TRUE)
+staged_data <- dbConnectDuckdb(db_path_list$staged_data, read_only = FALSE)
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+# Read from raw, write to staged
+customers_raw <- tbl(raw_data, "cbz_customers_raw") %>% collect()
+customers_staged <- stage_customer_data(customers_raw)
+DBI::dbWriteTable(staged_data, "cbz_customers_staged", customers_staged, overwrite = TRUE)
+```
+
+# Section 4: Connection Lifecycle Management {#lifecycle}
+
+## Opening Connections
+
+Connections MUST be opened in this sequence:
+
+1. `autoinit()` - Sets up environment and db_path_list
+2. Load libraries
+3. Source functions
+4. **Connect to databases** (last step of INITIALIZE)
+
+## Using Connections
+
+In MAIN, TEST, and SUMMARIZE sections:
+- Use established connections freely
+- Do NOT create new connections
+- Handle connection errors gracefully
+
+## Closing Connections
+
+In DEINITIALIZE section:
+
+```r
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+# Close all database connections
+if (exists("raw_data") && DBI::dbIsValid(raw_data)) {
+  DBI::dbDisconnect(raw_data)
+  message("DEINITIALIZE: Closed raw_data connection")
+}
+
+if (exists("staged_data") && DBI::dbIsValid(staged_data)) {
+  DBI::dbDisconnect(staged_data)
+  message("DEINITIALIZE: Closed staged_data connection")
+}
+
+# Final cleanup
+autodeinit()
+```
+
+# Section 5: Error Handling {#error-handling}
+
+## Connection Failure Handling
+
+```r
+# 1.2: Database Connections with error handling
+tryCatch({
+  raw_data <- dbConnectDuckdb(db_path_list$raw_data, read_only = FALSE)
+  message("INITIALIZE: ✅ Connected to raw_data")
+}, error = function(e) {
+  stop("INITIALIZE: ❌ Failed to connect to raw_data: ", e$message)
+})
+```
+
+## Validation Before Use
+
+```r
+# In MAIN section
+if (!exists("raw_data") || !DBI::dbIsValid(raw_data)) {
+  stop("MAIN: Database connection not available")
+}
+```
+
+# Section 6: Migration Guide {#migration}
+
+## Identifying Non-Compliant Scripts
+
+Look for these patterns:
+
+```r
+# ❌ Pattern 1: Direct DBI connection
+DBI::dbConnect(duckdb::duckdb(), "path/to/db.duckdb")
+
+# ❌ Pattern 2: Connection in MAIN section
+# PART 2: MAIN
+conn <- DBI::dbConnect(...)
+
+# ❌ Pattern 3: Hard-coded paths
+dbConnect(duckdb::duckdb(), "data/local_data/raw_data.duckdb")
+```
+
+## Migration Steps
+
+1. **Move connections to INITIALIZE**
+   - Cut connection code from MAIN
+   - Paste at END of INITIALIZE
+
+2. **Replace with dbConnectDuckdb**
+   ```r
+   # Before
+   conn <- DBI::dbConnect(duckdb::duckdb(), "data/raw.duckdb")
+   
+   # After
+   conn <- dbConnectDuckdb(db_path_list$raw_data, read_only = FALSE)
+   ```
+
+3. **Add subsection comments**
+   ```r
+   # 1.1: Basic Initialization
+   # ... autoinit, libraries, functions ...
+   
+   # 1.2: Database Connections
+   # ... dbConnectDuckdb calls ...
+   ```
+
+# Section 7: Validation {#validation}
+
+## Automated Validation Function
+
+```r
+validate_database_connections <- function(script_path) {
+  lines <- readLines(script_path)
+  
+  # Find INITIALIZE and MAIN sections
+  init_start <- grep("PART 1: INITIALIZE", lines)[1]
+  main_start <- grep("PART 2: MAIN", lines)[1]
+  
+  # Check for connections in INITIALIZE
+  init_section <- lines[init_start:(main_start-1)]
+  has_dbconnect <- any(grepl("dbConnectDuckdb", init_section))
+  uses_db_path_list <- any(grepl("db_path_list", init_section))
+  
+  # Check for wrong patterns in MAIN
+  main_section <- lines[main_start:length(lines)]
+  has_dbi_direct <- any(grepl("DBI::dbConnect.*duckdb", main_section))
+  
+  list(
+    compliant = has_dbconnect && uses_db_path_list && !has_dbi_direct,
+    has_proper_wrapper = has_dbconnect,
+    uses_centralized_paths = uses_db_path_list,
+    no_main_connections = !has_dbi_direct
+  )
+}
+```
+
+# Section 8: Relationships {#relationships}
+
+## Dependencies
+
+- **MP031**: Initialization First - Establishes initialization order
+- **DEV_R032**: Script Structure - Defines five-part structure
+- **MP097**: DuckDB Refactoring - Mandates wrapper usage
+- **DM_R023**: Universal DBI - Standardizes database interface
+
+## Impact on Other Rules
+
+- **DM_R028**: ETL Data Type Separation - Uses these connections
+- **DM_R036**: ETL Return Values - Depends on valid connections
+- **MP104**: ETL Data Flow - Requires proper connection setup
+
+# Section 9: FAQ {#faq}
+
+## Q: Why must connections be at the END of INITIALIZE?
+
+A: This ensures all dependencies (autoinit, libraries, functions) are loaded before attempting database connections. The db_path_list is created by autoinit(), so connections must come after.
+
+## Q: Can I use DBI::dbConnect directly for non-DuckDB databases?
+
+A: Yes, but only for non-DuckDB connections (PostgreSQL, SQLite, etc.). DuckDB connections MUST use dbConnectDuckdb().
+
+## Q: What if I need different connection parameters?
+
+A: The dbConnectDuckdb() function accepts parameters. For special cases, create a wrapper function that calls dbConnectDuckdb() with your parameters.
+
+## Q: How do I handle multiple company databases?
+
+A: Use the db_path_list structure with company-specific paths:
+```r
+raw_data_cbz <- dbConnectDuckdb(db_path_list$raw_data_cbz, read_only = FALSE)
+raw_data_eby <- dbConnectDuckdb(db_path_list$raw_data_eby, read_only = FALSE)
+```
+
+# Section 10: Conclusion {#conclusion}
+
+The Database Connection Pattern Rule establishes:
+
+1. **Consistent timing** - Connections at END of INITIALIZE
+2. **Proper wrapper usage** - dbConnectDuckdb() for all DuckDB
+3. **Centralized paths** - db_path_list configuration
+4. **Clear structure** - Two-part INITIALIZE section
+5. **Resource safety** - Proper connection lifecycle
+
+This pattern MUST be adopted for all ETL and update scripts immediately.
+
+---
+
+*Based on: Data Management Law Article 39*  
+*Status: ACTIVE - Mandatory for all ETL and update scripts*  
+*Effective: 2025-08-28*  
+*Related: [DEV_R032](../../CH03_development_methodology/rules/DEV_R032_update_script_structure.qmd), [MP097](../../CH00_fundamental_principles/04_data_management/MP097_duckdb_refactoring.qmd)*

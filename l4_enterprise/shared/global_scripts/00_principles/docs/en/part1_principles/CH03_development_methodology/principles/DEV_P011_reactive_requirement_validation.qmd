@@ -1,0 +1,405 @@
+---
+title: "DEV_P011: Reactive Requirement Validation Principle"
+subtitle: "Explicitly validating required inputs and handling invalid states in reactive computations"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P011"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article-number: "Article 11"
+related_to:
+  - "DEV_P010: Reactive Value Access Safety"
+  - "CH00.MP041: Type-Dependent Operations"
+  - "CH00.MP035: Null Special Treatment"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Article 11 (Reactive Requirement Validation Principle)**
+
+All reactive computations must explicitly validate their required inputs using appropriate validation mechanisms (like `req()` in Shiny) before proceeding, with clear error handling strategies for missing or invalid values.
+
+:::{.callout-important}
+## Core Principle
+Reactive computations must explicitly validate input validity, gracefully halt execution when prerequisites aren't satisfied, and prevent errors from propagating through the reactive graph.
+:::
+
+# Section 1: Theoretical Foundation {#rationale}
+
+## Subsection 1: Execution Control {#execution-control}
+
+Properly halt reactive execution when prerequisites aren't satisfied:
+- Prevent invalid computations
+- Protect downstream components
+- Maintain system stability
+
+## Subsection 2: Error Prevention {#error-prevention}
+
+Stop errors from propagating through the reactive graph:
+1. **Early Validation**: Check before computation begins
+2. **Chain Protection**: Prevent error spread
+3. **Stable State**: Maintain valid UI component states
+
+## Subsection 3: User Experience {#user-experience}
+
+Gracefully handle temporary undefined states:
+- Preserve previous valid output
+- Provide meaningful feedback
+- Avoid flicker or error messages
+
+# Section 2: Validation Mechanisms {#validation-mechanisms}
+
+## Subsection 1: Basic Input Validation {#input-validation}
+
+```r
+# Basic validation with req()
+observe({
+  # Validate required inputs exist
+  req(input$selection, input$data)
+  
+  # Validate input validity
+  req(input$value > 0)
+  req(length(input$items) > 0)
+  
+  # Continue computation with validated inputs
+  result <- processData(input$data, input$selection)
+  updateOutput(result)
+})
+
+# Multiple condition validation
+output$analysis <- renderPlot({
+  # All conditions must be TRUE
+  req(
+    input$x_var,
+    input$y_var,
+    input$x_var != input$y_var,  # Variables cannot be the same
+    nrow(data()) > 10             # Need sufficient data points
+  )
+  
+  # Create scatter plot
+  plot(data()[[input$x_var]], data()[[input$y_var]])
+})
+```
+
+## Subsection 2: Conditional Output {#conditional-output}
+
+```r
+# Only proceed when data and settings are available
+output$plot <- renderPlot({
+  # Validate reactive values and inputs
+  req(data())
+  req(!is.null(input$plot_type))
+  req(input$plot_type %in% c("bar", "line", "scatter"))
+  
+  # Create plot based on type
+  switch(input$plot_type,
+    bar = barplot(data()),
+    line = plot(data(), type = "l"),
+    scatter = plot(data())
+  )
+})
+
+# Conditional UI rendering
+output$options <- renderUI({
+  req(input$category)
+  
+  # Get category options
+  options <- getOptionsForCategory(input$category)
+  req(length(options) > 0)
+  
+  # Only show selector when options exist
+  selectInput(ns("option"), "Select option", choices = options)
+})
+```
+
+## Subsection 3: State Preservation {#state-preservation}
+
+```r
+# Keep previous valid output when inputs are temporarily invalid
+output$summary <- renderText({
+  # cancelOutput=TRUE keeps previous output visible
+  req(dataset(), cancelOutput = TRUE)
+  
+  # Check dataset validity
+  req(
+    is.data.frame(dataset()),
+    nrow(dataset()) > 0,
+    cancelOutput = TRUE
+  )
+  
+  paste("Dataset contains", nrow(dataset()), "rows and",
+        ncol(dataset()), "columns")
+})
+
+# Dynamic table display
+output$filtered_table <- renderTable({
+  # Keep table until new valid filter
+  req(input$filter_value, cancelOutput = TRUE)
+  
+  filtered_data <- data()[data()$value > input$filter_value, ]
+  
+  # Only update when data exists
+  req(nrow(filtered_data) > 0, cancelOutput = TRUE)
+  
+  filtered_data
+})
+```
+
+# Section 3: Progressive Requirements {#progressive-requirements}
+
+## Subsection 1: Chained Validation {#chained-validation}
+
+```r
+# Progressive validation provides contextual checks
+output$details <- renderUI({
+  # Level 1: Need category
+  req(input$category)
+  
+  # Level 2: Check category validity
+  req(input$category %in% valid_categories)
+  
+  # Level 3: Get and validate options
+  options <- getOptionsForCategory(input$category)
+  req(length(options) > 0)
+  
+  # Level 4: Decide UI based on option count
+  if (length(options) <= 5) {
+    radioButtons(ns("option"), "Select option", choices = options)
+  } else {
+    selectInput(ns("option"), "Select option", choices = options)
+  }
+})
+```
+
+## Subsection 2: Conditional Logic Validation {#conditional-logic}
+
+```r
+# Different validation requirements based on analysis type
+output$analysis <- renderPrint({
+  req(input$analysis_type)
+  
+  if (input$analysis_type == "correlation") {
+    # Correlation analysis needs at least 2 variables
+    req(
+      input$cor_vars,
+      length(input$cor_vars) >= 2,
+      all(input$cor_vars %in% names(data()))
+    )
+    
+    cor(data()[, input$cor_vars])
+    
+  } else if (input$analysis_type == "regression") {
+    # Regression needs dependent and independent variables
+    req(
+      input$dep_var,
+      input$indep_vars,
+      length(input$indep_vars) >= 1,
+      !input$dep_var %in% input$indep_vars  # Dependent can't be independent
+    )
+    
+    formula_str <- paste(input$dep_var, "~", 
+                        paste(input$indep_vars, collapse = " + "))
+    summary(lm(formula_str, data = data()))
+  }
+})
+```
+
+# Section 4: Custom Validation Functions {#custom-validation}
+
+## Subsection 1: Validation Helper Functions {#validation-helpers}
+
+```r
+# Custom validation functions
+is_valid_input <- function(x) {
+  !is.null(x) && length(x) > 0 && x != "" && !is.na(x)
+}
+
+is_valid_numeric <- function(x) {
+  is_valid_input(x) && is.numeric(x) && is.finite(x)
+}
+
+is_valid_date_range <- function(start, end) {
+  !is.null(start) && !is.null(end) && 
+  inherits(start, "Date") && inherits(end, "Date") &&
+  start <= end
+}
+
+# Using custom validation
+observe({
+  req(is_valid_input(input$name))
+  req(is_valid_numeric(input$age))
+  req(is_valid_date_range(input$date_start, input$date_end))
+  
+  # Process after all validations pass
+  process_validated_inputs(
+    name = input$name,
+    age = input$age,
+    period = c(input$date_start, input$date_end)
+  )
+})
+```
+
+## Subsection 2: Composite Validation Patterns {#composite-validation}
+
+```r
+# Create validator class
+create_validator <- function() {
+  list(
+    # Validate single value
+    require_value = function(x, message = "Value required") {
+      if (!is_valid_input(x)) {
+        stop(message)
+      }
+      x
+    },
+    
+    # Validate range
+    require_range = function(x, min, max, message = "Value out of range") {
+      req(is_valid_numeric(x))
+      if (x < min || x > max) {
+        stop(paste(message, ":", min, "-", max))
+      }
+      x
+    },
+    
+    # Validate choice
+    require_choice = function(x, choices, message = "Invalid choice") {
+      req(is_valid_input(x))
+      if (!x %in% choices) {
+        stop(paste(message, "Valid options:", paste(choices, collapse = ", ")))
+      }
+      x
+    }
+  )
+}
+
+# Using validator
+validator <- create_validator()
+
+output$result <- renderText({
+  tryCatch({
+    value <- validator$require_value(input$value)
+    value <- validator$require_range(value, 0, 100)
+    
+    paste("Processing value:", value)
+  }, error = function(e) {
+    paste("Validation error:", e$message)
+  })
+})
+```
+
+# Section 5: Best Practices {#best-practices}
+
+## Subsection 1: Validation Order {#validation-order}
+
+```r
+# From general to specific validation order
+output$report <- renderPrint({
+  # 1. Basic existence check
+  req(input$data_source)
+  
+  # 2. Load data
+  data <- load_data(input$data_source)
+  req(data)
+  
+  # 3. Data structure check
+  req(is.data.frame(data))
+  req(nrow(data) > 0)
+  
+  # 4. Required columns check
+  required_cols <- c("id", "value", "timestamp")
+  req(all(required_cols %in% names(data)))
+  
+  # 5. Data quality check
+  req(sum(!is.na(data$value)) > 0)
+  
+  # All checks passed, generate report
+  generate_report(data)
+})
+```
+
+## Subsection 2: Error Messaging {#error-messaging}
+
+```r
+# Provide useful error messages
+output$analysis <- renderUI({
+  # Use validate() for user-friendly messages
+  validate(
+    need(input$file, "Please upload a file"),
+    need(tools::file_ext(input$file$name) %in% c("csv", "xlsx"), 
+         "Only CSV or Excel files are supported"),
+    need(input$file$size < 10 * 1024 * 1024, 
+         "File size cannot exceed 10MB")
+  )
+  
+  # Process file after validation
+  data <- read_file(input$file$datapath)
+  
+  validate(
+    need(nrow(data) > 0, "File contains no data"),
+    need(ncol(data) >= 2, "File must have at least two columns")
+  )
+  
+  # Display analysis results
+  tagList(
+    h4("File Analysis Results"),
+    p(paste("Number of records:", nrow(data))),
+    p(paste("Number of columns:", ncol(data)))
+  )
+})
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Reactive Requirement Validation Checklist
+
+**Input Validation**:
+- [ ] req() at start of all reactive expressions
+- [ ] Validate input existence
+- [ ] Validate input validity
+- [ ] Check boundary conditions
+
+**State Management**:
+- [ ] Use cancelOutput to preserve state
+- [ ] Handle temporary invalid states
+- [ ] Provide default values
+- [ ] Avoid flicker
+
+**Error Handling**:
+- [ ] Use validate/need for messages
+- [ ] Implement tryCatch error capture
+- [ ] Log validation failures
+- [ ] Graceful degradation
+
+**Custom Validation**:
+- [ ] Create validation helper functions
+- [ ] Implement composite validation
+- [ ] Test validation logic
+- [ ] Document validation rules
+
+**Performance Considerations**:
+- [ ] Avoid repeated validation
+- [ ] Cache validation results
+- [ ] Optimize validation order
+- [ ] Minimize validation overhead
+:::
+
+# Conclusion {#conclusion}
+
+The Reactive Requirement Validation Principle is key to building robust reactive applications. By explicitly validating all required inputs, gracefully handling invalid states, and providing clear error messages, applications become more reliable and predictable. Remember, good validation not only prevents errors but enhances user experience, ensuring applications work correctly under all input conditions.
+
+---
+
+*Based on: Development Methodology Law Article 11*  
+*Related to: [DEV_P010 Reactive Value Access Safety](DEV_P010_reactive_access_safety.qmd), [MP041 Type-Dependent Operations](../../CH00_fundamental_principles/03_development_methodology/MP041_type_dependent_operations.qmd)*

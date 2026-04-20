@@ -1,0 +1,327 @@
+---
+title: "DEV_R005: AI-Locked Files and Code Blocks Rule"
+subtitle: "Protection mechanism for critical files and code sections from AI modification"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R005"
+date-created: "2025-04-05"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law Implementation Rules"
+article-number: "Article 5"
+related_to:
+  - "DM_R004: Data Storage Organization"
+  - "CH00.MP029: No Fake Data"
+  - "CH00.MP002: Default Deny"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Implementation Rules Article 5 (AI-Locked Files and Code Blocks Rule)**
+
+This article establishes protection mechanisms for critical files and code sections, preventing AI modification while maintaining human oversight for sensitive components.
+
+:::{.callout-important}
+## Core Rule
+Files containing `(lock)` in their filename and code blocks surrounded by `#lock on` and `#lock off` comments are explicitly protected from AI modification. These can only be modified by human developers.
+:::
+
+# Section 1: File-Level Locking {#file-locking}
+
+## Subsection 1: Lock Indicator Format {#lock-format}
+
+第一項：檔案鎖定指示器 (File lock indicator)
+
+Add `(lock)` immediately before the file extension:
+- Format: `filename(lock).extension`
+- Example: `fn_get_default_db_paths(lock).R`
+- Example: `app_config(lock).yaml`
+
+## Subsection 2: When to Lock Files {#when-lock-files}
+
+第一項：需要鎖定的檔案類型 (Files requiring locks)
+
+Lock files containing:
+1. **Critical Configuration**: System initialization and core settings
+2. **Security Components**: Authentication, encryption, API keys
+3. **Complex Business Logic**: Domain-specific algorithms requiring human understanding
+4. **Database Connections**: Connection strings and path configurations
+5. **External Interfaces**: API endpoints and integration points
+
+# Section 2: Code Block Locking {#block-locking}
+
+## Subsection 1: Standard Lock (Allows Additions) {#standard-lock}
+
+第一項：標準鎖定格式 (Standard lock format)
+
+Use `#lock on` and `#lock off` comments:
+
+```r
+#lock on
+# CONSTANTS
+YAML_PATH <- "app_config.yaml"
+API_KEY <- "xyz123"
+#lock off
+```
+
+第二項：標準鎖定規則 (Standard lock rules)
+
+- **Cannot**: Modify or delete existing code
+- **Can**: Add new code or comments (SCD Type 2 approach)
+- **Purpose**: Protect existing logic while allowing expansion
+
+## Subsection 2: Strict Lock (No Modifications) {#strict-lock}
+
+第一項：嚴格鎖定格式 (Strict lock format)
+
+Use `#LOCK ON` and `#LOCK OFF` comments (all caps):
+
+```r
+#LOCK ON
+# CRITICAL SECURITY CONSTANTS
+ENCRYPTION_KEY <- "abc123xyz789"
+SECRET_SALT <- "secure_random_value"
+#LOCK OFF
+```
+
+第二項：嚴格鎖定規則 (Strict lock rules)
+
+- **Cannot**: Modify, delete, or add anything
+- **Purpose**: Complete protection for critical security code
+- **Use Cases**: Encryption keys, security tokens, critical algorithms
+
+## Subsection 3: When to Lock Code Blocks {#when-lock-blocks}
+
+第一項：需要鎖定的程式碼區塊 (Code blocks requiring locks)
+
+1. **Critical Constants**: System-wide configuration values
+2. **Security Code**: Authentication and encryption logic
+3. **Complex Algorithms**: Business-critical calculations
+4. **External Interfaces**: API credentials and endpoints
+5. **Database Schemas**: Table definitions and relationships
+
+# Section 3: Usage Rules {#usage-rules}
+
+## Subsection 1: For Human Developers {#human-rules}
+
+第一項：人類開發者指引 (Human developer guidelines)
+
+1. **Selective Application**: Only lock truly critical files and code
+2. **Documentation**: Document lock reasons in file headers or before blocks
+3. **Team Review**: Multiple team members should review before modifying locked content
+4. **Minimal Scope**: Keep locked sections as small and specific as possible
+5. **Clear Boundaries**: Ensure lock markers are clearly visible
+
+第二項：鎖定文件說明 (Lock documentation)
+
+```r
+# filename: fn_get_default_db_paths(lock).R
+#
+# LOCKED FILE - AI MODIFICATION RESTRICTED
+# Reason: Critical database path configuration requiring human oversight
+# Last modified by: John Smith (2025-04-05)
+# Review required by: Team Lead before any changes
+```
+
+## Subsection 2: For AI Assistants {#ai-rules}
+
+第一項：AI助理規則 (AI assistant rules)
+
+**MUST**:
+- Refuse to directly modify any file with `(lock)` in filename
+- NOT modify or delete existing code between lock markers
+- NOT modify, delete, or add to strict lock blocks (`#LOCK ON`/`#LOCK OFF`)
+- Explain to users that file or code is locked when refusing modifications
+
+**MAY**:
+- ADD new code/comments within standard locked blocks without modifying existing
+- Suggest changes to locked files or code blocks for human implementation
+- Provide exact code change suggestions for human review
+
+# Section 4: AI Response Templates {#response-templates}
+
+## Subsection 1: Locked File Response {#file-response}
+
+第一項：鎖定檔案回應範本 (Locked file response template)
+
+```
+I notice you've asked me to modify fn_get_default_db_paths(lock).R.
+This file is locked as indicated by '(lock)' in the filename and cannot
+be modified directly by AI assistants according to DEV_R005.
+
+Here are the changes I would suggest:
+
+[code suggestions here]
+
+Please implement these changes manually after reviewing them.
+```
+
+## Subsection 2: Standard Lock Response {#standard-response}
+
+第一項：標準鎖定回應 (Standard lock response)
+
+**For modification requests**:
+```
+This code block is locked with standard locks. While I can add new content,
+I cannot modify or delete existing content according to DEV_R005.
+
+Here are the changes I would suggest:
+[code suggestions]
+
+Please implement these modifications manually.
+```
+
+**For addition requests**:
+```
+I'll add the new constant to the standard locked block as requested:
+
+#lock on
+# CONSTANTS
+YAML_PATH <- "app_config.yaml"
+NEW_CONSTANT <- "new_value"  # Added new constant
+#lock off
+
+I've added without modifying existing content, following SCD Type 2 approach.
+```
+
+## Subsection 3: Strict Lock Response {#strict-response}
+
+第一項：嚴格鎖定回應 (Strict lock response)
+
+```
+This code block is strictly locked as indicated by '#LOCK ON' and '#LOCK OFF'
+comments (all caps). I cannot modify, delete, or add to strictly locked blocks
+under any circumstances according to DEV_R005.
+
+Here are the changes I would suggest:
+[code suggestions]
+
+Please implement these changes manually after reviewing them.
+```
+
+# Section 5: Exception Handling {#exceptions}
+
+## Subsection 1: Emergency Modifications {#emergency}
+
+第一項：緊急修改程序 (Emergency modification procedure)
+
+If locked file must be modified by AI in emergency:
+
+1. **Temporarily Unlock**: Remove `(lock)` indicator from filename
+2. **Make Changes**: Apply required modifications
+3. **Thorough Review**: Human must review all changes
+4. **Re-lock**: Restore `(lock)` indicator to filename
+5. **Document**: Record emergency exception in change log
+
+第二項：緊急修改記錄 (Emergency modification log)
+
+```markdown
+## Emergency Modification Log
+
+Date: 2025-04-05
+File: fn_get_default_db_paths(lock).R
+Reason: Critical production bug requiring immediate fix
+Unlocked by: John Smith
+Modifications: Updated database connection string
+Reviewed by: Jane Doe
+Re-locked: 2025-04-05 14:30
+```
+
+## Subsection 2: Lock Removal Process {#removal}
+
+第一項：鎖定移除流程 (Lock removal process)
+
+Permanent lock removal requires:
+1. Team consensus on removal necessity
+2. Documentation of removal reason
+3. Code review of unlocked content
+4. Update to related documentation
+5. Notification to team members
+
+# Section 6: Best Practices {#best-practices}
+
+## Subsection 1: Lock Granularity {#granularity}
+
+第一項：鎖定粒度建議 (Lock granularity recommendations)
+
+**Prefer Specific Locks**:
+```r
+# Good: Lock only critical section
+#lock on
+DATABASE_PASSWORD <- Sys.getenv("DB_PASS")
+#lock off
+
+# Regular code continues...
+connection_timeout <- 30
+```
+
+**Avoid Over-locking**:
+```r
+# Bad: Entire file locked when only one line is critical
+#lock on
+# 500 lines of code...
+#lock off
+```
+
+## Subsection 2: Documentation Standards {#documentation}
+
+第一項：鎖定文件標準 (Lock documentation standards)
+
+Every lock should include:
+1. **Reason**: Why the lock is necessary
+2. **Owner**: Who is responsible for the locked content
+3. **Review Requirements**: What approval is needed for changes
+4. **Related Systems**: What depends on this locked code
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## AI Lock Implementation Checklist
+
+**File Locking:**
+- [ ] Lock indicator format correct: `filename(lock).ext`
+- [ ] Lock reason documented in file header
+- [ ] Team aware of locked files
+- [ ] Emergency procedure documented
+
+**Code Block Locking:**
+- [ ] Standard locks use `#lock on`/`#lock off`
+- [ ] Strict locks use `#LOCK ON`/`#LOCK OFF` (caps)
+- [ ] Lock reason documented above block
+- [ ] Minimal scope maintained
+
+**AI Behavior:**
+- [ ] AI refuses to modify locked files
+- [ ] AI provides suggestions for manual implementation
+- [ ] AI can add to standard locks (not strict)
+- [ ] AI explains lock status to users
+
+**Documentation:**
+- [ ] Lock reasons clearly stated
+- [ ] Owner/reviewer identified
+- [ ] Emergency procedures defined
+- [ ] Team trained on lock protocol
+
+**Best Practices:**
+- [ ] Only critical content locked
+- [ ] Locks as specific as possible
+- [ ] Regular review of lock necessity
+- [ ] Clear communication about locks
+:::
+
+# Conclusion {#conclusion}
+
+The AI-Locked Files and Code Blocks Rule provides essential protection for critical system components while maintaining flexibility for development. By distinguishing between standard locks (allowing additions) and strict locks (complete protection), and by clearly marking locked files with `(lock)` indicators, teams can ensure human oversight of sensitive code while still benefiting from AI assistance for suggestions and non-critical modifications.
+
+---
+
+*Based on: Development Methodology Law Implementation Rules Article 5*  
+*Related to: [DM_R004 Data Storage Organization](../../CH02_data_management/rules/DM_R004_data_storage_organization.qmd), [MP029 No Fake Data](../../CH00_fundamental_principles/MP029_no_fake_data.qmd), [MP002 Default Deny](../../CH00_fundamental_principles/MP002_default_deny.qmd)*

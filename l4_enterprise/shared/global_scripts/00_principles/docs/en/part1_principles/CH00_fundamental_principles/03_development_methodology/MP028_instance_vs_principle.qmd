@@ -1,0 +1,120 @@
+---
+title: "MP028: Instance vs. Principle"
+subtitle: "Meta-principle for system design, implementation, and conflict resolution"
+author: "Claude"
+date: "2025-03-15"
+date-modified: "2026-02-13"
+categories: []
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Concept
+
+Instances are case-specific artifacts: one-off reports, logs, generated outputs, or a single task implementation.
+Principles are reusable, normative guidance intended to be applied repeatedly across contexts.
+
+When a script, operation, or implementation assumption conflicts with an existing principle, the conflict is resolved by **updating the principle first** (or explicitly extending it), then changing scripts to conform to that updated principle.
+
+This is the "spec first, implementation second" rule for DRV systems.
+
+## Key Principles
+
+1. **Principle takes precedence over instance**  
+   The value and behavior of a principle must be checked before any script-level optimization, patch, or exception.
+2. **No principle bypasses**  
+   Script-level adjustments cannot override a principle unless that principle has been revised and re-approved through documentation updates.
+3. **Spec-driven implementation**  
+   Any required behavior change in scripts must start from a corresponding update to spec/principle documents.
+4. **Traceability and auditability**  
+   Every principle modification and script delta must reference each other with clear rationale and date.
+
+## Implementation Guidelines
+
+### 1) Conflict Resolution Order
+
+When conflict is detected:
+
+1. Pause direct script changes.
+2. Identify the applicable principle(s) and the exact contradiction.
+3. Update or create principle documents first:
+   - clarify intent
+   - define scope
+   - define precedence
+   - add decision rationale and migration notes
+4. Only after principle updates are accepted, modify scripts to match the new/updated principle.
+
+### 2) Exception Handling
+
+If existing principles are incomplete:
+
+- Extend or refine the existing principle instead of creating silent script exceptions.
+- If needed, add a new principle (MP/DR/Rule record) and cross-link affected DRV docs.
+- Do not apply a direct hotfix that contradicts current principles.
+
+### 3) DRV Alignment
+
+- Before changing any DRV-related script, verify:
+  - the target derivation path name
+  - mapping from derivation requirement to script name
+  - principle references inside implementation notes
+- If DRV metadata and principle intent disagree, align DRV documentation first, then adapt scripts.
+
+### 4) Acceptance Criteria
+
+A script change is compliant only when:
+
+- no unresolved conflict remains between principle and implementation
+- changed files include references to the principle rule that authorizes the behavior
+- rollback conditions are defined if principle intent is later adjusted
+
+## Examples
+
+```r
+## Example: comment/description logic conflict
+
+# Example of wrong sequence (do not do this):
+# 1) Script logic is modified first
+# 2) Principle is later rewritten to "explain" what changed
+
+# Example of compliant sequence:
+# 1) Edit principle text to define expected behavior
+# 2) Add/update implementation to match updated principle
+#
+# - MP028: Instance vs. Principle
+# - MP037: Principle-Guided Modifications
+```
+
+## Related Principles
+
+### Derives From
+- MP000: Axiomatization System
+
+### Influences
+ - MP007: Documentation Organization
+ - MP002: Structural Blueprint
+ - MP037: Principle-Guided Modifications
+
+## Benefits
+
+1. Reduces drift between documentation and operational behavior.
+2. Makes DRV script intent explicit, reviewable, and repeatable.
+3. Prevents one-off patches from becoming long-term ungoverned exceptions.
+
+## Implementation Checklist
+
+- [x] Identify conflict with principle before editing code
+- [x] Update principle/DRV spec before code change
+- [x] Record script references and migration notes
+- [x] Validate script still aligns with updated principle
+
+## Conclusion
+
+Principles define the stable governance layer. Scripts are implementations that must conform to that layer.
+If they conflict, fix the principle first, then adapt the code.

@@ -1,0 +1,111 @@
+---
+title: "Section 2: Framework Comparison"
+parent: "ST04"
+---
+
+# Framework Comparison {#comparison}
+
+We considered four progressively more appropriate frameworks. This section documents the reasoning chain.
+
+## 2.1 Classical Survival Analysis
+
+**Formulation**: Model the time until a single terminal event (churn), potentially with covariates and random effects.
+
+$$
+h(t \mid \mathbf{X}, u_j, v_k) = h_0(t) \cdot \exp\left(\boldsymbol{\gamma}' \mathbf{X} + u_j + v_k\right)
+$$
+
+Where $u_j$ = customer frailty, $v_k$ = product line frailty.
+
+**Strengths**:
+
+- Well-established machinery (Cox, Weibull, cure rate models)
+- Natural handling of right-censoring
+- Random effects can capture customer $\times$ product_line heterogeneity (analogous to IRT: person $\theta$ $\times$ item $\beta$)
+
+**Fatal flaw**: Treats churn as a **single, observable terminal event**. But in non-contractual settings, churn is never directly observed. We can only observe the gap growing — we never know the exact moment the customer "died."
+
+**Verdict**: Inappropriate as the primary framework. However, the concepts of censoring, hazard functions, and frailty terms remain valuable and are absorbed into BTYD's theoretical foundation.
+
+## 2.2 Renewal Process
+
+**Formulation**: Model each inter-purchase gap as an independent draw from the same distribution (IID renewal).
+
+$$
+T_1, T_2, \ldots \stackrel{\text{iid}}{\sim} F(\cdot; \boldsymbol{\theta}_j)
+$$
+
+Where $F$ is the inter-arrival time distribution (e.g., Exponential, Weibull) and $\boldsymbol{\theta}_j$ captures customer-specific parameters.
+
+**Strengths**:
+
+- Naturally handles multiple purchases per customer
+- The renewal function $M(t) = E[N(t)]$ connects directly to expected purchase count
+- Can model duration dependence (increasing/decreasing hazard of returning)
+
+**Fatal flaw**: Assumes the customer is **always alive** and will always eventually return. There is no mechanism for permanent departure. A customer who stops purchasing is modeled as simply having a very long gap — but they are always "in the system."
+
+**Verdict**: Missing the death process entirely. The correct answer requires **superimposing a death process on top of the renewal process** — which is exactly what BTYD does.
+
+## 2.3 Recurrent Event Models (AG / PWP)
+
+**Formulation**: Extensions of Cox regression for multiple events per subject.
+
+- **Andersen-Gill (AG)**: Treats each event independently with a common baseline hazard
+- **Prentice-Williams-Peterson (PWP)**: Conditions on event number (stratum per gap)
+
+$$
+h_i(t \mid \mathcal{H}_t) = h_{0i}(t) \cdot \exp(\boldsymbol{\beta}' \mathbf{X}(t))
+$$
+
+**Strengths**:
+
+- Handles multiple events per customer correctly
+- PWP can model event-dependent baseline hazards (e.g., 2nd purchase gap differs from 5th)
+- Can incorporate a terminal event (death stops the process)
+
+**Critical limitation**: If we include a "terminal event" (churn), it must be **directly observed** — i.e., we need to know which customers have definitely churned. In non-contractual settings, this is exactly what we don't know. We can only observe that the gap keeps growing.
+
+**Verdict**: Mathematically elegant but requires observable churn, which we don't have.
+
+## 2.4 BTYD (Buy-Till-You-Die) — The Recommended Framework
+
+**Formulation**: A customer has two independent latent processes:
+
+1. **While alive**, they purchase according to a Poisson process with rate $\lambda_j$
+2. **At some unobserved point**, they "die" (churn) with rate $\mu_j$, and purchases stop forever
+
+$$
+\begin{aligned}
+N_j(t) &\sim \text{Poisson}(\lambda_j t) \quad &\text{while alive} \\
+\text{Lifetime}_j &\sim \text{Exp}(\mu_j) \quad &\text{death process (latent)}
+\end{aligned}
+$$
+
+Population heterogeneity:
+$$
+\lambda_j \sim \text{Gamma}(r, \alpha), \quad \mu_j \sim \text{Beta}(a, b)
+$$
+
+**Why this is the right framework**:
+
+| Property | BTYD | Others |
+|----------|------|--------|
+| Churn is latent (never observed) | **Yes** | No (require observed terminal event) |
+| Multiple purchases per customer | **Yes** | Only recurrent event models |
+| Heterogeneity in purchase rate | **Yes** (Gamma mixing) | Only with frailty terms |
+| Heterogeneity in churn propensity | **Yes** (Beta mixing) | Not directly |
+| Key output: $P(\text{alive} \mid \text{data})$ | **Yes** | Cannot produce this without observing churn |
+| Closed-form likelihood | **Yes** (BG/NBD, Pareto/NBD) | Cox: partial likelihood only |
+| Minimal data requirements | **4 summary statistics** | Full transaction history |
+
+## 2.5 Summary Comparison Table
+
+| Framework | Event Definition | "Death" (Churn) | Multiple Purchases | Core Problem |
+|-----------|-----------------|-----------------|-------------------|-------------|
+| Classical Survival | Single terminal event | Must be observed | No | Customers have multiple purchases; churn is unobservable |
+| Renewal Process | IID gaps, no death | No death mechanism | Yes | Cannot model permanent churn |
+| Recurrent Event (AG/PWP) | Multiple events + terminal | Must be observed | Yes | Churn is NEVER directly observed in non-contractual settings |
+| **BTYD** | Churn is latent | **Latent** (estimated) | Yes | **This matches our situation** |
+
+The progression is clear: each framework addresses one more limitation than the previous, and BTYD is the first to handle all four requirements simultaneously.

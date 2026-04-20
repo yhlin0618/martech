@@ -1,0 +1,214 @@
+---
+title: "UX_P001: 延遲初始化原則"
+subtitle: "啟動時只載入立即必要的資源，其餘延遲到首次使用時才載入"
+chapter: "CH07"
+category: "principle"
+number: "UX_P001"
+date-created: "2026-03-02"
+date-modified: "2026-03-02"
+author: "Claude"
+type: "principle"
+law: "使用者體驗法 (User Experience Law)"
+article-number: "第1條"
+derives_from:
+  - "CH00.MP048: Universal Initialization"
+influences:
+  - "CH03.DEV_P014: Performance Optimization"
+  - "CH03.DEV_P021: Performance Acceleration"
+related_to:
+  - "CH04.UI_R019: AI Process Notification"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**使用者體驗法第1條（延遲初始化原則）**
+
+本條建立應用程式啟動僅載入最少必要資源的原則，將所有其他資源延遲到首次使用時才載入。這直接改善了感知效能與使用者體驗。
+
+:::{.callout-important}
+## 核心概念
+「有需要才載入」(Load Only When Needed) — 啟動階段只載入「讓應用程式變得可互動」的立即必要資源。所有其他資源（套件、source 檔案、資料）都延遲到首次使用時才載入。
+:::
+
+# 背景 {#background}
+
+## 問題陳述 {#problem-statement}
+
+MAMBA 應用程式啟動涉及多個重量級操作，依序執行：
+
+| 階段 | 內容 | 估計時間 |
+|------|------|----------|
+| 套件載入 | 28 packages (arrow, plotly, bs4Dash 較慢) | 10-15s |
+| 遞迴 source() | ~327 個 R 檔案從 6 個目錄載入 | 8-15s |
+| 重複 source() | union 檔明確 source() 已被 init 載入的檔案 | 2-5s |
+| 其他 | DuckDB init、CSV 讀取、翻譯初始化 | 2-3s |
+
+**合計：30-45 秒**（從 `Rscript app.R` 到 "Listening on http"）
+
+## 根本原因 {#root-cause}
+
+目前的初始化模式（`autoinit()` / `sc_initialization_app_mode.R`）在啟動時載入所有資源，不論是否立即需要。這種「急切初始化」方式造成不必要的啟動延遲。
+
+# 第一項：套件載入 {#package-loading}
+
+## 第一款：啟動必須 vs 運行時需要 {#essential-vs-runtime}
+
+套件必須分為兩類：
+
+**啟動必須**（立即載入）：
+
+- `shiny` — 應用程式框架
+- `bs4Dash` — UI 框架
+- `DBI`, `duckdb` — 資料庫連線
+- `dplyr` — 核心資料操作
+
+**運行時延遲**（首次使用時載入）：
+
+- `arrow` — 僅在讀取 parquet/feather 檔案時
+- `plotly` — 僅在渲染互動圖表時
+- `readxl` — 僅在匯入 Excel 檔案時
+- `janitor` — 僅在清理資料時
+- `openxlsx` — 僅在匯出 Excel 檔案時
+
+## 第二款：延遲載入模式 {#deferred-loading-pattern}
+
+使用 `requireNamespace()` 搭配延遲 `library()` 載入運行時套件：
+
+```r
+# 模式：延遲套件載入
+ensure_package <- function(pkg) {
+  if (!isNamespaceLoaded(pkg)) {
+    suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+  }
+}
+
+# 在元件 server 中使用
+positionMSPlotlyServer <- function(id, ...) {
+  moduleServer(id, function(input, output, session) {
+    ensure_package("plotly")
+    # ... 使用 plotly 的元件邏輯
+  })
+}
+```
+
+:::{.callout-note}
+## 實作備註
+`ensure_package()` 函數應定義在 `global_scripts/04_utils/fn_ensure_package.R`，並作為啟動必要工具的一部分載入。
+:::
+
+# 第二項：檔案 Source {#file-sourcing}
+
+## 第一款：按需載入元件 {#on-demand-sourcing}
+
+Shiny UI 元件（`10_rshinyapp_components/`）應在首次啟動時才 source，而非啟動時全部載入：
+
+**目前模式（急切）：**
+```r
+# 在 autoinit() 中 — 啟動時 source 所有 ~327 個檔案
+source_dirs <- c("01_db", "02_db_utils", "03_config",
+                 "04_utils", "10_rshinyapp_components", ...)
+for (dir in source_dirs) {
+  files <- list.files(dir, pattern = "\\.R$", recursive = TRUE)
+  lapply(files, source)  # 所有檔案，包括未使用的元件
+}
+```
+
+**建議模式（延遲）：**
+```r
+# 啟動時：只 source 核心基礎設施
+startup_dirs <- c("01_db", "02_db_utils", "03_config", "04_utils")
+for (dir in startup_dirs) {
+  files <- list.files(dir, pattern = "\\.R$", recursive = TRUE)
+  lapply(files, source)
+}
+
+# 元件：首次使用時透過 source guard 載入
+source_component <- function(component_path) {
+  component_env_key <- paste0(".sourced_", basename(component_path))
+  if (!exists(component_env_key, envir = .GlobalEnv)) {
+    source(component_path)
+    assign(component_env_key, TRUE, envir = .GlobalEnv)
+  }
+}
+```
+
+## 第二款：Source Guard 模式 {#source-guard}
+
+每個元件檔案都應該是冪等的 — 多次 source 不會產生副作用：
+
+```r
+# Source guard：已載入則跳過
+if (exists("positionMSPlotlyUI") && is.function(positionMSPlotlyUI)) {
+  return(invisible(NULL))
+}
+
+# ... 實際函數定義在下方
+```
+
+# 第三項：防止重複 Source {#double-source-prevention}
+
+## 第一款：問題描述 {#double-source-problem}
+
+目前架構有兩個重疊的 source 路徑：
+
+1. **autoinit()** 遞迴 source `10_rshinyapp_components/` 中所有檔案
+2. **union 檔案**（如 `union_production_test.R`）明確 `source()` 相同檔案
+
+這導致 ~30-50 個檔案被 source 兩次，浪費 2-5 秒。
+
+## 第二款：Registry 模式 {#registry-pattern}
+
+使用 source registry 防止重複 source：
+
+```r
+# 在 04_utils/fn_source_once.R
+.source_registry <- new.env(parent = emptyenv())
+
+source_once <- function(file_path) {
+  canonical <- normalizePath(file_path, mustWork = FALSE)
+  if (!exists(canonical, envir = .source_registry)) {
+    source(file_path, local = FALSE)
+    assign(canonical, Sys.time(), envir = .source_registry)
+  }
+  invisible(NULL)
+}
+```
+
+所有 union 檔案和元件載入器中的 `source()` 呼叫都應改用 `source_once()`。
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 延遲初始化檢查清單
+
+實作延遲初始化時，確認：
+
+- [ ] 將所有套件分類為「啟動必須」或「運行時延遲」
+- [ ] 建立 `fn_ensure_package.R` 工具函數
+- [ ] 將非必要套件的急切 `library()` 替換為延遲載入
+- [ ] 將啟動 source 目錄與元件 source 目錄分離
+- [ ] 在元件檔案中實作 source guard
+- [ ] 建立 `fn_source_once.R` 防止重複 source
+- [ ] 將 union 檔案中的 `source()` 替換為 `source_once()`
+- [ ] 量測改善前後的啟動時間（目標：< 15 秒）
+:::
+
+# 相關原則 {#related}
+
+- **MP048**: Universal Initialization — 定義初始化框架；UX_P001 優化其執行順序
+- **DEV_P014**: Performance Optimization — 通用效能指引
+- **DEV_P021**: Performance Acceleration — 運行時優化（與 UX_P001 的啟動優化互補）
+- **UI_R019**: AI Process Notification — 在剩餘載入時間顯示進度
+
+---
+
+*依據：使用者體驗法第1條*
+*衍生自：[MP048 Universal Initialization](../../CH00_fundamental_principles/MP048_universal_initialization.qmd)*
+*影響：[DEV_P014 Performance Optimization](../../CH03_development_methodology/principles/DEV_P014_performance_optimization.qmd)*

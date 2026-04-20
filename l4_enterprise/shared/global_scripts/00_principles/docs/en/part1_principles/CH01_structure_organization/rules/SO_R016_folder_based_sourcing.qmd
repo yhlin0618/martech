@@ -1,0 +1,142 @@
+---
+title: "SO_R016: Folder-Based Sourcing Rule"
+subtitle: "Components and dependencies should be sourced at the folder level during initialization, rather than individually throughout the application code"
+chapter: "CH01"
+category: "rule"
+number: "SO_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article-number: 
+  number: 16
+  title: "Folder-Based Sourcing Rules"
+related_to:
+  - "MP031: Initialization First"
+  - "SO_P013: N-tuple Independent Loading"
+  - "SO_R015: Component Folder Organization"
+  - "MP017: Separation of Concerns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 16: Folder-Based Sourcing Rules {#overview}
+
+**Structure & Organization Law Article 16 (Folder-Based Sourcing Rules)**
+
+This rule establishes the standard approach for managing component dependencies through folder-level sourcing.
+
+:::{.callout-important}
+## Core Rule
+Components and dependencies should be sourced at the folder level during initialization, rather than individually throughout the application code. This ensures proper initialization order and reduces dependency issues.
+:::
+
+# Section 1: Background {#background}
+
+Sourcing files by folder rather than individually promotes cleaner initialization, better organization, and eliminates the risk of circular dependencies or missing prerequisites. This approach:
+
+1. Aligns with MP031 (Initialization First) by ensuring all required components are loaded during initialization
+2. Enforces a clear separation between component definition and component usage
+3. Makes dependency relationships explicit through directory structure
+4. Simplifies ongoing maintenance through predictable loading patterns
+5. Prevents runtime errors caused by missing dependencies
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Component Organization {#component-organization}
+
+- Group related components into meaningful directory structures
+- Use directory names that reflect the purpose of the components they contain
+- Follow SO_R015 (Component Folder Organization) when designing folder structure
+
+## Subsection 2: Sourcing Strategy {#sourcing-strategy}
+
+- Source entire folders rather than individual files
+- Use a recursive directory traversal algorithm during initialization
+- Source in order by aspect type (UI first, then Server, etc.) following SO_P013
+- Log sourcing operations for debugging purposes
+
+## Subsection 3: Initialization Script {#initialization-script}
+
+- Create a dedicated section for component sourcing in the initialization script
+- Traverse the component directory structure following aspect-based ordering
+- Use a consistent naming pattern for sourcing-related functions
+
+# Section 3: Implementation Example {#example}
+
+```r
+# In initialization.R:
+
+# Define recursive sourcing function
+source_directory <- function(dir_path, pattern = "\\.R$", 
+                            recursive = TRUE, verbose = FALSE) {
+  # Ensure directory exists
+  if (!dir.exists(dir_path)) {
+    warning("Directory not found: ", dir_path)
+    return(invisible(FALSE))
+  }
+  
+  # Get all matching files
+  files <- list.files(
+    path = dir_path,
+    pattern = pattern,
+    full.names = TRUE,
+    recursive = recursive
+  )
+  
+  # Sort files to ensure consistent order
+  files <- sort(files)
+  
+  # Source each file
+  for (file in files) {
+    if (verbose) message("Sourcing: ", file)
+    source(file, local = FALSE)
+  }
+  
+  return(invisible(TRUE))
+}
+
+# Source components by aspect type
+# First UI components
+source_directory("components", pattern = "UI\\.R$")
+
+# Then Server components
+source_directory("components", pattern = "Server\\.R$")
+
+# Then utility functions
+source_directory("components", pattern = "Filters\\.R$")
+source_directory("components", pattern = "Defaults\\.R$")
+```
+
+# Section 4: Benefits {#benefits}
+
+Adopting this rule will:
+
+1. **Ensure loading order**: Components are always loaded in the correct order
+2. **Reduce dependency issues**: Reduces risk of dependency problems or circular references
+3. **Improve maintainability**: Makes codebase more maintainable by centralizing sourcing logic
+4. **Reduce cognitive load**: Reduces mental burden during development
+5. **Speed up initialization**: Speeds up initialization through efficient sourcing patterns
+
+# Section 5: Implementation Checklist {#checklist}
+
+When implementing folder-based sourcing:
+
+1. ☐ Identify component directory structure
+2. ☐ Create recursive sourcing function
+3. ☐ Define sourcing order (UI → Server → Utilities)
+4. ☐ Implement error handling
+5. ☐ Add verbose logging option
+6. ☐ Test sourcing order
+7. ☐ Document sourcing strategy
+
+---
+
+*Based on: Structure & Organization Law Article 16*  
+*Related to: [MP031 Initialization First](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [SO_R015 Component Folder Organization](SO_R015_component_folder_organization.qmd)*

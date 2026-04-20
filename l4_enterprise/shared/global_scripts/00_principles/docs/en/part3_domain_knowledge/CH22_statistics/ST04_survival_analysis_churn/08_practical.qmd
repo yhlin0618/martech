@@ -1,0 +1,60 @@
+---
+title: "Section 8: Practical Considerations"
+parent: "ST04"
+---
+
+# Practical Considerations {#practical}
+
+## 8.1 Computational Cost
+
+| Model | Estimated Time (18K customers) | Package |
+|-------|-------------------------------|---------|
+| BG/NBD | ~5-8 seconds | `CLVTools` |
+| Pareto/NBD | ~30 seconds | `CLVTools` |
+| Pareto/GGG | ~2-5 minutes | `BTYDplus` |
+| Covariate Pareto/NBD | ~5-10 minutes | `CLVTools` |
+
+All acceptable for DRV pipeline (offline computation). The actual D_RACING deployment (10 slices, Two-Pass) completed in approximately 80 seconds total.
+
+## 8.2 Minimum Data Requirements
+
+Unlike the old model (needs 10+ complete cases with `cai`), BTYD needs:
+
+- **At least 1 purchase** — one-time buyers contribute as $(x=0, t_x=0, T=\text{observation period})$
+- **No special variables** beyond `customer_id`, `payment_time`, `amount`
+- **All 18,221 customers can participate** (vs. 56 with complete CAI in the old model)
+
+## 8.3 Handling the "all" Product Line
+
+The current system includes a synthetic "all" product line that aggregates across lines:
+
+- **Option A**: Fit one global BG/NBD on all transactions (ignoring product line) — use for "all" filter
+- **Option B**: Fit separate models per product line — aggregate P(alive) for "all" using max or weighted average
+- **Deployed**: Option A for simplicity. The global model captures the overall churn pattern. Per-product-line models (Phase 3 with covariates) can refine later.
+
+## 8.4 Model Validation
+
+Recommended validation approach (Fader, Hardie & Shang, 2010):
+
+1. **Holdout split**: Estimate model on first 70% of observation period, validate on remaining 30%
+2. **Frequency calibration**: Plot actual vs. predicted purchase counts in holdout by P(alive) decile
+3. **Tracking plot**: Compare cumulative actual vs. predicted repeat transactions over time
+4. **Individual-level**: Correlation between predicted and actual purchases in holdout
+
+## 8.5 Updating Frequency
+
+Model parameters $(r, \alpha, a, b)$ should be re-estimated:
+
+- **Weekly to monthly** in DRV pipeline — as new transactions arrive
+- The P(alive) scores update automatically between re-estimations (see Section 3, §3.6)
+
+## 8.6 CLVTools Installation
+
+```r
+# Ensure CLVTools is available
+if (!requireNamespace("CLVTools", quietly = TRUE)) {
+  install.packages("CLVTools")
+}
+```
+
+Dependencies: `optimx`, `data.table`, `methods` — compatible with existing pipeline environment.

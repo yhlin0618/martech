@@ -1,0 +1,319 @@
+---
+title: "DM_R053: 多來源 ETL 優先順序模式"
+subtitle: "來源優先排序與動態欄位對應，實現公司無關的 ETL"
+chapter: "CH02"
+category: "rule"
+number: "DM_R053"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 53"
+parent_principle: "MP064"
+related_to:
+  - "DM_R052": "Cross-Platform Product Identification"
+  - "DM_R037": "Company-Specific ETL Naming"
+  - "DM_R028": "ETL Data Type Separation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R053: 多來源 ETL 優先順序模式 {#overview}
+
+當整合多個資料來源時，ETL 腳本必須定義明確的來源優先順序以進行去重，並使用動態欄位對應來適應不同公司的 schema 變化。
+
+## 規則聲明
+
+**多來源 ETL 必須實作明確的來源優先排序和動態欄位對應，以確保不同公司配置下的一致去重行為。**
+
+## 原理 {#rationale}
+
+### 為何需要來源優先順序？
+
+| 挑戰 | 解決方案 |
+|------|----------|
+| **同一資料來自多個來源** | 明確的優先順序決定哪個來源優先 |
+| **不同的資料品質等級** | 高品質來源優先 |
+| **來源特定的完整性** | 優先選擇更完整的來源 |
+| **一致的行為** | 跨執行的確定性去重 |
+
+### 為何需要動態欄位對應？
+
+| 挑戰 | 解決方案 |
+|------|----------|
+| **每家公司不同的欄位名稱** | 基於模式的欄位發現 |
+| **Schema 演化** | 容忍新的欄位名稱 |
+| **公司無關的程式碼** | 相同邏輯適用於不同公司 |
+| **減少維護** | 無硬編碼的欄位引用 |
+
+## 來源優先順序模式 {#priority-pattern}
+
+### 定義優先順序
+
+來源應按**最權威到最不權威**排序。若有 app 參數表（例如 `app_data.df_product_line`），應視為最高優先順序：
+
+```r
+# 優先順序：較高 = 更權威
+# 1. app_data_df_product_line (產品線權威表)
+# 2. google_sheet_sku_eby     (專用對應表 sheet)
+# 3. google_sheet             (item_profile sheets)
+# 4. excel                    (試算表檔案)
+
+df_combined %>%
+  arrange(desc(source)) %>%  # 降序排列使專用來源優先
+  group_by(sku, eby_item_id) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+```
+
+### 來源命名慣例
+
+使用能正確排序的描述性來源識別碼：
+
+| 來源 | 識別碼 | 排序順序 |
+|------|--------|----------|
+| App 參數表 | `app_data_df_product_line` | 第 1（最高） |
+| 專用對應表 sheet | `google_sheet_sku_eby` | 第 2 |
+| Item profile sheets | `google_sheet` | 第 3 |
+| Excel 檔案 | `excel` | 第 4 |
+| CSV 匯入 | `csv` | 第 5 |
+| API 饋送 | `api` | 第 6（最低） |
+
+### 優先順序覆寫模式
+
+當字母排序不足時，使用明確控制：
+
+```r
+# 定義明確優先順序
+source_priority <- c(
+  "app_data_df_product_line" = 1,
+  "google_sheet_sku_eby" = 2,
+  "google_sheet" = 3,
+  "excel" = 4,
+  "csv" = 5
+)
+
+df_combined %>%
+  mutate(priority = source_priority[source]) %>%
+  arrange(priority) %>%
+  group_by(sku, eby_item_id) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  select(-priority)
+```
+
+## 動態欄位對應模式 {#column-mapping}
+
+### 問題
+
+不同公司使用不同的欄位名稱：
+
+| 公司 A | 公司 B | 語意意義 |
+|--------|--------|----------|
+| `SKU` | `sku` | 產品識別碼 |
+| `eBay item number` | `ebay_id` | eBay 刊登 ID |
+| `Product Category` | `category` | 產品分類 |
+
+### 基於模式的發現
+
+使用 regex 模式動態尋找欄位：
+
+```r
+# 先清理欄位名稱（janitor 處理各種變化）
+df_cleaned <- janitor::clean_names(df_raw, ascii = FALSE)
+col_names <- names(df_cleaned)
+
+# 基於模式的欄位發現
+sku_col <- col_names[grepl("^sku$", col_names, ignore.case = TRUE)][1]
+eby_col <- col_names[grepl("e_?bay", col_names, ignore.case = TRUE)][1]
+name_col <- col_names[grepl("^name$|^product_name$", col_names, ignore.case = TRUE)][1]
+cat_col <- col_names[grepl("product.*category|^category$", col_names, ignore.case = TRUE)][1]
+
+# 安全的欄位存取
+df_standardized <- df_cleaned %>%
+  transmute(
+    sku = if (!is.na(sku_col)) as.character(.data[[sku_col]]) else NA_character_,
+    eby_item_id = if (!is.na(eby_col)) as.character(.data[[eby_col]]) else NA_character_,
+    product_name = if (!is.na(name_col)) as.character(.data[[name_col]]) else NA_character_,
+    product_line_id = if (!is.na(cat_col)) as.character(.data[[cat_col]]) else NA_character_
+  )
+```
+
+### 記錄欄位對應
+
+始終記錄發現的欄位對應以供除錯：
+
+```r
+message("欄位對應:")
+message("  SKU=", sku_col, ", eBay=", eby_col)
+message("  Name=", name_col, ", Category=", cat_col)
+```
+
+### 備援處理
+
+當找不到必要欄位時：
+
+```r
+if (is.na(sku_col) && is.na(eby_col)) {
+  warning("找不到 SKU 或 eBay 欄位 - 跳過此來源")
+  return(NULL)
+}
+
+# 使用可用欄位繼續
+df_result <- df_cleaned %>%
+  transmute(
+    sku = if (!is.na(sku_col)) as.character(.data[[sku_col]]) else NA_character_,
+    eby_item_id = if (!is.na(eby_col)) as.character(.data[[eby_col]]) else NA_character_
+  ) %>%
+  filter(!is.na(sku) | !is.na(eby_item_id))  # 至少需要一個 ID
+```
+
+## 公司特定配置 {#company-config}
+
+### 配置驅動的來源定義
+
+在 `app_config.yaml` 中儲存來源配置：
+
+```yaml
+# 公司 MAMBA
+etl_sources:
+  product_mapping:
+    sources:
+      - name: "item_profile_sheets"
+        type: "google_sheet"
+        priority: 2
+        sheet_pattern: "item_profile_*"
+      - name: "sku_eby_mapping"
+        type: "google_sheet"
+        priority: 1
+        sheet_name: "SKU to eBay Item Number"
+      - name: "excel_backup"
+        type: "excel"
+        priority: 3
+        path: "data/local_data/rawdata_MAMBA/SKUtoeBay numbers/SKUtoeBay number.xlsx"
+```
+
+### 公司特定的欄位模式
+
+為公司變化擴展欄位模式：
+
+```yaml
+# 在 app_config.yaml 中
+column_patterns:
+  sku:
+    - "^sku$"
+    - "^product_sku$"
+    - "^item_sku$"
+  ebay_id:
+    - "e_?bay.*id"
+    - "e_?bay.*number"
+    - "^ebay$"
+  product_name:
+    - "^name$"
+    - "^product_name$"
+    - "^item_name$"
+```
+
+## 實作範本 {#template}
+
+### 多來源 ETL 腳本結構
+
+```r
+#' @file all_ETL_product_mapping_0IM___{company}.R
+#' @principle DM_R053 Multi-Source ETL Priority Pattern
+#' @principle DM_R052 Cross-Platform Product Identification
+
+autoinit()
+
+# 載入配置
+config <- yaml::read_yaml("app_config.yaml")
+
+tryCatch({
+  # 為每個來源初始化結果容器
+  source_results <- list()
+
+  # ==========================================================================
+  # SOURCE 1: 主要來源（最高優先順序）
+  # ==========================================================================
+  message("--- SOURCE 1: [描述] (Priority: 1) ---")
+
+  df_source1 <- read_source_1(...)
+  df_source1_mapped <- df_source1 %>%
+    dynamic_column_map(...) %>%
+    mutate(source = "source1_identifier")
+
+  source_results[["source1"]] <- df_source1_mapped
+
+  # ==========================================================================
+  # SOURCE 2: 次要來源（較低優先順序）
+  # ==========================================================================
+  message("--- SOURCE 2: [描述] (Priority: 2) ---")
+
+  df_source2 <- read_source_2(...)
+  df_source2_mapped <- df_source2 %>%
+    dynamic_column_map(...) %>%
+    mutate(source = "source2_identifier")
+
+  source_results[["source2"]] <- df_source2_mapped
+
+  # ==========================================================================
+  # MERGE: 使用基於優先順序的去重進行合併
+  # ==========================================================================
+  message("--- 合併來源 ---")
+
+  df_combined <- bind_rows(source_results)
+
+  df_final <- df_combined %>%
+    arrange(desc(source)) %>%  # 優先順序
+    group_by(key_col1, key_col2) %>%
+    slice_head(n = 1) %>%
+    ungroup()
+
+  message("來源分布:")
+  print(count(df_final, source))
+
+  # 寫入資料庫
+  dbWriteTable(con, "target_table", df_final, overwrite = TRUE)
+
+}, error = function(e) {
+  stop("多來源 ETL 失敗: ", e$message)
+})
+
+autodeinit()
+```
+
+## 驗證清單 {#checklist}
+
+對於多來源 ETL 腳本：
+
+- [ ] 每個來源有明確的優先順序（透過命名或明確的優先順序映射）
+- [ ] 每行都包含來源識別碼（`source` 欄位）
+- [ ] 欄位對應使用基於模式的發現（非硬編碼）
+- [ ] 欄位對應有記錄以供除錯
+- [ ] 缺失欄位優雅處理（NULL 或跳過）
+- [ ] 去重使用 `group_by()` + `slice_head()` 模式
+- [ ] 合併後記錄來源分布
+- [ ] 公司特定的模式在配置中（不在程式碼中）
+
+對於公司配置：
+
+- [ ] 來源優先順序定義在 `app_config.yaml`
+- [ ] 每家公司的欄位模式有文件記錄
+- [ ] 提供常見情況的預設模式
+
+## 與其他原則的關係 {#relationships}
+
+| 原則 | 關係 |
+|------|------|
+| **DM_R052** | 定義產品對應 schema；DM_R053 定義如何從多個來源填充它 |
+| **DM_R037** | 公司特定命名（`___MAMBA`）；DM_R053 確保程式碼跨公司運作 |
+| **DM_R028** | ETL 階段分離；DM_R053 適用於匯入（0IM）階段 |
+| **MP064** | ETL-DRV 分離；多來源合併是 ETL，不是商業邏輯 |
+
+## 結論
+
+多來源 ETL 優先順序模式（DM_R053）建立了一個標準化方法，用於整合來自多個來源的資料，具有明確的優先順序和動態欄位對應。這使得公司無關的 ETL 腳本能夠在不同組織 schema 下運作，同時保持一致、確定性的去重行為。

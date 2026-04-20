@@ -1,0 +1,153 @@
+---
+title: "DM_R017: Memory-Resident Parameters Rule"
+subtitle: "All configuration parameters and reference data must be loaded into R memory (globalenv) during initialization of app mode and accessed directly from memory throughout application execution. Memory will be cleared during deinitialization"
+chapter: "CH02"
+category: "rule"
+number: "DM_R017"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 17
+  title: "Memory-Resident Parameters Rule"
+related_to:
+  - "MP15: Currency Principle"
+  - "MP31: Initialization First"
+  - "MP48: Universal Initialization"
+  - "MP33: Deinitialization Final"
+  - "R58: Global Parameter Organization"
+  - "P18: Dual Parameter Sources"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 17: Memory-Resident Parameters Rule {#overview}
+
+**Data Management Law Article 17 (Memory-Resident Parameters Rule)**
+
+All configuration parameters and reference data must be loaded into R memory (globalenv) during initialization of app mode and accessed directly from memory throughout application execution. Memory will be cleared during deinitialization.
+
+:::{.callout-important}
+## Statement
+All configuration parameters and reference data must be loaded into R memory (globalenv) during initialization of app mode and accessed directly from memory throughout application execution. Memory will be cleared during deinitialization.
+:::
+
+# Section 1: Rationale {#rationale}
+
+Memory-resident parameters offer several critical advantages:
+
+1. **Performance**: Eliminates repeated disk/database access for frequently used values
+2. **Consistency**: Ensures all application components reference identical parameter values
+3. **Centralization**: Provides a single source of truth for configuration settings
+4. **Observability**: Allows direct inspection of current parameter values
+5. **Modifiability**: Enables real-time modification of parameters during execution
+6. **Lifecycle Management**: Parameters are loaded in app mode initialization and cleared in deinitialization
+
+This approach allows for efficient operation while maintaining clear traceability of parameter sources and changes and proper memory management.
+
+# Section 2: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Parameter Loading Sequence {#parameter-loading-sequence}
+
+- Global parameters MUST be loaded into memory during initialization phase
+- Parameter loading MUST occur before any dependent components are initialized
+- Parameters MUST be stored in the globalenv with properly prefixed names
+- Source file paths MUST be documented in initialization logs
+- Loading sequence MUST follow the R048 Universal Initialization principle
+
+## Subsection 2: Parameter Naming Convention {#parameter-naming-convention}
+
+- Parameter data frames MUST use the `df_` prefix (e.g., `df_product_line_profile`)
+- List parameters MUST use the `list_` prefix
+- Vector parameters MUST use the `vec_` prefix
+- Scalar parameters MUST use descriptive names without prefixes
+- All parameter objects SHOULD include provenance attributes documenting their source
+
+## Subsection 3: Memory Management {#memory-management}
+
+- Parameter objects MUST be kept reasonably sized to prevent memory issues
+- Large datasets SHOULD remain in database with only indices/lookups in memory
+- Reference tables with fewer than 10,000 rows SHOULD be fully memory-resident
+- Dynamic parameters MUST be protected from unintended modification
+- All parameters MUST be loaded during app mode initialization
+- All parameters MUST be cleared during app mode deinitialization
+
+## Subsection 4: Source File Structure {#source-file-structure}
+
+- Source CSV/Excel files MUST follow the established organization rules
+- Files for SCD Type 1 parameters MUST be placed in the `app_data/parameters/scd_type1/` directory
+- Files for SCD Type 2 parameters MUST be placed in the `app_data/parameters/scd_type2/` directory
+- Global parameter files MUST be placed in `global_scripts/parameters/`
+
+## Subsection 5: Access Pattern {#access-pattern}
+
+- Components MUST access parameters directly from globalenv
+- Functions SHOULD NOT reload parameters from disk/database unnecessarily
+- Validation of parameter existence SHOULD occur in initialization, not at usage time
+- Updates to parameters MUST follow controlled patterns that maintain memory/disk synchronization
+
+# Section 3: Examples {#examples}
+
+## Subsection 1: Correct Implementation {#correct-implementation}
+
+```r
+# In initialization script
+# 1. Load from source file
+product_line_csv <- file.path("app_data", "parameters", "scd_type1", "product_line.csv")
+df_product_line_profile <- read_csvxlsx(product_line_csv)
+
+# 2. Add provenance attribute
+attr(df_product_line_profile, "source_file") <- product_line_csv
+attr(df_product_line_profile, "load_time") <- Sys.time()
+
+# 3. Place in global environment with prescribed prefix
+assign("df_product_line_profile", df_product_line_profile, envir = globalenv())
+
+# Later in application code - direct access from memory
+filtered_products <- filter(df_product_line_profile, included == 1)
+```
+
+## Subsection 2: Incorrect Implementation {#incorrect-implementation}
+
+```r
+# Incorrect: Reloading from disk in function
+get_product_lines <- function() {
+  # BAD: Reloads from disk each time instead of using memory-resident version
+  product_line_csv <- file.path("app_data", "parameters", "scd_type1", "product_line.csv")
+  read_csvxlsx(product_line_csv)
+}
+
+# Incorrect: Not following naming convention
+# BAD: Missing df_ prefix for data frame
+product_line_profile <- read_csvxlsx(product_line_csv)
+assign("product_line_profile", product_line_profile, envir = globalenv())
+```
+
+# Section 4: Relationship to Other Principles {#relationship-to-other-principles}
+
+- **MP15: Currency Principle** - Memory-resident parameters must still follow currency requirements
+- **MP31: Initialization First** - Parameter loading is a critical initialization step
+- **MP33: Deinitialization Final** - Memory clearing occurs during deinitialization
+- **MP48: Universal Initialization** - Parameters are part of universal initialization sequence
+- **R58: Global Parameter Organization** - Defines structure for parameter source files
+- **P18: Dual Parameter Sources** - Defines YAML and Excel as primary parameter sources
+
+# Section 5: Benefits {#benefits}
+
+1. **Performance Optimization**: Eliminates file I/O and database queries during normal operation
+2. **Simplified Development**: Creates a consistent access pattern for all application components
+3. **Enhanced Debugging**: Enables direct inspection of current parameter values
+4. **Audit Capability**: Parameter provenance attributes support comprehensive auditing
+5. **Real-time Adaptation**: Supports controlled modification of parameters during execution
+
+---
+
+*Based on: Data Management Law Article 17*  
+*Related to: [MP31 Initialization First](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [MP48 Universal Initialization](../../CH00_fundamental_principles/meta_principles/MP048_universal_initialization.qmd)*

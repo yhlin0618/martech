@@ -1,0 +1,240 @@
+---
+id: "DM_R037"
+title: "ETL Import Source Naming Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2026-02-06"
+author: "Claude"
+status: "active"
+version: "3.0"
+weight: 37
+implements:
+  - "MP104": "ETL Data Flow Separation Principle"
+  - "MP092": "Platform ID Standard"
+related_to:
+  - "DM_R028": "ETL Data Type Separation Rule"
+  - "DM_R022": "Platform Numbering Convention Rule"
+  - "MP064": "ETL-Derivation Separation Principle"
+  - "DM_R038": "Data Artifact Naming Scope"
+  - "DM_R053": "Multi-Source ETL Priority Pattern"
+---
+
+# DM_R037: ETL Import Source Naming Rule
+
+## Version History
+
+| Version | Date | Change |
+|---------|------|--------|
+| 1.0 | 2025-08-28 | Initial: `___COMPANY` suffix for company-specific ETL scripts |
+| 2.0 | 2026-02-06 | Revised: `___SOURCE_TYPE_VERSION` composite suffix replacing `___COMPANY` |
+| 3.0 | 2026-02-06 | **Config-Driven Import**: Removed suffix from filenames; source_type/version managed in `app_config.yaml` |
+
+## Rule Statement (v3.0)
+
+**ETL import scripts (0IM phase) follow standard DM_R028 naming without suffix**: `{platform}_ETL_{datatype}_0IM.R`.
+
+Source type and version metadata are stored in `app_config.yaml` under `platforms.{platform}.etl_sources.{datatype}`. Each 0IM script reads its profile from config at initialization time.
+
+## Core Requirements
+
+### 1. Standard Naming (No Suffix)
+
+All 0IM scripts use the standard DM_R028 pattern:
+
+```yaml
+naming_patterns:
+  import:
+    pattern: "{platform}_ETL_{datatype}_0IM.R"
+    example: "amz_ETL_sales_0IM.R"
+
+  staging:
+    pattern: "{platform}_ETL_{datatype}_1ST.R"
+    example: "amz_ETL_sales_1ST.R"
+
+  transform:
+    pattern: "{platform}_ETL_{datatype}_2TR.R"
+    example: "amz_ETL_sales_2TR.R"
+```
+
+### 2. Config-Driven Source Profile
+
+Source type and version are declared in `app_config.yaml`:
+
+```yaml
+platforms:
+  amz:
+    status: "active"
+    etl_sources:
+      sales:
+        source_type: "excel"
+        version: "v1"
+        rawdata_pattern: "amazon_sales/*/*.xlsx"
+      keys:
+        source_type: "excel"
+        version: "v1"
+        rawdata_path: "KEYS.xlsx"
+      product_profiles:
+        source_type: "gsheets"
+        version: "v1"
+```
+
+### 3. Script Reads Config at Initialization
+
+Each 0IM script reads its profile from config in the INITIALIZE section:
+
+```r
+# Read ETL profile from config (DM_R037 v3.0: config-driven import)
+source(file.path(GLOBAL_DIR, "04_utils", "fn_get_platform_config.R"))
+platform_cfg <- get_platform_config("amz")
+etl_profile <- platform_cfg$etl_sources$sales
+message(sprintf("PROFILE: source_type=%s, version=%s",
+                etl_profile$source_type, etl_profile$version))
+```
+
+### 4. Standard Source Types
+
+| Source Type | Description | Typical Library |
+|------------|-------------|-----------------|
+| `excel` | Local .xlsx/.xls files | `readxl` |
+| `csv` | Local .csv files | `data.table::fread` |
+| `api` | REST API calls | `httr`, `jsonlite` |
+| `gsheets` | Google Sheets | `googlesheets4` |
+| `sqlserver` | SQL Server via SSH/ODBC | `DBI`, `odbc` |
+
+Source type codes are lowercase in config.
+
+### 5. Version Rules
+
+| Scenario | Action |
+|----------|--------|
+| New datatype | Start at v1 |
+| Format changes | Update version in config (v1 → v2) |
+| Multiple active versions | Use config to select which version |
+
+### 6. Input Source Documentation
+
+Each company MUST document all available data sources in `schema_registry.yaml` under `input_sources`.
+
+Required metadata per source:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `source_type` | Yes | excel / csv / gsheets / api |
+| `etl_source_key` | Yes | Corresponding key in `app_config.yaml > etl_sources` (or `"unmapped"`) |
+| `description` | Yes | Brief purpose of this data source |
+| `columns` | Recommended | List of key columns |
+| `status` | Yes | mapped / unmapped / deprecated |
+
+For Google Sheets sources, additional fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `sheet_id` | Yes | The Google Sheet ID |
+| `tab_name` | Yes | Exact tab name in the sheet |
+| `tab_category` | Yes | data / codebook / metadata / backup / utility |
+
+For rawdata (file-based) sources:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `rawdata_pattern` or `rawdata_path` | Yes | File glob pattern or exact path relative to RAW_DATA_DIR |
+
+This enables the `/setup-etl-source` skill to show available unmapped sources when adding new ETL data types.
+
+## Examples
+
+### Amazon Platform (v3.0)
+
+```yaml
+amazon_etl_scripts:
+  # All 0IM scripts use standard naming (no suffix)
+  - "amz_ETL_sales_0IM.R"
+  - "amz_ETL_keys_0IM.R"
+  - "amz_ETL_reviews_0IM.R"
+  - "amz_ETL_competitor_sales_0IM.R"
+  - "amz_ETL_keepa_0IM.R"
+  - "amz_ETL_sku_mapping_0IM.R"
+  - "amz_ETL_demographic_0IM.R"
+  - "amz_ETL_product_profiles_0IM.R"
+  - "amz_ETL_competitor_ids_0IM.R"
+  - "amz_ETL_comment_properties_0IM.R"
+
+  # 1ST/2TR/2TS remain unchanged
+  - "amz_ETL_sales_1ST.R"
+  - "amz_ETL_sales_2TR.R"
+  - "amz_ETL_sales_2TS.R"
+```
+
+### eBay Platform (Backward Compatibility)
+
+```yaml
+ebay_etl_scripts:
+  # Legacy company suffix (still valid, not required to migrate)
+  - "eby_ETL_sales_0IM___MAMBA.R"
+
+  # New scripts should use standard naming + config
+  - "eby_ETL_sales_0IM.R"  # reads config for source_type
+```
+
+## Backward Compatibility
+
+### Legacy Suffixes
+
+Existing scripts with suffixes (`___MAMBA`, `___SOURCE_TYPE_VERSION`) remain valid:
+
+```yaml
+backward_compatibility:
+  legacy_suffixes:
+    - "___MAMBA"           # MAMBA company scripts
+    - "___EXCEL_V1"        # v2.0 format scripts
+
+  migration_policy:
+    existing_scripts: "Legacy suffixes remain valid until natural refactoring"
+    new_scripts: "MUST use standard naming + config profile"
+    gradual_migration: "Migrate legacy scripts when they need modification"
+```
+
+## Data Artifacts Are Source-Agnostic (DM_R038)
+
+Data artifacts (tables, databases) never include source information:
+
+```yaml
+correct_scope:
+  scripts:
+    - "amz_ETL_sales_0IM.R"       # Standard naming
+  tables:
+    - "df_amz_sales"               # No source info
+  databases:
+    - "raw_data.duckdb"            # No source info
+```
+
+## Compliance Checklist
+
+- [ ] All new 0IM scripts use standard `{platform}_ETL_{datatype}_0IM.R` naming
+- [ ] No `___` suffix in new filenames
+- [ ] `app_config.yaml` has `etl_sources` entry for each datatype
+- [ ] 0IM scripts read profile from config in INITIALIZE section
+- [ ] PROFILE message logged at startup
+- [ ] 1ST/2TR/2TS scripts remain unchanged (no suffix, no config needed)
+- [ ] Data artifacts (tables, databases) do NOT include source info (DM_R038)
+
+## Rationale for Change (v2.0 → v3.0)
+
+| Issue with v2.0 (`___SOURCE_TYPE_VERSION` in filename) | Resolution in v3.0 (config-driven) |
+|--------------------------------------------------------|-------------------------------------|
+| Filename changes when source type changes | Filename is stable; config changes only |
+| Suffix creates case-sensitivity issues on macOS | No suffix in filename |
+| Downstream references must track suffix changes | Downstream references use standard names |
+| Redundant: both filename and config encode source | Single source of truth in config |
+| `___` breaks some tooling conventions | Clean standard naming |
+
+## Conclusion
+
+DM_R037 v3.0 moves source type and version metadata out of filenames and into `app_config.yaml`. This provides:
+
+- **Stability**: Filenames don't change when data sources change
+- **Standard**: All 0IM scripts follow DM_R028 naming consistently
+- **Single source of truth**: Source metadata lives in config, not filenames
+- **Transparency**: PROFILE message at script startup shows the active config
+- **Backward compatible**: Legacy suffixes remain valid

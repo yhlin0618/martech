@@ -1,0 +1,249 @@
+---
+
+title: "D02_05: Master Execution Flow"
+subtitle: "Complete D02 execution orchestration"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_05"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D02_00_grid_initialization"
+  - "D02_01_condition_grid"
+  - "D02_02_filtered_sales_views"
+  - "D02_03_customer_views"
+  - "D02_04_dna_integration"
+outputs_to:
+  - "execution_result"
+implements:
+  - "DM_R044": "Derivation Implementation Standard"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_05: Master Execution Flow {#overview}
+
+This task orchestrates the complete D02 derivation pipeline, coordinating all subtasks and managing the execution flow for customer view filtering.
+
+## Complete Execution Flow (NSQL) {#complete-execution}
+
+```nsql
+# D02 Complete Execution Flow
+EXECUTE D02_complete:
+  CONTEXT:
+    start_time: CURRENT_TIMESTAMP
+    derivation_name: "D02_Customer_View_Filtering"
+
+  # Verify prerequisites
+  PREREQUISITE:
+    ASSERT D01.success = TRUE
+    ELSE: ABORT "D02 requires successful D01 execution"
+
+  # Execute steps in sequence
+  SEQUENCE:
+    STEP 1: D02_00_create_schema
+      ON_SUCCESS: LOG "Filtered schema created"
+      ON_FAILURE: ABORT "Failed to create schema"
+
+    STEP 2: D02_01_create_condition_grid
+      ON_SUCCESS: LOG "Condition grid created: {grid_count} combinations"
+      ON_FAILURE: ABORT "Failed to create condition grid"
+
+    STEP 3: D02_02_create_filtered_sales_views
+      ON_SUCCESS: LOG "Filtered sales views created: {view_count} views"
+      ON_FAILURE: ABORT "Failed to create sales views"
+
+    STEP 4: D02_03_create_customer_views
+      ON_SUCCESS: LOG "Customer-centric views created: {customer_view_count} views"
+      ON_FAILURE: ABORT "Failed to create customer views"
+
+    STEP 5: D02_04_integrate_dna
+      ON_SUCCESS: LOG "DNA integration complete: {complete_view_count} views"
+      ON_FAILURE: ABORT "Failed to integrate DNA profiles"
+
+    STEP 6: D02_validate_success
+      ON_SUCCESS: LOG "All success criteria validated"
+      ON_FAILURE: WARNING "Some validation checks failed"
+
+  # Calculate execution metrics
+  FINALIZE:
+    execution_time: DATEDIFF(seconds, start_time, CURRENT_TIMESTAMP)
+    total_views_created: COUNT(views) IN processed_data.filtered
+    condition_combinations: COUNT(condition_grids)
+
+  RETURN:
+    success: TRUE
+    derivation_name: derivation_name
+    views_created: total_views_created
+    condition_combinations: condition_combinations
+    execution_time_secs: execution_time
+```
+
+## Execution Sequence Diagram
+
+```
+┌─────────────────┐
+│ D01 DNA Analysis│
+│  (prerequisite) │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D02_00        │
+│ Create Schema   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D02_01        │
+│ Condition Grid  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D02_02        │
+│ Sales Views     │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D02_03        │
+│ Customer Views  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D02_04        │
+│ DNA Integration │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Execution Result│
+└─────────────────┘
+```
+
+## Five-Part Structure Compliance (DM_R044) {#five-part}
+
+Each implementation script MUST follow the five-part execution structure:
+
+| Part | Purpose | Key Elements |
+|------|---------|--------------|
+| **PART 1: INITIALIZE** | Setup environment | `autoinit()`, database connection, config loading |
+| **PART 2: MAIN** | Execute D02_00-D02_03 | Core business logic wrapped in `tryCatch()` |
+| **PART 3: TEST** | Validate outputs | View existence, schema validation |
+| **PART 4: SUMMARIZE** | Report metrics | View count, execution time |
+| **PART 5: DEINITIALIZE** | Cleanup | `autodeinit()` (MUST be final statement) |
+
+## Configuration Management (NSQL) {#config-mgmt}
+
+```nsql
+# D02 Configuration Management
+CONFIGURATION D02_config:
+  # Grid component source files
+  SOURCES:
+    grid_components: "app_data/parameters/list_grid_components.R"
+    grid_initializer: "22_initializations/sc_grid_components.R"
+
+  # Runtime configuration
+  RUNTIME:
+    enable_subset_mode: TRUE  # Allow testing with subset
+    default_subset_size: 36   # Reduced grid for testing
+    cache_views: TRUE         # Cache query results
+    cache_ttl_minutes: 30     # Cache expiration
+
+  # View generation settings
+  VIEW_SETTINGS:
+    materialization: FALSE    # Virtual views by default
+    create_indexes: TRUE      # Index filter columns
+    log_creation: TRUE        # Log view creation
+```
+
+## Performance Optimization (NSQL) {#performance}
+
+```nsql
+# D02 Performance Optimization Patterns
+OPTIMIZE D02_performance:
+  # Index creation for filter columns
+  CREATE_INDEXES:
+    INDEX idx_source ON df_sales(source_filter)
+    INDEX idx_time ON df_sales(transaction_date)
+    INDEX idx_product ON df_sales(product_line_id)
+    INDEX idx_state ON df_sales(state)
+    COMPOSITE INDEX idx_all_filters ON df_sales(source_filter, product_line_id, state)
+
+  # Materialization for hot views
+  MATERIALIZE hot_views:
+    CRITERIA:
+      access_count >= 100 PER day
+      OR is_default_filter = TRUE
+    REFRESH: EVERY 1 HOUR
+
+  # Query caching
+  CACHE_STRATEGY:
+    cache_enabled: TRUE
+    cache_size_mb: 512
+    eviction_policy: LRU
+    ttl_minutes: 30
+```
+
+## Success Validation (NSQL) {#validation}
+
+```nsql
+# D02 Success Criteria Validation
+VALIDATE D02_success:
+  # Criterion 1: All condition combinations have views
+  CHECK view_coverage:
+    expected_views: COUNT(condition_grids) * 2  # Sales + Customer views
+    actual_views: COUNT(views) IN processed_data.filtered
+    ASSERT actual_views >= expected_views
+
+  # Criterion 2: Views have required columns
+  CHECK view_schema:
+    FOR EACH view IN processed_data.filtered.df_sales_*:
+      ASSERT columns_exist: [customer_id, transaction_date, amount, product_id]
+      ASSERT filter_columns_exist: [source_filter, time_condition, product_line_id_filter, state_filter]
+
+  # Criterion 3: Customer aggregation is correct
+  CHECK customer_aggregation:
+    FOR EACH view IN processed_data.filtered.df_sales_by_customer_*:
+      ASSERT is_unique: customer_id
+      ASSERT has_metrics: [transaction_count, total_spent, first_purchase_date, last_purchase_date]
+
+  # Criterion 4: Filter conditions are preserved
+  CHECK filter_preservation:
+    FOR EACH view IN processed_data.filtered.*:
+      ASSERT column_not_null: source_filter
+      ASSERT column_not_null: time_condition
+
+  # Criterion 5: Query performance is acceptable
+  CHECK query_performance:
+    FOR SAMPLE views IN processed_data.filtered (LIMIT 10):
+      query_time: TIME(SELECT * FROM view LIMIT 1000)
+      ASSERT query_time < 1 SECOND
+
+  RETURN validation_report
+```
+
+## Execution Result Schema {#result-schema}
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | BOOLEAN | Whether execution completed |
+| `derivation_name` | VARCHAR | Name identifier |
+| `views_created` | INTEGER | Total views created |
+| `condition_combinations` | INTEGER | Grid combination count |
+| `execution_time_secs` | NUMERIC | Total execution time |
+
+## Related Documentation
+
+- [D02_03_customer_views.qmd](D02_03_customer_views.qmd) - Customer aggregation
+- [D02_04_dna_integration.qmd](D02_04_dna_integration.qmd) - DNA integration
+- [D02_06_module_consumers.qmd](D02_06_module_consumers.qmd) - Module consumers
+- [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) - Implementation standard

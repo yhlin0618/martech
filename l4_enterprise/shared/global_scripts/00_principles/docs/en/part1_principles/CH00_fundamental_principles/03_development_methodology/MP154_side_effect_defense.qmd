@@ -1,0 +1,45 @@
+---
+title: "MP154: Side Effect Defense"
+subtitle: "Operations must not silently alter the semantic meaning of data"
+category: "Meta-Principle"
+type: "Meta-Principle"
+id: "MP154"
+created: "2026-03-14"
+triggered_by: "Issue #340 — unmapped product_line_id silently replaced with NA"
+---
+
+## Summary
+
+Any operation that transforms data **must not silently change the semantic meaning** of existing values. When a transformation cannot fully resolve, the failure must be **visible** — either through an explicit sentinel value, an error, or a warning — never through silent data corruption (e.g., replacing valid values with `NA` or leaving semantically inconsistent values).
+
+## Motivation
+
+In data pipelines, operations like mapping, joining, and filtering can introduce **silent side effects** — changes to data that are not directly intended by the operation and are invisible to the developer. These side effects compound: a silent `NA` in an ETL stage becomes a missing row after a downstream `JOIN`, which becomes a wrong aggregate in a dashboard KPI.
+
+**Real-world example (Issue #340):** `amz_ETL_keys_0IM.R` mapped Amazon product line names to internal IDs. When a name had no mapping, `ifelse()` returned `NA`, silently erasing the original value. Downstream joins on `product_line_id` dropped these rows, producing incorrect per-product-line aggregations — with no warning.
+
+## Principle Statement
+
+> Operations must defend against silent side effects. When an operation cannot fully succeed, the partial failure must be visible, not hidden.
+
+This means:
+
+1. **Never silently replace valid data with `NA` or `NULL`** — if a mapping fails, use an explicit sentinel value (e.g., `"UNKNOWN"`) or raise an error
+2. **Preserve semantic consistency** — a column named `_id` must contain IDs, not a mix of IDs and raw names
+3. **Warn loudly on partial failure** — `warning()` with actionable detail (what failed, what values, how to fix)
+4. **Prefer crashing over silent corruption** — `stop()` is better than producing wrong data
+
+## Application
+
+| Scenario | Wrong (Silent Side Effect) | Right (Defended) |
+|----------|---------------------------|-------------------|
+| Mapping fails | Replace with `NA` | Assign `"UNKNOWN"` + `warning()` |
+| Join key missing | Silently drop row | Keep row with sentinel + log |
+| Type coercion fails | Return `NA` silently | `stop()` or assign default + warn |
+| Config key absent | Use `NULL` and continue | `stop("Missing required config: ...")` |
+
+## Relationship to Other Principles
+
+- **MP029 (No Fake Data)**: MP154 is complementary — MP029 prohibits fabricating data; MP154 prohibits silently destroying or altering existing data
+- **MP151 (No Fallback)**: MP151 says "don't silently fall back to a degraded mode"; MP154 says "don't silently degrade the data itself"
+- **DEV_R055**: Concrete rule implementing MP154 for ETL/DRV mapping operations

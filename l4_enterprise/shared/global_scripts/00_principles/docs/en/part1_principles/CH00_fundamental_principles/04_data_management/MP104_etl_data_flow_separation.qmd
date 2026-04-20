@@ -1,0 +1,755 @@
+---
+id: "MP104"
+title: "ETL Data Flow Separation Principle"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2025-09-28"
+author: "Claude"
+status: "active"
+version: "2.0"
+weight: 104
+supersedes:
+  - "Mixed data type ETL patterns": "Replaces single ETL handling multiple data types"
+related_to:
+  - "MP107": "ETL Pipeline Independence Principle - CRITICAL COMPANION - Ensures complete ETL autonomy"
+  - "MP108": "ETL Phase Sequence Principle - Defines vertical data flow within pipelines"
+  - "MP064": "ETL-Derivation Separation Principle"
+  - "MP102": "ETL Output Standardization Principle"
+  - "MP017": "Separation of Concerns"
+  - "MP092": "Platform ID Standard"
+  - "DM_R028": "ETL Data Type Separation Rule"
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+implements:
+  - "SEPARATION": "Data type isolation in ETL pipelines"
+  - "ORCHESTRATION": "Multi-pipeline coordination pattern"
+---
+
+# MP104: ETL Data Flow Separation Principle
+
+## Core Statement
+
+**Each data type must have its own dedicated ETL pipeline series in platform-based subdirectories**: Sales, customers, orders, and products data must flow through separate, specialized ETL pipelines (0IM→1ST→2TR) organized in ETL/{platform}/ subdirectories to maintain clear separation of concerns, enable independent processing, and prevent data orphaning in mixed-type pipelines.
+
+## Mandatory Directory Structure
+
+### Platform-Based Subdirectory Organization
+
+**ALL ETL scripts MUST be organized in platform-specific subdirectories**:
+
+```yaml
+update_scripts/
+├── ETL/                    # Root ETL directory
+│   ├── cbz/              # Cyberbiz platform ETLs
+│   │   ├── cbz_ETL_sales_0IM.R
+│   │   ├── cbz_ETL_sales_1ST.R
+│   │   ├── cbz_ETL_sales_2TR.R
+│   │   ├── cbz_ETL_customers_0IM.R
+│   │   └── ... (other data types)
+│   ├── amz/              # Amazon platform ETLs
+│   │   ├── amz_ETL_sales_0IM.R
+│   │   └── ... (all phases and data types)
+│   ├── eby/              # eBay platform ETLs
+│   │   └── ... (all phases and data types)
+│   └── all/              # Cross-platform summaries
+│       ├── all_ETL_summary_0IM.R
+│       ├── all_ETL_summary_1ST.R
+│       └── all_ETL_summary_2TR.R
+├── DRV/                    # Derivation scripts (similar structure)
+│   ├── cbz/
+│   ├── amz/
+│   ├── eby/
+│   └── all/
+└── orchestration/          # Pipeline control
+    ├── run_full_pipeline.R
+    ├── run_cbz_pipeline.R
+    ├── run_amz_pipeline.R
+    └── run_eby_pipeline.R
+```
+
+**CRITICAL REQUIREMENTS**:
+- ✅ ETL scripts MUST be in ETL/{platform}/ subdirectories
+- ✅ Each platform has its own subdirectory
+- ✅ Cross-platform summaries go in ETL/all/
+- ✅ Orchestration scripts in orchestration/
+- ❌ NO ETL scripts in root update_scripts/
+- ❌ NO ETL scripts directly in ETL/ (must be in platform subdirs)
+
+## Architectural Definition
+
+### Data Type Segregation
+
+ETL pipelines must be organized by **data type within platform directories**, not by platform alone:
+
+```yaml
+etl_organization:
+  by_data_type_and_platform:
+    sales:
+      purpose: "Transaction-level sales data processing"
+      pipelines:
+        - "ETL/cbz/cbz_ETL_sales_[0IM|1ST|2TR].R"
+        - "ETL/eby/eby_ETL_sales_[0IM|1ST|2TR].R"
+        - "ETL/amz/amz_ETL_sales_[0IM|1ST|2TR].R"
+
+    customers:
+      purpose: "Customer profile data processing"
+      pipelines:
+        - "ETL/cbz/cbz_ETL_customers_[0IM|1ST|2TR].R"
+        - "ETL/eby/eby_ETL_customers_[0IM|1ST|2TR].R"
+        - "ETL/amz/amz_ETL_customers_[0IM|1ST|2TR].R"
+
+    orders:
+      purpose: "Order header data processing"
+      pipelines:
+        - "ETL/cbz/cbz_ETL_orders_[0IM|1ST|2TR].R"
+        - "ETL/eby/eby_ETL_orders_[0IM|1ST|2TR].R"
+        - "ETL/amz/amz_ETL_orders_[0IM|1ST|2TR].R"
+
+    products:
+      purpose: "Product catalog data processing"
+      pipelines:
+        - "ETL/cbz/cbz_ETL_products_[0IM|1ST|2TR].R"
+        - "ETL/eby/eby_ETL_products_[0IM|1ST|2TR].R"
+        - "ETL/amz/amz_ETL_products_[0IM|1ST|2TR].R"
+```
+
+### Problems with Mixed-Type ETLs
+
+**Anti-Pattern Example**: Current cbz_ETL01 series
+```yaml
+problems:
+  data_orphaning:
+    - "cbz_ETL01_0IM.R imports customers, orders, AND sales"
+    - "cbz_ETL01_1ST.R only processes sales data"
+    - "cbz_ETL01_2TR.R only processes sales data"
+    - "Result: Customers and orders remain unprocessed in raw_data"
+  
+  violation_of_concerns:
+    - "Single pipeline tries to handle multiple business entities"
+    - "Different data types have different processing requirements"
+    - "Debugging becomes complex when multiple data flows mixed"
+  
+  maintenance_issues:
+    - "Changes to customer processing affect sales pipeline"
+    - "Cannot optimize pipelines for specific data type needs"
+    - "Error handling becomes overly complex"
+```
+
+## Naming Convention Standard
+
+### File Naming Pattern
+
+**Standard Format**: `{platform}_ETL_{datatype}_{phase}.R`
+**Company-Specific Format**: `{platform}_ETL_{datatype}_{phase}___{company}.R` (see DM_R037)
+
+```yaml
+naming_examples:
+  # Standard platform ETLs
+  sales_pipelines:
+    - "cbz_ETL_sales_0IM.R"    # Cyberbiz sales import
+    - "cbz_ETL_sales_1ST.R"    # Cyberbiz sales staging
+    - "cbz_ETL_sales_2TR.R"    # Cyberbiz sales transform
+  
+  customer_pipelines:
+    - "eby_ETL_customers_0IM.R" # eBay customer import
+    - "eby_ETL_customers_1ST.R" # eBay customer staging
+    - "eby_ETL_customers_2TR.R" # eBay customer transform
+  
+  order_pipelines:
+    - "amz_ETL_orders_0IM.R"   # Amazon order import
+    - "amz_ETL_orders_1ST.R"   # Amazon order staging
+    - "amz_ETL_orders_2TR.R"   # Amazon order transform
+    
+  # Company-specific ETLs (when using custom databases/logic)
+  company_specific:
+    - "eby_ETL_sales_0IM___MAMBA.R"   # MAMBA's eBay SQL Server
+    - "amz_ETL_orders_1ST___ACME.R"   # ACME's custom processing
+    - "cbz_ETL_products_2TR___WIDGET.R" # WIDGET's transformations
+```
+
+### Legacy to New Mapping
+
+```yaml
+migration_mapping:
+  # OLD (Mixed-type, non-compliant)
+  "cbz_ETL01_0IM.R": 
+    splits_into:
+      - "cbz_ETL_sales_0IM.R"
+      - "cbz_ETL_customers_0IM.R" 
+      - "cbz_ETL_orders_0IM.R"
+  
+  "cbz_ETL01_1ST.R":
+    becomes: "cbz_ETL_sales_1ST.R"
+    needs_new:
+      - "cbz_ETL_customers_1ST.R"
+      - "cbz_ETL_orders_1ST.R"
+  
+  "cbz_ETL01_2TR.R":
+    becomes: "cbz_ETL_sales_2TR.R"
+    needs_new:
+      - "cbz_ETL_customers_2TR.R"
+      - "cbz_ETL_orders_2TR.R"
+```
+
+## Company-Specific Implementations
+
+### When to Use Company Identifiers
+
+Company-specific ETL implementations are required when:
+
+```yaml
+company_specific_requirements:
+  custom_infrastructure:
+    description: "Company owns the database or server infrastructure"
+    example: "MAMBA's eBay SQL Server at 125.227.84.85"
+    naming: "eby_ETL_sales_0IM___MAMBA.R"
+    
+  proprietary_logic:
+    description: "Business rules specific to company operations"
+    example: "Custom SKU mappings, commission calculations"
+    naming: "cbz_ETL_products_2TR___ACME.R"
+    
+  private_connections:
+    description: "SSH tunnels, VPNs, or private networks"
+    example: "MAMBA's SSH tunnel via 220.128.138.146"
+    naming: "eby_ETL_customers_0IM___MAMBA.R"
+```
+
+### Company-Specific vs. Generic ETLs
+
+```yaml
+parallel_implementation:
+  # Both can coexist in the same system
+  generic_etl:
+    purpose: "Standard platform API data"
+    scripts:
+      - "eby_ETL_sales_0IM.R"        # From eBay Marketplace API
+      - "eby_ETL_sales_1ST.R"
+      - "eby_ETL_sales_2TR.R"
+    output_tables:
+      - "df_eby_sales___raw"
+      - "df_eby_sales___staged"
+      - "df_eby_sales___transformed"
+      
+  company_specific_etl:
+    purpose: "Company's custom database data"
+    scripts:
+      - "eby_ETL_sales_0IM___MAMBA.R"  # From MAMBA's SQL Server
+      - "eby_ETL_sales_1ST___MAMBA.R"
+      - "eby_ETL_sales_2TR___MAMBA.R"
+    output_tables:
+      - "df_eby_sales___raw___MAMBA"
+      - "df_eby_sales___staged___MAMBA"
+      - "df_eby_sales___transformed___MAMBA"
+```
+
+### Example: MAMBA's eBay Implementation
+
+```r
+# eby_ETL_sales_0IM___MAMBA.R
+# Connects to MAMBA's own eBay SQL Server, not standard eBay API
+
+mamba_eby_sales_import <- function() {
+  # Custom SSH tunnel to MAMBA's infrastructure
+  ssh_tunnel <- establish_ssh_tunnel(
+    ssh_host = "220.128.138.146",
+    ssh_port = 22,
+    local_port = 1433,
+    remote_host = "125.227.84.85",
+    remote_port = 1433
+  )
+  
+  # Connect to MAMBA's eBay SQL Server
+  con <- dbConnect(
+    odbc::odbc(),
+    Driver = "ODBC Driver 17 for SQL Server",
+    Server = "localhost,1433",
+    Database = "ebay_mamba_db",
+    UID = Sys.getenv("MAMBA_DB_USER"),
+    PWD = Sys.getenv("MAMBA_DB_PASSWORD")
+  )
+  
+  # MAMBA-specific SQL query
+  sales_query <- "
+    SELECT 
+      transaction_id,
+      product_sku,
+      mamba_category,  -- MAMBA's custom categorization
+      sale_amount,
+      commission_rate  -- MAMBA's negotiated rates
+    FROM mamba_ebay_transactions
+    WHERE sync_date >= DATEADD(day, -7, GETDATE())
+  "
+  
+  sales_data <- dbGetQuery(con, sales_query)
+  
+  # Apply MAMBA-specific business rules
+  processed_sales <- sales_data %>%
+    apply_mamba_commission_logic() %>%
+    map_mamba_sku_to_standard() %>%
+    calculate_mamba_metrics()
+  
+  # Write to MAMBA-specific raw table
+  write_to_raw_data("df_eby_sales___raw___MAMBA", processed_sales)
+  
+  dbDisconnect(con)
+  close_ssh_tunnel(ssh_tunnel)
+}
+```
+
+## API Efficiency Strategy
+
+### Shared Import Pattern
+
+To avoid redundant API calls, implement a **shared import with data distribution**:
+
+```r
+# cbz_ETL_shared_0IM.R - Shared API import for efficiency
+cbz_shared_import <- function() {
+  message("API: 📡 Fetching all Cyberbiz data in single call...")
+  
+  # Single API call to minimize bandwidth and rate limiting
+  api_response <- fetch_cyberbiz_complete_data()
+  
+  # Extract data by type using specialized functions
+  sales_data <- extract_sales_transactions(api_response)
+  customers_data <- extract_customer_profiles(api_response)
+  orders_data <- extract_order_headers(api_response)
+  products_data <- extract_product_catalog(api_response)
+  
+  # Write each data type to its respective raw table
+  write_raw_sales_data(sales_data, "cbz")
+  write_raw_customers_data(customers_data, "cbz")
+  write_raw_orders_data(orders_data, "cbz")
+  write_raw_products_data(products_data, "cbz")
+  
+  message("API: ✅ Data distributed to type-specific raw tables")
+  return(TRUE)
+}
+
+# Individual data type ETLs then read from their respective raw tables
+# cbz_ETL_sales_0IM.R
+cbz_sales_import <- function() {
+  # Read from shared import output
+  raw_sales <- read_raw_sales_data("cbz")
+  
+  # Sales-specific import processing
+  processed_sales <- process_sales_specific_logic(raw_sales)
+  
+  # Write to sales-specific raw table
+  write_to_raw_data("df_cbz_sales___raw", processed_sales)
+}
+```
+
+### Alternative: Independent Import Pattern
+
+For platforms with efficient APIs, each pipeline can import independently:
+
+```r
+# cbz_ETL_sales_0IM.R - Independent sales import
+cbz_sales_import <- function() {
+  # API call optimized for sales data only
+  sales_api_response <- fetch_cyberbiz_sales_only()
+  
+  # Process sales-specific data
+  processed_sales <- process_sales_import(sales_api_response)
+  
+  # Write to sales raw table
+  write_to_raw_data("df_cbz_sales___raw", processed_sales)
+}
+
+# cbz_ETL_customers_0IM.R - Independent customer import
+cbz_customers_import <- function() {
+  # API call optimized for customer data only  
+  customers_api_response <- fetch_cyberbiz_customers_only()
+  
+  # Process customer-specific data
+  processed_customers <- process_customers_import(customers_api_response)
+  
+  # Write to customers raw table
+  write_to_raw_data("df_cbz_customers_raw", processed_customers)
+}
+```
+
+## Database Organization
+
+### Table Naming Pattern
+
+Follow MP102 standardization with data type separation:
+
+```yaml
+table_structure:
+  raw_data_tables:
+    - "df_cbz_sales___raw"      # Raw sales transactions
+    - "df_cbz_customers_raw"  # Raw customer profiles
+    - "df_cbz_orders_raw"     # Raw order headers
+    - "df_cbz_products_raw"   # Raw product catalog
+  
+  staged_data_tables:
+    - "df_cbz_sales_staged"
+    - "df_cbz_customers_staged"
+    - "df_cbz_orders_staged"
+    - "df_cbz_products_staged"
+  
+  transformed_data_tables:
+    - "df_cbz_sales_transformed"
+    - "df_cbz_customers_transformed"
+    - "df_cbz_orders_transformed"
+    - "df_cbz_products_transformed"
+```
+
+### Cross-Pipeline Dependencies
+
+Handle dependencies through clear data contracts:
+
+```r
+# D01_customer_analysis.R - Derivation consuming multiple ETL outputs
+d01_customer_analysis <- function() {
+  # Read from multiple specialized ETL outputs
+  sales_data <- tbl2(transformed_data, "df_cbz_sales_transformed") %>% collect()
+  customers_data <- tbl2(transformed_data, "df_cbz_customers_transformed") %>% collect()
+  orders_data <- tbl2(transformed_data, "df_cbz_orders_transformed") %>% collect()
+  
+  # Join data for comprehensive customer analysis
+  customer_analysis <- sales_data %>%
+    left_join(customers_data, by = "customer_id") %>%
+    left_join(orders_data, by = "order_id") %>%
+    # Business logic for customer DNA analysis
+    calculate_customer_metrics()
+  
+  return(customer_analysis)
+}
+```
+
+## Pipeline Orchestration
+
+### Orchestration Directory Structure
+
+**All orchestration scripts MUST be in the orchestration/ directory**:
+
+```r
+# orchestration/run_full_pipeline.R
+source("orchestration/helpers/pipeline_functions.R")
+
+# Run all platform pipelines
+run_all_platforms <- function() {
+  # Source from proper directories
+  source_etl_scripts <- function(platform) {
+    etl_path <- file.path("ETL", platform)
+    scripts <- list.files(etl_path, pattern = "\\.R$", full.names = TRUE)
+    for (script in scripts) source(script)
+  }
+
+  # Execute pipelines for each platform
+  platforms <- c("cbz", "amz", "eby")
+  for (platform in platforms) {
+    source_etl_scripts(platform)
+    execute_platform_etl(platform)
+  }
+}
+```
+
+### Parallel Execution Pattern (MANDATORY per MP107)
+
+**⚠️ CRITICAL REQUIREMENT**: Per MP107 (ETL Pipeline Independence Principle - CORE ARCHITECTURAL REQUIREMENT), all ETLs MUST be capable of parallel execution. There are **ABSOLUTELY NO** sequential dependencies between different ETLs - this is non-negotiable.
+
+**MP107 MANDATE**: Every ETL must pass the independence test - "Can I run this ETL right now, by itself, without running anything else first?" If NO, the ETL is architecturally broken.
+
+```r
+# Master orchestration function leveraging independence
+execute_cbz_etl_complete <- function() {
+  
+  # Phase 1: Import all data types IN PARALLEL (MP107 MANDATORY)
+  message("PHASE 1: Import - Running all imports in parallel (MP107 REQUIRED)")
+  execute_parallel(  # MP107: Complete independence enables unlimited parallelization
+    cbz_ETL_sales_0IM,      # Each can run standalone
+    cbz_ETL_customers_0IM,  # No dependencies between them
+    cbz_ETL_orders_0IM,     # Can run in any order
+    cbz_ETL_products_0IM    # Or selectively
+  
+  # Phase 2: Stage all data types (can be parallel)
+  message("PHASE 2: Staging")
+  execute_parallel(
+    cbz_ETL_sales_1ST,
+    cbz_ETL_customers_1ST,
+    cbz_ETL_orders_1ST,
+    cbz_ETL_products_1ST
+  )
+  
+  # Phase 3: Transform all data types (can be parallel)
+  message("PHASE 3: Transform")
+  execute_parallel(
+    cbz_ETL_sales_2TR,
+    cbz_ETL_customers_2TR,
+    cbz_ETL_orders_2TR,
+    cbz_ETL_products_2TR
+  )
+  
+  message("✅ Complete Cyberbiz ETL pipeline executed")
+}
+
+# Individual data type execution
+execute_cbz_sales_etl <- function() {
+  cbz_ETL_sales_0IM()
+  cbz_ETL_sales_1ST()
+  cbz_ETL_sales_2TR()
+}
+```
+
+### Error Handling Strategy
+
+```r
+# Isolated error handling per data type
+execute_etl_with_isolation <- function(pipeline_name, pipeline_function) {
+  tryCatch({
+    result <- pipeline_function()
+    log_success(pipeline_name, result)
+    return(TRUE)
+  }, error = function(e) {
+    log_error(pipeline_name, e$message)
+    # Other pipelines continue executing
+    return(FALSE)
+  })
+}
+```
+
+## Benefits of Separation (Enabled by MP107 Independence)
+
+### Core Independence Benefits (MP107 Mandated)
+1. **COMPLETE INDEPENDENCE** (MP107 CRITICAL): Every ETL is self-contained and can run standalone
+2. **UNLIMITED PARALLEL EXECUTION** (MP107 CORE): All ETLs can run simultaneously without restriction
+3. **NO SEQUENTIAL DEPENDENCIES** (MP107 ABSOLUTE): ETLs can run in any order or selectively
+4. **TOTAL ERROR ISOLATION** (MP107 REQUIRED): Failures never cascade between ETLs
+5. **SELECTIVE RE-RUNNING** (MP107 ENABLED): Re-run any ETL without affecting others
+
+### Additional Separation Benefits
+6. **Clear Responsibilities**: Each pipeline handles one data type
+7. **Independent Debugging**: Issues in customer ETL don't affect sales ETL
+8. **Optimized Processing**: Each pipeline optimized for its data type
+9. **Maintenance Simplicity**: Changes isolated to relevant data type
+10. **Resource Optimization**: Different memory/CPU requirements per data type
+
+**MP107 Golden Rule**: "If an ETL cannot run by itself, at any time, without any other ETL having run first, it is architecturally broken and must be fixed immediately."
+
+## Migration Strategy
+
+### Step 1: Create Directory Structure
+
+```r
+# Create the mandatory directory hierarchy
+create_etl_directory_structure <- function(base_path) {
+  # Main directories
+  etl_path <- file.path(base_path, "ETL")
+  drv_path <- file.path(base_path, "DRV")
+  orch_path <- file.path(base_path, "orchestration")
+
+  dir.create(etl_path, showWarnings = FALSE)
+  dir.create(drv_path, showWarnings = FALSE)
+  dir.create(orch_path, showWarnings = FALSE)
+
+  # Platform subdirectories
+  platforms <- c("cbz", "amz", "eby", "all")
+  for (platform in platforms) {
+    dir.create(file.path(etl_path, platform), showWarnings = FALSE)
+    dir.create(file.path(drv_path, platform), showWarnings = FALSE)
+  }
+
+  message("✅ Directory structure created successfully")
+}
+```
+
+### Step 2: Audit Current Mixed ETLs
+
+```r
+# Identify all ETL scripts not in proper directories
+audit_etl_locations <- function(base_path) {
+  # Find ETL scripts in root (non-compliant)
+  root_etls <- list.files(base_path, pattern = ".*_ETL.*\\.R$")
+
+  if (length(root_etls) > 0) {
+    message(sprintf("❌ Found %d ETL scripts in root (should be in ETL/{platform}/):",
+                   length(root_etls)))
+    print(root_etls)
+  }
+
+  # Check for mixed-type ETLs
+  mixed_etls <- grep("ETL[0-9]{2}_", root_etls, value = TRUE)
+  if (length(mixed_etls) > 0) {
+    message("❌ Found mixed-type ETL scripts (need separation):")
+    print(mixed_etls)
+  }
+
+  return(list(root_etls = root_etls, mixed_etls = mixed_etls))
+}
+```
+
+### Step 3: Move Scripts to Platform Directories
+
+```r
+# Migrate ETL scripts to proper platform subdirectories
+migrate_to_platform_dirs <- function(base_path) {
+  root_etls <- list.files(base_path, pattern = ".*_ETL.*\\.R$")
+
+  for (script in root_etls) {
+    filename <- basename(script)
+
+    # Determine platform from filename prefix
+    platform <- substr(filename, 1, 3)
+    if (platform %in% c("cbz", "amz", "eby")) {
+      # Move to ETL/{platform}/
+      old_path <- file.path(base_path, filename)
+      new_path <- file.path(base_path, "ETL", platform, filename)
+
+      file.rename(old_path, new_path)
+      message(sprintf("✅ Moved %s to ETL/%s/", filename, platform))
+    } else if (grepl("^all_ETL", filename)) {
+      # Move cross-platform summaries to ETL/all/
+      old_path <- file.path(base_path, filename)
+      new_path <- file.path(base_path, "ETL", "all", filename)
+
+      file.rename(old_path, new_path)
+      message(sprintf("✅ Moved %s to ETL/all/", filename))
+    }
+  }
+}
+```
+
+### Step 4: Create Data Type Extraction Functions
+
+```r
+# Extract sales logic from mixed ETL
+extract_sales_etl_logic <- function(mixed_etl_code) {
+  # Parse existing code
+  # Extract sales-specific transformations
+  # Generate new cbz_ETL_sales_* scripts
+}
+```
+
+### Step 5: Implement New Separated Pipelines
+
+```r
+# Create new specialized ETL scripts following the naming convention
+create_separated_etl_scripts <- function(platform, data_types) {
+  for (data_type in data_types) {
+    for (phase in c("0IM", "1ST", "2TR")) {
+      script_name <- sprintf("%s_ETL_%s_%s.R", platform, data_type, phase)
+      create_etl_script(script_name, platform, data_type, phase)
+    }
+  }
+}
+```
+
+### Step 6: Validate and Test
+
+```r
+# Validate directory structure compliance
+validate_directory_structure <- function(base_path) {
+  etl_path <- file.path(base_path, "ETL")
+  drv_path <- file.path(base_path, "DRV")
+  orch_path <- file.path(base_path, "orchestration")
+
+  # Check main directories exist
+  if (!dir.exists(etl_path)) {
+    stop("❌ ETL/ directory missing")
+  }
+  if (!dir.exists(drv_path)) {
+    stop("❌ DRV/ directory missing")
+  }
+  if (!dir.exists(orch_path)) {
+    stop("❌ orchestration/ directory missing")
+  }
+
+  # Check platform subdirectories
+  platforms <- c("cbz", "amz", "eby", "all")
+  for (platform in platforms) {
+    if (!dir.exists(file.path(etl_path, platform))) {
+      warning(sprintf("⚠️ ETL/%s/ subdirectory missing", platform))
+    }
+  }
+
+  # Ensure no ETL scripts in root
+  root_etls <- list.files(base_path, pattern = ".*_ETL.*\\.R$")
+  if (length(root_etls) > 0) {
+    stop(sprintf("❌ Found %d ETL scripts in root directory", length(root_etls)))
+  }
+
+  message("✅ Directory structure is compliant with MP104")
+  return(TRUE)
+}
+```
+
+### Step 7: Validate Pipeline Completeness
+
+```r
+# Test each separated pipeline individually
+test_separated_etl <- function(platform, data_type) {
+  # Test 0IM → 1ST → 2TR flow
+  # Validate output schema compliance
+  # Check data integrity
+}
+```
+
+### Step 8: Update Derivations
+
+```r
+# Update derivation functions to consume separated ETL outputs
+update_derivations_for_separated_etls <- function() {
+  # Update D01, D02, etc. to read from new table names
+  # Ensure proper joins across data types
+}
+```
+
+## Compliance Requirements
+
+1. **Directory Structure**: All ETL scripts MUST be in ETL/{platform}/ subdirectories
+2. **Platform Organization**: Each platform must have its own subdirectory
+3. **All new ETL scripts** must follow data type separation in proper directories
+4. **No mixed-type ETL pipelines** are allowed
+5. **Each data type** must have complete 0IM→1ST→2TR pipeline in platform directory
+6. **Cross-platform summaries** must be in ETL/all/ directory
+7. **Orchestration scripts** must be in orchestration/ directory
+8. **API calls** must be optimized to avoid redundancy
+9. **Dependencies** between data types must be explicit
+10. **Error handling** must isolate failures by data type
+
+## Template Structure
+
+### Template: Sales ETL Pipeline
+
+```r
+# Template: {platform}_ETL_sales_0IM.R
+{platform}_sales_import <- function() {
+  # Import sales transactions only
+  sales_data <- fetch_{platform}_sales()
+  
+  # Sales-specific processing
+  processed_sales <- process_sales_data(sales_data)
+  
+  # Write to sales raw table
+  write_to_raw_data("df_{platform}_sales_raw", processed_sales)
+}
+```
+
+### Template: Customer ETL Pipeline
+
+```r
+# Template: {platform}_ETL_customers_0IM.R
+{platform}_customers_import <- function() {
+  # Import customer profiles only
+  customers_data <- fetch_{platform}_customers()
+  
+  # Customer-specific processing
+  processed_customers <- process_customers_data(customers_data)
+  
+  # Write to customers raw table
+  write_to_raw_data("df_{platform}_customers_raw", processed_customers)
+}
+```
+
+## Conclusion
+
+The ETL Data Flow Separation Principle ensures clean, maintainable data processing by dedicating separate pipelines to each data type and organizing them in platform-based subdirectories. This eliminates the problems of mixed-type ETLs, enables parallel processing, and provides clear boundaries for debugging and maintenance through physical directory separation.
+
+By implementing this principle with mandatory directory structure (ETL/{platform}/, DRV/{platform}/, orchestration/), the system achieves better separation of concerns, improved error isolation, and enhanced scalability while maintaining API efficiency through shared import patterns where appropriate.
+
+Version 2.0 mandates the platform-based subdirectory structure, ensuring all ETL scripts are organized by platform within the ETL/ hierarchy, with orchestration scripts centralized in the orchestration/ directory.

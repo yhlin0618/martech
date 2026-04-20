@@ -1,0 +1,321 @@
+---
+id: "DM_R041"
+title: "ETL 目錄結構規則"
+type: "rule"
+category: "data_management"
+date_created: "2025-09-28"
+date_modified: "2025-09-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 41
+implements:
+  - "MP104": "ETL 數據流分離原則"
+  - "MP064": "ETL-衍生分離原則"
+related_to:
+  - "DM_R028": "ETL 數據類型分離與目錄結構規則"
+  - "MP107": "ETL 管線獨立性原則"
+  - "DM_R037": "公司特定 ETL 命名規則"
+---
+
+# DM_R041: ETL 目錄結構規則
+
+## 規則聲明
+
+**所有 ETL、DRV 和編排腳本必須組織在強制性的層級目錄結構中**：任何 ETL 或 DRV 腳本不得存在於 update_scripts 根目錄中。所有腳本必須根據類型（ETL/DRV/orchestration）和平台放置在指定的目錄中。
+
+## 強制目錄層級
+
+### 必需結構
+
+```yaml
+update_scripts/              # 所有更新腳本的根目錄
+├── ETL/                    # 強制性：所有 ETL 腳本
+│   ├── cbz/               # Cyberbiz 平台 ETL
+│   ├── amz/               # Amazon 平台 ETL
+│   ├── eby/               # eBay 平台 ETL
+│   └── all/               # 跨平台 ETL 匯總
+├── DRV/                    # 強制性：所有衍生腳本
+│   ├── cbz/               # Cyberbiz 平台衍生
+│   ├── amz/               # Amazon 平台衍生
+│   ├── eby/               # eBay 平台衍生
+│   └── all/               # 跨平台衍生
+└── orchestration/          # 強制性：管線控制腳本
+    ├── run_full_pipeline.R
+    ├── run_cbz_pipeline.R
+    ├── run_amz_pipeline.R
+    └── run_eby_pipeline.R
+```
+
+### 目錄用途
+
+```yaml
+directory_purposes:
+  ETL:
+    purpose: "提取-轉換-載入數據準備腳本"
+    subdirs: "平台特定（cbz、amz、eby）和跨平台（all）"
+    naming: "{platform}_ETL_{datatype}_{phase}.R"
+
+  DRV:
+    purpose: "用於業務邏輯的衍生腳本"
+    subdirs: "平台特定（cbz、amz、eby）和跨平台（all）"
+    naming: "{platform}_DRV{nn}_{purpose}.R"
+
+  orchestration:
+    purpose: "管線執行器和控制腳本"
+    subdirs: "無 - 扁平結構"
+    naming: "run_{scope}_pipeline.R"
+```
+
+## 符合性要求
+
+### 強制規則
+
+1. **根目錄中禁止腳本**：update_scripts/ 目錄必須僅包含子目錄，不包含 .R 檔案
+2. **ETL 隔離**：所有 ETL 腳本必須在 ETL/{platform}/ 目錄中
+3. **DRV 隔離**：所有 DRV 腳本必須在 DRV/{platform}/ 目錄中
+4. **平台組織**：每個平台必須有自己的子目錄
+5. **編排集中化**：所有管線執行器在 orchestration/ 中
+
+### 檔案放置規則
+
+```yaml
+placement_rules:
+  # ETL 腳本
+  "cbz_ETL_sales_0IM.R": "ETL/cbz/"         # ✅ 正確
+  "amz_ETL_orders_1ST.R": "ETL/amz/"        # ✅ 正確
+  "eby_ETL_products_2TR.R": "ETL/eby/"      # ✅ 正確
+  "all_ETL_summary_0IM.R": "ETL/all/"       # ✅ 正確
+
+  # DRV 腳本
+  "cbz_DRV01_customer.R": "DRV/cbz/"        # ✅ 正確
+  "amz_DRV03_positioning.R": "DRV/amz/"     # ✅ 正確
+  "all_DRV_summary.R": "DRV/all/"           # ✅ 正確
+
+  # 編排腳本
+  "run_full_pipeline.R": "orchestration/"    # ✅ 正確
+
+  # 違規
+  "cbz_ETL_sales_0IM.R": "update_scripts/"  # ❌ 錯誤（根目錄）
+  "amz_DRV01_customer.R": "update_scripts/" # ❌ 錯誤（根目錄）
+  "cbz_ETL_sales_0IM.R": "ETL/"            # ❌ 錯誤（無平台子目錄）
+```
+
+## 實施
+
+### 創建目錄結構
+
+```r
+# 創建強制目錄結構的函數
+create_etl_directory_structure <- function(base_path = "scripts/update_scripts") {
+  # 主目錄
+  main_dirs <- c("ETL", "DRV", "orchestration")
+
+  for (dir in main_dirs) {
+    dir.create(file.path(base_path, dir), showWarnings = FALSE, recursive = TRUE)
+  }
+
+  # 平台子目錄
+  platforms <- c("cbz", "amz", "eby", "all")
+
+  for (platform in platforms) {
+    dir.create(file.path(base_path, "ETL", platform),
+               showWarnings = FALSE, recursive = TRUE)
+    dir.create(file.path(base_path, "DRV", platform),
+               showWarnings = FALSE, recursive = TRUE)
+  }
+
+  message("✅ DM_R041：目錄結構創建成功")
+
+  # 驗證結構
+  validate_directory_structure(base_path)
+}
+```
+
+### 驗證目錄結構
+
+```r
+# 驗證目錄符合性的函數
+validate_directory_structure <- function(base_path = "scripts/update_scripts") {
+  violations <- list()
+
+  # 檢查根目錄中的腳本（禁止）
+  root_scripts <- list.files(base_path, pattern = "\\.R$")
+  if (length(root_scripts) > 0) {
+    violations$root_scripts <- root_scripts
+    message(sprintf("❌ DM_R041 違規：在根目錄中發現 %d 個腳本",
+                   length(root_scripts)))
+  }
+
+  # 檢查必需的目錄
+  required_dirs <- c("ETL", "DRV", "orchestration")
+  existing_dirs <- list.dirs(base_path, full.names = FALSE, recursive = FALSE)
+  missing_dirs <- setdiff(required_dirs, existing_dirs)
+
+  if (length(missing_dirs) > 0) {
+    violations$missing_dirs <- missing_dirs
+    message(sprintf("❌ DM_R041 違規：缺少必需的目錄：%s",
+                   paste(missing_dirs, collapse = ", ")))
+  }
+
+  # 檢查平台子目錄
+  if (dir.exists(file.path(base_path, "ETL"))) {
+    etl_subdirs <- list.dirs(file.path(base_path, "ETL"),
+                            full.names = FALSE, recursive = FALSE)
+    required_platforms <- c("cbz", "amz", "eby", "all")
+    missing_platforms <- setdiff(required_platforms, etl_subdirs)
+
+    if (length(missing_platforms) > 0) {
+      violations$missing_etl_platforms <- missing_platforms
+      message(sprintf("⚠️ DM_R041 警告：缺少 ETL 平台目錄：%s",
+                     paste(missing_platforms, collapse = ", ")))
+    }
+  }
+
+  # 檢查錯置的 ETL 腳本
+  etl_scripts_in_root <- grep("_ETL_", root_scripts, value = TRUE)
+  if (length(etl_scripts_in_root) > 0) {
+    violations$misplaced_etl <- etl_scripts_in_root
+    message(sprintf("❌ DM_R041 違規：根目錄中的 ETL 腳本（應在 ETL/{platform}/）：%s",
+                   paste(etl_scripts_in_root, collapse = ", ")))
+  }
+
+  # 檢查錯置的 DRV 腳本
+  df_scripts_in_root <- grep("_DRV|_D[0-9]{2}", root_scripts, value = TRUE)
+  if (length(df_scripts_in_root) > 0) {
+    violations$misplaced_drv <- df_scripts_in_root
+    message(sprintf("❌ DM_R041 違規：根目錄中的 DRV 腳本（應在 DRV/{platform}/）：%s",
+                   paste(df_scripts_in_root, collapse = ", ")))
+  }
+
+  if (length(violations) == 0) {
+    message("✅ DM_R041：目錄結構完全符合規範")
+    return(TRUE)
+  } else {
+    return(violations)
+  }
+}
+```
+
+### 遷移函數
+
+```r
+# 將腳本遷移到適當目錄的函數
+migrate_to_directory_structure <- function(base_path = "scripts/update_scripts") {
+  # 首先創建結構
+  create_etl_directory_structure(base_path)
+
+  # 獲取根目錄中的所有腳本
+  root_scripts <- list.files(base_path, pattern = "\\.R$", full.names = FALSE)
+
+  migration_log <- list()
+
+  for (script in root_scripts) {
+    filename <- basename(script)
+    old_path <- file.path(base_path, filename)
+    new_path <- NULL
+
+    # 根據腳本類型確定目標
+    if (grepl("_ETL_", filename)) {
+      # ETL 腳本 - 提取平台
+      platform <- substr(filename, 1, 3)
+      if (platform %in% c("cbz", "amz", "eby")) {
+        new_path <- file.path(base_path, "ETL", platform, filename)
+      } else if (grepl("^all_ETL", filename)) {
+        new_path <- file.path(base_path, "ETL", "all", filename)
+      }
+
+    } else if (grepl("_DRV|_D[0-9]{2}", filename)) {
+      # DRV 腳本 - 提取平台
+      platform <- substr(filename, 1, 3)
+      if (platform %in% c("cbz", "amz", "eby")) {
+        new_path <- file.path(base_path, "DRV", platform, filename)
+      } else if (grepl("^all_DRV", filename)) {
+        new_path <- file.path(base_path, "DRV", "all", filename)
+      }
+
+    } else if (grepl("^run_.*_pipeline", filename)) {
+      # 編排腳本
+      new_path <- file.path(base_path, "orchestration", filename)
+    }
+
+    # 如果確定了目標，則移動檔案
+    if (!is.null(new_path)) {
+      file.rename(old_path, new_path)
+      migration_log[[filename]] <- new_path
+      message(sprintf("✅ 移動 %s 到 %s", filename, dirname(new_path)))
+    } else {
+      message(sprintf("⚠️ 無法確定 %s 的目標", filename))
+    }
+  }
+
+  # 最終驗證
+  validate_directory_structure(base_path)
+
+  return(migration_log)
+}
+```
+
+## 好處
+
+### 組織好處
+1. **清晰分離**：ETL、DRV 和編排邏輯物理分離
+2. **平台隔離**：每個平台的腳本分組在一起
+3. **輕鬆導航**：基於類型和平台的可預測檔案位置
+4. **減少混亂**：根目錄中沒有腳本
+
+### 維護好處
+1. **簡化調試**：確切知道在哪裡找到腳本
+2. **並行開發**：團隊可以獨立處理不同平台
+3. **明確所有權**：平台特定的目錄使團隊分配成為可能
+4. **版本控制**：組織目錄具有更好的 git 歷史記錄
+
+### 操作好處
+1. **選擇性執行**：輕鬆運行特定平台管線
+2. **部署控制**：獨立部署平台特定的更新
+3. **性能優化**：僅載入所需的平台腳本
+4. **錯誤隔離**：平台故障不影響其他平台
+
+## 驗證檢查清單
+
+- [ ] ETL/ 目錄存在，包含 cbz/、amz/、eby/、all/ 子目錄
+- [ ] DRV/ 目錄存在，包含 cbz/、amz/、eby/、all/ 子目錄
+- [ ] orchestration/ 目錄存在
+- [ ] update_scripts/ 根目錄中沒有 .R 檔案
+- [ ] 所有 ETL 腳本在 ETL/{platform}/ 目錄中
+- [ ] 所有 DRV 腳本在 DRV/{platform}/ 目錄中
+- [ ] 所有編排腳本在 orchestration/ 目錄中
+- [ ] validate_directory_structure() 返回 TRUE
+
+## 常見違規
+
+### 違規：根目錄中的腳本
+```bash
+update_scripts/
+├── cbz_ETL_sales_0IM.R     # ❌ 應該在 ETL/cbz/
+├── amz_DRV01_customer.R    # ❌ 應該在 DRV/amz/
+└── run_full_pipeline.R     # ❌ 應該在 orchestration/
+```
+
+### 違規：缺少平台子目錄
+```bash
+update_scripts/
+├── ETL/
+│   ├── cbz_ETL_sales_0IM.R # ❌ 應該在 ETL/cbz/
+│   └── amz_ETL_orders_1ST.R # ❌ 應該在 ETL/amz/
+```
+
+### 違規：混合腳本類型
+```bash
+update_scripts/
+├── ETL/
+│   ├── cbz/
+│   │   ├── cbz_ETL_sales_0IM.R  # ✅ 正確
+│   │   └── cbz_DRV01_customer.R # ❌ 應該在 DRV/cbz/
+```
+
+## 結論
+
+ETL 目錄結構規則（DM_R041）強制對所有更新腳本實施清晰、有組織的層級結構。通過將 ETL、DRV 和編排腳本強制物理分離到具有基於平台的子目錄的專用目錄中，此規則確保了可維護性、可擴展性和操作效率。
+
+此結構不可協商，必須在任何 ETL/DRV 開發或執行之前實施。提供的驗證和遷移函數使順利過渡到符合規範的結構成為可能。

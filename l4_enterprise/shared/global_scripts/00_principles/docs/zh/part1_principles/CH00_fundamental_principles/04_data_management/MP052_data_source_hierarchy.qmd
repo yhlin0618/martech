@@ -1,0 +1,372 @@
+---
+title: "MP006: Data Source Hierarchy"
+subtitle: "資料來源層級原則"
+chapter: "CH00"
+category: "MP"
+number: "006"
+date-created: "2025-04-02"
+date-modified: "2025-08-16"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP000: Axiomatization System"
+  - "MP001: Primitive Terms and Definitions"
+  - "P002: Data Integrity"
+influences:
+  - "MP003: Operating Modes"
+  - "P009: Authentic Context Testing"
+  - "P004: App Construction Principles"
+  - "R004: App YAML Configuration"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 核心概念 {#core-concept}
+
+應用程式應遵循清晰的資料來源層級，具有明確定義的存取模式和明確的例外。這確保資料一致性，提高可維護性，並提供關於特定類型資料應儲存和存取位置的清晰指導。
+
+:::{.callout-important}
+## 層級原則
+資料來源形成嚴格的層級結構，從應用特定資料到外部來源，每個層級都有明確的存取權限和使用場景。
+:::
+
+# 資料來源目錄 {#data-catalog}
+
+精準行銷生態系統中的資料來源可分為以下類型：
+
+:::{.panel-tabset}
+
+## 應用特定資料（應用層）
+- `app_data/` 目錄（基於檔案的應用特定資料）
+- `Data.duckdb`（基於資料庫的應用特定資料）
+- `app_configs/`（應用配置檔案）
+
+## 專案資料（處理層）
+- `processed_data/`（已處理但不是最終應用形式的資料）
+- `cleansed_data/`（已清理但需要進一步處理的資料）
+- `raw_data/`（從外部來源匯入的原始資料）
+- `intermediate_data/`（中間處理階段的資料）
+
+## 共享資源（全域層）
+- `update_scripts/global_scripts/30_global_data/`（跨專案共享資料）
+- `reference_data/`（跨專案使用的穩定參考表）
+
+## 開發資源（開發層）
+- `test_data/`（用於測試的資料）
+- `mock_data/`（用於開發的合成資料）
+- 暫存檔案和目錄
+
+## 外部來源（外部層）
+- 外部 API
+- 外部資料庫
+- 雲端儲存
+- FTP 站點
+:::
+
+# 資料存取層級 {#access-hierarchy}
+
+對於應用程式操作，資料來源應按此順序優先考慮：
+
+```{mermaid}
+%%| fig-cap: "資料來源優先順序"
+%%| fig-align: "center"
+
+graph TD
+    A[1. 應用特定資料<br/>用於應用功能]
+    B[2. 共享資源<br/>用於跨專案需求]
+    C[3. 專案資料<br/>用於資料更新和維護]
+    D[4. 外部來源<br/>用於資料刷新]
+    
+    A --> B
+    B --> C
+    C --> D
+    
+    style A fill:#e6ffe6
+    style B fill:#e6f3ff
+    style C fill:#fff0e6
+    style D fill:#ffe6e6
+```
+
+# 模式特定資料存取範圍 {#mode-specific-access}
+
+應用程式的操作模式（如 MP003 中定義）具有不同的資料存取權限和範圍：
+
+| 資料來源 | APP_MODE | UPDATE_MODE | GLOBAL_MODE |
+|---------|:--------:|:-----------:|:-----------:|
+| **應用層** ||||
+| `app_data/` | 唯讀 | 讀/寫 | 讀/寫 |
+| `Data.duckdb` | 唯讀 | 讀/寫 | 讀/寫 |
+| `app_configs/` | 唯讀 | 讀/寫 | 讀/寫 |
+| **處理層** ||||
+| `processed_data/` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `cleansed_data/` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `raw_data/` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `intermediate_data/` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| **全域層** ||||
+| X_global_data/` | 唯讀（子集） | 唯讀 | 讀/寫 |
+| `reference_data/` | 唯讀 | 唯讀 | 讀/寫 |
+| **開發層** ||||
+| `test_data/` | ❌ 無存取 | 完全存取 | 完全存取 |
+| `mock_data/` | ❌ 無存取 | 完全存取 | 完全存取 |
+| **外部層** ||||
+| 外部來源 | ❌ 無存取 | 唯讀 | 唯讀 |
+
+## 各模式詳細說明 {#mode-details}
+
+:::{.callout-note}
+## APP_MODE 資料存取範圍
+- **目的**：生產應用程式執行
+- **存取模式**：最小、唯讀存取最終資料產品
+- **可存取資料**：
+  - 對 app_data 目錄的唯讀存取
+  - 對應用資料庫（Data.duckdb）的唯讀存取
+  - 對精選的 30_global_data 子集的唯讀存取
+  - 無法存取處理層資料
+  - 無法存取開發資源
+  - 無法存取外部來源
+:::
+
+:::{.callout-note}
+## UPDATE_MODE 資料存取範圍
+- **目的**：資料處理和應用程式開發
+- **存取模式**：對專案資料的完全存取，對共享資源的受控存取
+- **可存取資料**：
+  - 對所有應用特定資料的讀寫存取
+  - 對所有處理層資料的讀寫存取
+  - 對全域共享資源的唯讀存取
+  - 對開發資源的完全存取
+  - 對外部來源的唯讀存取
+:::
+
+:::{.callout-note}
+## GLOBAL_MODE 資料存取範圍
+- **目的**：共享資源維護和跨專案管理
+- **存取模式**：對所有資料層的完全存取
+- **可存取資料**：
+  - 對所有資料層的完全存取
+  - 對全域共享資源的讀寫存取
+  - 對參考資料的讀寫存取
+  - 對跨專案資源的管理存取
+:::
+
+# 實作指導方針 {#implementation}
+
+## 應用特定資料來源 {#app-specific}
+
+應用特定資料應盡可能作為主要資料來源：
+
+:::{.panel-tabset}
+
+### 基於檔案的資料
+儲存在 `app_data/` 目錄：
+- 按資料類型在子目錄中結構化（例如 `app_data/scd_type1/`、`app_data/scd_type2/`）
+- 用於配置檔案、查找表和其他靜態資料
+
+### 基於資料庫的資料
+儲存在 `Data.duckdb`：
+- 用於需要查詢能力的關聯資料
+- 適用於較大的資料集和需要索引的資料
+- 適合需要交易支援的資料
+:::
+
+## 共享資源資料 {#shared-resources}
+
+`update_scripts/global_scripts/30_global_data/` 目錄包含跨多個專案共享的資料：
+
+:::{.callout-warning}
+## 共享資料規則
+- 僅用於真正的跨專案資源
+- 預設在應用程式內必須為唯讀存取
+- 修改應遵循嚴格的變更管理
+- 變更必須記錄並傳達給所有相依專案
+- 共享資料檔案需要版本控制
+:::
+
+## 外部資料來源 {#external-sources}
+
+外部資料來源應謹慎使用並需要：
+
+- 明確記錄依賴關係
+- 處理不可用的錯誤處理
+- 快取策略以減少外部依賴
+- 外部資料綱要的版本追蹤
+
+# 存取模式 {#access-patterns}
+
+## 明確來源識別 {#explicit-identification}
+
+所有資料存取都應明確識別來源：
+
+```r
+# 正確 - 明確識別資料來源
+customer_data <- read_from_app_data("customer_segments.csv")
+sales_data <- dbGetQuery(db_connection, "SELECT * FROM sales")
+reference_data <- load_from_global_data("industry_codes.rds")
+
+# 錯誤 - 來源模糊
+data <- read.csv("data.csv")  # 這個檔案位於哪裡？
+```
+
+## 來源函數模式 {#source-functions}
+
+實作特定來源的存取函數：
+
+```r
+# 應用特定資料存取函數
+read_from_app_data <- function(file_name, subdir = NULL) {
+  path <- if (is.null(subdir)) {
+    file.path("app_data", file_name)
+  } else {
+    file.path("app_data", subdir, file_name)
+  }
+  
+  # 根據檔案副檔名的適當讀取函數
+  if (endsWith(file_name, ".csv")) {
+    return(read.csv(path))
+  } else if (endsWith(file_name, ".rds")) {
+    return(readRDS(path))
+  } else {
+    # 其他格式...
+  }
+}
+
+# 全域共享資料存取
+load_from_global_data <- function(file_name, version = "current") {
+  path <- file.path("update_scripts", "global_scripts", "30_global_data", 
+                   if (version == "current") file_name else file.path(version, file_name))
+  
+  # 根據檔案副檔名的適當讀取函數
+  # 與上述類似的實作
+}
+```
+
+## 基於配置的資料來源映射 {#config-mapping}
+
+使用 YAML 配置明確將組件映射到資料來源：
+
+```yaml
+components:
+  micro:
+    customer_profile:
+      primary: "app_data/customer_details.csv"  # 應用特定資料
+      preferences: X_global_data/customer_preferences.rds"  # 共享資料
+```
+
+# 資料流系列實作 {#data-flow-implementation}
+
+此原則通過資料流（DF）系列架構實作：
+
+## 五層資料管道 {#five-layer-pipeline}
+
+資料來源層級現在包括一個全面的五層管道：
+
+```{mermaid}
+%%| fig-cap: "五層資料處理管道"
+%%| fig-align: "center"
+
+graph LR
+    R[raw_data<br/>原始資料]
+    S[staged_data<br/>暫存資料]
+    T[transformed_data<br/>轉換資料]
+    C[cleansed_data<br/>清理資料]
+    P[processed_data<br/>處理資料]
+    A[app_data<br/>應用資料]
+    
+    R --> S
+    S --> T
+    T --> C
+    C --> P
+    P --> A
+    
+    style R fill:#ffe6e6
+    style S fill:#ffeee6
+    style T fill:#fff6e6
+    style C fill:#f6ffe6
+    style P fill:#e6f6ff
+    style A fill:#e6e6ff
+```
+
+:::{.callout-tip}
+## DF 系列文件
+- **[@DF000]**：資料管道架構 - 整體層級框架
+- **[@DF001]**：暫存操作 - 檔案級預處理層
+- **[@DF002]**：轉換操作 - 綱要標準化層
+- **[@DF003]**：清理操作 - 品質保證層
+- **[@DF004]**：處理操作 - 業務邏輯層
+- **[@DF005]**：應用資料 - UI 消費層
+:::
+
+## 更新的資料存取範圍 {#updated-access-scope}
+
+| 資料來源 | APP_MODE | UPDATE_MODE | GLOBAL_MODE |
+|---------|:--------:|:-----------:|:-----------:|
+| **管道層** ||||
+| `raw_data.duckdb` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `staged_data.duckdb` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `transformed_data.duckdb` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `cleansed_data.duckdb` | ❌ 無存取 | 讀/寫 | 讀/寫 |
+| `processed_data.duckdb` | 唯讀 | 讀/寫 | 讀/寫 |
+| `app_data.duckdb` | 唯讀 | 讀/寫 | 讀/寫 |
+
+## 增強的資料庫整合 {#enhanced-db-integration}
+
+層級與通用資料庫存取模式整合：
+
+```r
+# 遵循 DF 架構的層特定存取
+raw_conn <- dbConnect_from_list("raw_data")           # 第 1 層
+staged_conn <- dbConnect_from_list("staged_data")     # 第 2 層
+transformed_conn <- dbConnect_from_list("transformed_data") # 第 3 層
+cleansed_conn <- dbConnect_from_list("cleansed_data") # 第 4 層
+processed_conn <- dbConnect_from_list("processed_data") # 第 5 層
+app_conn <- dbConnect_from_list("app_data")           # 第 6 層
+```
+
+# 最佳實務 {#best-practices}
+
+:::{.callout-tip}
+## 實作準則
+
+### 來源隔離
+- 組件理想上應依賴單一資料來源類型
+- 當需要多個來源時，清楚分離其使用
+- 考慮跨多個來源創建統一視圖
+
+### 預設值
+- 所有組件應優雅處理缺失資料
+- 當資料來源不可用時提供合理的預設值
+- 為 Shiny 組件使用 UI-Server-Defaults 三重規則
+
+### 資料來源文檔
+- 在中央資料目錄中記錄所有資料來源
+- 包括來源、更新頻率和依賴關係
+- 清楚標記共享資源及其跨專案影響
+
+### 使用模擬資料測試
+- 設計可以使用模擬資料運作的組件
+- 創建反映生產綱要的測試資料
+- 為測試和生產資料使用相同的存取模式
+:::
+
+# 來源優先規則 {#priority-rules}
+
+當相同資料可能從多個來源獲得時，遵循這些優先順序：
+
+1. **主要規則**：盡可能使用應用特定資料而非共享資料
+2. **例外規則**：當需要跨專案標準化時使用共享資料
+3. **更新規則**：應用特定資料可能覆蓋共享資料，但這必須明確
+4. **文檔規則**：所有主要規則的例外必須記錄
+
+# 結論 {#conclusion}
+
+通過建立清晰的資料來源層級和一致的存取模式，我們確保應用程式的資料依賴是明確的、可維護的和適當隔離的。五層資料管道提供了從原始外部資料到應用程式就緒消費格式的結構化進展，同時維持應用特定資料在大多數用例中的首要地位。
+
+:::{.callout-important}
+## 關鍵要點
+資料流系列（DF00-DF05）為此層級的每一層提供具體的實作指導，確保所有應用程式的資料處理模式一致。
+:::

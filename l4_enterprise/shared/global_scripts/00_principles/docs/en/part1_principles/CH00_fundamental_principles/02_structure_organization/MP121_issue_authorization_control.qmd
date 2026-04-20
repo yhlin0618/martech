@@ -1,0 +1,202 @@
+---
+title: "MP121: Issue Authorization Control"
+subtitle: "Meta-Principle for Issue Status-Based Code Modification Authorization"
+author: "MAMBA Development Team"
+date: "2025-09-08"
+categories: ["Meta-Principle", "Workflow Management", "Authorization Control"]
+principles_addressed: ["MP028", "MP037", "MP064", "MP088"]
+---
+
+## Meta-Principle Statement
+
+**MP121: Issue Authorization Control** - Code modifications must follow authorization protocols based on issue status, ensuring controlled development workflow and proper change management.
+
+## Core Requirements
+
+### Issue Status Authorization Matrix
+
+1. **OPEN Status**
+   - Code analysis and documentation: ✅ Permitted
+   - Root cause investigation: ✅ Permitted  
+   - Problem reproduction: ✅ Permitted
+   - **Code modification**: ❌ Requires discussion and approval
+   - Issue status changes: ✅ Permitted (OPEN → IN_PROGRESS)
+
+2. **IN_PROGRESS Status**
+   - Code analysis and documentation: ✅ Permitted
+   - Problem debugging: ✅ Permitted
+   - Solution planning: ✅ Permitted
+   - **Code modification**: ❌ Requires explicit authorization
+   - Testing and validation: ✅ Permitted after authorization
+
+3. **RESOLVED/REJECTED Status**
+   - Code analysis: ✅ Permitted (read-only)
+   - Documentation updates: ✅ Permitted
+   - **Code modification**: ❌ Prohibited without reopening issue
+
+### Authorization Protocols
+
+#### OPEN → Code Modification
+```
+SEQUENCE {
+  ANALYZE(issue) → DOCUMENT(findings) → DISCUSS(solution) → AWAIT(approval) → MODIFY(code)
+}
+```
+
+#### IN_PROGRESS → Code Modification  
+```
+SEQUENCE {
+  PLAN(solution) → REQUEST(authorization) → RECEIVE(explicit_permission) → MODIFY(code)
+}
+```
+
+### Emergency Override Protocol
+
+When critical system failures occur:
+
+1. **Immediate Action Permitted**
+   - Document override reason
+   - Apply minimal necessary fix
+   - Create audit trail
+
+2. **Post-Emergency Requirements**
+   - Retrospective authorization within 24 hours
+   - Full change documentation
+   - Process improvement recommendations
+
+## Implementation Rules
+
+### R078: Issue Status Verification
+Before any code modification:
+```r
+verify_issue_status <- function(issue_id) {
+  status <- get_issue_status(issue_id)
+  if (status %in% c("OPEN", "IN_PROGRESS")) {
+    stop("Authorization required for code modification")
+  }
+}
+```
+
+### R079: Authorization Documentation
+All authorized changes must include:
+```yaml
+authorization:
+  issue_id: "ISSUE_XXX"
+  status: "IN_PROGRESS"
+  authorized_by: "User/Team"
+  authorization_date: "YYYY-MM-DD"
+  change_scope: "Brief description"
+```
+
+### R080: Change Audit Trail
+Every code modification must reference:
+```r
+# AUTHORIZED CHANGE (ISSUE_XXX): Brief description
+# Authorization: [User/Team] on [Date]
+# Scope: [Change description]
+[code changes]
+```
+
+## Integration with Existing Principles
+
+### MP028: Avoid Self-Reference
+- Authorization requests must be explicit, not assumed
+- Clear separation between analysis and implementation phases
+
+### MP037: Comment Only for Temporary or Uncertain
+- Temporary authorization overrides must be clearly documented
+- Include expected resolution timeframes
+
+### MP064: Business Logic Separation  
+- Authorization logic separate from business implementation
+- Clear workflow boundaries
+
+### MP088: Immediate Feedback
+- Authorization status immediately visible
+- Clear feedback on permission requirements
+
+## Workflow Examples
+
+### Correct Workflow (OPEN Issue)
+```
+User: "Fix the authentication bug in ISSUE_067"
+AI: 1. Analyze ISSUE_067 (status: OPEN)
+    2. Document root cause in issue
+    3. "I've identified the problem. Shall I proceed with the fix?"
+    4. Wait for explicit permission
+    5. Apply authorized changes
+```
+
+### Incorrect Workflow (Unauthorized Change)
+```
+User: "Fix ISSUE_067"  
+AI: 1. Analyze issue
+    2. Immediately modify code ❌
+    3. "Fixed the authentication bug"
+```
+
+### Correct Workflow (IN_PROGRESS Issue)
+```
+User: "The IN_PROGRESS ISSUE_106 needs fixing"
+AI: 1. Review issue analysis
+    2. Plan solution approach
+    3. "Solution ready. Authorization needed for code modification."
+    4. Wait for explicit "Yes, modify the code" confirmation
+    5. Apply authorized changes
+```
+
+## Exceptions and Special Cases
+
+### Documentation-Only Changes
+Always permitted regardless of issue status:
+- Issue analysis updates
+- Root cause documentation
+- Solution planning
+- Test case creation
+
+### Configuration Changes
+Require authorization like code changes:
+- Database schema modifications
+- Environment variable changes
+- Deployment configuration updates
+
+### Emergency Protocols
+Override authorization for:
+- Production system failures
+- Security vulnerability patches
+- Data loss prevention
+
+## Compliance Verification
+
+### Pre-Change Checklist
+- [ ] Issue status verified
+- [ ] Authorization level confirmed
+- [ ] Change scope documented
+- [ ] Audit trail prepared
+
+### Post-Change Requirements
+- [ ] Changes documented in issue
+- [ ] Authorization recorded
+- [ ] Testing completed
+- [ ] Status updated appropriately
+
+## Benefits
+
+1. **Controlled Development**: Prevents unauthorized changes
+2. **Clear Workflow**: Explicit authorization points
+3. **Audit Compliance**: Full change tracking
+4. **Risk Management**: Controlled modification process
+5. **Collaborative Development**: Discussion before implementation
+
+## Related Principles
+
+- **MP028**: Avoid Self-Reference (explicit authorization)
+- **MP037**: Comment Only for Temporary (override documentation)  
+- **MP064**: Business Logic Separation (workflow boundaries)
+- **MP088**: Immediate Feedback (authorization status)
+- **R021**: One Function One File (change granularity)
+- **R045**: Initialization Imports Only (controlled dependencies)
+
+---
+
+*This Meta-Principle ensures systematic control over code modifications based on issue workflow status, providing the missing authorization framework identified in the principles audit.*

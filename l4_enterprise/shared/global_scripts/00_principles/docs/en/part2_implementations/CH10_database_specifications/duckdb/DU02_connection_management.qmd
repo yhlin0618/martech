@@ -1,0 +1,695 @@
+---
+title: "DU02: DuckDB Connection Management"
+subtitle: "Best Practices for Connection Handling and Resource Management"
+author: "MAMBA Framework"
+date: "2025-08-28"
+categories: [duckdb, connections, resource-management]
+---
+
+# DuckDB Connection Management
+
+## Overview
+
+Proper connection management is crucial for DuckDB performance and stability. This guide covers connection patterns, resource management, and best practices specific to the MAMBA framework.
+
+## Connection Types
+
+### In-Memory Database
+
+```r
+# R: In-memory connection (data lost on close)
+library(DBI)
+library(duckdb)
+
+con <- dbConnect(duckdb::duckdb())
+
+# Optionally set memory limit
+dbExecute(con, "SET memory_limit='8GB'")
+
+# Remember to disconnect
+dbDisconnect(con, shutdown = TRUE)
+```
+
+```python
+# Python: In-memory connection
+import duckdb
+
+# Simple connection
+con = duckdb.connect()
+
+# Or with configuration
+con = duckdb.connect(
+    database=':memory:',
+    config={
+        'memory_limit': '8GB',
+        'threads': 4
+    }
+)
+
+# Close when done
+con.close()
+```
+
+### Persistent Database
+
+```r
+# R: Persistent database connection
+con <- dbConnect(
+  duckdb::duckdb(), 
+  dbdir = "path/to/database.duckdb",
+  read_only = FALSE
+)
+
+# For read-only access (allows multiple readers)
+con_read <- dbConnect(
+  duckdb::duckdb(),
+  dbdir = "path/to/database.duckdb", 
+  read_only = TRUE
+)
+```
+
+```python
+# Python: Persistent database
+con = duckdb.connect('path/to/database.duckdb')
+
+# Read-only connection
+con_read = duckdb.connect('path/to/database.duckdb', read_only=True)
+```
+
+## MAMBA Framework Connection Patterns
+
+### Using dbConnect_universal()
+
+The MAMBA framework provides a universal connection function:
+
+```r
+# Load the universal connection function
+source("scripts/global_scripts/01_db/dbConnect.R")
+
+# Get connection based on configuration
+con <- dbConnect_universal(
+  db_type = "duckdb",
+  config_path = "app_config.yaml"
+)
+```
+
+### Configuration-Driven Connections
+
+```yaml
+# app_config.yaml
+database:
+  type: "duckdb"
+  path: "data/analytics.duckdb"
+  read_only: false
+  memory_limit: "8GB"
+  threads: 4
+  temp_directory: "/tmp/duckdb"
+  preserve_insertion_order: true
+```
+
+```r
+# R: Load connection from configuration
+load_configured_connection <- function(config_path = "app_config.yaml") {
+  config <- yaml::read_yaml(config_path)
+  db_config <- config$database
+  
+  # Create connection
+  con <- dbConnect(
+    duckdb::duckdb(),
+    dbdir = db_config$path,
+    read_only = db_config$read_only %||% FALSE
+  )
+  
+  # Apply configuration settings
+  if (!is.null(db_config$memory_limit)) {
+    dbExecute(con, sprintf("SET memory_limit='%s'", db_config$memory_limit))
+  }
+  
+  if (!is.null(db_config$threads)) {
+    dbExecute(con, sprintf("SET threads=%d", db_config$threads))
+  }
+  
+  if (!is.null(db_config$temp_directory)) {
+    dbExecute(con, sprintf("SET temp_directory='%s'", db_config$temp_directory))
+  }
+  
+  if (!is.null(db_config$preserve_insertion_order)) {
+    dbExecute(con, sprintf("SET preserve_insertion_order=%s", 
+                          tolower(as.character(db_config$preserve_insertion_order))))
+  }
+  
+  return(con)
+}
+```
+
+## Connection Lifecycle Management
+
+### Connection Pool Pattern
+
+```r
+# R: Simple connection pool implementation
+DuckDBPool <- R6::R6Class("DuckDBPool",
+  public = list(
+    db_path = NULL,
+    max_connections = NULL,
+    connections = NULL,
+    in_use = NULL,
+    
+    initialize = function(db_path, max_connections = 5) {
+      self$db_path <- db_path
+      self$max_connections <- max_connections
+      self$connections <- list()
+      self$in_use <- logical(max_connections)
+    },
+    
+    get_connection = function() {
+      # Find available connection
+      for (i in seq_along(self$connections)) {
+        if (!self$in_use[i]) {
+          self$in_use[i] <- TRUE
+          return(self$connections[[i]])
+        }
+      }
+      
+      # Create new connection if under limit
+      if (length(self$connections) < self$max_connections) {
+        con <- dbConnect(duckdb::duckdb(), dbdir = self$db_path)
+        self$connections[[length(self$connections) + 1]] <- con
+        self$in_use[length(self$connections)] <- TRUE
+        return(con)
+      }
+      
+      stop("No connections available in pool")
+    },
+    
+    return_connection = function(con) {
+      for (i in seq_along(self$connections)) {
+        if (identical(self$connections[[i]], con)) {
+          self$in_use[i] <- FALSE
+          return(invisible(TRUE))
+        }
+      }
+      warning("Connection not found in pool")
+    },
+    
+    close_all = function() {
+      for (con in self$connections) {
+        try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+      }
+      self$connections <- list()
+      self$in_use <- logical(0)
+    }
+  )
+)
+
+# Usage
+pool <- DuckDBPool$new("data/analytics.duckdb", max_connections = 3)
+con <- pool$get_connection()
+# Use connection...
+pool$return_connection(con)
+# Clean up
+pool$close_all()
+```
+
+### Connection Wrapper with Auto-Cleanup
+
+```r
+# R: Ensure connections are always closed
+with_duckdb_connection <- function(db_path, expr) {
+  con <- dbConnect(duckdb::duckdb(), dbdir = db_path)
+  on.exit(dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  
+  eval(substitute(expr), envir = list(con = con), enclos = parent.frame())
+}
+
+# Usage
+result <- with_duckdb_connection("data/analytics.duckdb", {
+  dbGetQuery(con, "SELECT COUNT(*) FROM sales")
+})
+```
+
+### Python Context Manager
+
+```python
+# Python: Context manager for automatic cleanup
+import duckdb
+from contextlib import contextmanager
+
+@contextmanager
+def duckdb_connection(db_path=None, **config):
+    """Context manager for DuckDB connections"""
+    con = duckdb.connect(db_path or ':memory:', config=config)
+    try:
+        yield con
+    finally:
+        con.close()
+
+# Usage
+with duckdb_connection('data/analytics.duckdb', memory_limit='8GB') as con:
+    result = con.execute("SELECT COUNT(*) FROM sales").fetchall()
+```
+
+## Connection Settings and Configuration
+
+### Memory Management Settings
+
+```r
+# R: Configure memory settings
+configure_memory <- function(con, config = list()) {
+  # Set memory limit (default 80% of system memory)
+  memory_limit <- config$memory_limit %||% "80%"
+  dbExecute(con, sprintf("SET memory_limit='%s'", memory_limit))
+  
+  # Set max memory per query
+  if (!is.null(config$max_memory_per_query)) {
+    dbExecute(con, sprintf("SET max_memory='%s'", config$max_memory_per_query))
+  }
+  
+  # Enable/disable external sorting
+  external_threads <- config$external_threads %||% 1
+  dbExecute(con, sprintf("SET external_threads=%d", external_threads))
+  
+  # Set temp directory for spilling
+  if (!is.null(config$temp_directory)) {
+    dbExecute(con, sprintf("SET temp_directory='%s'", config$temp_directory))
+  }
+}
+```
+
+### Performance Settings
+
+```r
+# R: Optimize performance settings
+optimize_performance <- function(con) {
+  # Set number of threads
+  threads <- parallel::detectCores() - 1
+  dbExecute(con, sprintf("SET threads=%d", threads))
+  
+  # Enable parallelism
+  dbExecute(con, "SET enable_parallel=true")
+  
+  # Optimize for analytical workloads
+  dbExecute(con, "SET default_order_by_nulls_last=true")
+  dbExecute(con, "SET enable_object_cache=true")
+  
+  # Set checkpoint threshold for WAL
+  dbExecute(con, "SET checkpoint_threshold='1GB'")
+}
+```
+
+## Connection Monitoring
+
+### Health Checks
+
+```r
+# R: Connection health check
+check_connection_health <- function(con) {
+  tryCatch({
+    # Test basic query
+    result <- dbGetQuery(con, "SELECT 1 as test")
+    
+    # Check database statistics
+    stats <- dbGetQuery(con, "SELECT * FROM duckdb_databases()")
+    
+    # Get memory usage
+    memory <- dbGetQuery(con, "SELECT * FROM duckdb_memory()")
+    
+    list(
+      status = "healthy",
+      test_query = result$test == 1,
+      database_info = stats,
+      memory_usage = memory
+    )
+  }, error = function(e) {
+    list(
+      status = "unhealthy",
+      error = e$message
+    )
+  })
+}
+```
+
+### Connection Metrics
+
+```r
+# R: Monitor connection metrics
+monitor_connection <- function(con) {
+  # Get current settings
+  settings <- dbGetQuery(con, "SELECT * FROM duckdb_settings()")
+  
+  # Get table statistics
+  tables <- dbGetQuery(con, "
+    SELECT 
+      schema_name,
+      table_name,
+      estimated_size,
+      column_count,
+      row_count
+    FROM duckdb_tables()
+  ")
+  
+  # Get current queries (if any running)
+  queries <- tryCatch(
+    dbGetQuery(con, "SELECT * FROM duckdb_queries()"),
+    error = function(e) data.frame()
+  )
+  
+  list(
+    settings = settings,
+    tables = tables,
+    active_queries = queries,
+    timestamp = Sys.time()
+  )
+}
+```
+
+## Multi-User and Concurrency
+
+### Read-Write Locking
+
+DuckDB uses single-writer, multiple-reader concurrency:
+
+```r
+# R: Handle concurrent access patterns
+handle_concurrent_access <- function(db_path) {
+  # Single writer connection
+  writer_con <- dbConnect(
+    duckdb::duckdb(),
+    dbdir = db_path,
+    read_only = FALSE
+  )
+  
+  # Multiple reader connections
+  create_reader <- function() {
+    dbConnect(
+      duckdb::duckdb(),
+      dbdir = db_path,
+      read_only = TRUE
+    )
+  }
+  
+  readers <- lapply(1:5, function(i) create_reader())
+  
+  # Writer performs updates
+  dbExecute(writer_con, "UPDATE table SET value = value + 1")
+  
+  # Readers can query simultaneously
+  results <- lapply(readers, function(con) {
+    dbGetQuery(con, "SELECT * FROM table")
+  })
+  
+  # Clean up
+  dbDisconnect(writer_con, shutdown = TRUE)
+  lapply(readers, dbDisconnect)
+  
+  results
+}
+```
+
+### Connection Retry Logic
+
+```r
+# R: Implement retry logic for connections
+connect_with_retry <- function(db_path, max_retries = 3, wait_time = 1) {
+  for (attempt in 1:max_retries) {
+    con <- tryCatch({
+      dbConnect(duckdb::duckdb(), dbdir = db_path)
+    }, error = function(e) {
+      if (attempt < max_retries) {
+        message(sprintf("Connection attempt %d failed: %s. Retrying...", 
+                       attempt, e$message))
+        Sys.sleep(wait_time * attempt)  # Exponential backoff
+        NULL
+      } else {
+        stop(sprintf("Failed to connect after %d attempts: %s", 
+                    max_retries, e$message))
+      }
+    })
+    
+    if (!is.null(con)) {
+      return(con)
+    }
+  }
+}
+```
+
+## Resource Management
+
+### Memory Pressure Handling
+
+```r
+# R: Handle memory pressure
+handle_memory_pressure <- function(con) {
+  # Check current memory usage
+  memory_info <- dbGetQuery(con, "SELECT * FROM duckdb_memory()")
+  memory_used <- sum(memory_info$used_memory)
+  memory_limit <- dbGetQuery(con, "SELECT value FROM duckdb_settings() WHERE name='memory_limit'")$value
+  
+  # Parse memory limit
+  parse_memory <- function(x) {
+    if (grepl("GB$", x)) {
+      return(as.numeric(gsub("GB", "", x)) * 1024^3)
+    } else if (grepl("MB$", x)) {
+      return(as.numeric(gsub("MB", "", x)) * 1024^2)
+    }
+    return(as.numeric(x))
+  }
+  
+  limit_bytes <- parse_memory(memory_limit)
+  usage_pct <- memory_used / limit_bytes * 100
+  
+  if (usage_pct > 90) {
+    warning(sprintf("Memory usage critical: %.1f%%", usage_pct))
+    
+    # Force checkpoint to free memory
+    dbExecute(con, "CHECKPOINT")
+    
+    # Clear caches
+    dbExecute(con, "PRAGMA disable_object_cache")
+    dbExecute(con, "PRAGMA enable_object_cache")
+  }
+  
+  return(list(
+    memory_used = memory_used,
+    memory_limit = limit_bytes,
+    usage_percentage = usage_pct
+  ))
+}
+```
+
+### Temporary File Management
+
+```r
+# R: Manage temporary files
+manage_temp_files <- function(con, temp_dir = NULL) {
+  if (!is.null(temp_dir)) {
+    # Set custom temp directory
+    dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+    dbExecute(con, sprintf("SET temp_directory='%s'", temp_dir))
+  }
+  
+  # Monitor temp file usage
+  temp_files <- list.files(
+    temp_dir %||% tempdir(), 
+    pattern = "duckdb_temp",
+    full.names = TRUE
+  )
+  
+  if (length(temp_files) > 0) {
+    temp_sizes <- file.info(temp_files)$size
+    total_size <- sum(temp_sizes, na.rm = TRUE)
+    
+    message(sprintf("Temporary files: %d files, %.2f MB total", 
+                   length(temp_files), total_size / 1024^2))
+    
+    # Clean up old temp files (older than 1 hour)
+    old_files <- temp_files[
+      difftime(Sys.time(), file.info(temp_files)$mtime, units = "hours") > 1
+    ]
+    
+    if (length(old_files) > 0) {
+      unlink(old_files)
+      message(sprintf("Cleaned up %d old temporary files", length(old_files)))
+    }
+  }
+}
+```
+
+## Error Handling and Recovery
+
+### Connection Error Handling
+
+```r
+# R: Comprehensive error handling
+safe_query <- function(con, query, ...) {
+  tryCatch({
+    dbGetQuery(con, query, ...)
+  }, error = function(e) {
+    if (grepl("database is locked", e$message)) {
+      # Database locked - retry after delay
+      Sys.sleep(0.5)
+      return(safe_query(con, query, ...))
+    } else if (grepl("out of memory", e$message)) {
+      # Memory error - try to free memory
+      gc()
+      dbExecute(con, "CHECKPOINT")
+      stop("Query failed due to memory constraints. Consider using chunked processing.")
+    } else if (grepl("connection", e$message)) {
+      # Connection error - attempt reconnection
+      stop("Connection lost. Please reconnect and retry.")
+    } else {
+      # Other errors
+      stop(e$message)
+    }
+  })
+}
+```
+
+### Graceful Shutdown
+
+```r
+# R: Ensure graceful shutdown
+graceful_shutdown <- function(con) {
+  tryCatch({
+    # Checkpoint to ensure data is written
+    dbExecute(con, "CHECKPOINT")
+    
+    # Get connection info before closing
+    info <- dbGetQuery(con, "SELECT * FROM duckdb_databases()")
+    
+    # Disconnect properly
+    dbDisconnect(con, shutdown = TRUE)
+    
+    message("Database shutdown gracefully")
+    return(info)
+  }, error = function(e) {
+    warning(sprintf("Error during shutdown: %s", e$message))
+    # Force disconnect
+    try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+  })
+}
+```
+
+## Best Practices
+
+### DO's
+
+1. **Always close connections** when done
+2. **Use connection pools** for multi-threaded applications
+3. **Configure memory limits** appropriate to your system
+4. **Monitor memory usage** during large operations
+5. **Use read-only connections** when possible
+6. **Implement retry logic** for production systems
+7. **Set appropriate temp directories** for large operations
+8. **Use transactions** for multi-statement operations
+
+### DON'Ts
+
+1. **Don't share connections** between threads
+2. **Don't leave connections open** indefinitely
+3. **Don't ignore memory warnings**
+4. **Don't use in-memory databases** for large datasets
+5. **Don't skip CHECKPOINT** before closing persistent databases
+6. **Don't ignore connection errors**
+
+## Connection Patterns for Common Scenarios
+
+### ETL Pipeline Connection
+
+```r
+# R: ETL pipeline with proper connection management
+run_etl_pipeline <- function(source_path, target_path) {
+  # Source connection (read-only)
+  source_con <- dbConnect(duckdb::duckdb(), 
+                         dbdir = source_path, 
+                         read_only = TRUE)
+  on.exit(dbDisconnect(source_con), add = TRUE)
+  
+  # Target connection (read-write)
+  target_con <- dbConnect(duckdb::duckdb(), 
+                         dbdir = target_path, 
+                         read_only = FALSE)
+  on.exit(dbDisconnect(target_con, shutdown = TRUE), add = TRUE)
+  
+  # Configure for ETL workload
+  dbExecute(target_con, "SET memory_limit='16GB'")
+  dbExecute(target_con, "SET preserve_insertion_order=false")
+  
+  # Transfer data
+  tables <- dbListTables(source_con)
+  
+  for (table in tables) {
+    data <- dbReadTable(source_con, table)
+    # Transform data...
+    dbWriteTable(target_con, table, data, overwrite = TRUE)
+  }
+  
+  # Checkpoint to ensure data is written
+  dbExecute(target_con, "CHECKPOINT")
+}
+```
+
+### Shiny App Connection
+
+```r
+# R: Connection management for Shiny apps
+shiny_db_pool <- function(db_path) {
+  pool::dbPool(
+    drv = duckdb::duckdb(),
+    dbdir = db_path,
+    minSize = 1,
+    maxSize = 5,
+    idleTimeout = 3600000  # 1 hour
+  )
+}
+
+# In Shiny server
+server <- function(input, output, session) {
+  pool <- shiny_db_pool("data/app.duckdb")
+  
+  onStop(function() {
+    pool::poolClose(pool)
+  })
+  
+  output$data <- renderTable({
+    pool::dbGetQuery(pool, "SELECT * FROM table LIMIT 100")
+  })
+}
+```
+
+### Batch Processing Connection
+
+```r
+# R: Connection for batch processing
+batch_process <- function(db_path, batch_size = 10000) {
+  con <- dbConnect(duckdb::duckdb(), dbdir = db_path)
+  on.exit(dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  
+  # Configure for batch processing
+  dbExecute(con, "SET memory_limit='4GB'")
+  dbExecute(con, "SET checkpoint_threshold='256MB'")
+  
+  # Process in batches
+  total_rows <- dbGetQuery(con, "SELECT COUNT(*) as n FROM source_table")$n
+  
+  for (offset in seq(0, total_rows, by = batch_size)) {
+    batch <- dbGetQuery(con, sprintf(
+      "SELECT * FROM source_table LIMIT %d OFFSET %d",
+      batch_size, offset
+    ))
+    
+    # Process batch...
+    
+    # Periodic checkpoint
+    if (offset %% (batch_size * 10) == 0) {
+      dbExecute(con, "CHECKPOINT")
+    }
+  }
+}
+```
+
+## Related Documentation
+
+- [DuckDB Official Connection Documentation](https://duckdb.org/docs/api/overview)
+- [MAMBA Database Connection Patterns](../../part1_principles/CH02_data_management/)
+- [Universal DBI Pattern (R092)](../../../../01_db/dbConnect.R)

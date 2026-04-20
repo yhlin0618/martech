@@ -1,0 +1,179 @@
+---
+
+title: "D04_10: Application Module Consumers"
+subtitle: "UI modules that consume D04 derivation outputs"
+parent: "D04_poisson_marketing"
+chapter: "CH12"
+category: "derivation-task"
+number: "D04_10"
+date-created: "2025-12-24"
+date-modified: "2025-12-30"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D04_06_app_data_publishing"
+  - "D04_08_precision_poisson_analysis"
+implements:
+  - "DM_R049": "Derivation Consumer Documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D04_10: Application Module Consumers {#overview}
+
+This task documents which application UI modules consume the outputs from the D04 Poisson Precision Marketing derivation. This completes the data flow traceability from ETL -> DRV -> APP.
+
+## Output-to-Module Mapping {#mapping}
+
+The following table maps each D04 output table to its consuming UI modules:
+
+| D04 Output Table | Consuming Module | Component Location |
+|------------------|------------------|-------------------|
+| `df_{platform}_poisson_analysis_all` | poissonFeatureAnalysis, poissonCommentAnalysis, poissonTimeAnalysis, reportIntegration | `poisson/poissonFeatureAnalysis/`, `poisson/poissonCommentAnalysis/`, `poisson/poissonTimeAnalysis/`, `report/reportIntegration/` |
+
+**Note**: Per-product-line tables are stored in `processed_data` as intermediate
+outputs. App modules use `_all` and filter by `product_line_id`.
+
+## Primary Consuming Modules {#modules}
+
+### poissonFeatureAnalysis
+
+**Location**: `global_scripts/10_rshinyapp_components/poisson/poissonFeatureAnalysis/`
+
+**Purpose**: Feature-level Poisson coefficient interpretation and impact ranking.
+
+**Tables Consumed**:
+- `df_{platform}_poisson_analysis_all` (filter by `product_line_id` when needed)
+
+**Data Access Pattern**:
+```nsql
+QUERY df_{platform}_poisson_analysis_all
+  FILTER BY: predictor_type != 'time_feature'
+  FILTER BY: product_line_id (if provided)
+  COLLECT TO: feature_coefficients
+```
+
+### poissonCommentAnalysis
+
+**Location**: `global_scripts/10_rshinyapp_components/poisson/poissonCommentAnalysis/`
+
+**Purpose**: Comment/rating feature analysis from Poisson coefficients.
+
+**Tables Consumed**:
+- `df_{platform}_poisson_analysis_all` (filter by `product_line_id`)
+
+### poissonTimeAnalysis
+
+**Location**: `global_scripts/10_rshinyapp_components/poisson/poissonTimeAnalysis/`
+
+**Purpose**: Time dimension effects (year/month/weekday) from Poisson coefficients.
+
+**Tables Consumed**:
+- `df_{platform}_poisson_analysis_all` filtered to `predictor_type = 'time_feature'`
+
+### reportIntegration
+
+**Location**: `global_scripts/10_rshinyapp_components/report/reportIntegration/`
+
+**Purpose**: Report aggregation module that includes Poisson analysis snapshots.
+
+**Tables Consumed**:
+- `df_cbz_poisson_analysis_all` (fallback: `df_eby_poisson_analysis_all`)
+
+## Data Flow Diagram {#data-flow}
+
+```
+                    D04 Derivation Pipeline
+                           │
+                           ▼
+        ┌──────────────────────────────────────┐
+        │ df_{platform}_poisson_analysis_*     │
+        │ (app_data.duckdb)                    │
+        └──────────────────┬───────────────────┘
+                           │
+    ┌──────────────────────┼──────────────────────┐
+    │                      │                      │
+    ▼                      ▼                      ▼
+┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐
+│poissonFeature│  │poissonComment   │  │poissonTime       │
+│Analysis      │  │Analysis         │  │Analysis          │
+└──────────────┘  └─────────────────┘  └──────────────────┘
+                           │
+                           ▼
+                    ┌──────────────┐
+                    │reportIntegration│
+                    └──────────────┘
+```
+
+## Module Data Access Patterns {#usage}
+
+### Poisson Analysis Access (NSQL)
+
+```nsql
+# Pattern: Load Poisson coefficients by platform and product line
+QUERY df_{platform}_poisson_analysis_all
+  FILTER BY: product_line_id (optional)
+  FILTER BY: predictor_type
+  COLUMNS: predictor, coefficient, p_value, incidence_rate_ratio,
+           predictor_type, display_name, computed_at, data_version
+  COLLECT TO: poisson_coefficients
+```
+
+## Impact Analysis {#impact}
+
+When modifying D04 outputs, the following modules will be affected:
+
+| Change Type | Affected Modules | Required Actions |
+|-------------|-----------------|------------------|
+| Column rename in `df_{platform}_poisson_analysis_*` | poissonFeatureAnalysis, poissonCommentAnalysis, poissonTimeAnalysis, reportIntegration | Update column references |
+| `predictor_type` classification changes | poissonTimeAnalysis, poissonFeatureAnalysis, poissonCommentAnalysis | Adjust filters and UI expectations |
+| `convergence` format changes | poissonFeatureAnalysis, poissonCommentAnalysis | Update convergence filters |
+| Table removal/rename | ALL | Critical: requires major refactoring |
+
+## Module Visualization Integration (App Layer)
+
+### Time Effects Plot
+
+The `poissonTimeAnalysis` module visualizes time-related coefficients:
+
+```nsql
+# Time Effects Plot Configuration
+COMPONENT poissonTimeAnalysis:
+  SOURCE: df_{platform}_poisson_analysis_all
+  FILTER: predictor_type = 'time_feature'
+  X_AXIS: hierarchical_label
+  Y_AXIS: incidence_rate_ratio
+  INTERACTIVITY: hover_info, zoom, filter
+```
+
+### Feature Impact Plot
+
+The `poissonFeatureAnalysis` module visualizes attribute impacts:
+
+```nsql
+# Feature Impact Plot Configuration
+COMPONENT poissonFeatureAnalysis:
+  SOURCE: df_{platform}_poisson_analysis_all
+  FILTER: predictor_type != 'time_feature'
+  X_AXIS: predictor
+  Y_AXIS: coefficient
+  ANNOTATIONS: p_value, significance_flag
+```
+
+## Principle Compliance {#compliance}
+
+This documentation implements **DM_R049 (Derivation Consumer Documentation)** by:
+
+1. **Output-Consumer Mapping**: Every output table is mapped to its consumers
+2. **Module Location**: Full paths provided in `10_rshinyapp_components/`
+3. **Data Flow Visualization**: ASCII diagram showing complete flow
+4. **Impact Analysis**: Change impact documented for maintenance
+
+## Related Documentation
+
+- [D04_08_precision_poisson_analysis.qmd](D04_08_precision_poisson_analysis.qmd) - Precision Poisson analysis
+- [D04_06_app_data_publishing.qmd](D04_06_app_data_publishing.qmd) - App data publishing (no DRV visualization)
+- [DM_R049](../../../part1_principles/CH02_data_management/rules/DM_R049_derivation_consumer_documentation.qmd) - Consumer documentation requirement

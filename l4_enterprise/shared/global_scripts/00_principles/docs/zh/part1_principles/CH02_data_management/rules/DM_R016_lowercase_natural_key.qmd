@@ -1,0 +1,132 @@
+---
+title: "DM_R016: 小寫自然鍵規則"
+subtitle: "系統中用作識別碼的所有自然鍵必須為小寫，以保持與現有命名慣例的模式一致性"
+chapter: "CH02"
+category: "rule"
+number: "DM_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 16
+  title: "小寫自然鍵規則"
+related_to:
+  - "MP83: 鍵選擇原則"
+  - "MP70: 類型前綴命名"
+  - "MP71: 大小寫慣例"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十六條：小寫自然鍵規則 {#overview}
+
+**資料管理法第十六條（小寫自然鍵規則）**
+
+系統中用作識別碼的所有自然鍵必須為小寫，以保持與現有命名慣例的模式一致性。
+
+:::{.callout-important}
+## 陳述
+系統中用作識別碼的所有自然鍵必須為小寫，以保持與現有命名慣例的模式一致性。
+:::
+
+# 第一項：原理 {#rationale}
+
+自然鍵通過有意義、自我記錄的識別碼提供語義價值。但是，為了保持與系統現有命名慣例（使用小寫和底線）的一致性，自然鍵必須遵循相同的模式。這確保了視覺連貫性，減少認知負擔，並防止由大小寫不一致引起的錯誤。
+
+# 第二項：實施要求 {#implementation-requirements}
+
+## 第一款：字元大小寫 {#character-case}
+
+- 所有自然鍵識別碼必須為小寫（例如，"amz"、"cas"、"spt"）
+- 自然鍵中不允許大寫字元
+- 這適用於所有資料庫物件、變數名稱和代碼參考
+
+## 第二款：格式要求 {#format-requirements}
+
+- 產品線的自然鍵應盡可能為 3 個字元長
+- 多字概念應使用既定的縮寫做法，不使用分隔符
+- 鍵不得包含特殊字元、空格或標點符號
+
+## 第三款：資料庫實施 {#database-implementation}
+
+- 自然鍵的列定義應在支援的情況下指定不區分大小寫的排序規則
+- 輸入驗證必須在儲存之前將任何大寫輸入轉換為小寫
+- 查詢應包含大小寫轉換以提高穩健性：`WHERE LOWER(product_line_code) = 'amz'`
+
+## 第四款：一致應用 {#consistent-application}
+
+- 使用自然鍵的現有表必須修改為使用小寫
+- 資料遷移腳本必須將大寫自然鍵轉換為小寫
+- 文檔必須反映所有自然鍵的小寫範例
+
+# 第三項：範例 {#examples}
+
+## 第一款：正確實施 {#correct-implementation}
+
+```sql
+-- 正確：小寫自然鍵
+CREATE TABLE product_lines (
+  product_line_code char(3) PRIMARY KEY,
+  product_line_name_english text NOT NULL
+);
+
+INSERT INTO product_lines VALUES ('cas', 'Casual Wear');
+INSERT INTO product_lines VALUES ('spt', 'Sports Apparel');
+```
+
+```r
+# 正確：表和變數名稱中的小寫
+df_cas_sales <- df_sales %>% 
+  filter(product_line_code == 'cas')
+```
+
+## 第二款：錯誤實施 {#incorrect-implementation}
+
+```sql
+-- 錯誤：大寫自然鍵
+CREATE TABLE product_lines (
+  product_line_code char(3) PRIMARY KEY
+);
+
+INSERT INTO product_lines VALUES ('CAS', 'Casual Wear');
+```
+
+```r
+# 錯誤：變數名稱中的混合大小寫
+df_CAS_sales <- df_sales %>% 
+  filter(product_line_code == 'CAS')
+```
+
+# 第四項：UI 展示例外 {#ui-presentation-exception}
+
+雖然自然鍵在資料庫和代碼中必須為小寫，但在使用者介面中強調有益時可以以大寫顯示，前提是：
+
+1. 轉換為大寫僅發生在展示層
+2. 任何使用者輸入在儲存之前都轉換回小寫
+3. UI 始終以相同的大小寫顯示所有自然鍵
+
+# 第五項：與其他原則的關係 {#relationship-to-other-principles}
+
+- **MP83：鍵選擇原則** - 此規則特別適用於 MP83 中定義的自然鍵
+- **MP70：類型前綴命名** - 自然鍵遵循類似的前綴模式但使用小寫
+- **MP71：大小寫慣例** - 將大小寫規則擴展到自然鍵
+
+# 第六項：優點 {#benefits}
+
+1. **視覺一致性**：在所有代碼和資料庫元素中保持連貫的模式
+2. **減少認知負擔**：開發人員不需要記住大小寫例外
+3. **錯誤預防**：減少不一致大小寫引起的錯誤
+4. **打字效率**：小寫打字更快，無需 shift 鍵
+5. **慣例對齊**：與通常偏好小寫的 R 和 SQL 慣例對齊
+
+---
+
+*基於：資料管理法第十六條*  
+*相關連結：[MP83 鍵選擇原則](../../CH00_fundamental_principles/meta_principles/MP083_key_selection.qmd), [MP70 類型前綴命名](../../CH00_fundamental_principles/meta_principles/MP070_type_prefix_naming.qmd)*

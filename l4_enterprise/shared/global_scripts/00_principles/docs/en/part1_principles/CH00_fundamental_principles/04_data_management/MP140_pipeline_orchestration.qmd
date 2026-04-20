@@ -1,0 +1,523 @@
+---
+id: "MP140"
+title: "Pipeline Orchestration Principle"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-12-23"
+date_modified: "2025-12-24"
+author: "Claude"
+status: "active"
+version: "1.1"
+weight: 140
+priority: "HIGH"
+related_to:
+  - "MP064": "ETL-Derivation Separation Principle - Physical separation of ETL and DRV"
+  - "MP107": "ETL Pipeline Independence Principle - Horizontal ETL independence"
+  - "MP108": "ETL Phase Sequence Principle - Vertical 6-layer sequence within pipelines"
+  - "MP109": "Derived Data Pipelines - DRV flexibility patterns"
+  - "MP141": "Scheduled Execution Pattern - Scheduling and observability"
+  - "MP142": "Configuration-Driven Pipeline - YAML configuration standard"
+  - "DF00": "Pipeline Architecture - 6-layer symmetric data flow architecture"
+implements:
+  - "DECLARATIVE_DEPENDENCIES": "All dependencies explicitly declared in scripts"
+  - "ON_DEMAND_EXECUTION": "Run only necessary upstream dependencies"
+  - "DAG_RESOLUTION": "Directed Acyclic Graph for dependency resolution"
+  - "DRV_GROUP_EXECUTION": "Group-based sequential execution for DRV"
+---
+
+# MP140: Pipeline Orchestration Principle
+
+## Core Statement
+
+**ETL and DRV automated execution MUST be driven through declarative dependency markers within each script, enabling on-demand execution where selecting a target automatically runs only its required upstream dependencies.**
+
+### The Golden Rule of Pipeline Orchestration
+
+> **"When you run a DRV target, the system knows exactly what ETL pipelines and upstream DRV scripts it needs, and runs only those - nothing more, nothing less."**
+
+## Architectural Definition
+
+### On-Demand Execution Model
+
+This is the CORE execution pattern for MAMBA pipelines:
+
+```yaml
+execution_model:
+  trigger: "User selects a target DRV script"
+  process:
+    - "Parse target's DEPENDS_ON_ETL and CONSUMES markers"
+    - "Build minimum dependency subgraph"
+    - "Execute only required upstream ETL phases"
+    - "Execute only required upstream DRV scripts"
+    - "Execute the target"
+
+  example:
+    command: "make run TARGET=cbz_D04_02"
+    resolution:
+      - "Read cbz_D04_02.R markers"
+      - "Identify: DEPENDS_ON_ETL: cbz_ETL_sales_2TR"
+      - "Identify: CONSUMES: df_cbz_sales_complete_time_series"
+      - "Build path: cbz_ETL_sales_0IM → 1ST → 2TR → cbz_D04_01 → cbz_D04_02"
+      - "Execute only this path"
+```
+
+### NOT "Run All ETL First"
+
+**CRITICAL DISTINCTION**: The system does NOT run all ETL pipelines before starting DRV. It runs only the minimum necessary path to the selected target.
+
+```yaml
+wrong_model:
+  description: "Run all ETL first, then all DRV"
+  problems:
+    - "Wastes resources on unneeded pipelines"
+    - "Increases total execution time"
+    - "Ignores actual dependencies"
+
+correct_model:
+  description: "Build dependency graph, execute minimum path"
+  benefits:
+    - "Run only what's needed"
+    - "Faster execution for targeted updates"
+    - "Clear dependency visibility"
+```
+
+## Dependency Declaration Standard
+
+### Required Markers in Every DRV Script
+
+Each DRV script MUST declare its dependencies using standardized comment markers:
+
+```r
+#####
+# CONSUMES: df_cbz_sales_complete_time_series_{product_line}
+# PRODUCES: df_cbz_poisson_analysis_{product_line}, df_cbz_poisson_analysis_all
+# DEPENDS_ON_ETL: cbz_ETL_sales_2TR
+# DEPENDS_ON_DRV: cbz_D04_01
+#####
+```
+
+### Marker Definitions
+
+```yaml
+dependency_markers:
+  CONSUMES:
+    purpose: "Declare input data tables/dataframes"
+    format: "Table names or patterns with {placeholders}"
+    example: "df_cbz_sales_complete_time_series_{product_line}"
+
+  PRODUCES:
+    purpose: "Declare output data tables/dataframes"
+    format: "Comma-separated list of output names"
+    example: "df_cbz_poisson_analysis_all, df_cbz_metadata"
+
+  DEPENDS_ON_ETL:
+    purpose: "Declare required ETL pipeline(s)"
+    format: "ETL script identifier(s), comma-separated"
+    example: "cbz_ETL_sales_2TR, cbz_ETL_customers_2TR"
+
+  DEPENDS_ON_DRV:
+    purpose: "Declare required upstream DRV script(s)"
+    format: "DRV script identifier(s), comma-separated"
+    example: "cbz_D04_01, cbz_D01_07"
+```
+
+### ETL Scripts Also Declare Dependencies
+
+ETL scripts declare their phase dependencies:
+
+```r
+#####
+# cbz_ETL_sales_1ST.R
+# CONSUMES: df_cbz_sales___imported (from 0IM phase)
+# PRODUCES: df_cbz_sales___staged
+# DEPENDS_ON_ETL: cbz_ETL_sales_0IM
+#####
+```
+
+## DRV Group Execution Model
+
+### Group-Based Sequential Execution
+
+DRV scripts are organized in numbered groups (D01, D04, etc.). Within each group:
+
+```yaml
+drv_group_execution:
+  within_group:
+    rule: "Execute in numerical sequence"
+    example: "D01_03 → D01_04 → D01_05 → D01_06 → D01_07"
+
+  between_groups:
+    rule: "Can execute in parallel (if no cross-group dependencies)"
+    example: "D01 group || D04 group (parallel if independent)"
+```
+
+### Visual Model
+
+```
+D01 Group (Customer Profile)          D04 Group (Poisson Analysis)
+┌────────────────────────┐           ┌────────────────────────┐
+│  D01_03 → D01_04       │    ||     │  D04_01 → D04_02       │
+│     ↓        ↓         │           │     ↓        ↓         │
+│  D01_05 → D01_06       │           │  D04_03 → D04_04       │
+│     ↓                  │           │     ↓        ↓         │
+│  D01_07                │           │  D04_05 → D04_06       │
+└────────────────────────┘           └────────────────────────┘
+      Sequential internally               Sequential internally
+           ↑────────── Parallel between groups ──────────↑
+```
+
+### No Over-Engineering Within Groups
+
+**IMPORTANT**: Within a DRV group, scripts simply run in numerical order. Do NOT:
+- Create complex dependency graphs within a group
+- Add explicit DEPENDS_ON_DRV for same-group sequential scripts
+- Over-specify what is implied by numbering
+
+```yaml
+group_execution_rules:
+  simple_case:
+    scenario: "D04_01 → D04_02 → D04_03"
+    implementation: "Just loop through sorted filenames"
+    no_need_for: "Explicit dependency markers for same-group sequence"
+
+  complex_case:
+    scenario: "D04_02 needs output from D01_07"
+    implementation: "Use DEPENDS_ON_DRV: cbz_D01_07"
+    required_for: "Cross-group dependencies only"
+```
+
+## Respects Existing Principles
+
+### Integration with MP107 (ETL Independence)
+
+```yaml
+mp107_compliance:
+  horizontal_independence: "ETL pipelines independent of each other"
+  parallel_safe: "Multiple ETL pipelines can run simultaneously"
+  orchestrator_role: "Orchestrator manages parallel execution"
+```
+
+### Integration with MP108 (ETL Phase Sequence)
+
+```yaml
+mp108_compliance:
+  vertical_sequence: "0IM → 1ST → 2TR → 3PR → 4CL → 5NM"
+  same_datatype: "Phases execute in sequence within same datatype"
+  different_datatype: "Different datatypes can run in parallel"
+```
+
+### Integration with MP064 (ETL-DRV Separation)
+
+```yaml
+mp064_compliance:
+  physical_separation: "ETL/ and DRV/ directories remain separate"
+  clear_boundary: "ETL prepares data, DRV applies business logic"
+  orchestration_layer: "Orchestration/ coordinates both"
+```
+
+## Configuration Integration (MP142)
+
+### How Configuration Drives Orchestration
+
+The orchestration system integrates with **MP142 Configuration-Driven Pipeline** to resolve dependencies:
+
+```
+Configuration-to-Execution Flow
+===============================
+
+_targets_config.yaml (at project root)
+    │
+    ├─→ Defines enabled platforms
+    ├─→ Specifies DRV groups per platform
+    ├─→ Contains explicit dependency overrides
+    │
+    ↓
+Script Markers (in each .R file)
+    │
+    ├─→ DEPENDS_ON_ETL
+    ├─→ DEPENDS_ON_DRV
+    ├─→ CONSUMES / PRODUCES
+    │
+    ↓
+DAG Resolution (at runtime)
+    │
+    ├─→ Merge config + markers
+    ├─→ Build dependency graph
+    ├─→ Topological sort
+    │
+    ↓
+Execution Plan
+    │
+    └─→ Run minimum necessary path
+```
+
+### Configuration as Dependency Source
+
+```yaml
+configuration_dependency_flow:
+  primary_source: "Script markers (DEPENDS_ON_*)"
+  override_source: "_targets_config.yaml explicit_dependencies"
+
+  resolution_order:
+    1: "Read target from CLI (TARGET=cbz_D04_02)"
+    2: "Load _targets_config.yaml"
+    3: "Parse target script markers"
+    4: "Check config for explicit overrides"
+    5: "Build combined dependency graph"
+    6: "Execute topological order"
+
+  config_can_add:
+    - "Dependencies not declared in markers"
+    - "Cross-platform dependencies"
+    - "Platform-specific overrides"
+
+  config_cannot:
+    - "Remove dependencies declared in markers"
+    - "Change execution order within groups"
+```
+
+### Three-Layer Config Awareness
+
+Per **SO_P016**, the orchestration system respects the three-layer configuration:
+
+```yaml
+config_layers:
+  layer_1_universal:
+    source: "global_scripts/templates/_targets_config.base.yaml"
+    provides: "Default execution settings, phase ordering"
+
+  layer_2_company:
+    source: "app_config.yaml > pipeline:"
+    provides: "Enabled platforms, DRV groups, worker count"
+
+  layer_3_generated:
+    source: "{project_root}/_targets_config.yaml"
+    provides: "Merged final configuration for execution"
+
+  orchestrator_reads: "Layer 3 (generated merged config)"
+```
+
+### Configuration Update Workflow
+
+```bash
+# When dependencies change:
+
+# 1. Update script markers OR app_config.yaml pipeline: section
+vim cbz/cbz_D04_02.R  # Update DEPENDS_ON_* markers
+
+# 2. Regenerate merged config
+make config-merge
+
+# 3. Scan for new scripts
+make config-scan
+
+# 4. Validate
+make config-validate
+
+# 5. Run
+make run TARGET=cbz_D04_02
+```
+
+## DAG Construction Algorithm
+
+### Dependency Resolution Process
+
+```r
+# Pseudocode for dependency resolution
+resolve_dependencies <- function(target) {
+  # 1. Read target script markers
+  markers <- parse_dependency_markers(target)
+
+  # 2. Build upstream dependency set
+  dependencies <- list()
+
+  # Add ETL dependencies
+  for (etl in markers$DEPENDS_ON_ETL) {
+    # Recursively add ETL phase chain
+    dependencies <- c(dependencies, get_etl_chain(etl))
+  }
+
+  # Add DRV dependencies
+  for (drv in markers$DEPENDS_ON_DRV) {
+    # Recursively resolve DRV dependencies
+    dependencies <- c(dependencies, resolve_dependencies(drv))
+  }
+
+  # 3. Return ordered execution list
+  return(topological_sort(dependencies))
+}
+```
+
+### Example Dependency Graph
+
+```
+cbz_ETL_sales_0IM
+    ↓
+cbz_ETL_sales_1ST
+    ↓
+cbz_ETL_sales_2TR ─────────┐
+                           │
+cbz_ETL_customers_2TR ─────┼──→ cbz_D01_03 ─→ cbz_D01_04
+                           │         ↓
+                           │    cbz_D04_01
+                           │         ↓
+                           └──→ cbz_D04_02 (TARGET)
+```
+
+When `TARGET=cbz_D04_02`, only this subgraph executes.
+
+## Platform Isolation
+
+### Per-Platform Execution
+
+```yaml
+platform_isolation:
+  independent_platforms:
+    - cbz (Cyberbiz)
+    - amz (Amazon)
+    - eby (eBay)
+
+  cross_platform:
+    directory: "all/"
+    depends_on: "Multiple platform outputs"
+    example: "all_D04_08.R depends on cbz_D04_02, eby_D04_02"
+```
+
+### Cross-Platform Dependencies
+
+```r
+#####
+# all_D04_08.R - Cross-platform Poisson summary
+# CONSUMES: df_cbz_poisson_analysis_all, df_eby_poisson_analysis_all
+# PRODUCES: df_all_poisson_summary
+# DEPENDS_ON_DRV: cbz_D04_02, eby_D04_02
+#####
+```
+
+## Implementation Guidelines
+
+### Adding New DRV Scripts
+
+1. **Assign group and sequence number** following DM_R042
+2. **Add required markers** at top of script
+3. **Test with dry-run** to verify dependency resolution
+4. **Update configuration** if needed
+
+### Marker Placement Standard
+
+```r
+#####
+# {platform}_{script_id}.R
+# P-number: P{nn}_{script_id}
+#
+# CONSUMES: {input_tables}
+# PRODUCES: {output_tables}
+# DEPENDS_ON_ETL: {required_etl_scripts}
+# DEPENDS_ON_DRV: {required_drv_scripts}
+#
+# Description: {brief description}
+#####
+
+# Script implementation follows...
+```
+
+## CLI Interface
+
+### Target-Based Execution
+
+```bash
+# Run specific DRV target with auto-dependency resolution
+make run TARGET=cbz_D04_02
+
+# Run all DRV for a platform
+make run PLATFORM=cbz
+
+# Dry-run to see what would execute
+make dry-run TARGET=cbz_D04_02
+
+# Visualize dependency graph
+make vis TARGET=cbz_D04_02
+```
+
+### Expected Output
+
+```
+$ make run TARGET=cbz_D04_02
+
+Resolving dependencies for: cbz_D04_02
+Dependency graph:
+  1. cbz_ETL_sales_0IM (needs update)
+  2. cbz_ETL_sales_1ST (needs update)
+  3. cbz_ETL_sales_2TR (needs update)
+  4. cbz_D04_01 (needs update)
+  5. cbz_D04_02 (target)
+
+Executing pipeline...
+[1/5] cbz_ETL_sales_0IM... OK (45s)
+[2/5] cbz_ETL_sales_1ST... OK (12s)
+[3/5] cbz_ETL_sales_2TR... OK (23s)
+[4/5] cbz_D04_01... OK (67s)
+[5/5] cbz_D04_02... OK (89s)
+
+Pipeline complete. Total time: 3m 56s
+```
+
+## Compliance Checklist
+
+### For Every DRV Script
+
+```yaml
+compliance_checklist:
+  ✓ Has CONSUMES marker declaring input tables
+  ✓ Has PRODUCES marker declaring output tables
+  ✓ Has DEPENDS_ON_ETL if consuming ETL output
+  ✓ Has DEPENDS_ON_DRV if consuming other DRV output
+  ✓ Markers placed in standard header format
+  ✓ No circular dependencies
+  ✓ Cross-group dependencies explicitly declared
+```
+
+### For ETL Scripts
+
+```yaml
+etl_compliance:
+  ✓ Phase dependencies follow MP108 (0IM→1ST→2TR...)
+  ✓ PRODUCES marker declares output tables
+  ✓ DEPENDS_ON_ETL for phase chain (1ST depends on 0IM, etc.)
+```
+
+## Benefits Summary
+
+```yaml
+orchestration_benefits:
+  efficiency:
+    - "Run only what's needed"
+    - "Skip up-to-date dependencies"
+    - "Parallel execution where possible"
+
+  clarity:
+    - "Dependencies visible in code"
+    - "Execution path predictable"
+    - "Easy to debug and trace"
+
+  flexibility:
+    - "Target any script directly"
+    - "Platform-selective execution"
+    - "Incremental updates supported"
+
+  maintainability:
+    - "Self-documenting dependencies"
+    - "No external dependency files to sync"
+    - "Changes tracked in git with code"
+```
+
+## Conclusion
+
+The Pipeline Orchestration Principle establishes a declarative, on-demand execution model for MAMBA pipelines. By requiring explicit dependency markers in each script and building execution graphs dynamically, the system ensures efficient, predictable, and maintainable pipeline execution.
+
+**Key Mandates:**
+1. Every DRV script declares CONSUMES, PRODUCES, and DEPENDS_ON_* markers
+2. Execution is on-demand: select target → run minimum necessary path
+3. DRV groups execute sequentially internally, can parallel between groups
+4. ETL+DRV follows 6-layer symmetric sequence per MP108
+5. Cross-group and cross-platform dependencies must be explicitly declared

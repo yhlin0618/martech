@@ -1,0 +1,109 @@
+---
+
+title: "D04_04: Time Series Expansion"
+subtitle: "Build complete sales time series for Poisson analysis"
+parent: "D04_poisson_marketing"
+chapter: "CH12"
+category: "derivation-task"
+number: "D04_04"
+date-created: "2025-12-14"
+date-modified: "2025-12-30"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D04_00_product_dictionary"
+outputs_to:
+  - "D04_02_poisson_analysis"
+implements:
+  - script: "cbz_D04_04.R"
+    path: "update_scripts/DRV/cbz/"
+  - script: "eby_D04_04.R"
+    path: "update_scripts/DRV/eby/"
+  - script: "all_D04_04.R"
+    path: "update_scripts/DRV/all/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D04_04: Time Series Expansion {#overview}
+
+This task builds complete sales time series for Poisson analysis. Behavior is
+platform-specific (CBZ/EBY ETL wrappers, ALL wrapper).
+
+## Implementation Scripts
+
+| Platform | Script | Location | Output |
+|----------|--------|----------|--------|
+| Cyberbiz | `cbz_D04_04.R` | `update_scripts/DRV/cbz/` | Delegates to ETL time series script |
+| eBay | `eby_D04_04.R` | `update_scripts/DRV/eby/` | Delegates to ETL time series script |
+| All | `all_D04_04.R` | `update_scripts/DRV/all/` | Delegates to `all_D04_07.R` |
+
+## Platform Behavior
+
+### CBZ (ETL-Driven)
+
+- Time series build is implemented in a derived ETL script.
+- `cbz_D04_04.R` is a wrapper that triggers the ETL step.
+- Inputs:
+  - `transformed_data.df_cbz_sales___transformed`
+  - `raw_data.df_all_item_profile_{product_line}`
+  - `app_data.df_product_line` (preferred) or
+    `data/app_data/parameters/scd_type1/df_product_line.csv` (fallback)
+- ETL script:
+  - `scripts/update_scripts/ETL/cbz/cbz_ETL_sales_time_series_2TR.R`
+- Outputs:
+  - `app_data.df_cbz_sales_complete_time_series_{product_line}`
+  - `app_data.df_cbz_sales_complete_time_series`
+- Note: This ETL produces base time series fields; feature enrichment occurs downstream.
+
+### EBY (ETL-Driven)
+
+- Time series build is implemented in a derived ETL script.
+- `eby_D04_04.R` is a wrapper that triggers the ETL step.
+- Requires ETL outputs:
+  - `scripts/update_scripts/ETL/eby/eby_ETL_sales_2TR___MAMBA.R`
+    -> `transformed_data.df_eby_sales___transformed___MAMBA`
+  - `scripts/update_scripts/ETL/all/all_ETL_item_profile_0IM.R`
+    -> `raw_data.df_all_item_profile_{product_line}`
+- ETL script:
+  - `scripts/update_scripts/ETL/eby/eby_ETL_sales_time_series_2TR___MAMBA.R`
+- Inputs:
+  - `transformed_data.df_eby_sales___transformed___MAMBA`
+  - `raw_data.df_all_item_profile_{product_line}`
+- Outputs:
+  - `app_data.df_eby_sales_complete_time_series_{product_line}`
+  - `app_data.df_eby_sales_complete_time_series`
+
+### ALL (Wrapper)
+
+- `all_D04_04.R` delegates to [D04_07: Precision Time Series Completion](D04_07_precision_time_series.qmd).
+- Output is `processed_data.df_precision_time_series` (placeholder schema when sales data is missing).
+
+## Task Definition (NSQL)
+
+```nsql
+EXPAND D04_04_time_series:
+  FOR CBZ:
+    FROM transformed_data.df_cbz_sales___transformed
+    JOIN raw_data.df_all_item_profile_{product_line}
+    COMPLETE_TIME_SERIES BY day WITH zero_fill
+    OUTPUT TO app_data.df_cbz_sales_complete_time_series_{product_line}
+  FOR EBY:
+  FROM transformed_data.df_eby_sales___transformed___MAMBA
+  JOIN raw_data.df_all_item_profile_{product_line}
+  COMPLETE_TIME_SERIES BY day WITH zero_fill
+  OUTPUT TO app_data.df_eby_sales_complete_time_series_{product_line}
+```
+
+## Output Tables
+
+- `app_data.df_eby_sales_complete_time_series_{product_line}`
+- `app_data.df_eby_sales_complete_time_series`
+- `processed_data.df_precision_time_series` (ALL track)
+
+## Next Task
+
+Proceed to [D04_02: Poisson Analysis Core](D04_02_poisson_analysis.qmd).

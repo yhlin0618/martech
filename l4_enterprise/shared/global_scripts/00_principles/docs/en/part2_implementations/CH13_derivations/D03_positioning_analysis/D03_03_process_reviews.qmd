@@ -1,0 +1,159 @@
+---
+
+title: "D03_03: Process Reviews"
+subtitle: "Long-to-wide transformation of AI rating results"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_03"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_02_rate_reviews"
+outputs_to:
+  - "D03_04_query_by_asin"
+implements:
+  - script: "amz_D03_09.R"
+    path: "update_scripts/DRV/amz/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_03: Process Reviews {#overview}
+
+This task transforms the long-format AI rating results back to wide format, with each property becoming a column. This prepares the data for product-level aggregation.
+
+## Implementation Scripts
+
+| Platform | Script | Location |
+|----------|--------|----------|
+| Amazon | `amz_D03_09.R` | `update_scripts/DRV/amz/` |
+
+## Task Definition (NSQL)
+
+```nsql
+# Layer 4CL: Output to cleansed_data (intermediate wide-format data)
+TRANSFORM processed_data.df_rating_results___processed
+WITH long_to_wide BY property_name
+TO cleansed_data.df_comment_property_ratingonly_{product_line_id}___cleansed
+```
+
+**Layer**: 4CL (Cleanse) - Per MP144, output uses `___cleansed` suffix.
+
+## Detailed Transformation (NSQL)
+
+```nsql
+# D03_03: Long-to-Wide Transformation [Layer: 4CL]
+TRANSFORM D03_03_process_reviews:
+  FOR EACH product_line_id IN vec_product_line_id:
+    FROM processed_data.df_ratings_{product_line_id}___processed
+
+    # Step 1: Filter valid ratings
+    FILTER:
+      ai_rating IS NOT NULL
+      AND confidence >= 0.5
+
+    # Step 2: Long-to-wide transformation
+    PIVOT_WIDER:
+      id_columns: [review_id, product_id, review_text, rating, review_date]
+      names_from: property_name
+      values_from: ai_rating
+      names_prefix: "prop_"
+
+    # Step 3: Calculate review-level aggregates
+    CALCULATE:
+      avg_property_rating: MEAN(prop_*) ACROSS all property columns
+      property_count: COUNT_NON_NULL(prop_*)
+
+    # Step 4: Output to cleansed_data with ___cleansed suffix
+    OUTPUT TO cleansed_data.df_comment_property_ratingonly_{product_line_id}___cleansed
+
+    LOG "Processed {row_count} reviews for product line {product_line_id}"
+```
+
+## Long-to-Wide Transformation Details (NSQL)
+
+```nsql
+# D03_03: Long-to-Wide Pivot Details
+PIVOT_WIDER D03_03_pivot:
+  # Input: Long format with property ratings
+  INPUT:
+    review_id, product_id, property_name, ai_rating, confidence
+
+  # Output: Wide format with property columns
+  OUTPUT:
+    review_id, product_id,
+    prop_durability, prop_value, prop_quality, prop_design, ...
+
+  # Transformation using tidyr::pivot_wider()
+  TRANSFORM:
+    id_cols: [review_id, product_id, review_text, rating, review_date]
+    names_from: property_name
+    values_from: ai_rating
+    names_prefix: "prop_"
+    values_fill: NA
+
+  # Handle multiple ratings per (review, property)
+  values_fn: MEAN  # Average if multiple ratings exist
+```
+
+## Quality Filtering (NSQL)
+
+```nsql
+# D03_03: Quality Filtering Rules
+FILTER D03_03_quality:
+  # Rule 1: Minimum confidence threshold
+  FILTER ai_rating WHERE confidence >= 0.5
+
+  # Rule 2: Valid rating range
+  FILTER ai_rating WHERE ai_rating BETWEEN 1 AND 5
+
+  # Rule 3: Flag low-quality reviews
+  FLAG low_quality_reviews:
+    property_count < 3  # Fewer than 3 properties rated
+    avg_confidence < 0.6  # Low average confidence
+```
+
+## Implementation Reference {#implementation}
+
+See platform implementation scripts listed in "Implementation Scripts" section above.
+
+Key implementation features:
+- Uses `fn_process_review_ratings()` for transformation
+- Applies quality filtering based on confidence scores
+- Handles missing values with NA (for later imputation)
+- Preserves original review metadata
+
+Scripts follow [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) Five-Part Structure.
+
+## Output Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `review_id` | VARCHAR | Review identifier |
+| `product_id` | VARCHAR | Product ASIN |
+| `review_text` | VARCHAR | Original review text |
+| `rating` | INTEGER | Original star rating |
+| `review_date` | DATE | Review date |
+| `prop_durability` | INTEGER | AI rating for durability (1-5) |
+| `prop_value` | INTEGER | AI rating for value (1-5) |
+| `prop_quality` | INTEGER | AI rating for quality (1-5) |
+| `prop_*` | INTEGER | AI ratings for other properties |
+| `avg_property_rating` | FLOAT | Average across all properties |
+| `property_count` | INTEGER | Number of properties rated |
+
+## Key Principle
+
+Long-to-wide transformation enables **review-level analysis** where each review has ratings for all properties. This structure supports:
+1. Per-review quality assessment
+2. Cross-property correlation analysis
+3. Efficient product-level aggregation in D03_04
+
+## Next Task
+
+After processing reviews, proceed to [D03_04: Query by ASIN](D03_04_query_by_asin.qmd).

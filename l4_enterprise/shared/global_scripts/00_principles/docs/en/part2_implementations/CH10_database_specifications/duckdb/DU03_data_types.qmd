@@ -1,0 +1,308 @@
+---
+title: "DU03: DuckDB Data Types Reference"
+subtitle: "Complete Guide to Data Types and Type Mappings"
+author: "MAMBA Framework"
+date: "2025-08-28"
+categories: [duckdb, data-types, reference]
+---
+
+# DuckDB Data Types Reference
+
+## Overview
+
+This document provides a complete reference for DuckDB data types, including mappings from R and Python, type conversion rules, and best practices for type handling in the MAMBA framework.
+
+## Basic Data Types
+
+### Numeric Types
+
+| DuckDB Type | R Type | Python Type | Range/Precision | Use Case |
+|------------|--------|-------------|-----------------|----------|
+| **TINYINT** | integer | int | -128 to 127 | Small counts, flags |
+| **SMALLINT** | integer | int | -32,768 to 32,767 | Medium counts |
+| **INTEGER** | integer | int | -2,147,483,648 to 2,147,483,647 | Standard integers |
+| **BIGINT** | numeric/integer64 | int | -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807 | Large IDs, timestamps |
+| **HUGEINT** | numeric | int | -170,141,183,460,469,231,731,687,303,715,884,105,728 to 170,141,183,460,469,231,731,687,303,715,884,105,727 | Extreme values |
+| **FLOAT** | numeric | float | 4 bytes, ~7 digits precision | Scientific data |
+| **DOUBLE** | numeric | float | 8 bytes, ~15 digits precision | Standard decimals |
+| **DECIMAL(p,s)** | numeric | Decimal | User-defined precision | Financial data |
+
+#### Numeric Type Selection Guide
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `choose_numeric_type()`  
+**Purpose**: Automatically selects optimal DuckDB numeric type based on data characteristics
+:::
+
+```r
+# Usage: source the implementation file
+source("scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R")
+```
+
+### String Types
+
+| DuckDB Type | R Type | Python Type | Description |
+|------------|--------|-------------|-------------|
+| **VARCHAR** | character | str | Variable-length string, no limit |
+| **CHAR(n)** | character | str | Fixed-length string, padded |
+| **TEXT** | character | str | Alias for VARCHAR |
+| **STRING** | character | str | Alias for VARCHAR |
+
+#### String Handling Best Practices
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `prepare_strings_for_duckdb()`  
+**Purpose**: Cleans and normalizes string data for DuckDB storage
+:::
+
+
+### Date and Time Types
+
+| DuckDB Type | R Type | Python Type | Format | Range |
+|------------|--------|-------------|--------|-------|
+| **DATE** | Date | date | YYYY-MM-DD | 0001-01-01 to 9999-12-31 |
+| **TIME** | hms | time | HH:MM:SS[.ffffff] | 00:00:00 to 23:59:59.999999 |
+| **TIMESTAMP** | POSIXct | datetime | YYYY-MM-DD HH:MM:SS[.ffffff] | 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999 |
+| **TIMESTAMPTZ** | POSIXct | datetime | With timezone | Same as TIMESTAMP |
+| **INTERVAL** | difftime | timedelta | Flexible duration | Various |
+
+#### Temporal Type Conversion
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `handle_temporal_types()`  
+**Purpose**: Standardizes date/time columns to UTC and proper formats
+:::
+
+
+### Boolean Type
+
+| DuckDB Type | R Type | Python Type | Values |
+|------------|--------|-------------|--------|
+| **BOOLEAN** | logical | bool | TRUE/FALSE/NULL |
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `prepare_boolean_columns()`  
+**Purpose**: Ensures proper three-valued logic for boolean columns
+:::
+
+## Complex/Nested Data Types
+
+### LIST Type
+
+The LIST type stores variable-length arrays of homogeneous elements.
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_list_columns.R`  
+**Functions**: `handle_list_columns()`, `extract_first_element()`, `summarize_list_column()`  
+**Purpose**: Multiple strategies for handling list columns from APIs and nested data
+:::
+
+```sql
+-- Creating LIST columns in DuckDB
+CREATE TABLE products (
+  id INTEGER,
+  tags VARCHAR[],  -- LIST of strings
+  prices DOUBLE[]  -- LIST of doubles
+)
+```
+
+### STRUCT Type
+
+STRUCT type represents a row with named fields of potentially different types.
+
+::: {.callout-note}
+## SQL Pattern for STRUCT
+```sql
+-- Creating STRUCT: STRUCT_PACK(field := value, ...)
+-- Accessing fields: struct_column.field_name
+```
+:::
+
+**Implementation**: See `fn_duckdb_list_columns.R` - `process_struct_data()`
+
+### MAP Type
+
+MAP type stores key-value pairs with consistent types.
+
+::: {.callout-note}
+## SQL Pattern for MAP
+```sql
+-- Create: MAP(keys_array, values_array)
+-- Access: map_column['key_name']
+```
+:::
+
+### JSON Type
+
+JSON type requires the json extension and stores semi-structured data.
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_list_columns.R`  
+**Function**: `handle_json_data()`  
+**SQL Functions**: `json_extract()`, `json_array_length()`
+:::
+
+## Type Mapping Tables
+
+### R to DuckDB Type Mapping
+
+| R Class | DuckDB Type | Notes |
+|---------|-------------|-------|
+| integer | INTEGER | Use INTEGER64 for large values |
+| numeric | DOUBLE | Use DECIMAL for financial data |
+| character | VARCHAR | No length limit needed |
+| logical | BOOLEAN | Three-valued logic (TRUE/FALSE/NULL) |
+| Date | DATE | |
+| POSIXct | TIMESTAMP | Convert to UTC recommended |
+| POSIXlt | TIMESTAMP | Convert to POSIXct first |
+| factor | VARCHAR | Convert to character first |
+| list | JSON or LIST | Depends on structure |
+| data.frame | JSON | Nested data frames as JSON |
+| raw | BLOB | Binary data |
+
+### Python to DuckDB Type Mapping
+
+| Python Type | DuckDB Type | Notes |
+|------------|-------------|-------|
+| int | INTEGER/BIGINT | Based on value range |
+| float | DOUBLE | |
+| str | VARCHAR | |
+| bool | BOOLEAN | |
+| datetime.date | DATE | |
+| datetime.datetime | TIMESTAMP | |
+| datetime.time | TIME | |
+| datetime.timedelta | INTERVAL | |
+| list | LIST or JSON | Homogeneous → LIST |
+| dict | JSON or STRUCT | |
+| bytes | BLOB | |
+| Decimal | DECIMAL | Preserves precision |
+| numpy.ndarray | LIST | 1D arrays only |
+| pandas.DataFrame | Table | Direct registration |
+
+## Type Conversion Functions
+
+### Explicit Type Casting
+
+```sql
+-- SQL casting syntax
+SELECT 
+  '123'::INTEGER as int_value,
+  123::VARCHAR as str_value,
+  '2024-01-01'::DATE as date_value,
+  '{"key": "value"}'::JSON as json_value,
+  CAST('3.14' AS DOUBLE) as double_value
+FROM table_name;
+```
+
+### R Type Conversion Utilities
+
+::: {.callout-important}
+## Complete Implementation Available
+**Location**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`
+
+**Key Functions**:
+- `convert_r_to_duckdb()` - Maps R types to DuckDB types
+- `create_table_from_df()` - Creates tables with explicit type definitions
+- `check_overflow()` - Validates numeric ranges before insertion
+- `save_factor_levels()` - Preserves factor metadata
+- `standardize_timezones()` - Ensures UTC consistency
+:::
+
+
+### Python Type Conversion Patterns
+
+::: {.callout-tip}
+## Python Implementation Pattern
+For Python users, similar type conversion logic can be implemented following the patterns in the R implementation. The key principles are:
+1. Analyze data characteristics to select optimal types
+2. Handle NULL/NaN values consistently
+3. Standardize temporal data to UTC
+4. Use JSON for complex nested structures
+:::
+
+## Type-Specific Considerations
+
+### NULL Handling
+
+DuckDB uses three-valued logic for NULL values:
+
+::: {.callout-note}
+## Implementation Reference
+**R Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `handle_nulls()`  
+**SQL Pattern**: Use `IS NULL`/`IS NOT NULL` for comparisons, `COALESCE()` for defaults
+:::
+
+### Overflow Protection
+
+::: {.callout-warning}
+## Overflow Protection
+**Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `check_overflow()`  
+**Purpose**: Validates numeric ranges to prevent overflow errors
+:::
+
+### Performance Tips by Type
+
+1. **Integers**: Use the smallest integer type that fits your data
+2. **Strings**: No need to specify VARCHAR length in DuckDB
+3. **Dates**: Store as DATE rather than VARCHAR for better performance
+4. **Booleans**: More efficient than TINYINT for true/false values
+5. **JSON**: Use for truly semi-structured data, not for known structures
+6. **Lists**: Prefer over JSON for homogeneous arrays
+
+## Common Type-Related Issues
+
+### Issue: List columns from tidyr::nest()
+
+::: {.callout-solution}
+## Solution Reference
+**Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_list_columns.R`  
+**Functions**: `lists_to_json()`, `store_list_as_json()`  
+**Approach**: Convert nested data frames to JSON strings for storage
+:::
+
+### Issue: Factor levels lost
+
+::: {.callout-solution}
+## Solution Reference
+**Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `save_factor_levels()`  
+**Approach**: Store factor levels in separate lookup tables
+:::
+
+### Issue: Time zone confusion
+
+::: {.callout-solution}
+## Solution Reference
+**Implementation**: `scripts/global_scripts/02_db_utils/duckdb/fn_duckdb_type_conversion.R`  
+**Function**: `standardize_timezones()`  
+**Best Practice**: Always convert to UTC before storage
+:::
+
+## Best Practices Summary
+
+1. **Always specify types explicitly** when creating tables
+2. **Validate data types** before bulk inserts
+3. **Use appropriate precision** for numeric types
+4. **Standardize temporal data** to UTC
+5. **Document type conversions** in your ETL pipeline
+6. **Test with edge cases** (NULL, empty, extreme values)
+7. **Monitor for overflow** in production data
+8. **Prefer native types** over string storage when possible
+
+## Related Documentation
+
+- [DuckDB Official Type Documentation](https://duckdb.org/docs/sql/data_types/overview)
+- [MAMBA Type Conversion Rules (DM_R025)](../../part1_principles/CH02_data_management/rules/DM_R025_type_conversion_r_duckdb.qmd)
+- [List Column Handling (DM_R024)](../../part1_principles/CH02_data_management/rules/DM_R024_list_column_handling.qmd)

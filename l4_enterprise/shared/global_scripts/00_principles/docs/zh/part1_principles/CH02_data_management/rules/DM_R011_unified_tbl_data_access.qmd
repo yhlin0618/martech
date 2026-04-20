@@ -1,0 +1,162 @@
+---
+title: "DM_R011: 統一 tbl 型資料存取模式"
+subtitle: "所有資料來源，無論類型（資料庫、列表、函數、資料框），都應使用一致的 tbl() 型模式存取，提供惰性資料存取、一致的過濾和選擇操作、資料引用與資料收集之間的清晰分離"
+chapter: "CH02"
+category: "rule"
+number: "DM_R011"
+date-created: "2025-04-13"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 11
+  title: "統一 tbl 型資料存取模式"
+derives_from:
+  - "MP16: 模組化"
+  - "MP17: 關注分離"
+  - "P77: 性能優化"
+  - "R91: 通用資料存取模式"
+  - "R100: 通過 tbl() 的資料庫存取規則"
+influences:
+  - "P04: 應用程式建構原則"
+  - "R92: 通用 DBI 方法"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十一條：統一 tbl 型資料存取模式 {#overview}
+
+**資料管理法第十一條（統一 tbl 型資料存取模式）**
+
+此規則確保所有資料來源使用一致的存取模式，提供惰性評估和統一的操作介面。
+
+:::{.callout-important}
+## 核心規則
+所有資料來源，無論類型（資料庫、列表、函數、資料框），都應使用一致的 tbl() 型模式存取，提供：
+1. 盡可能的惰性資料存取
+2. 一致的過濾和選擇操作
+3. 資料引用與資料收集之間的清晰分離
+4. 跨不同資料來源的統一處理
+:::
+
+# 第一項：實施指南 {#implementation-guidelines}
+
+## 第一款：統一引用模型 {#unified-reference-model}
+
+- 創建資料引用而非立即擷取資料
+- 為所有資料類型實施模仿 dplyr::tbl() 的一致模式
+- 為所有資料類型支援 filter()、select() 和 collect() 等方法
+
+## 第二款：惰性評估 {#lazy-evaluation}
+
+- 延遲實際資料存取直到呼叫 collect()
+- 在資料檢索前建立操作（過濾器、投影）
+- 僅在需要最終結果時收集資料
+
+## 第三款：資料庫存取 {#database-access}
+
+- 對於 DBI 連接，根據 R100 使用 dplyr::tbl() 和 dbplyr
+- 對於非 DBI 連接，實施提供相同功能的相容介面
+- 最初將所有資料來源視為引用物件
+
+## 第四款：非資料庫來源 {#non-database-sources}
+
+- 將所有非資料庫資料來源包裝在相容的引用介面中
+- 實施可在收集時應用於資料的 filter() 和 select() 操作
+- 使用統一介面支援各種存取模式（直接、基於函數等）
+
+## 第五款：統一介面 {#uniform-interface}
+
+- 所有資料存取應遵循相同模式，無論來源類型
+- 為不同環境提供一致的備用方案
+- 維護與現有代碼的相容性
+
+# 第二項：範例 {#examples}
+
+## 第一款：統一存取介面 {#unified-access-interface}
+
+```r
+# 任何資料來源的存取模式
+data_ref <- get_data_reference(connection, "table_name")
+filtered_ref <- data_ref %>% filter(column == value) %>% select(col1, col2)
+result <- collect(filtered_ref)
+
+# 資料庫連接（內部使用 dplyr::tbl）
+db_conn <- DBI::dbConnect(...)
+data_ref <- get_data_reference(db_conn, "customers")
+result <- data_ref %>% 
+  filter(status == "active") %>% 
+  select(id, name, email) %>%
+  collect()
+
+# 列表連接（使用類 tbl 包裝器）
+list_conn <- list(customers = data.frame(...))
+data_ref <- get_data_reference(list_conn, "customers")
+result <- data_ref %>% 
+  filter(status == "active") %>% 
+  select(id, name, email) %>%
+  collect()
+
+# 基於函數的連接（也使用類 tbl 包裝器）
+fn_conn <- list(get_customers = function() { ... })
+data_ref <- get_data_reference(fn_conn, "customers")
+result <- data_ref %>% 
+  filter(status == "active") %>% 
+  select(id, name, email) %>%
+  collect()
+```
+
+## 第二款：在通用資料存取器中的實施 {#implementation-in-universal-data-accessor}
+
+```r
+# 為任何資料來源創建統一引用
+universal_data_reference <- function(connection, data_name) {
+  # 對於 DBI 連接，使用 dplyr::tbl
+  if (inherits(connection, "DBIConnection")) {
+    return(dplyr::tbl(connection, data_name))
+  }
+  
+  # 對於所有其他連接類型，創建類 tbl 引用
+  return(create_tbl_ref(connection, data_name))
+}
+
+# 使用範例
+ref <- universal_data_reference(conn, "customers")
+filtered_ref <- ref %>% filter(region == "東部")
+result <- collect(filtered_ref)
+```
+
+# 第三項：優點 {#benefits}
+
+- **一致性**：所有資料存取遵循相同模式
+- **性能**：可在資料收集前優化操作
+- **靈活性**：適用於任何資料來源類型
+- **可維護性**：資料存取與處理之間的關注點清晰分離
+- **相容性**：與 dplyr 等 tidyverse 工具無縫整合
+
+# 第四項：向後相容性 {#backward-compatibility}
+
+此模式建立在 R91（通用資料存取模式）和 R100（通過 tbl() 的資料庫存取規則）之上，但將它們擴展到所有資料來源。為了向後相容：
+
+1. universal_data_accessor 函數應維護其當前簽名
+2. 從引用模型到具體資料的自動轉換應在內部發生
+3. 應為沒有 dplyr 的環境實施備用方法
+
+# 第五項：與其他模式的使用 {#usage-with-other-patterns}
+
+此模式設計為與以下模式無縫協作：
+
+- **R76**（模組資料連接）：模組應接收與此模式配合使用的資料連接物件
+- **R91**（通用資料存取模式）：這以更一致的處理擴展 R91
+- **R100**（通過 tbl() 的資料庫存取規則）：這將 R100 概括到所有資料來源
+
+---
+
+*基於：資料管理法第十一條*  
+*相關連結：[R91 通用資料存取模式](DM_R002_universal_data_access.qmd), [R100 資料庫存取 tbl 規則](DM_R003_database_access_tbl.qmd)*

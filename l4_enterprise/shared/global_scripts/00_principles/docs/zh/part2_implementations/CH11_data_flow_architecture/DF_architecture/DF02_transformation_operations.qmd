@@ -1,0 +1,715 @@
+---
+id: "DF002"
+title: "Transformation Operations"
+type: "data-flow"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "DF001": "Staging Operations"
+  - "MP0052": "Unidirectional Data Flow"
+influences:
+  - "DF003": "Cleansing Operations"
+relates_to:
+  - "MP0058": "Database Table Creation Strategy"
+  - "R091": "Universal Data Access"
+  - "R092": "Universal DBI Approach"
+---
+
+# DF02: Transformation Operations
+
+## Core Principle
+
+Transformation operations perform **schema-level standardization**, converting staged data into a unified structure with consistent column names, data types, and reference relationships without modifying data quality or business logic.
+
+## Purpose and Scope
+
+### What Transformation Does
+- **Column standardization**: Rename columns to consistent naming conventions
+- **Data type conversion**: Convert strings to dates, numbers, factors as appropriate
+- **Reference data integration**: Add foreign key relationships and lookup values
+- **Schema normalization**: Ensure consistent structure across similar tables
+- **Simple derived fields**: Calculate basic fields needed for downstream processing
+
+### What Transformation Does NOT Do
+- **Data quality fixes**: No deduplication, missing value imputation, or outlier removal
+- **Business logic**: No KPIs, segmentation, or complex calculated metrics
+- **Data validation**: No business rule enforcement or constraint checking
+- **Aggregation**: No summarization or grouping operations
+
+## Layer Position in Pipeline
+
+```mermaid
+graph LR
+    A[raw_data] --> B[staged_data]
+    B --> C[transformed_data]
+    C --> D[cleansed_data]
+    D --> E[processed_data]
+    E --> F[app_data]
+    
+    C -.-> C1["Transformation Layer<br/>• Schema standardization<br/>• Type conversion<br/>• Reference integration"]
+    
+    style C fill:#fff3e0
+    style C1 fill:#fff3e0
+```
+
+**Input**: `staged_data.duckdb` (Layer 2)  
+**Output**: `transformed_data.duckdb` (Layer 3)  
+**Directory**: `20_transformed/`
+
+## Schema Standardization Patterns
+
+### 1. Column Naming Convention
+
+Transform all column names to follow consistent patterns:
+
+```r
+# Standard naming convention: section_entity_attribute
+# Examples:
+#   customer_profile_email
+#   order_detail_quantity  
+#   product_info_category
+#   campaign_performance_ctr
+
+standardize_column_names <- function(df, table_type) {
+  
+  name_mappings <- switch(table_type,
+    "customer" = list(
+      "email" = "customer_profile_email",
+      "first_name" = "customer_profile_first_name",
+      "last_name" = "customer_profile_last_name", 
+      "registration_date" = "customer_profile_registration_date",
+      "total_spent" = "customer_behavior_total_spent",
+      "last_order_date" = "customer_behavior_last_order_date"
+    ),
+    
+    "order" = list(
+      "order_id" = "order_detail_id",
+      "customer_id" = "order_detail_customer_id",
+      "product_id" = "order_detail_product_id",
+      "quantity" = "order_detail_quantity",
+      "unit_price" = "order_detail_unit_price",
+      "order_date" = "order_detail_date"
+    ),
+    
+    "product" = list(
+      "product_id" = "product_info_id",
+      "name" = "product_info_name",
+      "category" = "product_info_category",
+      "price" = "product_info_price",
+      "brand" = "product_info_brand"
+    )
+  )
+  
+  # Apply renamings
+  for (old_name in names(name_mappings)) {
+    if (old_name %in% names(df)) {
+      names(df)[names(df) == old_name] <- name_mappings[[old_name]]
+    }
+  }
+  
+  return(df)
+}
+```
+
+### 2. Data Type Standardization
+
+Convert columns to appropriate data types with consistent formatting:
+
+```r
+#' Standardize data types across tables
+#' 
+#' Applies consistent type conversion rules following business standards
+#'
+standardize_data_types <- function(df, column_specs) {
+  
+  for (col_name in names(column_specs)) {
+    if (col_name %in% names(df)) {
+      
+      target_type <- column_specs[[col_name]]
+      
+      df[[col_name]] <- switch(target_type,
+        "date" = {
+          # Handle multiple date formats consistently
+          if (is.character(df[[col_name]])) {
+            lubridate::ymd_hms(df[[col_name]], quiet = TRUE) %||%
+            lubridate::ymd(df[[col_name]], quiet = TRUE) %||%
+            lubridate::dmy(df[[col_name]], quiet = TRUE) %||%
+            as.Date(df[[col_name]])
+          } else {
+            as.Date(df[[col_name]])
+          }
+        },
+        
+        "numeric" = {
+          # Remove currency symbols and convert
+          if (is.character(df[[col_name]])) {
+            cleaned <- gsub("[^0-9.-]", "", df[[col_name]])
+            as.numeric(cleaned)
+          } else {
+            as.numeric(df[[col_name]])
+          }
+        },
+        
+        "integer" = {
+          as.integer(df[[col_name]])
+        },
+        
+        "character" = {
+          as.character(df[[col_name]])
+        },
+        
+        "factor" = {
+          # Convert to factor with ordered levels if specified
+          factor(df[[col_name]])
+        },
+        
+        "logical" = {
+          # Handle various boolean representations
+          if (is.character(df[[col_name]])) {
+            tolower(df[[col_name]]) %in% c("true", "yes", "1", "y", "t")
+          } else {
+            as.logical(df[[col_name]])
+          }
+        }
+      )
+    }
+  }
+  
+  return(df)
+}
+
+# Example column specifications
+customer_column_specs <- list(
+  customer_profile_email = "character",
+  customer_profile_registration_date = "date",
+  customer_behavior_total_spent = "numeric",
+  customer_behavior_last_order_date = "date"
+)
+
+order_column_specs <- list(
+  order_detail_id = "integer",
+  order_detail_customer_id = "integer", 
+  order_detail_product_id = "integer",
+  order_detail_quantity = "integer",
+  order_detail_unit_price = "numeric",
+  order_detail_date = "date"
+)
+```
+
+### 3. Reference Data Integration
+
+Add foreign key relationships and lookup values from reference tables:
+
+```r
+#' Integrate reference data during transformation
+#' 
+#' Adds lookup values and foreign key relationships
+#'
+integrate_reference_data <- function(df, reference_tables) {
+  
+  # Product category standardization
+  if ("product_info_category" %in% names(df) && 
+      "product_categories" %in% names(reference_tables)) {
+    
+    category_lookup <- reference_tables$product_categories
+    
+    df <- df %>%
+      dplyr::left_join(
+        category_lookup %>% 
+          dplyr::select(
+            category_raw = raw_category,
+            product_info_category_std = standard_category,
+            product_info_category_level1 = level1_category,
+            product_info_category_level2 = level2_category
+          ),
+        by = c("product_info_category" = "category_raw")
+      )
+  }
+  
+  # Customer segment integration
+  if ("customer_profile_email" %in% names(df) &&
+      "customer_segments" %in% names(reference_tables)) {
+    
+    segment_lookup <- reference_tables$customer_segments
+    
+    df <- df %>%
+      dplyr::left_join(
+        segment_lookup %>%
+          dplyr::select(
+            customer_profile_email,
+            customer_segment_tier,
+            customer_segment_value,
+            customer_segment_behavior
+          ),
+        by = "customer_profile_email"
+      )
+  }
+  
+  # Geographic standardization
+  if (any(c("customer_address_country", "customer_address_state") %in% names(df)) &&
+      "geo_codes" %in% names(reference_tables)) {
+    
+    geo_lookup <- reference_tables$geo_codes
+    
+    df <- df %>%
+      dplyr::left_join(
+        geo_lookup %>%
+          dplyr::select(
+            country_raw = raw_country,
+            state_raw = raw_state,
+            customer_address_country_iso = country_iso,
+            customer_address_state_code = state_code,
+            customer_address_region = region_name
+          ),
+        by = c("customer_address_country" = "country_raw",
+               "customer_address_state" = "state_raw")
+      )
+  }
+  
+  return(df)
+}
+```
+
+## Implementation Framework
+
+### Core Transformation Function
+
+```r
+#' Transform staged data to standardized schema
+#' 
+#' Main transformation function that applies all schema standardization
+#'
+transform_table <- function(table_name, 
+                           staged_conn, 
+                           transformed_conn,
+                           table_config) {
+  
+  message("Transforming table: ", table_name)
+  
+  # Read from staged database
+  staged_data <- tbl2(staged_conn, table_name) %>%
+    dplyr::collect()
+  
+  # Apply transformation steps in sequence
+  transformed_data <- staged_data %>%
+    
+    # Step 1: Column name standardization
+    standardize_column_names(table_config$table_type) %>%
+    
+    # Step 2: Data type conversion  
+    standardize_data_types(table_config$column_specs) %>%
+    
+    # Step 3: Reference data integration
+    integrate_reference_data(table_config$reference_tables) %>%
+    
+    # Step 4: Simple derived fields
+    add_derived_fields(table_config$derived_fields) %>%
+    
+    # Step 5: Add transformation metadata
+    add_transformation_metadata()
+  
+  # Write to transformed database with explicit schema
+  write_transformed_table(
+    transformed_data, 
+    table_name, 
+    transformed_conn,
+    table_config$schema_definition
+  )
+  
+  # Log transformation summary
+  log_transformation_summary(table_name, staged_data, transformed_data)
+  
+  return(nrow(transformed_data))
+}
+
+#' Add simple derived fields during transformation
+add_derived_fields <- function(df, derived_config) {
+  
+  if (is.null(derived_config)) return(df)
+  
+  for (field_name in names(derived_config)) {
+    field_spec <- derived_config[[field_name]]
+    
+    df[[field_name]] <- switch(field_spec$type,
+      "concatenate" = {
+        # Combine multiple columns
+        do.call(paste, c(df[field_spec$columns], sep = field_spec$separator))
+      },
+      
+      "extract_year" = {
+        # Extract year from date column
+        lubridate::year(df[[field_spec$source_column]])
+      },
+      
+      "extract_month" = {
+        # Extract month from date column  
+        lubridate::month(df[[field_spec$source_column]])
+      },
+      
+      "calculate_age" = {
+        # Calculate age from birth date
+        as.numeric(difftime(Sys.Date(), df[[field_spec$source_column]], units = "days")) / 365.25
+      },
+      
+      "flag_missing" = {
+        # Create missing value flag
+        is.na(df[[field_spec$source_column]])
+      }
+    )
+  }
+  
+  return(df)
+}
+
+#' Add transformation metadata to track processing
+add_transformation_metadata <- function(df) {
+  df$transform_timestamp <- Sys.time()
+  df$transform_version <- "DF02_v1.0"
+  df$source_layer <- "staged_data"
+  
+  return(df)
+}
+```
+
+### Configuration-Driven Transformation
+
+```r
+# Example transformation configuration
+customer_transform_config <- list(
+  table_type = "customer",
+  
+  column_specs = list(
+    customer_profile_email = "character",
+    customer_profile_first_name = "character", 
+    customer_profile_last_name = "character",
+    customer_profile_registration_date = "date",
+    customer_behavior_total_spent = "numeric",
+    customer_behavior_order_count = "integer"
+  ),
+  
+  reference_tables = list(
+    customer_segments = "reference_customer_segments",
+    geo_codes = "reference_geo_codes"
+  ),
+  
+  derived_fields = list(
+    customer_profile_full_name = list(
+      type = "concatenate",
+      columns = c("customer_profile_first_name", "customer_profile_last_name"),
+      separator = " "
+    ),
+    customer_profile_registration_year = list(
+      type = "extract_year", 
+      source_column = "customer_profile_registration_date"
+    ),
+    customer_behavior_total_spent_missing = list(
+      type = "flag_missing",
+      source_column = "customer_behavior_total_spent"
+    )
+  ),
+  
+  schema_definition = list(
+    primary_key = "customer_profile_email",
+    indexes = c("customer_profile_registration_date", "customer_segment_tier"),
+    not_null = c("customer_profile_email")
+  )
+)
+
+# Run transformation with configuration
+transform_table("customers", staged_conn, transformed_conn, customer_transform_config)
+```
+
+## Database Schema Management
+
+### Explicit Schema Creation (MP058 Pattern)
+
+```r
+#' Create transformed table with explicit schema definition
+#' 
+#' Follows MP058 Database Table Creation Strategy for stable schemas
+#'
+write_transformed_table <- function(data, table_name, conn, schema_def) {
+  
+  # Drop existing table if it exists
+  if (DBI::dbExistsTable(conn, table_name)) {
+    DBI::dbRemoveTable(conn, table_name)
+  }
+  
+  # Create table with explicit schema
+  create_sql <- build_create_table_sql(table_name, data, schema_def)
+  DBI::dbExecute(conn, create_sql)
+  
+  # Insert data
+  DBI::dbAppendTable(conn, table_name, data)
+  
+  # Create indexes
+  if (!is.null(schema_def$indexes)) {
+    for (index_col in schema_def$indexes) {
+      index_sql <- sprintf(
+        "CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s)",
+        table_name, index_col, table_name, index_col
+      )
+      DBI::dbExecute(conn, index_sql)
+    }
+  }
+  
+  message("Created table ", table_name, " with ", nrow(data), " rows")
+}
+
+#' Build CREATE TABLE SQL with proper data types
+build_create_table_sql <- function(table_name, data, schema_def) {
+  
+  # Map R types to SQL types
+  sql_types <- sapply(names(data), function(col_name) {
+    r_type <- class(data[[col_name]])[1]
+    
+    switch(r_type,
+      "character" = "TEXT",
+      "numeric" = "REAL", 
+      "integer" = "INTEGER",
+      "Date" = "DATE",
+      "POSIXct" = "TIMESTAMP",
+      "logical" = "BOOLEAN",
+      "factor" = "TEXT",
+      "TEXT" # default
+    )
+  })
+  
+  # Build column definitions
+  col_defs <- paste0(names(sql_types), " ", sql_types)
+  
+  # Add constraints
+  if (!is.null(schema_def$not_null)) {
+    for (col in schema_def$not_null) {
+      if (col %in% names(sql_types)) {
+        col_idx <- which(names(sql_types) == col)
+        col_defs[col_idx] <- paste(col_defs[col_idx], "NOT NULL")
+      }
+    }
+  }
+  
+  # Add primary key
+  if (!is.null(schema_def$primary_key)) {
+    pk_col <- schema_def$primary_key
+    if (pk_col %in% names(sql_types)) {
+      col_idx <- which(names(sql_types) == pk_col)
+      col_defs[col_idx] <- paste(col_defs[col_idx], "PRIMARY KEY")
+    }
+  }
+  
+  # Build final CREATE TABLE statement
+  create_sql <- sprintf(
+    "CREATE TABLE %s (\n  %s\n)",
+    table_name,
+    paste(col_defs, collapse = ",\n  ")
+  )
+  
+  return(create_sql)
+}
+```
+
+## Quality Assurance for Transformations
+
+### Transformation Validation
+
+```r
+#' Validate transformation results
+#' 
+#' Ensures transformation maintains data integrity and follows standards
+#'
+validate_transformation <- function(table_name, staged_conn, transformed_conn) {
+  
+  # Get row counts
+  staged_count <- DBI::dbGetQuery(
+    staged_conn, 
+    paste("SELECT COUNT(*) as count FROM", table_name)
+  )$count
+  
+  transformed_count <- DBI::dbGetQuery(
+    transformed_conn,
+    paste("SELECT COUNT(*) as count FROM", table_name)
+  )$count
+  
+  validation_results <- list(
+    table_name = table_name,
+    row_count_maintained = (staged_count == transformed_count),
+    staged_rows = staged_count,
+    transformed_rows = transformed_count
+  )
+  
+  # Check column naming conventions
+  transformed_cols <- DBI::dbListFields(transformed_conn, table_name)
+  validation_results$naming_convention_check <- all(
+    grepl("^[a-z]+(_[a-z]+)*$", transformed_cols)
+  )
+  
+  # Check for required metadata columns
+  required_metadata <- c("transform_timestamp", "transform_version", "source_layer")
+  validation_results$metadata_complete <- all(
+    required_metadata %in% transformed_cols
+  )
+  
+  # Check for data type consistency
+  sample_data <- tbl2(transformed_conn, table_name) %>%
+    dplyr::slice_head(n = 100) %>%
+    dplyr::collect()
+  
+  validation_results$type_consistency <- check_type_consistency(sample_data)
+  
+  return(validation_results)
+}
+
+#' Check data type consistency in sample
+check_type_consistency <- function(sample_data) {
+  
+  # Check date columns are proper dates
+  date_cols <- grep("_date$|_timestamp$", names(sample_data), value = TRUE)
+  date_check <- all(sapply(sample_data[date_cols], function(x) {
+    inherits(x, c("Date", "POSIXct"))
+  }))
+  
+  # Check numeric columns are numeric
+  numeric_cols <- grep("_amount$|_price$|_total$|_count$", names(sample_data), value = TRUE)
+  numeric_check <- all(sapply(sample_data[numeric_cols], is.numeric))
+  
+  # Check email format for email columns
+  email_cols <- grep("_email$", names(sample_data), value = TRUE)
+  email_check <- TRUE
+  if (length(email_cols) > 0) {
+    email_check <- all(sapply(sample_data[email_cols], function(x) {
+      all(grepl("@", x, fixed = TRUE) | is.na(x))
+    }))
+  }
+  
+  return(list(
+    dates_valid = date_check,
+    numerics_valid = numeric_check, 
+    emails_valid = email_check
+  ))
+}
+```
+
+## Batch Processing Framework
+
+### Complete Transformation Workflow
+
+```r
+#' Run complete transformation for all staged tables
+#' 
+#' Processes all tables from staged to transformed layer
+#'
+run_complete_transformation <- function(transformation_configs) {
+  
+  # Connect to databases
+  staged_conn <- dbConnect_from_list("staged_data")
+  transformed_conn <- dbConnect_from_list("transformed_data")
+  
+  # Get list of tables to transform
+  staged_tables <- DBI::dbListTables(staged_conn)
+  
+  # Filter to configured tables only
+  tables_to_transform <- intersect(staged_tables, names(transformation_configs))
+  
+  if (length(tables_to_transform) == 0) {
+    stop("No tables found for transformation. Check staging database and configurations.")
+  }
+  
+  message("Starting transformation for ", length(tables_to_transform), " tables")
+  
+  transformation_results <- list()
+  
+  for (table_name in tables_to_transform) {
+    tryCatch({
+      
+      # Transform table
+      row_count <- transform_table(
+        table_name,
+        staged_conn,
+        transformed_conn, 
+        transformation_configs[[table_name]]
+      )
+      
+      # Validate transformation
+      validation <- validate_transformation(
+        table_name,
+        staged_conn,
+        transformed_conn
+      )
+      
+      transformation_results[[table_name]] <- list(
+        success = TRUE,
+        row_count = row_count,
+        validation = validation
+      )
+      
+    }, error = function(e) {
+      warning("Transformation failed for ", table_name, ": ", e$message)
+      transformation_results[[table_name]] <- list(
+        success = FALSE,
+        error = e$message
+      )
+    })
+  }
+  
+  # Close connections
+  DBI::dbDisconnect(staged_conn)
+  DBI::dbDisconnect(transformed_conn)
+  
+  # Generate summary report
+  generate_transformation_report(transformation_results)
+  
+  return(transformation_results)
+}
+
+#' Generate transformation summary report
+generate_transformation_report <- function(results) {
+  
+  total_tables <- length(results)
+  successful_tables <- sum(sapply(results, function(x) x$success))
+  failed_tables <- total_tables - successful_tables
+  
+  message("\n=== TRANSFORMATION SUMMARY ===")
+  message("Total tables processed: ", total_tables)
+  message("Successfully transformed: ", successful_tables)
+  message("Failed transformations: ", failed_tables)
+  
+  if (failed_tables > 0) {
+    message("\nFailed tables:")
+    for (table_name in names(results)) {
+      if (!results[[table_name]]$success) {
+        message("  - ", table_name, ": ", results[[table_name]]$error)
+      }
+    }
+  }
+  
+  # Write detailed report to file
+  report_data <- data.frame(
+    table_name = names(results),
+    success = sapply(results, function(x) x$success),
+    row_count = sapply(results, function(x) x$row_count %||% 0),
+    error = sapply(results, function(x) x$error %||% "")
+  )
+  
+  write.csv(report_data, "20_transformed/transformation_report.csv", row.names = FALSE)
+  message("\nDetailed report saved to: 20_transformed/transformation_report.csv")
+}
+```
+
+## Integration with DF03 (Cleansing)
+
+Transformation operations prepare standardized data for quality processing by ensuring:
+
+1. **Consistent schema**: All tables follow naming conventions and type standards
+2. **Reference integration**: Foreign keys and lookup values are established
+3. **Structural completeness**: Required derived fields are calculated
+4. **Metadata tracking**: Transformation lineage is documented
+
+The cleansing layer ([@DF003]) can then focus on data quality issues without dealing with schema inconsistencies.
+
+## Conclusion
+
+Transformation operations bridge the gap between file-level staging and quality-focused cleansing by establishing a consistent, well-structured schema foundation. By separating schema concerns from quality concerns, the transformation layer enables more focused and maintainable data processing workflows.
+
+The transformed_data layer provides a standardized structural foundation that supports all subsequent quality assurance and business logic processing steps.

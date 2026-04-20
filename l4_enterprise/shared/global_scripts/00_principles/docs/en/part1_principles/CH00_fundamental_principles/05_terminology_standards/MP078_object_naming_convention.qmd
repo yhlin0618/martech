@@ -1,0 +1,317 @@
+---
+title: "MP077: Object Naming Convention"
+subtitle: "All objects within the precision marketing system must follow standardized naming conventions that use dot notation to separate hierarchical components, maintain consistent ordering of components from general to specific, and include type prefixes that identify the nature of the object"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP077"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "terminology-standard"
+law: "Fundamental Principles Law"
+article-number: 
+  number: 77
+  title: "Object Naming Convention"
+related_to:
+  - "DEV_P004: Dot Notation Property Access Principle"
+  - "MP024: Natural SQL Language"
+  - "MP017: Separation of Concerns"
+  - "MP001: Primitive Terms and Definitions"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 77: Object Naming Convention {#overview}
+
+**Fundamental Principles Law Article 77 (Object Naming Convention)**
+
+All objects within the precision marketing system must follow standardized naming conventions that use dot notation to separate hierarchical components, maintain consistent ordering of components from general to specific, and include type prefixes that identify the nature of the object.
+
+:::{.callout-important}
+## Core Requirement
+By establishing a comprehensive naming system, this rule enhances code clarity, maintains consistency, and integrates naturally with the Natural SQL Language.
+:::
+
+# Section 1: Fundamental Object Naming Equation {#fundamental-equation}
+
+## Subsection 1: Object Naming Equation {#naming-equation}
+
+```
+object_name = rigid_identifier + optional_descriptors
+```
+
+Where:
+- `rigid_identifier` is the unique, unchanging part that identifies the object
+- `optional_descriptors` are the variable, descriptive tags that characterize the state or processing
+
+In implementation:
+- The rigid identifier is used for object loading and identification (get_rigid_id(object))
+- The optional descriptors are separated by triple underscore (___) from the rigid identifier
+- Multiple versions of the same object can exist with different descriptors
+
+## Subsection 2: Type Prefixes Aligned with MP001 {#type-prefixes}
+
+| Prefix | Object Type | MP001 Term | Description |
+|--------|-------------|------------|-------------|
+| df. | Data Frame | Processed Data | Tabular data structure processed for analysis |
+| raw. | Raw Data | Raw Data | Unprocessed data collected directly from platforms |
+| dt. | Data Transformation | Function | Function that transforms data |
+| calc. | Calculation | Function | Function that performs calculations |
+| util. | Utility | Function | Utility function for common operations |
+| mdl. | Model | - | Statistical or machine learning model |
+| lst. | List | - | Collection of named elements |
+| vec. | Vector | - | One-dimensional array |
+| par. | Parameter | Parameter | Configuration value specified externally |
+| def. | Default Value | Default Value | Fallback value specified internally |
+| SCOPE. | Constant | - | Fixed value that does not change (using uppercase) |
+| tmp. | Temporary | - | Temporary calculation object |
+| comp. | Component | Component | Self-contained piece of modular functionality |
+| iface. | Interface | Interface | Defined methods and contracts for interaction |
+| impl. | Implementation | Implementation | Specific code fulfilling an interface contract |
+| g. | Global | - | Global scope variable |
+| mod. | Module | Module | Collection of related components (M) |
+| seq. | Sequence | Sequence | Ordered process workflow (S) |
+| deriv. | Derivation | Derivation | Complete transformation process (D) |
+
+# Section 2: Naming Convention Principles {#naming-principles}
+
+## Subsection 1: Component Separation vs. Word Separation {#component-vs-word-separation}
+
+Throughout all naming patterns, observe these critical distinctions:
+- **Dots (.)** separate hierarchical components and indicate property/domain access
+- **Underscores (_)** separate words within a single component
+
+For example:
+- `df.amazon.sales_by_region.at_ALL.current_month.001` 
+  - Dots separate components: df, amazon, sales_by_region, at_ALL, current_month, 001
+  - Underscores separate words within components: sales_by_region, at_ALL, current_month
+
+## Subsection 2: Type-Specific Naming Patterns {#type-specific-patterns}
+
+### Data Frames / Processed Data {#data-frames}
+
+```
+df.platform.purpose.by_id1.by_id2.by_id3.at_dimension1.at_dimension2.at_dimension3[___identifier]
+```
+
+Where:
+- `by_id` components identify what entities we're grouping by (can have 0-N components)
+- `at_dimension` components identify what dimensions we're slicing at (can have 0-N components)
+
+Examples:
+- `df.amazon.sales.by_product_index.at_ALL.at_now.at_001___clean`
+- `df.official_website.comment_property.by_all_products.at_NY.at_m1month.at_000___manual`
+- `df.sales.transactions.by_customer.at_CT.at_q1_2025.at_000___agg`
+
+Note: The triple underscore (`___`) notation clearly separates the optional identifier. When loading or identifying objects, only the part before the triple underscore is used.
+
+### Functions {#functions}
+
+```
+type.purpose
+```
+
+Note: The 'fn_' prefix only appears in the filename (fn_type_purpose.R), not in the actual object name itself. This ensures cleaner function calls while maintaining type identification in the filesystem.
+
+Examples:
+- `dt.calculate_sales`
+- `calc.aggregate_transactions`
+- `util.clean_data`
+
+### Models {#models}
+
+```
+mdl.algorithm.target.features
+```
+
+Examples:
+- `mdl.regression.sales.price_seasonality`
+- `mdl.cluster.customers.purchase_behavior`
+- `mdl.forecast.inventory.seasonal_trends`
+
+### Constants {#constants}
+
+```
+SCOPE.RIGID
+```
+
+Note: Constants use uppercase letters to distinguish them from variables. They do not use optional descriptors and maintain a simpler two-part structure.
+
+Examples:
+- `GLOBAL.API_VERSION`
+- `SYSTEM.MAX_RETRY_ATTEMPTS`
+- `VALIDATION.MAX_NAME_LENGTH`
+
+# Section 3: Component Definitions {#component-definitions}
+
+## Subsection 1: Data Frame Components {#data-frame-components}
+
+1. **platform**: Data origin platform as defined in MP001
+   - `amazon`: Amazon marketplace data
+   - `official_website`: Company website data
+   - Blank: Combined or derived data
+
+2. **purpose**: Primary function of the data
+   - `product_property`: Product information
+   - `sales_data`: Sales transactions
+   - `comment_property`: Product reviews
+
+3. **by_id components**: Entity grouping identifiers
+   - `by_product_index`: Grouped by product identifier
+   - `by_customer`: Grouped by customer
+   - `by_date`: Grouped by date
+
+4. **at_dimension components**: Dimensional slices
+   - **Location dimension**:
+     - `at_ALL`: All locations combined
+     - `at_NY`: New York location only
+     - `at_CT`: Connecticut location only
+   
+   - **Time dimension**:
+     - `at_now`: Current period
+     - `at_m1year`: Previous year
+     - `at_m1month`: Previous month
+   
+   - **Product dimension**:
+     - `at_000`: All products
+     - `at_001`: electric_can_opener
+     - `at_002`: milk_frother
+
+## Subsection 2: Column Naming Standards {#column-naming-standards}
+
+### Standard Column Names {#standard-column-names}
+
+- `product_name`: Product name
+- `sku`: Stock Keeping Unit
+- `product_line`: Product category
+- `asin`: Amazon Standard Identification Number
+- `product_index`: SKU or ASIN
+- `product_id`: Identifier for choice model
+- `brand`: Brand name
+- `subject_id`: Subject identifier
+
+### Standardized Prefixes for Column Names {#standardized-prefixes}
+
+- `id_*`: Identifiers (id_customer, id_order)
+- `dt_*`: Dates (dt_order, dt_delivery)
+- `amt_*`: Monetary amounts (amt_total, amt_tax)
+- `cnt_*`: Counts (cnt_orders, cnt_products)
+- `pct_*`: Percentages (pct_discount, pct_growth)
+- `flg_*`: Flags/booleans (flg_active, flg_promotional)
+
+# Section 4: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Consistency {#consistency}
+
+- All new objects must follow these naming conventions
+- Existing objects should be renamed when revised
+- Scripts should use consistent naming throughout
+
+## Subsection 2: Documentation {#documentation}
+
+- Include comments explaining component choices for complex objects
+- Document any non-standard component values
+- Maintain a central register of all component values
+
+## Subsection 3: Validation {#validation}
+
+- Scripts should validate object names against conventions
+- Warning should be raised for non-compliant names
+- Critical systems should enforce naming compliance
+
+## Subsection 4: Data Dictionaries {#data-dictionaries}
+
+- Maintain data dictionaries that map object names to descriptions
+- Include data types, units, and constraints in dictionaries
+- Link objects to their source definitions
+
+# Section 5: Database Tables Implementation {#database-tables}
+
+## Subsection 1: Database to Object Name Relationship {#database-object-relationship}
+
+The database table name must correspond directly to the data frame object name, using the translation principles in R027:
+
+| Object Name | Database Table Name |
+|-------------|---------------------|
+| df.amazon.sales_data.by_product_index | df_amazon_sales_data_by_product_index |
+| df.website.comment_property | df_website_comment_property |
+
+## Subsection 2: Table Creation Strategy Pattern {#table-creation-strategy}
+
+Table creation functions should use the Strategy Pattern to ensure consistent creation while supporting different table types:
+
+```r
+# Central registry for table creation strategies
+table_creators <- list()
+
+# Registration function
+register_table_creator <- function(table_type, creator_fn) {
+  table_creators[[table_type]] <- creator_fn
+}
+
+# Dispatch function
+create_or_replace_table <- function(object_name, data, table_type = "standard") {
+  # Convert object name to table name using R027 principles
+  table_name <- gsub("\\.", "_", strsplit(object_name, "___")[[1]][1])
+  
+  # Get the correct strategy
+  creator <- table_creators[[table_type]]
+  
+  if (is.null(creator)) {
+    stop("No table creator registered for type: ", table_type)
+  }
+  
+  # Execute the strategy
+  return(creator(table_name, data))
+}
+```
+
+# Section 6: Relationship to Other Principles {#relationship-to-other-principles}
+
+## Subsection 1: Relation to Dot Notation Property Access Principle (DEV_P004) {#relation-to-dot-notation}
+
+This rule implements DEV_P004 by:
+1. **Using Dot Notation**: Adopting dots as separators between naming components
+2. **Hierarchical Structure**: Organizing components from general to specific
+3. **Consistent Access**: Creating a naming system that works with property access patterns
+
+## Subsection 2: Relation to Natural SQL Language (MP024) {#relation-to-natural-sql}
+
+This rule supports MP024 by:
+1. **Similar Notation**: Using the same A.B notation as NSQL hierarchical references
+2. **Conceptual Alignment**: Creating names that align with query patterns
+3. **Data Accessibility**: Making data sources easily referenceable in queries
+
+## Subsection 3: Relation to Primitive Terms and Definitions (MP001) {#relation-to-primitive-terms}
+
+This rule implements MP001 by:
+1. **Terminology Alignment**: Using the precise terms defined in MP001 for type prefixes
+2. **Type Hierarchy Respect**: Maintaining the type hierarchies defined in MP001
+3. **Categorical Distinctions**: Respecting categorical distinctions (e.g., parameter vs. default value)
+4. **Variable/Constant Distinction**: Distinguishing between variables and constants
+
+# Section 7: Benefits {#benefits}
+
+## Subsection 1: Code Quality Benefits {#code-quality-benefits}
+
+1. **Clarity**: Names clearly convey object purpose and content
+2. **Consistency**: Creates a unified naming system across the project
+3. **Navigability**: Makes code easier to navigate and understand
+4. **Self-Documentation**: Names serve as micro-documentation
+
+## Subsection 2: System Benefits {#system-benefits}
+
+1. **Taxonomy**: Creates a natural taxonomic structure through naming
+2. **Integration**: Facilitates integration with query languages
+3. **Type Safety**: Promotes type awareness through consistent prefixing
+4. **Company Adaptability**: Supports company-specific implementations while maintaining common patterns
+
+---
+
+*Based on: Fundamental Principles Law Article 77*  
+*Related to: [DEV_P004 Dot Notation Property Access Principle](../../CH03_development_methodology/principles/DEV_P004_dot_notation_property_access.qmd), [MP001 Primitive Terms and Definitions](../meta_principles/MP001_primitive_terms_definitions.qmd)*

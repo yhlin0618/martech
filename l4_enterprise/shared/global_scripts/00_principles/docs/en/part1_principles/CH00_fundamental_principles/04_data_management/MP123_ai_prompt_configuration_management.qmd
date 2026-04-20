@@ -1,0 +1,767 @@
+---
+title: "MP123: AI Prompt Configuration Management"
+subtitle: "All AI prompts must be centrally managed through pre-loaded configuration, loaded once at initialization and accessed from app_configs throughout runtime"
+chapter: "CH00"
+category: "meta_principle"
+number: "MP123"
+date-created: "2025-10-06"
+date-modified: "2025-10-06"
+author: "Claude"
+type: "meta_principle"
+related_to:
+  - "MP045: Universal Initialization"
+  - "MP031: Separation of Concerns"
+  - "MP032: Don't Repeat Yourself"
+  - "MP065: Platform Configuration Management"
+  - "R116: Enhanced Data Access"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 123: AI Prompt Configuration Management {#overview}
+
+**Fundamental Data Management Meta-Principle 123 (AI Prompt Configuration Management)**
+
+This meta-principle establishes that all AI prompts must be centrally managed through YAML configuration files, loaded once during application initialization into `app_configs`, and accessed from this pre-loaded configuration throughout the application runtime. Direct file reading of prompt configurations during runtime is prohibited.
+
+:::{.callout-important}
+## Core Principle
+AI prompt configuration follows the initialization-first pattern. All prompts are loaded once at application startup from centralized YAML files (e.g., `list_openai_prompt.yaml`) into the `app_configs$list_openai_prompt` object. Runtime components access prompts exclusively from this pre-loaded configuration, never by re-reading files.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Current Challenges {#current-challenges}
+
+Direct file reading of AI prompt configurations during runtime creates several problems:
+
+1. **File Path Resolution Errors**: Runtime file path resolution fails in deployment environments
+2. **Performance Overhead**: Repeated YAML file parsing for each prompt access
+3. **Initialization Principle Violation**: Configuration should be loaded once, not repeatedly
+4. **Separation of Concerns Violation**: Runtime logic shouldn't handle file I/O
+5. **DRY Violation**: Same YAML file read multiple times across different components
+6. **Error Propagation**: File reading errors occur deep in component logic rather than at initialization
+
+## Subsection 2: Benefits of Pre-loaded Configuration {#benefits-preloaded}
+
+Loading AI prompts during initialization provides:
+
+1. **Single Source of Truth**: One configuration object accessed by all components (MP032)
+2. **Early Error Detection**: Configuration errors caught at startup, not during user interaction
+3. **Performance**: Zero file I/O overhead during runtime operations
+4. **Reliability**: Guaranteed availability of prompts throughout application lifecycle
+5. **Testability**: Easy to mock prompt configurations for testing
+6. **Separation of Concerns**: Configuration loading separated from runtime logic (MP031)
+7. **Initialization Pattern Compliance**: Follows MP045 Universal Initialization
+
+# Section 2: Configuration Structure {#configuration-structure}
+
+## Subsection 1: YAML Configuration Format {#yaml-format}
+
+AI prompts are organized in hierarchical YAML structure:
+
+```yaml
+# scripts/global_scripts/30_global_data/parameters/scd_type1/list_openai_prompt.yaml
+position_analysis:
+  strategy_quadrant_analysis:
+    system_role: "You are a marketing strategy analyst..."
+    user_instruction: "Analyze the positioning data and provide strategic insights..."
+    temperature: 0.7
+    max_tokens: 2000
+    model: "gpt-4"
+
+  competitive_positioning:
+    system_role: "You are a competitive analysis expert..."
+    user_instruction: "Compare positioning across competitors..."
+    temperature: 0.6
+    max_tokens: 1500
+    model: "gpt-4"
+
+customer_analysis:
+  segment_insights:
+    system_role: "You are a customer segmentation specialist..."
+    user_instruction: "Provide insights on customer segments..."
+    temperature: 0.7
+    max_tokens: 1800
+    model: "gpt-4"
+```
+
+## Subsection 2: Configuration Schema {#configuration-schema}
+
+Each AI prompt configuration must include:
+
+```yaml
+prompt_category:              # Organizational category (e.g., position_analysis)
+  prompt_name:               # Specific prompt identifier
+    system_role: string      # Required: System role definition for AI
+    user_instruction: string # Required: User instruction template
+    temperature: float       # Optional: Temperature setting (0.0-2.0)
+    max_tokens: integer     # Optional: Maximum response tokens
+    model: string           # Optional: Model identifier (default from app config)
+    response_format: string # Optional: json_object, text (default: text)
+    parameters:             # Optional: Additional model parameters
+      top_p: float
+      frequency_penalty: float
+      presence_penalty: float
+```
+
+## Subsection 3: Nested Configuration Access {#nested-access}
+
+Prompts are accessed using dot notation or nested list access:
+
+```r
+# Access via nested list structure
+prompt_config <- app_configs$list_openai_prompt$position_analysis$strategy_quadrant_analysis
+
+# Extract components
+system_role <- prompt_config$system_role
+user_instruction <- prompt_config$user_instruction
+temperature <- prompt_config$temperature %||% 0.7  # Default if not specified
+```
+
+# Section 3: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Initialization Loading {#initialization-loading}
+
+AI prompt configuration must be loaded during application initialization:
+
+```r
+# In initialization script (e.g., s01_initialization.R or app_mode_initialization.R)
+load_ai_prompt_config <- function(config_path = NULL) {
+  # Default path if not specified
+  if (is.null(config_path)) {
+    config_path <- file.path(
+      "scripts", "global_scripts", "30_global_data", "parameters",
+      "scd_type1", "list_openai_prompt.yaml"
+    )
+  }
+
+  # Validate file exists
+  if (!file.exists(config_path)) {
+    stop("AI prompt configuration file not found: ", config_path)
+  }
+
+  # Load YAML configuration
+  prompt_config <- yaml::read_yaml(config_path)
+
+  # Validate structure
+  if (!is.list(prompt_config) || length(prompt_config) == 0) {
+    stop("Invalid AI prompt configuration: must be non-empty list")
+  }
+
+  # Validate each prompt configuration
+  validate_prompt_config(prompt_config)
+
+  # Store in app_configs
+  if (!exists("app_configs", envir = .GlobalEnv)) {
+    app_configs <- list()
+  } else {
+    app_configs <- get("app_configs", envir = .GlobalEnv)
+  }
+
+  app_configs$list_openai_prompt <- prompt_config
+  assign("app_configs", app_configs, envir = .GlobalEnv)
+
+  cli::cli_alert_success("Loaded {length(names(prompt_config))} AI prompt categories")
+
+  return(invisible(prompt_config))
+}
+```
+
+## Subsection 2: Configuration Validation {#configuration-validation}
+
+Prompt configurations must be validated at load time:
+
+```r
+validate_prompt_config <- function(prompt_config) {
+  # Recursively validate prompt configurations
+  for (category_name in names(prompt_config)) {
+    category <- prompt_config[[category_name]]
+
+    if (!is.list(category)) {
+      stop("Invalid prompt category: ", category_name, " must be a list")
+    }
+
+    for (prompt_name in names(category)) {
+      prompt <- category[[prompt_name]]
+
+      # Check required fields
+      required_fields <- c("system_role", "user_instruction")
+      missing_fields <- setdiff(required_fields, names(prompt))
+
+      if (length(missing_fields) > 0) {
+        stop("Prompt ", category_name, ".", prompt_name,
+             " missing required fields: ", paste(missing_fields, collapse = ", "))
+      }
+
+      # Validate system_role is non-empty string
+      if (!is.character(prompt$system_role) || nchar(prompt$system_role) == 0) {
+        stop("Prompt ", category_name, ".", prompt_name,
+             " has invalid system_role")
+      }
+
+      # Validate user_instruction is non-empty string
+      if (!is.character(prompt$user_instruction) || nchar(prompt$user_instruction) == 0) {
+        stop("Prompt ", category_name, ".", prompt_name,
+             " has invalid user_instruction")
+      }
+
+      # Validate optional numeric fields
+      if (!is.null(prompt$temperature)) {
+        if (!is.numeric(prompt$temperature) ||
+            prompt$temperature < 0 || prompt$temperature > 2) {
+          stop("Prompt ", category_name, ".", prompt_name,
+               " has invalid temperature (must be 0-2)")
+        }
+      }
+
+      if (!is.null(prompt$max_tokens)) {
+        if (!is.numeric(prompt$max_tokens) || prompt$max_tokens <= 0) {
+          stop("Prompt ", category_name, ".", prompt_name,
+               " has invalid max_tokens (must be positive)")
+        }
+      }
+    }
+  }
+
+  return(TRUE)
+}
+```
+
+## Subsection 3: Runtime Access Pattern {#runtime-access}
+
+Components must access prompts from pre-loaded configuration:
+
+```r
+# CORRECT: Access from pre-loaded app_configs
+get_ai_prompt <- function(category, prompt_name) {
+  # Validate app_configs exists
+  if (!exists("app_configs", envir = .GlobalEnv)) {
+    stop("app_configs not initialized. Run initialization script first.")
+  }
+
+  app_configs <- get("app_configs", envir = .GlobalEnv)
+
+  # Validate list_openai_prompt exists
+  if (is.null(app_configs$list_openai_prompt)) {
+    stop("AI prompt configuration not loaded in app_configs")
+  }
+
+  # Access category
+  if (!category %in% names(app_configs$list_openai_prompt)) {
+    stop("Unknown AI prompt category: ", category)
+  }
+
+  category_config <- app_configs$list_openai_prompt[[category]]
+
+  # Access specific prompt
+  if (!prompt_name %in% names(category_config)) {
+    stop("Unknown AI prompt: ", category, ".", prompt_name)
+  }
+
+  prompt_config <- category_config[[prompt_name]]
+
+  return(prompt_config)
+}
+
+# Usage in components
+analyze_position <- function(data) {
+  # Get prompt configuration
+  prompt_config <- get_ai_prompt("position_analysis", "strategy_quadrant_analysis")
+
+  # Use configuration in API call
+  response <- call_openai_api(
+    system_role = prompt_config$system_role,
+    user_message = build_user_message(prompt_config$user_instruction, data),
+    temperature = prompt_config$temperature %||% 0.7,
+    max_tokens = prompt_config$max_tokens %||% 2000,
+    model = prompt_config$model %||% app_configs$openai$default_model
+  )
+
+  return(response)
+}
+```
+
+```r
+# INCORRECT: Re-reading YAML file
+# DO NOT DO THIS!
+load_openai_prompt <- function(prompt_path) {
+  # This violates MP123
+  yaml::read_yaml("scripts/global_scripts/30_global_data/parameters/scd_type1/list_openai_prompt.yaml")
+}
+```
+
+# Section 4: Integration with fn_chat_api {#chat-api-integration}
+
+## Subsection 1: Updated fn_chat_api Pattern {#chat-api-pattern}
+
+The `fn_chat_api()` function should accept prompt configurations from `app_configs`:
+
+```r
+# fn_chat_api.R
+fn_chat_api <- function(
+  user_message,
+  system_role = NULL,
+  prompt_config = NULL,  # Accept pre-loaded prompt config
+  model = NULL,
+  temperature = NULL,
+  max_tokens = NULL,
+  response_format = "text",
+  ...
+) {
+  # If prompt_config provided, use it as defaults
+  if (!is.null(prompt_config)) {
+    system_role <- system_role %||% prompt_config$system_role
+    model <- model %||% prompt_config$model
+    temperature <- temperature %||% prompt_config$temperature
+    max_tokens <- max_tokens %||% prompt_config$max_tokens
+    if (!is.null(prompt_config$response_format)) {
+      response_format <- prompt_config$response_format
+    }
+  }
+
+  # Apply final defaults from app_configs
+  system_role <- system_role %||% "You are a helpful AI assistant."
+  model <- model %||% app_configs$openai$default_model %||% "gpt-4"
+  temperature <- temperature %||% 0.7
+  max_tokens <- max_tokens %||% 2000
+
+  # Build request
+  messages <- list(
+    list(role = "system", content = system_role),
+    list(role = "user", content = user_message)
+  )
+
+  # Make API call
+  response <- call_openai_chat(
+    model = model,
+    messages = messages,
+    temperature = temperature,
+    max_tokens = max_tokens,
+    response_format = response_format,
+    ...
+  )
+
+  return(response)
+}
+```
+
+## Subsection 2: Component Usage Pattern {#component-usage}
+
+Components use the integrated pattern:
+
+```r
+# In component server function
+analyze_customer_segment <- function(customer_data) {
+  # Get prompt configuration from app_configs
+  prompt_config <- get_ai_prompt("customer_analysis", "segment_insights")
+
+  # Build user message with data
+  user_message <- glue::glue(
+    prompt_config$user_instruction,
+    segment_summary = summarize_segment(customer_data)
+  )
+
+  # Call API with prompt configuration
+  response <- fn_chat_api(
+    user_message = user_message,
+    prompt_config = prompt_config  # Pass entire config
+  )
+
+  return(response)
+}
+```
+
+# Section 5: Migration Path {#migration-path}
+
+## Subsection 1: From File Reading to Pre-loaded Config {#migration-steps}
+
+Migration from file-reading pattern:
+
+**Before (Incorrect):**
+```r
+# Helper function that reads file
+load_openai_prompt <- function(prompt_path) {
+  yaml::read_yaml(file.path(
+    "scripts", "global_scripts", "30_global_data", "parameters",
+    "scd_type1", "list_openai_prompt.yaml"
+  ))
+}
+
+# Component uses helper
+analyze_position <- function(data) {
+  prompts <- load_openai_prompt()  # Re-reads file every time
+  prompt_config <- prompts$position_analysis$strategy_quadrant_analysis
+  # ... use prompt_config
+}
+```
+
+**After (Correct):**
+```r
+# Initialization (once at startup)
+# In s01_initialization.R or similar
+load_ai_prompt_config()  # Loads into app_configs$list_openai_prompt
+
+# Component accesses pre-loaded config
+analyze_position <- function(data) {
+  prompt_config <- app_configs$list_openai_prompt$position_analysis$strategy_quadrant_analysis
+  # ... use prompt_config
+}
+
+# Or use helper function
+analyze_position <- function(data) {
+  prompt_config <- get_ai_prompt("position_analysis", "strategy_quadrant_analysis")
+  # ... use prompt_config
+}
+```
+
+## Subsection 2: Deprecation Strategy {#deprecation-strategy}
+
+Deprecate file-reading helper functions:
+
+```r
+# Mark old function as deprecated
+load_openai_prompt <- function(prompt_path) {
+  .Deprecated(
+    new = "get_ai_prompt",
+    msg = paste(
+      "load_openai_prompt() is deprecated.",
+      "Use app_configs$list_openai_prompt or get_ai_prompt() instead.",
+      "See MP123: AI Prompt Configuration Management"
+    )
+  )
+
+  # Fall back to app_configs if available
+  if (exists("app_configs", envir = .GlobalEnv)) {
+    app_configs <- get("app_configs", envir = .GlobalEnv)
+    if (!is.null(app_configs$list_openai_prompt)) {
+      return(app_configs$list_openai_prompt)
+    }
+  }
+
+  # Otherwise read file (for backward compatibility)
+  yaml::read_yaml(prompt_path)
+}
+```
+
+# Section 6: Error Handling {#error-handling}
+
+## Subsection 1: Initialization Errors {#initialization-errors}
+
+Handle errors during prompt configuration loading:
+
+```r
+load_ai_prompt_config <- function(config_path = NULL, strict = TRUE) {
+  tryCatch(
+    {
+      # Load configuration
+      if (is.null(config_path)) {
+        config_path <- file.path(
+          "scripts", "global_scripts", "30_global_data", "parameters",
+          "scd_type1", "list_openai_prompt.yaml"
+        )
+      }
+
+      if (!file.exists(config_path)) {
+        if (strict) {
+          stop("AI prompt configuration file not found: ", config_path)
+        } else {
+          cli::cli_alert_warning("AI prompt configuration not found, using defaults")
+          return(invisible(list()))
+        }
+      }
+
+      prompt_config <- yaml::read_yaml(config_path)
+      validate_prompt_config(prompt_config)
+
+      # Store in app_configs
+      if (!exists("app_configs", envir = .GlobalEnv)) {
+        app_configs <- list()
+      } else {
+        app_configs <- get("app_configs", envir = .GlobalEnv)
+      }
+
+      app_configs$list_openai_prompt <- prompt_config
+      assign("app_configs", app_configs, envir = .GlobalEnv)
+
+      cli::cli_alert_success("Loaded AI prompt configuration")
+      return(invisible(prompt_config))
+    },
+    error = function(e) {
+      cli::cli_alert_danger("Failed to load AI prompt configuration: {e$message}")
+      if (strict) {
+        stop(e)
+      } else {
+        return(invisible(list()))
+      }
+    }
+  )
+}
+```
+
+## Subsection 2: Runtime Access Errors {#runtime-errors}
+
+Handle errors during prompt access:
+
+```r
+get_ai_prompt <- function(category, prompt_name, default = NULL) {
+  tryCatch(
+    {
+      # Check app_configs exists
+      if (!exists("app_configs", envir = .GlobalEnv)) {
+        stop("app_configs not initialized")
+      }
+
+      app_configs <- get("app_configs", envir = .GlobalEnv)
+
+      # Check prompt configuration loaded
+      if (is.null(app_configs$list_openai_prompt)) {
+        stop("AI prompt configuration not loaded")
+      }
+
+      # Access category
+      if (!category %in% names(app_configs$list_openai_prompt)) {
+        stop("Unknown category: ", category)
+      }
+
+      category_config <- app_configs$list_openai_prompt[[category]]
+
+      # Access prompt
+      if (!prompt_name %in% names(category_config)) {
+        stop("Unknown prompt: ", category, ".", prompt_name)
+      }
+
+      return(category_config[[prompt_name]])
+    },
+    error = function(e) {
+      if (!is.null(default)) {
+        cli::cli_alert_warning("Using default prompt config: {e$message}")
+        return(default)
+      } else {
+        stop("Error accessing AI prompt: ", e$message, call. = FALSE)
+      }
+    }
+  )
+}
+```
+
+# Section 7: Testing Considerations {#testing}
+
+## Subsection 1: Test Configuration {#test-configuration}
+
+Create test configurations for unit tests:
+
+```r
+# In test setup
+setup_test_prompt_config <- function() {
+  test_config <- list(
+    test_category = list(
+      test_prompt = list(
+        system_role = "You are a test assistant",
+        user_instruction = "Analyze the test data: {data}",
+        temperature = 0.5,
+        max_tokens = 1000,
+        model = "gpt-3.5-turbo"
+      )
+    )
+  )
+
+  # Mock app_configs
+  app_configs <- list(
+    list_openai_prompt = test_config,
+    openai = list(default_model = "gpt-3.5-turbo")
+  )
+
+  assign("app_configs", app_configs, envir = .GlobalEnv)
+
+  return(test_config)
+}
+
+# In test teardown
+teardown_test_prompt_config <- function() {
+  if (exists("app_configs", envir = .GlobalEnv)) {
+    rm("app_configs", envir = .GlobalEnv)
+  }
+}
+```
+
+## Subsection 2: Integration Testing {#integration-testing}
+
+Test prompt loading and access:
+
+```r
+test_that("AI prompt configuration loads correctly", {
+  # Setup
+  config_path <- tempfile(fileext = ".yaml")
+  test_config <- list(
+    analysis = list(
+      basic = list(
+        system_role = "Test role",
+        user_instruction = "Test instruction"
+      )
+    )
+  )
+  yaml::write_yaml(test_config, config_path)
+
+  # Test loading
+  load_ai_prompt_config(config_path)
+
+  # Verify
+  expect_true(exists("app_configs", envir = .GlobalEnv))
+  app_configs <- get("app_configs", envir = .GlobalEnv)
+  expect_false(is.null(app_configs$list_openai_prompt))
+  expect_equal(
+    app_configs$list_openai_prompt$analysis$basic$system_role,
+    "Test role"
+  )
+
+  # Test access
+  prompt_config <- get_ai_prompt("analysis", "basic")
+  expect_equal(prompt_config$system_role, "Test role")
+
+  # Cleanup
+  unlink(config_path)
+  teardown_test_prompt_config()
+})
+```
+
+# Section 8: Benefits and Impact {#benefits-impact}
+
+## Subsection 1: System Benefits {#system-benefits}
+
+1. **Performance**: Zero file I/O overhead during runtime operations
+2. **Reliability**: Guaranteed prompt availability throughout application lifecycle
+3. **Error Detection**: Configuration errors caught at startup, not during user interaction
+4. **Consistency**: All components use identical prompt configurations
+5. **Maintainability**: Single location to update prompt definitions
+6. **Testability**: Easy to mock and test prompt configurations
+
+## Subsection 2: Development Benefits {#development-benefits}
+
+1. **Simplified Components**: Components don't handle file I/O
+2. **Clear Dependencies**: Explicit dependency on app_configs
+3. **Faster Development**: No path resolution debugging
+4. **Better Debugging**: Configuration errors surface immediately at startup
+5. **Principle Compliance**: Follows MP045 (Universal Initialization), MP031 (Separation of Concerns), MP032 (DRY)
+
+## Subsection 3: Operational Benefits {#operational-benefits}
+
+1. **Deployment Safety**: File path issues detected before application serves requests
+2. **Configuration Validation**: Invalid prompts rejected at initialization
+3. **Monitoring**: Centralized logging of configuration loading
+4. **Audit Trail**: Clear tracking of which prompts are used
+5. **Hot Reload**: Easy to implement configuration refresh without restarting
+
+# Section 9: Extended Applications {#extended-applications}
+
+## Subsection 1: Multi-language Prompts {#multi-language}
+
+Extend pattern for multi-language support:
+
+```yaml
+# list_openai_prompt.yaml
+position_analysis:
+  strategy_quadrant_analysis:
+    en:
+      system_role: "You are a marketing strategy analyst..."
+      user_instruction: "Analyze the positioning data..."
+    zh_TW:
+      system_role: "你是行銷策略分析師..."
+      user_instruction: "分析定位資料..."
+    temperature: 0.7
+    max_tokens: 2000
+```
+
+```r
+get_ai_prompt <- function(category, prompt_name, language = "en") {
+  prompt_config <- app_configs$list_openai_prompt[[category]][[prompt_name]]
+
+  # If language-specific config exists, use it
+  if (language %in% names(prompt_config)) {
+    lang_config <- prompt_config[[language]]
+    # Merge with base config (temperature, max_tokens, etc.)
+    merged_config <- modifyList(prompt_config, lang_config)
+    merged_config[[language]] <- NULL  # Remove language keys
+    return(merged_config)
+  }
+
+  return(prompt_config)
+}
+```
+
+## Subsection 2: Dynamic Prompt Templates {#dynamic-templates}
+
+Support template variables in prompts:
+
+```yaml
+customer_analysis:
+  segment_report:
+    system_role: "You are a customer insights analyst"
+    user_instruction: |
+      Analyze the following customer segment:
+
+      Segment: {segment_name}
+      Size: {segment_size}
+      Key Metrics:
+      {metrics_summary}
+
+      Provide strategic recommendations.
+    temperature: 0.7
+```
+
+```r
+render_prompt_template <- function(prompt_config, variables) {
+  # Render user_instruction with variables
+  rendered_instruction <- glue::glue(
+    prompt_config$user_instruction,
+    .envir = variables
+  )
+
+  # Return config with rendered instruction
+  result <- prompt_config
+  result$user_instruction <- rendered_instruction
+  return(result)
+}
+
+# Usage
+analyze_segment <- function(segment_data) {
+  prompt_config <- get_ai_prompt("customer_analysis", "segment_report")
+
+  rendered_config <- render_prompt_template(
+    prompt_config,
+    list(
+      segment_name = segment_data$name,
+      segment_size = segment_data$size,
+      metrics_summary = summarize_metrics(segment_data)
+    )
+  )
+
+  response <- fn_chat_api(
+    user_message = rendered_config$user_instruction,
+    prompt_config = rendered_config
+  )
+
+  return(response)
+}
+```
+
+# Section 10: Related Principles {#related-principles}
+
+This meta-principle:
+
+1. **Extends MP045 (Universal Initialization)**: Applies initialization pattern to AI prompts
+2. **Implements MP031 (Separation of Concerns)**: Separates configuration from runtime logic
+3. **Supports MP032 (DRY)**: Eliminates repeated file reading
+4. **Parallels MP065 (Platform Configuration Management)**: Uses same centralization pattern
+5. **Influences fn_chat_api**: Defines how AI API functions receive prompt configurations
+6. **Guides Component Development**: Establishes pattern for accessing AI prompts
+
+---
+
+*Based on: Fundamental Data Management Principles*
+*Related to: [MP045 Universal Initialization](../03_development_methodology/MP045_universal_initialization.qmd), [MP065 Platform Configuration Management](MP065_platform_configuration_management.qmd)*

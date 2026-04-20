@@ -1,0 +1,223 @@
+---
+title: "SO_R033: 測試腳本位置標準"
+subtitle: "所有測試和驗證腳本必須存放在指定的測試目錄中，絕不可放在專案根目錄"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, testing, structure, organization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 規則聲明
+
+所有測試和驗證腳本必須存放在指定的測試目錄中，絕不可放在專案根目錄。
+
+## 理由
+
+**問題**：分散在專案根目錄的測試腳本會導致：
+- Git 狀態因未追蹤檔案而混亂
+- 專案組織結構不清晰
+- 難以找到特定組件的相關測試
+- 無法區分活躍測試和過時測試
+
+**解決方案**：集中式的測試組織，具有清晰的層級結構。
+
+## 實施規則
+
+### 測試腳本位置
+
+#### 系統級測試
+**位置**：`scripts/global_scripts/98_test/`
+
+**用途**：驗證跨系統功能的測試
+- 資料庫連接測試
+- API 整合測試
+- 設定驗證
+- 系統初始化測試
+
+**範例**：
+```r
+scripts/global_scripts/98_test/
+├── test_database_connection.R
+├── test_openai_api.R
+├── test_initialization.R
+└── verify_system_prerequisites.R
+```
+
+#### 組件專屬測試
+**位置**：`scripts/global_scripts/[component]/tests/`
+
+**用途**：特定單一組件或模組的測試
+
+**範例**：
+```r
+scripts/global_scripts/01_db/tests/
+├── test_connection_pooling.R
+└── test_transaction_handling.R
+
+scripts/global_scripts/26_platform_apis/eby/tests/
+├── test_eby_authentication.R
+└── test_eby_data_extraction.R
+```
+
+#### 模組測試框架
+**位置**：`scripts/global_scripts/13_modules/M70_testing/`
+
+**用途**：測試工具和框架
+
+#### 應用層級測試
+**位置**：`[app_directory]/tests/`
+
+**用途**：特定應用程式的測試
+
+### 命名慣例
+
+#### 測試前綴
+- `test_` - 用於持續驗證的活躍測試腳本
+- `validate_` - 資料/設定驗證腳本
+- `verify_` - 系統狀態檢查腳本
+- `check_` - 依賴項和狀態檢查腳本
+
+#### 命名模式
+```
+[prefix]_[component]_[aspect]_[optional_issue].R
+
+範例：
+test_database_connection.R
+validate_etl_completeness.R
+verify_cbz_data_access.R
+check_packages.R
+test_issue_113_fix_verification.R
+```
+
+### 根目錄政策
+
+#### 根目錄禁止
+- 測試腳本（`test_*.R`）
+- 驗證腳本（`validate_*.R`）
+- 校驗腳本（`verify_*.R`）
+- 檢查腳本（`check_*.R`）
+
+#### 例外
+**無。** 所有測試相關腳本必須放在指定的測試目錄中。
+
+#### 根目錄允許的檔案
+專案根目錄僅允許以下類型：
+- `app.R` - 應用程式進入點
+- `*.Rproj` - RStudio 專案檔案
+- `README.md` - 專案文檔
+- 設定檔（`.Rprofile`、`renv.lock`）
+
+## 範例
+
+### 正確的組織 ✓
+
+```r
+# 系統資料庫測試
+scripts/global_scripts/98_test/test_database_connection.R
+
+# 組件專屬測試
+scripts/global_scripts/01_db/tests/test_connection_pooling.R
+
+# 平台 API 測試
+scripts/global_scripts/26_platform_apis/eby/tests/test_eby_etl.R
+
+# 套件依賴檢查
+scripts/global_scripts/98_test/check_packages.R
+```
+
+### 錯誤的組織 ✗
+
+```r
+# 錯誤：測試在根目錄
+./test_database.R
+./validate_feature.R
+./check_dependencies.R
+
+# 錯誤：測試在錯誤的組件
+scripts/update_scripts/ETL/test_database.R
+```
+
+## 遷移程序
+
+發現測試腳本在錯誤位置時：
+
+1. **識別範圍**：確定是系統級還是組件專屬測試
+2. **移動到適當目錄**：遵循上述位置規則
+3. **更新參考**：修復文檔中的任何硬編碼路徑
+4. **驗證功能**：從新位置運行測試確保正常運作
+
+### 遷移腳本範本
+
+```r
+#!/usr/bin/env Rscript
+# 將測試腳本從根目錄移動到正確位置
+
+root_tests <- list.files(pattern = "^(test_|validate_|verify_|check_).*\\.R$")
+
+for (script in root_tests) {
+  # 根據腳本名稱/內容確定目標位置
+  dest <- "scripts/global_scripts/98_test/"
+
+  # 移動檔案
+  file.rename(script, file.path(dest, script))
+  message("已移動：", script, " -> ", dest)
+}
+```
+
+## 執行機制
+
+### 預提交鉤子
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# 檢查根目錄中的測試腳本
+TEST_FILES=$(git diff --cached --name-only --diff-filter=A | grep -E '^(test_|validate_|verify_|check_).*\.R$')
+
+if [ -n "$TEST_FILES" ]; then
+  echo "錯誤：在根目錄檢測到測試腳本："
+  echo "$TEST_FILES"
+  echo ""
+  echo "測試腳本必須放在："
+  echo "  - scripts/global_scripts/98_test/（系統測試）"
+  echo "  - scripts/global_scripts/[component]/tests/（組件測試）"
+  exit 1
+fi
+```
+
+### 程式碼審查檢查清單
+
+審查 PR 時，確認：
+- [ ] 根目錄中沒有 test_*.R 檔案
+- [ ] 測試腳本根據其範圍放在適當位置
+- [ ] 測試命名遵循前綴慣例
+- [ ] 如果存在測試，新組件目錄包含 tests/ 子目錄
+
+## 與其他原則的關係
+
+### SO_R025：腳本組織層級
+SO_R033 擴展 SO_R025，提供測試腳本放置的具體規則。
+
+### MP046：除錯程式碼追蹤
+測試腳本可以使用 MP046 定義的除錯追蹤工具，但除錯腳本本身由 SO_R034 規範。
+
+## 版本歷史
+
+| 版本 | 日期 | 變更 |
+|------|------|------|
+| 1.0 | 2025-11-30 | 根目錄清理後初始創建 |
+
+## 另請參閱
+
+- SO_R025：腳本組織層級
+- SO_R034：除錯腳本管理
+- SO_R035：臨時檔案和日誌管理
+- MP046：除錯程式碼追蹤

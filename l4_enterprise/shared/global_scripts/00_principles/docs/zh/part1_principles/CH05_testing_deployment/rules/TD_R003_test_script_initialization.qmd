@@ -1,0 +1,352 @@
+---
+title: "TD_R003: 測試腳本初始化規則"
+subtitle: "建立測試腳本初始化的標準化模式，確保適當的工作目錄設置、一致的依賴載入、正確的來源檔案包含和靈活的執行模式"
+chapter: "CH05"
+category: "rule"
+number: "TD_R003"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "測試部署法"
+article-number: 
+  number: 3
+  title: "測試腳本初始化規則"
+implements:
+  - "MP051: 測試資料設計"
+  - "R074: Shiny 測試資料"
+depends_on:
+  - "R037: 動態根路徑檢測"
+  - "R045: 僅初始化導入"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三條：測試腳本初始化規則 {#overview}
+
+**測試部署法第三條（測試腳本初始化規則）**
+
+此規則建立了測試腳本初始化的標準化模式。
+
+:::{.callout-important}
+## 核心需求
+建立測試腳本初始化的標準化模式，確保適當的工作目錄設置、一致的依賴載入、正確的來源檔案包含和靈活的執行模式。
+:::
+
+# 第一項：實施原則 {#implementation}
+
+## 第一款：演示模式標記 {#demo-mode-flag}
+
+所有測試腳本必須在檔案頂部包含 DEMO_MODE 標記，以便在測試和互動演示之間輕鬆切換：
+
+```r
+# 設置為 TRUE 以跳過測試並只啟動應用
+DEMO_MODE <- TRUE  # 改為 FALSE 以執行測試
+```
+
+run_tests() 函數必須檢查此標記並相應行動：
+
+```r
+run_tests <- function() {
+  # 檢查是否在演示模式
+  if (DEMO_MODE) {
+    message("在 DEMO_MODE 中執行 - 啟動應用而不執行測試")
+    create_test_app(test_data)
+    return()
+  }
+  
+  # 不在演示模式時執行測試
+  # ...測試程式碼...
+}
+```
+
+## 第二款：工作目錄管理 {#working-directory-management}
+
+所有測試腳本必須使用標準路徑檢測模式包含適當的工作目錄管理：
+
+```r
+# 初始化適當的工作目錄 (ROOT_DIR)
+if (!exists("script_triggered_from_app_mode") || !script_triggered_from_app_mode) {
+  # 根據目錄結構動態獲取專案根路徑
+  source_find_root <- function(start_path = getwd()) {
+    current_path <- normalizePath(start_path, winslash = "/")
+    while (!file.exists(file.path(current_path, "app.R"))) {
+      parent_path <- dirname(current_path)
+      if (parent_path == current_path) {
+        stop("無法找到包含 app.R 的專案根目錄")
+      }
+      current_path <- parent_path
+    }
+    return(current_path)
+  }
+  
+  # 設置正確的工作目錄
+  root_path <- source_find_root()
+  setwd(root_path)
+  
+  # 來源初始化腳本以設置適當的環境
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+}
+```
+
+## 第三款：測試腳本初始化序列 {#initialization-sequence}
+
+測試腳本必須遵循此初始化序列：
+
+1. **演示模式標記**：在檔案頂部設置 DEMO_MODE 標記
+2. **環境設置**：將工作目錄設置為 ROOT_DIR
+3. **模式初始化**：來源應用模式初始化腳本
+4. **必需程式庫**：載入測試程式庫
+5. **被測模組**：來源被測試的模組
+6. **測試工具**：載入測試輔助函數和工具
+7. **測試資料**：定義或載入測試資料
+8. **測試函數**：定義測試和工具函數
+9. **測試執行**：使用 DEMO_MODE 檢查執行測試
+
+## 第四款：測試模組來源 {#test-module-sourcing}
+
+被測試的模組必須使用從 ROOT_DIR 的相對路徑來源，而非絕對路徑：
+
+```r
+# 正確：使用從根目錄的相對路徑來源
+source(file.path("update_scripts", "global_scripts", "component_path", "component.R"))
+
+# 錯誤：使用工作目錄相對路徑來源
+source("component.R")  # 如果當前目錄不在元件目錄中將失敗
+
+# 錯誤：使用硬編碼絕對路徑來源
+source("/Users/developer/project/component.R")  # 在其他機器上將失敗
+```
+
+# 第二項：標準測試模式結構 {#standard-testing-pattern}
+
+## 第一款：測試腳本結構 {#test-script-structure}
+
+測試腳本必須實施標準化結構：
+
+```r
+#' @title 元件測試腳本
+#' @description 遵循 R0074 和 R75 的元件測試
+#' @file component_test.R
+
+# 初始化區塊（遵循上述序列）
+
+#' 測試資料創建函數
+#' @return 遵循 R74 的標準化測試資料
+create_test_data <- function() {
+  # 根據 R74 實施
+}
+
+#' 元件驗證測試
+#' @param test_data 要使用的測試資料
+run_validation_tests <- function(test_data) {
+  test_that("元件處理完整資料", {
+    # 使用完整資料測試
+  })
+  
+  test_that("元件處理不完整資料", {
+    # 使用不完整資料測試
+  })
+  
+  test_that("元件處理空資料", {
+    # 使用空資料測試
+  })
+}
+
+#' 用於手動測試的互動測試應用
+#' @param test_data 要使用的測試資料
+create_test_app <- function(test_data) {
+  # 創建互動測試應用
+  ui <- fluidPage(...)
+  server <- function(input, output, session) {...}
+  shinyApp(ui, server)
+}
+
+# 執行測試
+test_data <- create_test_data()
+run_validation_tests(test_data)
+
+# 只在請求時執行互動測試應用
+if (interactive() && !exists("skip_interactive") && !isTRUE(getOption("test.mode"))) {
+  create_test_app(test_data)
+}
+```
+
+## 第二款：測試腳本命名約定 {#naming-convention}
+
+測試腳本必須遵循此命名約定：
+
+- **元件測試**：`{component_name}_test.R`
+- **單元測試**：`test_{function_name}.R`
+- **整合測試**：`integration_test_{feature_name}.R`
+
+# 第三項：標準測試區塊 {#standard-testing-blocks}
+
+## 第一款：自動工作目錄檢測區塊 {#auto-directory-detection}
+
+```r
+# 標準工作目錄檢測區塊
+source_find_root <- function(start_path = getwd()) {
+  current_path <- normalizePath(start_path, winslash = "/")
+  while (!file.exists(file.path(current_path, "app.R"))) {
+    parent_path <- dirname(current_path)
+    if (parent_path == current_path) {
+      stop("無法找到包含 app.R 的專案根目錄")
+    }
+    current_path <- parent_path
+  }
+  return(current_path)
+}
+
+# 如果尚未在應用模式中則不初始化
+if (!exists("script_triggered_from_app_mode") || !script_triggered_from_app_mode) {
+  root_path <- source_find_root()
+  setwd(root_path)
+  source(file.path("update_scripts", "global_scripts", "00_principles", 
+                   "sc_initialization_app_mode.R"))
+}
+```
+
+## 第二款：標準測試應用區塊 {#standard-test-app}
+
+```r
+# 標準測試應用創建函數
+create_standard_test_app <- function(module_ui_fn, module_server_fn, test_data, id = "test_module") {
+  ui <- fluidPage(
+    title = "模組測試",
+    
+    # 測試控制
+    fluidRow(
+      column(12,
+             h3("測試控制"),
+             selectInput("test_scenario", "測試情境：", 
+                        choices = names(test_data$scenarios),
+                        selected = names(test_data$scenarios)[1])
+      )
+    ),
+    
+    # 被測模組
+    fluidRow(
+      column(12,
+             h3("模組測試結果"),
+             module_ui_fn(id)
+      )
+    ),
+    
+    # 除錯資訊
+    fluidRow(
+      column(12,
+             h3("除錯資訊"),
+             verbatimTextOutput("debug_info")
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    # 根據情境選擇當前測試資料
+    current_data <- reactive({
+      scenario <- input$test_scenario
+      test_data$scenarios[[scenario]]
+    })
+    
+    # 呼叫模組 server 函數
+    module_result <- module_server_fn(id, current_data())
+    
+    # 顯示除錯資訊
+    output$debug_info <- renderPrint({
+      list(
+        test_scenario = input$test_scenario,
+        data_summary = summarize_test_data(current_data()),
+        module_result = if(is.reactive(module_result)) module_result() else module_result
+      )
+    })
+  }
+  
+  # 使用特定選項啟動應用以確保可靠的瀏覽器開啟
+  shinyApp(ui, server, options = list(
+    launch.browser = TRUE,  # 強制瀏覽器啟動
+    port = 8765,            # 使用特定端口
+    host = "127.0.0.1"      # 僅在 localhost 監聽
+  ))
+}
+```
+
+# 第四項：在瀏覽器中啟動測試應用 {#launching-test-apps}
+
+當創建需要在瀏覽器中自動啟動的測試應用時，遵循這些指導原則以確保在互動和非互動環境中都能可靠地啟動：
+
+## 第一款：創建專用執行腳本 {#dedicated-runner}
+
+對於應該始終在瀏覽器中啟動的測試應用，創建單獨的執行腳本：
+
+```r
+# run_demo.R - 專用腳本在瀏覽器中啟動測試應用
+# 來源主測試腳本以繼承其資料和函數
+source(paste0(dirname(sys.frame(1)$ofile), "/app_test.R"))
+
+# 設置瀏覽器啟動選項而不使用自訂瀏覽器函數
+# 這可以避免無限遞迴問題
+options(shiny.launch.browser = TRUE)
+
+# 創建並執行應用（不要同時設置選項和參數）
+message("啟動演示應用...")
+app <- create_test_app(test_data)
+runApp(app, port = 8765) # 不要在這裡使用 launch.browser=TRUE
+```
+
+## 第二款：配置 Shiny 應用選項 {#configure-shiny-options}
+
+創建測試應用時，直接指定瀏覽器啟動選項：
+
+```r
+shinyApp(ui, server, options = list(
+  launch.browser = TRUE,  # 強制瀏覽器啟動
+  port = 8765,            # 使用特定端口
+  host = "127.0.0.1"      # 僅在 localhost 監聽
+))
+```
+
+## 第三款：設置瀏覽器函數 {#set-browser-function}
+
+對於可能沒有設置預設瀏覽器的環境：
+
+```r
+# 警告：只有在未設置 options(shiny.launch.browser = TRUE) 時使用
+# 否則會創建無限遞迴！
+options(browser = function(url) {
+  message("在以下位置開啟瀏覽器：", url)
+  utils::browseURL(url)
+})
+```
+
+# 第五項：驗證檢查清單 {#validation-checklist}
+
+要驗證測試腳本是否符合此規則，驗證：
+
+1. 腳本正確初始化 ROOT_DIR 工作目錄
+2. 初始化序列遵循標準模式
+3. 所有模組來源使用從 ROOT_DIR 的相對路徑
+4. 測試腳本遵循標準結構
+5. 正確遵循命名約定
+6. 腳本區分自動化和互動測試
+
+# 第六項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **一致性**：所有測試腳本使用相同的初始化模式
+2. **可靠性**：測試在不同環境中一致地工作
+3. **靈活性**：在測試和演示模式之間輕鬆切換
+4. **可維護性**：標準化結構使測試更易維護
+5. **可移植性**：測試可以在不同機器上執行
+
+---
+
+*基於：測試部署法第三條*  
+*相關連結：[MP051 測試資料設計](../../CH00_fundamental_principles/meta_principles/MP051_test_data_design.qmd), [R074 Shiny 測試資料](./TD_R001_shiny_test_data.qmd)*

@@ -1,0 +1,261 @@
+---
+title: "SO_R030: Operational Documentation Location Standard"
+subtitle: "All operational documents must be placed in CHANGELOG with proper date-prefixed naming"
+author: "Claude"
+date: "2025-11-30"
+categories: [rule, documentation, structure, changelog]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Rule Statement
+
+All operational documentation (implementation reports, debug reports, fix reports, test reports, and strategy documents) MUST be placed in the `CHANGELOG/` directory with proper date-prefixed, lowercase naming. Operational documents are NEVER permitted in the project root directory.
+
+## Mandatory Location
+
+```
+scripts/global_scripts/00_principles/CHANGELOG/
+```
+
+## Naming Convention
+
+### Format
+
+```
+YYYY-MM-DD_descriptive_name.md
+```
+
+### Requirements
+
+1. **Date Prefix**: Use the file creation date as prefix (YYYY-MM-DD)
+2. **Naming Style**: lowercase with underscores (snake_case)
+3. **File Extension**: `.md` for Markdown documents
+4. **Descriptive Names**: Use clear, meaningful names that describe the document content
+
+### Examples
+
+```
+# CORRECT Examples
+2025-11-30_root_directory_cleanup_analysis.md
+2025-11-13_critical_poisson_filter_fix.md
+2025-10-03_deployment_fix_report.md
+2025-09-28_database_migration_strategy.md
+
+# INCORRECT Examples (PROHIBITED)
+ROOT_DIRECTORY_CLEANUP_ANALYSIS.md          # Missing date, uppercase
+CRITICAL_FIX_SUMMARY_2025-11-13.md          # Uppercase, date not prefix
+debug_report.md                              # Missing date prefix
+2025-11-30-descriptive-name.md              # Using hyphens instead of underscores
+```
+
+## Document Types Covered
+
+### 1. Implementation Reports
+
+Documents describing completed implementations, features, or changes.
+
+```
+2025-11-30_feature_x_implementation.md
+2025-11-30_api_integration_complete.md
+```
+
+### 2. Debug Reports
+
+Documents recording debugging sessions, investigations, and findings.
+
+```
+2025-11-30_memory_leak_investigation.md
+2025-11-30_connection_timeout_debug.md
+```
+
+### 3. Fix Reports
+
+Documents describing bug fixes, patches, and corrections.
+
+```
+2025-11-30_authentication_bug_fix.md
+2025-11-30_data_validation_correction.md
+```
+
+### 4. Test Reports
+
+Documents recording test results, validation outcomes, and QA findings.
+
+```
+2025-11-30_integration_test_results.md
+2025-11-30_performance_benchmark_report.md
+```
+
+### 5. Strategy Documents
+
+Documents outlining plans, strategies, and architectural decisions.
+
+```
+2025-11-30_migration_strategy.md
+2025-11-30_scaling_architecture_plan.md
+```
+
+## Prohibited Locations
+
+The following locations are PROHIBITED for operational documentation:
+
+### Project Root Directory
+
+```
+# PROHIBITED - Never place operational docs here
+/MAMBA/IMPLEMENTATION_REPORT.md                    # WRONG!
+/MAMBA/DEBUG_REPORT_2025-11-30.md                  # WRONG!
+/MAMBA/FIX_SUMMARY.md                              # WRONG!
+```
+
+### 00_principles Root Directory
+
+```
+# PROHIBITED - Never place operational docs here
+/00_principles/AUDIT_REPORT.md                     # WRONG!
+/00_principles/MIGRATION_GUIDE.md                  # WRONG!
+```
+
+## Enforcement Mechanism
+
+### Detection Script
+
+```bash
+#!/bin/bash
+# Script to detect misplaced operational documents
+
+MAMBA_ROOT="/path/to/MAMBA"
+
+# Patterns for operational documents
+PATTERNS=(
+    "*_REPORT*.md"
+    "*_FIX*.md"
+    "*_DEBUG*.md"
+    "*_IMPLEMENTATION*.md"
+    "*_STRATEGY*.md"
+    "*_SUMMARY*.md"
+    "*_ANALYSIS*.md"
+)
+
+echo "Checking for misplaced operational documents..."
+
+for pattern in "${PATTERNS[@]}"; do
+    # Check project root
+    files=$(find "$MAMBA_ROOT" -maxdepth 1 -name "$pattern" -type f 2>/dev/null)
+    if [ -n "$files" ]; then
+        echo "VIOLATION: Found misplaced files matching $pattern in project root:"
+        echo "$files"
+    fi
+done
+```
+
+### Automated Migration
+
+When misplaced documents are found, migrate them using:
+
+```bash
+# Move misplaced document to CHANGELOG with proper naming
+DATE=$(date +%Y-%m-%d)
+OLD_NAME="IMPLEMENTATION_REPORT.md"
+NEW_NAME="${DATE}_$(echo $OLD_NAME | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
+
+mv "$MAMBA_ROOT/$OLD_NAME" "$MAMBA_ROOT/scripts/global_scripts/00_principles/CHANGELOG/$NEW_NAME"
+```
+
+## Rationale
+
+### 1. Clean Root Directory
+
+Keeping operational documents out of the root directory:
+- Maintains focus on essential project files (app.R, manifest.json)
+- Prevents accumulation of documentation clutter
+- Makes project structure immediately clear to new developers
+
+### 2. Organized Historical Record
+
+Placing documents in CHANGELOG with date prefixes:
+- Creates natural chronological ordering
+- Enables easy navigation of project history
+- Supports audit and compliance requirements
+
+### 3. Consistent Naming
+
+Using lowercase with underscores:
+- Avoids case-sensitivity issues across systems
+- Matches existing CHANGELOG naming conventions
+- Improves readability and consistency
+
+### 4. Discoverability
+
+Date-prefixed naming ensures:
+- Documents appear in chronological order when listed
+- Easy filtering by date range
+- Clear indication of document age and relevance
+
+## Relationship to Other Principles
+
+- **MP012 (Change Tracking)**: Implements documentation requirements for change tracking
+- **SO_R029 (CHANGELOG Organization)**: Extends CHANGELOG rules to operational documents
+- **SO_R006 (Archiving Standard)**: Complements archiving for completed operational work
+- **SO_R002 (File Naming Convention)**: Applies file naming standards to operational docs
+
+## Implementation Checklist
+
+- [ ] All new operational documents created in CHANGELOG/
+- [ ] Date prefix (YYYY-MM-DD) applied to all document names
+- [ ] Lowercase with underscores used for naming
+- [ ] No operational documents exist in project root
+- [ ] No operational documents exist in 00_principles root
+- [ ] Team trained on proper document placement
+- [ ] Detection script implemented (optional)
+- [ ] Pre-commit hook added to prevent violations (optional)
+
+## Migration Guide
+
+For projects with existing misplaced documents:
+
+### Step 1: Identify Misplaced Documents
+
+```bash
+# Find all uppercase .md files in project root
+find /path/to/MAMBA -maxdepth 1 -name "*.md" -type f | \
+  xargs -I {} basename {} | \
+  grep -E '^[A-Z_]+\.md$'
+```
+
+### Step 2: Create Migration Script
+
+```bash
+#!/bin/bash
+DATE=$(date +%Y-%m-%d)
+CHANGELOG_DIR="scripts/global_scripts/00_principles/CHANGELOG"
+
+for file in *.md; do
+    if [[ "$file" =~ ^[A-Z_]+\.md$ ]]; then
+        new_name="${DATE}_$(echo ${file%.md} | tr '[:upper:]' '[:lower:]').md"
+        echo "Moving: $file -> $CHANGELOG_DIR/$new_name"
+        mv "$file" "$CHANGELOG_DIR/$new_name"
+    fi
+done
+```
+
+### Step 3: Verify Migration
+
+```bash
+# Confirm no operational docs remain in root
+ls -la *.md 2>/dev/null | grep -E '^[A-Z_]+\.md$'
+
+# Confirm documents are in CHANGELOG
+ls -la scripts/global_scripts/00_principles/CHANGELOG/*.md | head -20
+```
+
+## Conclusion
+
+The Operational Documentation Location Standard ensures a clean, organized project structure by mandating that all operational documents reside in the CHANGELOG directory with proper date-prefixed, lowercase naming. This rule prevents the accumulation of documentation clutter in project root directories, maintains chronological organization of project history, and supports audit and compliance requirements. Enforcement through detection scripts and team training ensures consistent application across all development work.

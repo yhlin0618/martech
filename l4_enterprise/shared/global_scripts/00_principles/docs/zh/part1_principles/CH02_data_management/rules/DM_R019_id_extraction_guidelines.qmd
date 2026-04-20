@@ -1,0 +1,139 @@
+---
+title: "DM_R019: 資料清理和處理的 ID 提取指南"
+subtitle: "與資料唯一性、去重和外鍵相關的 ID 必須在清理階段建立；與分析邏輯相關的衍生 ID 應在處理階段生成"
+chapter: "CH02"
+category: "rule"
+number: "DM_R019"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 19
+  title: "ID 提取指南"
+related_to:
+  - "MP58: 資料庫表創建策略"
+  - "P02: 資料完整性"
+  - "R89: 整數 ID 類型轉換"
+  - "R90: ID 關係驗證"
+  - "D03: 定位分析衍生流程"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十九條：資料清理和處理的 ID 提取指南 {#overview}
+
+**資料管理法第十九條（ID 提取指南）**
+
+與資料唯一性、去重和外鍵相關的 ID 必須在清理階段建立；與分析邏輯相關的衍生 ID 應在處理階段生成。
+
+:::{.callout-important}
+## 核心原則
+與資料唯一性、去重和外鍵相關的 ID 必須在清理階段建立；與分析邏輯相關的衍生 ID 應在處理階段生成。
+:::
+
+# 第一項：兩階段目的 {#two-stage-purpose}
+
+| 階段 | 主要目標 | 常見動作 | 重要性 |
+|------|----------|----------|--------|
+| **清理** | 修正**資料品質**以確保資料可信度 | 去重、空值處理、類型標準化、異常檢測 | 防止髒資料污染下游流程 |
+| **處理** | 基於**業務邏輯**轉換以進行分析/建模 | 聚合、KPI 計算、特徵工程 | 將「正確」的資料轉換為「有用」的資料 |
+
+# 第二項：ID 配置指南 {#id-placement-guidelines}
+
+| ID 用途 | 建議階段 | 原因 |
+|---------|----------|------|
+| **唯一/外鍵**<br>(`customer_id`、`order_id`、`ebay_product_number` 等) | **清理** | 早期建立可實現去重、資料分割和清晰的血統 |
+| **分析衍生鍵**<br>(`week_id`、`cohort_id`、`session_id` 等) | **處理** | 分析粒度變更的靈活性 |
+| **僅報告索引**<br>(前端排序號碼等) | **處理/最終報告** | 無業務邏輯依賴，最後生成 |
+
+# 第三項：標準工作流程 {#standard-workflow}
+
+## 第一款：暫存（原始落地） {#staging}
+
+僅儲存帶有載入時間戳記的原始檔案。
+
+## 第二款：清理 {#cleanse}
+
+- 執行去重、值插補、驗證
+- **生成或映射影響唯一性/正規化的 ID**
+
+## 第三款：處理/轉換 {#process-transform}
+
+- 根據分析需求聚合和衍生欄位
+- 生成衍生 ID（例如 `session_id_v2`）以獲得最大靈活性
+
+# 第四項：為什麼要早期建立 ID？ {#why-establish-ids-early}
+
+- **避免不匹配**：主鍵確保正確的聚合/連接
+- **易於追溯**：固定的主鍵提供清晰的原始 → 清理 → 處理血統
+- **簡化調試**：使用相同的 ID 追溯到原始記錄
+
+# 第五項：實用技術 {#practical-techniques}
+
+| 技術 | 描述 |
+|------|------|
+| **雜湊/UUID 臨時鍵** | 在清理階段生成 `raw_row_hash`（當不存在自然鍵時） |
+| **封裝 ID 邏輯** | 使用 UDF/SQL 模組進行隔離、測試和版本控制 |
+| **版本衍生鍵** | 使用像 `session_id_v2` 的名稱來防止版本衝突 |
+| **更新資料字典** | 立即在資料目錄/ER 圖中記錄 ID |
+
+# 第六項：實施範例 {#implementation-examples}
+
+## 第一款：清理階段 ID 生成 {#cleanse-stage-id-generation}
+
+```r
+# 在 fn_cleanse_eby_reviews.R 中
+cleansed_reviews <- raw_reviews %>%
+  mutate(
+    # 早期建立主要識別碼
+    ebay_product_number = standardize_product_number(product_number),
+    # 創建用於去重的複合鍵
+    review_id = paste(ebay_product_number, reviewer, date, sep = "_")
+  ) %>%
+  distinct(review_id, .keep_all = TRUE)
+```
+
+## 第二款：處理階段 ID 生成 {#process-stage-id-generation}
+
+```r
+# 在 fn_process_eby_reviews.R 中
+processed_reviews <- cleansed_reviews %>%
+  mutate(
+    # 在處理期間生成分析特定的 ID
+    week_id = format(date, "%Y-W%V"),
+    cohort_id = format(first_purchase_date, "%Y-%m"),
+    session_id = generate_session_id(user_id, timestamp)
+  )
+```
+
+# 第七項：平台特定考量 {#platform-specific-considerations}
+
+## 第一款：亞馬遜 (amz) {#amazon}
+
+- 主要 ID：`asin`（10 個字元的字母數字）
+- 在清理階段建立：驗證格式，去重
+
+## 第二款：eBay (eby) {#ebay}
+
+- 主要 ID：`ebay_product_number`（10-13 位數字）
+- 次要 ID：`seller`、`country`
+- 在清理階段建立：標準化格式，處理變化
+
+# 第八項：相關原則 {#related-principles}
+
+- **MP58**：資料庫表創建策略 - 一致的表結構
+- **P02**：資料完整性 - 確保整個管道的資料品質
+- **R89**：整數 ID 類型轉換 - 正確處理 ID 類型轉換
+- **R90**：ID 關係驗證 - 在操作前驗證 ID 關係
+
+---
+
+*基於：資料管理法第十九條*  
+*相關連結：[MP58 資料庫表創建策略](../../CH00_fundamental_principles/meta_principles/MP058_database_table_creation_strategy.qmd), [P02 資料完整性](../../CH01_structure_organization/principles/SO_P002_data_integrity.qmd)*

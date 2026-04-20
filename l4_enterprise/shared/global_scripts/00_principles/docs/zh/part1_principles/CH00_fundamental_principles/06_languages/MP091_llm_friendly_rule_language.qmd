@@ -1,0 +1,301 @@
+---
+title: "MP091: LLM-Friendly Rule Language"
+subtitle: "A structured format for expressing rules that large language models can reliably interpret and apply"
+author: "Claude"
+date: "2025-12-14"
+date-modified: "2025-12-17"
+categories: [meta-principle, AI-communication, rule-language, LLM]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Principle
+
+LLM-Friendly Rule Language (LFRL) establishes a structured format specifically designed for large language models to interpret rules, constraints, and principles. Unlike traditional logic languages (Prolog, First-Order Logic) that are optimized for automated theorem provers, LFRL is optimized for **pattern recognition** and **semantic alignment** - the core strengths of LLMs.
+
+## Design Philosophy
+
+### Why Not Traditional Logic Languages?
+
+Traditional logic languages like Prolog are designed for **execution** by inference engines. However, LLMs do not execute logic - they perform:
+
+- **Pattern Recognition**: Matching input against learned patterns
+- **Contextual Alignment**: Understanding semantic relationships
+- **Constrained Inference**: Generating responses within learned constraints
+
+The core features of Prolog that make it powerful for inference engines are precisely what makes it difficult for LLMs:
+
+| Feature | Prolog Behavior | LLM Challenge |
+|---------|-----------------|---------------|
+| Backtracking | Implicit control flow | LLMs cannot "see" the search process |
+| Negation as Failure | `\+ p(X)` means "cannot prove" | LLMs often misinterpret as "is false" |
+| Unification | Pattern matching with variables | Compressed semantics, insufficient context |
+| Cut (!) | Control flow manipulation | Completely invisible to pattern matchers |
+
+### The Key Insight
+
+> **For LLM consumption, rules should be "alignable" rather than "executable".**
+
+This means:
+- **Explicit semantics**: Every relationship is spelled out
+- **Redundant representation**: Same rule in multiple formats
+- **Example-driven**: Concrete violations and compliant cases
+- **Flat structure**: No hidden recursion or backtracking
+
+## Language Specification
+
+### File Format: YAML
+
+LFRL uses YAML as the container format because:
+
+1. **Stable Key-Value Structure**: LLMs process key-value pairs extremely reliably
+2. **Human Readable**: Developers can also read and edit
+3. **Programmatically Processable**: Can be converted to other formats
+4. **No Execution Semantics**: Pure data, no hidden control flow
+
+### Document Structure
+
+```yaml
+version: "1.0"
+format: "llm-friendly-rules"
+
+# Section 1: Entity Definitions
+entities:
+  - name: EntityName
+    attributes: [attr1, attr2, ...]
+
+# Section 2: Relation Definitions
+relations:
+  - name: relation_name
+    signature: "Entity1 relation Entity2"
+    description: "Human-readable explanation"
+
+# Section 3: Principle Definitions
+principles:
+  - id: MP029
+    type: meta_principle
+    name: no_fake_data
+    one_liner: "Short summary"
+    rule_natural: |
+      Controlled Natural Language expression
+    rule_formal: |
+      Datalog-like formal expression
+    applies_to: [scenario1, scenario2]
+    violations:
+      - "Example of violation"
+    compliant:
+      - "Example of compliance"
+
+# Section 4: Dependencies (Explicit Graph)
+dependencies:
+  - from: PrincipleA
+    to: PrincipleB
+    reason: "Why A depends on B"
+
+# Section 5: Scenario Mappings
+scenarios:
+  scenario_name:
+    description: "When this applies"
+    must_read: [Principle1, Principle2]
+    checklist:
+      - "Verification question"
+
+# Section 6: Conflict Resolution
+priority_order:
+  - level: 1
+    type: meta_principle
+    description: "Highest priority"
+```
+
+### Rule Expression: Dual Format
+
+Every rule MUST be expressed in two formats:
+
+#### 1. Controlled Natural Language (CNL)
+
+CNL is a restricted subset of natural language with predictable structure:
+
+```
+If [condition],
+then [consequence].
+[Optional additional constraints].
+```
+
+Example:
+```
+If a data object X is used in production,
+then X must NOT be generated or fabricated.
+X must come from a real data source.
+```
+
+CNL Guidelines:
+- Use simple sentence structures
+- Avoid pronouns when possible (repeat the noun)
+- Use explicit quantifiers ("all", "any", "no")
+- Use explicit negation ("must NOT", "is NOT")
+
+#### 2. Datalog-like Formal Expression
+
+##### What is Datalog?
+
+[Datalog](https://en.wikipedia.org/wiki/Datalog) is a declarative logic programming language, syntactically a subset of Prolog. It was designed for database queries and is characterized by:
+
+- **Declarative semantics**: Rules describe "what" not "how"
+- **No function symbols**: Only predicates and constants
+- **Stratified negation**: Restricted form of negation
+- **Guaranteed termination**: Unlike general Prolog programs
+
+##### How LFRL Relates to Datalog
+
+LFRL's `rule_formal` component is **inspired by Datalog** but adapted for LLM consumption:
+
+| Aspect | Standard Datalog | LFRL Adaptation |
+|--------|------------------|-----------------|
+| **Purpose** | Machine execution | LLM alignment |
+| **Recursion** | Allowed (with restrictions) | **Prohibited** - LLMs struggle with recursive unfolding |
+| **Negation** | Stratified negation-as-failure | **Explicit NOT** - clearer for pattern matching |
+| **Syntax** | Prolog-like (`:-`) | **Keyword-based** (`IF`, `THEN`) - more readable |
+| **Variables** | Lowercase with implicit scope | **ALL CAPS** - visually distinct |
+
+##### Why "Datalog-like" and Not Pure Datalog?
+
+We borrow Datalog's **flat, declarative style** but intentionally diverge to optimize for LLM understanding:
+
+1. **No implicit semantics**: Datalog's negation-as-failure (`\+ p(X)`) is replaced with explicit `NOT p(X)`
+2. **No recursion**: Even stratified recursion is excluded because LLMs process rules as patterns, not as executable logic
+3. **Verbose keywords**: `IF/THEN/AND` instead of `:-` and `,` for better tokenization
+4. **Human-readable structure**: Designed to be "alignable" (pattern-matchable) rather than "executable"
+
+> **In summary**: LFRL uses Datalog as a **stylistic inspiration** for its flat, declarative structure, but strips away features that require execution semantics, creating a format optimized for LLM pattern recognition.
+
+##### Formal Syntax
+
+A flat, non-recursive logic format without backtracking:
+
+```
+RULE [rule_id]:
+FOR ALL [variable] [type]:
+IF [condition1]
+AND [condition2]
+THEN [consequence1]
+AND [consequence2]
+```
+
+Example:
+```
+RULE MP029_CHECK:
+FOR ALL data_object X:
+IF used_in_production(X)
+THEN NOT is_generated(X)
+AND has_real_source(X)
+```
+
+Datalog-like Guidelines:
+- No recursive definitions
+- No negation-as-failure (use explicit NOT)
+- No backtracking or cut
+- Variables in ALL CAPS (X, Y, F)
+- Predicates in snake_case
+
+### Example-Driven Specification
+
+Every principle MUST include:
+
+```yaml
+violations:
+  - "Using rnorm() to generate test data in production"
+  - "Hardcoding data values in source code"
+
+compliant:
+  - "Using tbl2() to read from database"
+  - "Using read_csv() to load real data files"
+```
+
+This leverages LLMs' strength in **learning from examples**.
+
+## Relationship to Other Languages
+
+| Language | Relationship to LFRL |
+|----------|----------------------|
+| NSQL (MP083) | LFRL can reference NSQL queries in examples |
+| AIMETA (MP084) | LFRL can serve as underlying rule carrier for AIMETA |
+| Prolog | LFRL can be mechanically converted to Prolog for backend verification |
+| First-Order Logic | LFRL's rule_formal is a readable subset of FOL |
+
+### Conversion to Prolog (For Verification)
+
+LFRL can be mechanically translated to Prolog when backend verification is needed:
+
+```yaml
+# LFRL Format
+rule_formal: |
+  RULE MP029_CHECK:
+  FOR ALL data_object X:
+  IF used_in_production(X)
+  THEN NOT is_generated(X)
+```
+
+Converts to:
+
+```prolog
+% Prolog Format
+mp029_check :-
+    forall(
+        data_object(X),
+        (used_in_production(X) -> \+ is_generated(X) ; true)
+    ).
+```
+
+However, the Prolog version is for **machine verification only**, not for LLM consumption.
+
+## Implementation Guidelines
+
+### For Principle Authors
+
+1. **Always provide both formats**: `rule_natural` AND `rule_formal`
+2. **Always provide examples**: At least 2 violations, 2 compliant cases
+3. **Make dependencies explicit**: Use the `dependencies` section
+4. **Assign to scenarios**: Every principle should map to at least one scenario
+
+### For AI Agents
+
+When reading LFRL files:
+
+1. **Read `rule_natural` first**: This is optimized for your understanding
+2. **Use `rule_formal` for precision**: When natural language is ambiguous
+3. **Check examples for calibration**: Violations/compliant help you calibrate
+4. **Follow dependencies**: If principle A requires B, read B first
+5. **Use scenarios for relevance**: Only read principles relevant to current task
+
+### For Verification Systems
+
+If implementing automated verification:
+
+1. Parse LFRL into AST
+2. Convert to Prolog/Datalog
+3. Execute verification query
+4. Report results back to LFRL layer
+
+## Implementation Checklist
+
+- [ ] Every principle has `rule_natural` (CNL format)
+- [ ] Every principle has `rule_formal` (Datalog-like format)
+- [ ] Every principle has `violations` examples (at least 2)
+- [ ] Every principle has `compliant` examples (at least 2)
+- [ ] All dependencies are explicit in `dependencies` section
+- [ ] All principles are mapped to scenarios in `scenarios` section
+- [ ] `priority_order` defines conflict resolution
+- [ ] File validates as proper YAML
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-12-14 | Initial specification |
+| 1.1 | 2025-12-17 | Added detailed explanation of Datalog relationship |

@@ -1,0 +1,257 @@
+---
+title: "DEV_R027: 套件函數參考規則"
+subtitle: "所有套件文檔必須包含詳細的參考部分，說明個別函數使用與最小工作範例。這些參考必須儲存在 precision_marketing 根目錄的集中式 R_package_references 資料夾中"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R027"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 27
+  title: "套件函數參考規則"
+related_to:
+  - "R103: 套件文檔參考規則"
+  - "MP57: 套件文檔元原則"
+  - "MP19: 套件一致性原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十七條：套件函數參考規則 {#overview}
+
+**開發方法法第二十七條（套件函數參考規則）**
+
+此規則確保套件函數的全面文檔化，提供精確的使用指導和標準化的函數使用模式。
+
+:::{.callout-important}
+## 核心規則
+所有套件文檔必須包含詳細的參考部分，說明個別函數使用與最小工作範例。這些參考必須儲存在 precision_marketing 根目錄的集中式 `R_package_references` 資料夾中。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+雖然高層次的使用模式是必要的，但開發人員經常需要快速參考特定的函數簽名、參數描述和工作範例。通過要求具有最小範例的全面函數參考：
+
+1. 開發人員可以快速了解如何正確使用特定函數
+2. 知識分享變得更精確且可行
+3. 通過標準化的函數使用提高代碼一致性
+4. 減少新團隊成員的入職時間
+5. 集中化確保所有專案存取相同的參考資料
+
+# 第二項：實施需求 {#implementation-requirements}
+
+## 第一款：中央參考位置 {#central-reference-location}
+
+所有套件參考必須儲存在集中式儲存庫中：
+
+```
+/precision_marketing/R_package_references/
+├── dplyr/
+│   ├── filter.md
+│   ├── select.md
+│   └── ...
+├── bs4Dash/
+│   ├── valueBox.md
+│   ├── box.md
+│   └── ...
+└── ...
+```
+
+## 第二款：函數參考結構 {#function-reference-structure}
+
+每個函數參考必須遵循此結構：
+
+```markdown
+# function_name
+
+## 描述
+函數用途的簡要描述。
+
+## 使用方式
+```r
+function_name(param1, param2, ...)
+```
+
+## 參數
+| 參數 | 類型 | 描述 | 預設值 |
+|------|------|------|--------|
+| param1 | 類型 | param1 的描述 | 預設值 |
+| param2 | 類型 | param2 的描述 | 預設值 |
+| ... | ... | ... | ... |
+
+## 返回值
+函數返回內容的描述。
+
+## 最小範例
+```r
+# 最簡單的工作範例
+library(package_name)
+result <- function_name(minimal_params)
+print(result)
+```
+
+## 常見使用模式
+```r
+# 函數在我們代碼庫中的典型使用方式範例
+library(package_name)
+# 具有典型參數的更實際範例
+```
+
+## 注意事項
+關於邊緣案例、性能考慮等的額外資訊。
+
+## 相關函數
+- `related_function1`：關係的簡要描述
+- `related_function2`：關係的簡要描述
+```
+
+## 第三款：套件層級索引 {#package-level-index}
+
+每個套件必須有一個列出所有記錄函數的索引檔案：
+
+```markdown
+# 套件名稱參考索引
+
+## 核心函數
+- [`function1`](function1.md)：簡要描述
+- [`function2`](function2.md)：簡要描述
+
+## 輔助函數
+- [`helper1`](helper1.md)：簡要描述
+
+## 進階函數
+- [`advanced1`](advanced1.md)：簡要描述
+```
+
+## 第四款：文檔參考 {#documentation-references}
+
+使用外部套件函數的檔案必須參考兩者：
+
+1. 來自 `20_R_packages/` 的高層次套件文檔
+2. 來自中央儲存庫的特定函數參考
+
+```r
+#' @file customer_analysis.R
+#' @principle R95 匯入需求規則
+#' @principle R103 套件文檔參考規則
+#' @principle R104 套件函數參考規則
+#' @uses_package dplyr 請參閱 20_R_packages/dplyr.md 了解使用模式
+#' @uses_function dplyr::filter 請參閱 /precision_marketing/R_package_references/dplyr/filter.md
+#' @uses_function dplyr::select 請參閱 /precision_marketing/R_package_references/dplyr/select.md
+```
+
+# 第三項：整合流程 {#integration-process}
+
+## 第一款：更新函數參考 {#updating-function-references}
+
+1. **新函數**：第一次使用函數時：
+   - 如果不存在，創建函數參考
+   - 基於您的實施添加最小範例
+   - 更新套件索引
+
+2. **現有參考**：使用現有參考實施函數時：
+   - 遵循記錄的模式
+   - 如果找到更好的方法，經批准後更新參考
+
+## 第二款：參考更新的 Git 工作流程 {#git-workflow}
+
+參考應通過標準化的 git 工作流程維護：
+
+1. 克隆中央參考儲存庫
+2. 為您的更新創建分支
+3. 添加或更新函數參考
+4. 提交拉取請求以供審查
+5. 批准後，合併更改
+
+:::{.callout-warning}
+## 重要提示
+絕不要直接修改 `/precision_marketing/R_package_references/` 目錄中克隆儲存庫的檔案。此目錄是來自中央 GitHub 儲存庫的 git 克隆，應只通過適當的 git 工作流程（pull、branch、commit、push、PR）更新。所有更改必須通過 GitHub 流程進行，以維持一致性和版本控制。
+:::
+
+# 第四項：範例實施 {#example-implementation}
+
+## 範例函數參考：dplyr::filter
+
+```markdown
+# filter
+
+## 描述
+使用邏輯條件篩選資料框中的行。
+
+## 使用方式
+```r
+filter(.data, ...)
+```
+
+## 參數
+| 參數 | 類型 | 描述 | 預設值 |
+|------|------|------|--------|
+| .data | data.frame/tibble | 輸入資料框 | 必需 |
+| ... | expressions | 用於過濾的邏輯條件 | 必需 |
+
+## 返回值
+符合條件的行的資料框。
+
+## 最小範例
+```r
+library(dplyr)
+mtcars %>% filter(cyl == 6)
+```
+
+## 常見使用模式
+```r
+# 在我們代碼庫中的標準使用
+customer_data %>%
+  filter(
+    segment == "high_value",
+    transaction_date >= start_date,
+    transaction_date <= end_date
+  )
+```
+
+## 注意事項
+- 多個條件使用 AND 邏輯組合
+- 使用 filter(condition1 | condition2) 進行 OR 邏輯
+- 偏好使用 %>% 運算子的管道語法
+- NA 值將被排除 - 明確使用 `is.na()` 以包含它們
+
+## 相關函數
+- `slice()`：按位置過濾行
+- `distinct()`：過濾唯一行
+- `arrange()`：排序行但不過濾
+```
+
+# 第五項：優點 {#benefits}
+
+1. **精確性**：關於如何使用每個函數的具體指導
+2. **標準化**：跨團隊的一致函數使用
+3. **學習**：最小範例促進快速學習
+4. **可發現性**：相關函數幫助開發人員找到更好的工具
+5. **入職**：新開發人員可以快速學習正確的使用模式
+
+# 第六項：與其他規則和原則的關係 {#relation-to-other-rules}
+
+此規則擴展和補充：
+
+- **R103 套件文檔參考規則**：為套件層級文檔添加函數層級細節
+- **MP57 套件文檔元原則**：為詳細的函數文檔提供結構
+- **MP19 套件一致性原則**：確保跨專案的一致函數使用
+
+# 第七項：例外情況 {#exception-cases}
+
+1. **內部函數**：未導出的套件函數不需要文檔
+2. **很少使用的函數**：對於腳本中的一次性使用，完整文檔可以簡化
+3. **快速發展的套件**：對於活躍開發中的套件，文檔可以在 API 穩定之前在單獨的分支中維護
+
+---
+
+*基於：開發方法法第二十七條*  
+*相關連結：[R103 套件文檔參考規則](DEV_R006_package_documentation_reference.qmd), [MP57 套件文檔](../../CH00_fundamental_principles/meta_principles/MP057_package_documentation.qmd)*

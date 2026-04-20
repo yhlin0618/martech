@@ -1,0 +1,201 @@
+---
+title: "MP078: 物件檔名轉換規則"
+subtitle: "將物件名稱（如 MP077 中定義）轉換為檔名時，物件名稱中的點（.）必須轉換為底線（_）以確保與檔案系統約定的相容性，同時保留物件識別符的階層結構和含義"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP078"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "terminology-standard"
+law: "基本原則法"
+article-number: 
+  number: 78
+  title: "物件檔名轉換規則"
+related_to:
+  - "MP077: 物件命名約定"
+  - "SO_R007: 一個主函數一個檔案規則"
+  - "DEV_P004: 點符號屬性存取原則"
+  - "SO_R002: 檔案命名約定"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七十八條：物件檔名轉換規則 {#overview}
+
+**基本原則法第七十八條（物件檔名轉換規則）**
+
+將物件名稱（如 MP077 中定義）轉換為檔名時，物件名稱中的點（.）必須轉換為底線（_）以確保與檔案系統約定的相容性，同時保留物件識別符的階層結構和含義。
+
+:::{.callout-important}
+## 核心要求
+透過定義具體的轉換規則和提供工具函數，此規則在程式碼引用和檔案操作之間實現無縫整合。
+:::
+
+# 第一項：轉換規則 {#translation-rules}
+
+## 第一款：基本轉換模式 {#basic-translation-pattern}
+
+```
+object_name = type.purpose[___identifier]
+filename = fn_type_purpose.ext  # 對於函數
+filename = type_purpose.ext     # 對於其他物件
+```
+
+其中：
+- 物件名稱中的所有點（.）在檔名中轉換為底線（_）
+- 可選識別符（三重底線 `___` 之後）從檔名中省略
+- 根據語言添加適當的檔案擴展名（.R、.py 等）
+
+## 第二款：轉換範例 {#translation-examples}
+
+| 物件名稱 | 檔名 |
+|----------|------|
+| dt.calculate_sales | fn_dt_calculate_sales.R |
+| mdl.regression.sales | mdl_regression_sales.R |
+| comp.ui.customer | comp_ui_customer.R |
+| df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001___clean | df_amazon_sales_data_by_product_index_at_ALL_at_now_at_001.R |
+
+## 第三款：處理物件名稱中的底線 {#handling-underscores}
+
+當物件名稱中已存在底線（例如，分離組件內的單詞）時，這些底線在檔名中保留。這意味著檔名中的底線可能對應於：
+- 物件名稱中的點（.）（分離組件）
+- 物件名稱中的底線（_）（分離組件內的單詞）
+
+例如：
+- 物件：`fn.process.customer_data.remove_duplicates`
+- 檔名：`fn_process_customer_data_remove_duplicates.R`
+
+## 第四款：識別符排除 {#identifiers-exclusion}
+
+物件名稱中的可選識別符部分（三重底線 `___` 之後）不包含在檔名中，因為它代表同一基礎物件的狀態或變化，而不是不同的實體。
+
+例如：
+- 物件：`df.sales.transactions.by_customer.at_CA.at_q1_2025.at_000___agg`
+- 檔名：`df_sales_transactions_by_customer_at_CA_at_q1_2025_at_000.R`
+
+# 第二項：實施要求 {#implementation-requirements}
+
+## 第一款：轉換函數 {#translation-functions}
+
+創建雙向轉換的標準化工具函數：
+- `object_name_to_filename(object_name, extension = ".R")` - 將物件名稱轉換為檔名
+- `filename_to_object_name(filename)` - 將檔名轉換為其相應的物件名稱
+
+## 第二款：一致應用 {#consistent-application}
+
+- 所有物件處理函數必須使用這些轉換函數
+- 檔案操作應透過物件名稱引用物件並內部執行轉換
+- 記錄所有檔名不遵循此轉換規則的情況
+
+## 第三款：IDE 整合 {#ide-integration}
+
+與 IDE 工具整合以支援：
+- 使用正確轉換名稱的自動檔案創建
+- 物件引用與其相應檔案之間的導航
+- 支援一致重命名的重構
+
+# 第三項：實施範例 {#implementation-examples}
+
+## 第一款：函數定義和檔案創建 {#function-definition}
+
+```r
+# 程式碼中定義的物件名稱
+calc.revenue <- function(sales_data, date_range, by_product = TRUE) {
+  # 函數實施
+}
+
+# 儲存到適當命名的檔案
+save_function_to_file(calc.revenue, "functions/")
+# 創建：functions/fn_calc_revenue.R
+```
+
+## 第二款：從檔案載入物件 {#loading-objects}
+
+```r
+# 根據物件名稱從檔案載入函數
+calc.revenue <- load_function("calc.revenue")
+# 內部轉換為：load_function_from_file("functions/fn_calc_revenue.R")
+```
+
+## 第三款：轉換函數實施 {#translation-functions-implementation}
+
+```r
+object_name_to_filename <- function(object_name, extension = ".R") {
+  # 提取主要部分（任何三重底線之前）
+  main_part <- strsplit(object_name, "___")[[1]][1]
+  
+  # 用底線替換點
+  filename <- gsub("\\.", "_", main_part)
+  
+  # 添加擴展名
+  paste0(filename, extension)
+}
+
+filename_to_object_name <- function(filename) {
+  # 移除擴展名
+  base_name <- tools::file_path_sans_ext(filename)
+  
+  # 這是近似的反向映射
+  # 注意：如果組件中有底線，則無法完美重建原始名稱
+  object_name_candidate <- gsub("_", ".", base_name)
+  
+  # 這裡可以實施額外的驗證
+  
+  return(object_name_candidate)
+}
+```
+
+# 第四項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與物件命名約定的關聯（MP077）{#relation-to-object-naming}
+
+此規則透過以下方式擴展 MP077：
+1. **檔案系統轉換**：提供物件名稱的檔案系統相容表示
+2. **保留階層**：維護 MP077 中定義的階層組件
+3. **處理識別符**：指定如何處理可選識別符部分
+
+## 第二款：與一個函數一個檔案規則的關聯（SO_R007）{#relation-to-one-function-one-file}
+
+此規則透過以下方式支援 SO_R007：
+1. **標準化映射**：創建將函數名稱映射到檔名的標準化方式
+2. **一致組織**：確保函數檔案的一致組織
+3. **命名空間支援**：透過階層命名支援命名空間函數
+
+## 第三款：與點符號屬性存取原則的關聯（DEV_P004）{#relation-to-dot-notation}
+
+此規則透過以下方式支援 DEV_P004：
+1. **一致存取**：在程式碼和檔案系統之間維護一致的符號
+2. **映射策略**：提供符號樣式之間的清晰映射
+
+## 第四款：與檔案命名約定的關聯（SO_R002）{#relation-to-file-naming}
+
+此規則透過以下方式擴展 SO_R002：
+1. **特定模式**：為物件相關檔案提供特定模式
+2. **一致性**：確保不同物件類型的一致處理
+
+# 第五項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **檔案系統相容性**：確保物件名稱與檔案系統限制相容
+2. **階層保留**：維護物件名稱的階層結構
+3. **一致存取**：提供程式碼和檔案之間的一致存取模式
+4. **自動化管理**：基於物件引用實現自動化檔案管理
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **清晰關聯**：使物件和檔案之間的關係明確
+2. **簡化操作**：簡化物件和檔案之間的轉換
+3. **更好的工具**：支援更好的 IDE 整合和工具
+4. **減少錯誤**：減少命名不一致導致的錯誤
+
+---
+
+*基於：基本原則法第七十八條*  
+*相關連結：[MP077 物件命名約定](MP077_object_naming_convention.qmd), [SO_R007 一個主函數一個檔案規則](../../CH01_structure_organization/rules/SO_R007_one_function_one_file.qmd)*

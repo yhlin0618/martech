@@ -1,0 +1,405 @@
+---
+title: "DEV_P011: 反應需求驗證原則"
+subtitle: "在反應式計算中明確驗證所需輸入並處理無效狀態"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P011"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article-number: "第十一條"
+related_to:
+  - "DEV_P010: 反應值存取安全"
+  - "CH00.MP041: 類型相依操作"
+  - "CH00.MP035: Null 特殊處理"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**開發方法法第十一條（反應需求驗證原則）**
+
+所有反應式計算必須在繼續執行前使用適當的驗證機制（如 Shiny 中的 `req()`）明確驗證其所需輸入，並為缺失或無效值制定清晰的錯誤處理策略。
+
+:::{.callout-important}
+## 核心原則
+反應式計算必須明確驗證輸入有效性，在前提條件不滿足時優雅地停止執行，防止錯誤在反應圖中傳播。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：執行控制 {#execution-control}
+
+適當地停止反應式執行當前提條件不滿足時：
+- 防止無效計算
+- 保護下游元件
+- 維持系統穩定性
+
+## 第二款：錯誤預防 {#error-prevention}
+
+阻止錯誤在反應圖中傳播：
+1. **早期驗證**：在計算開始前檢查
+2. **連鎖保護**：防止錯誤擴散
+3. **穩定狀態**：維持 UI 元件的有效狀態
+
+## 第三款：使用者體驗 {#user-experience}
+
+優雅處理暫時未定義狀態：
+- 保留先前有效輸出
+- 提供有意義的回饋
+- 避免閃爍或錯誤訊息
+
+# 第二項：驗證機制 {#validation-mechanisms}
+
+## 第一款：基本輸入驗證 {#input-validation}
+
+```r
+# 使用 req() 進行基本驗證
+observe({
+  # 驗證必要輸入存在
+  req(input$selection, input$data)
+  
+  # 驗證輸入有效性
+  req(input$value > 0)
+  req(length(input$items) > 0)
+  
+  # 使用已驗證的輸入繼續計算
+  result <- processData(input$data, input$selection)
+  updateOutput(result)
+})
+
+# 多重條件驗證
+output$analysis <- renderPlot({
+  # 所有條件必須為 TRUE
+  req(
+    input$x_var,
+    input$y_var,
+    input$x_var != input$y_var,  # 變數不能相同
+    nrow(data()) > 10             # 需要足夠的資料點
+  )
+  
+  # 繪製散點圖
+  plot(data()[[input$x_var]], data()[[input$y_var]])
+})
+```
+
+## 第二款：條件輸出 {#conditional-output}
+
+```r
+# 只在資料和設定可用時繼續
+output$plot <- renderPlot({
+  # 驗證反應值和輸入
+  req(data())
+  req(!is.null(input$plot_type))
+  req(input$plot_type %in% c("bar", "line", "scatter"))
+  
+  # 根據類型創建圖表
+  switch(input$plot_type,
+    bar = barplot(data()),
+    line = plot(data(), type = "l"),
+    scatter = plot(data())
+  )
+})
+
+# 條件 UI 渲染
+output$options <- renderUI({
+  req(input$category)
+  
+  # 獲取類別選項
+  options <- getOptionsForCategory(input$category)
+  req(length(options) > 0)
+  
+  # 只在有選項時顯示選擇器
+  selectInput(ns("option"), "選擇選項", choices = options)
+})
+```
+
+## 第三款：狀態保留 {#state-preservation}
+
+```r
+# 在輸入暫時無效時保留先前有效輸出
+output$summary <- renderText({
+  # cancelOutput=TRUE 保持先前輸出可見
+  req(dataset(), cancelOutput = TRUE)
+  
+  # 檢查資料集有效性
+  req(
+    is.data.frame(dataset()),
+    nrow(dataset()) > 0,
+    cancelOutput = TRUE
+  )
+  
+  paste("資料集包含", nrow(dataset()), "筆記錄，",
+        ncol(dataset()), "個欄位")
+})
+
+# 動態表格顯示
+output$filtered_table <- renderTable({
+  # 保留表格直到有新的有效篩選
+  req(input$filter_value, cancelOutput = TRUE)
+  
+  filtered_data <- data()[data()$value > input$filter_value, ]
+  
+  # 確保有資料才更新
+  req(nrow(filtered_data) > 0, cancelOutput = TRUE)
+  
+  filtered_data
+})
+```
+
+# 第三項：漸進式需求 {#progressive-requirements}
+
+## 第一款：鏈式驗證 {#chained-validation}
+
+```r
+# 漸進式驗證提供上下文相關的檢查
+output$details <- renderUI({
+  # 第一層：需要類別
+  req(input$category)
+  
+  # 第二層：檢查類別有效性
+  req(input$category %in% valid_categories)
+  
+  # 第三層：獲取並驗證選項
+  options <- getOptionsForCategory(input$category)
+  req(length(options) > 0)
+  
+  # 第四層：根據選項數量決定 UI
+  if (length(options) <= 5) {
+    radioButtons(ns("option"), "選擇選項", choices = options)
+  } else {
+    selectInput(ns("option"), "選擇選項", choices = options)
+  }
+})
+```
+
+## 第二款：條件邏輯驗證 {#conditional-logic}
+
+```r
+# 根據分析類型的不同驗證需求
+output$analysis <- renderPrint({
+  req(input$analysis_type)
+  
+  if (input$analysis_type == "correlation") {
+    # 相關分析需要至少 2 個變數
+    req(
+      input$cor_vars,
+      length(input$cor_vars) >= 2,
+      all(input$cor_vars %in% names(data()))
+    )
+    
+    cor(data()[, input$cor_vars])
+    
+  } else if (input$analysis_type == "regression") {
+    # 迴歸需要依變數和自變數
+    req(
+      input$dep_var,
+      input$indep_vars,
+      length(input$indep_vars) >= 1,
+      !input$dep_var %in% input$indep_vars  # 依變數不能也是自變數
+    )
+    
+    formula_str <- paste(input$dep_var, "~", 
+                        paste(input$indep_vars, collapse = " + "))
+    summary(lm(formula_str, data = data()))
+  }
+})
+```
+
+# 第四項：自訂驗證函數 {#custom-validation}
+
+## 第一款：驗證輔助函數 {#validation-helpers}
+
+```r
+# 自訂驗證函數
+is_valid_input <- function(x) {
+  !is.null(x) && length(x) > 0 && x != "" && !is.na(x)
+}
+
+is_valid_numeric <- function(x) {
+  is_valid_input(x) && is.numeric(x) && is.finite(x)
+}
+
+is_valid_date_range <- function(start, end) {
+  !is.null(start) && !is.null(end) && 
+  inherits(start, "Date") && inherits(end, "Date") &&
+  start <= end
+}
+
+# 使用自訂驗證
+observe({
+  req(is_valid_input(input$name))
+  req(is_valid_numeric(input$age))
+  req(is_valid_date_range(input$date_start, input$date_end))
+  
+  # 所有驗證通過後處理
+  process_validated_inputs(
+    name = input$name,
+    age = input$age,
+    period = c(input$date_start, input$date_end)
+  )
+})
+```
+
+## 第二款：複合驗證模式 {#composite-validation}
+
+```r
+# 創建驗證器類別
+create_validator <- function() {
+  list(
+    # 驗證單一值
+    require_value = function(x, message = "需要值") {
+      if (!is_valid_input(x)) {
+        stop(message)
+      }
+      x
+    },
+    
+    # 驗證範圍
+    require_range = function(x, min, max, message = "值超出範圍") {
+      req(is_valid_numeric(x))
+      if (x < min || x > max) {
+        stop(paste(message, ":", min, "-", max))
+      }
+      x
+    },
+    
+    # 驗證選項
+    require_choice = function(x, choices, message = "無效選擇") {
+      req(is_valid_input(x))
+      if (!x %in% choices) {
+        stop(paste(message, "有效選項:", paste(choices, collapse = ", ")))
+      }
+      x
+    }
+  )
+}
+
+# 使用驗證器
+validator <- create_validator()
+
+output$result <- renderText({
+  tryCatch({
+    value <- validator$require_value(input$value)
+    value <- validator$require_range(value, 0, 100)
+    
+    paste("處理值:", value)
+  }, error = function(e) {
+    paste("驗證錯誤:", e$message)
+  })
+})
+```
+
+# 第五項：最佳實踐 {#best-practices}
+
+## 第一款：驗證順序 {#validation-order}
+
+```r
+# 從一般到特定的驗證順序
+output$report <- renderPrint({
+  # 1. 基本存在性檢查
+  req(input$data_source)
+  
+  # 2. 載入資料
+  data <- load_data(input$data_source)
+  req(data)
+  
+  # 3. 資料結構檢查
+  req(is.data.frame(data))
+  req(nrow(data) > 0)
+  
+  # 4. 必要欄位檢查
+  required_cols <- c("id", "value", "timestamp")
+  req(all(required_cols %in% names(data)))
+  
+  # 5. 資料品質檢查
+  req(sum(!is.na(data$value)) > 0)
+  
+  # 所有檢查通過，生成報告
+  generate_report(data)
+})
+```
+
+## 第二款：錯誤訊息提供 {#error-messaging}
+
+```r
+# 提供有用的錯誤訊息
+output$analysis <- renderUI({
+  # 使用 validate() 提供使用者友善訊息
+  validate(
+    need(input$file, "請上傳檔案"),
+    need(tools::file_ext(input$file$name) %in% c("csv", "xlsx"), 
+         "只支援 CSV 或 Excel 檔案"),
+    need(input$file$size < 10 * 1024 * 1024, 
+         "檔案大小不能超過 10MB")
+  )
+  
+  # 驗證通過後處理檔案
+  data <- read_file(input$file$datapath)
+  
+  validate(
+    need(nrow(data) > 0, "檔案不包含資料"),
+    need(ncol(data) >= 2, "檔案必須至少有兩個欄位")
+  )
+  
+  # 顯示分析結果
+  tagList(
+    h4("檔案分析結果"),
+    p(paste("記錄數:", nrow(data))),
+    p(paste("欄位數:", ncol(data)))
+  )
+})
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 反應需求驗證檢查清單
+
+**輸入驗證**：
+- [ ] 所有反應表達式開始處有 req()
+- [ ] 驗證輸入存在性
+- [ ] 驗證輸入有效性
+- [ ] 檢查邊界條件
+
+**狀態管理**：
+- [ ] 使用 cancelOutput 保留狀態
+- [ ] 處理暫時無效狀態
+- [ ] 提供預設值
+- [ ] 避免閃爍
+
+**錯誤處理**：
+- [ ] 使用 validate/need 提供訊息
+- [ ] 實作 tryCatch 錯誤捕獲
+- [ ] 記錄驗證失敗
+- [ ] 優雅降級
+
+**自訂驗證**：
+- [ ] 創建驗證輔助函數
+- [ ] 實作複合驗證
+- [ ] 測試驗證邏輯
+- [ ] 文件化驗證規則
+
+**效能考量**：
+- [ ] 避免重複驗證
+- [ ] 快取驗證結果
+- [ ] 優化驗證順序
+- [ ] 最小化驗證開銷
+:::
+
+# 結論 {#conclusion}
+
+反應需求驗證原則是建構穩健反應式應用程式的關鍵。通過明確驗證所有必要輸入、優雅處理無效狀態，以及提供清晰的錯誤訊息，應用程式變得更加可靠和可預測。記住，良好的驗證不僅預防錯誤，更提升使用者體驗，使應用程式在各種輸入條件下都能正確運作。
+
+---
+
+*基於：開發方法法第十一條*  
+*相關：[DEV_P010 反應值存取安全](DEV_P010_reactive_access_safety.qmd)、[MP041 類型相依操作](../../CH00_fundamental_principles/03_development_methodology/MP041_type_dependent_operations.qmd)*

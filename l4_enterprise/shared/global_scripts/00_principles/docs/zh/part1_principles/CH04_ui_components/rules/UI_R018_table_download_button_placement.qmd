@@ -1,0 +1,587 @@
+---
+title: "UI_R018: Table Download Button Placement Rule"
+subtitle: "Download buttons for data tables must be placed above the table, not below, to create a unified user experience and align with standard workflow patterns where users configure data before exporting"
+chapter: "CH04"
+category: "rule"
+number: "UI_R018"
+date-created: "2025-11-02"
+date-modified: "2025-11-02"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article-number:
+  number: 18
+  title: "Table Download Button Placement Rule"
+related_to:
+  - "UI_P009: Single-Line UI Elements Principle"
+  - "UI_R005: UI Hierarchy Rule"
+  - "MP019: Separation of Concerns"
+  - "DEV_P014: Performance Optimization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 18: Table Download Button Placement Rule {#overview}
+
+**UI Components Law Article 18 (Table Download Button Placement Rule)**
+
+Download buttons for data tables must be placed **above** the table, not below, to create a unified user experience and align with standard workflow patterns where users configure data before exporting.
+
+:::{.callout-important}
+## Core Requirement
+All data table components must consistently position download/export controls above the table to ensure:
+1. Unified user experience across all modules
+2. Alignment with natural workflow (configure → preview → export)
+3. Improved discoverability of export functionality
+4. Consistent control placement patterns
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Standard Download Button Placement {#standard-placement}
+
+**Required placement pattern:**
+
+1. **Above Table**: Download buttons must be placed in the control area above the data table
+2. **Control Bar**: Download buttons should be part of a consistent control bar that includes other table actions
+3. **Right Alignment**: Download buttons should typically be right-aligned in the control bar
+4. **Visual Grouping**: Download buttons should be visually grouped with other export/action buttons
+
+## Subsection 2: Prohibited Placement Patterns {#prohibited-patterns}
+
+**The following placements are prohibited:**
+
+1. **Below Table**: Placing download buttons below the data table
+2. **Inside Table**: Embedding download buttons within table cells or headers
+3. **Sidebar Only**: Placing download buttons only in sidebars without table-adjacent access
+4. **Floating/Disconnected**: Download buttons that float or appear disconnected from the table context
+
+## Subsection 3: Control Bar Organization {#control-bar-organization}
+
+**Standard control bar structure:**
+
+```
+[Table Title]              [Search/Filter] [Refresh] [Download] [Settings]
+────────────────────────────────────────────────────────────────────────
+[Data Table Content]
+```
+
+**Control bar zones:**
+- **Left Zone**: Table title, record count, status indicators
+- **Center Zone**: Search inputs, quick filters
+- **Right Zone**: Action buttons (refresh, download, settings, etc.)
+
+# Section 2: Implementation Examples {#implementation-examples}
+
+## Subsection 1: Correct Implementation {#correct-implementation}
+
+**Proper table with download button above:**
+
+```r
+#' Data Table with Download Controls UI
+#'
+#' @param id Module ID
+#' @param title Table title
+#' @param show_download Whether to show download button
+#' @return UI element
+#' @export
+dataTableWithControlsUI <- function(id, title = "Data Table", show_download = TRUE) {
+  ns <- NS(id)
+
+  tagList(
+    # Control bar above table
+    div(class = "table-control-bar",
+      style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;",
+
+      # Left: Title and count
+      div(class = "table-info",
+        h4(title, style = "margin: 0;"),
+        textOutput(ns("record_count"), inline = TRUE) %>%
+          tagAppendAttributes(class = "text-muted", style = "margin-left: 10px;")
+      ),
+
+      # Right: Action buttons
+      div(class = "table-actions",
+        style = "display: flex; gap: 8px;",
+
+        # Search input
+        textInput(ns("search"), NULL, placeholder = "Search...",
+                  width = "200px") %>%
+          tagAppendAttributes(style = "margin: 0;"),
+
+        # Refresh button
+        actionButton(ns("refresh"), "Refresh",
+                    icon = icon("sync"),
+                    class = "btn-secondary"),
+
+        # Download button (conditionally shown)
+        if (show_download) {
+          downloadButton(ns("download"), "Download",
+                        class = "btn-primary",
+                        icon = icon("download"))
+        } else {
+          NULL
+        }
+      )
+    ),
+
+    # Data table below control bar
+    DT::dataTableOutput(ns("table"))
+  )
+}
+
+#' Data Table with Download Controls Server
+#'
+#' @param id Module ID
+#' @param data_source Reactive data source
+#' @param filename_base Base name for downloaded file
+#' @return Server logic
+#' @export
+dataTableWithControlsServer <- function(id, data_source, filename_base = "data") {
+  moduleServer(id, function(input, output, session) {
+    # Reactive data with search filter
+    filtered_data <- reactive({
+      req(data_source())
+      data <- data_source()
+
+      # Apply search filter if present
+      if (!is.null(input$search) && nchar(input$search) > 0) {
+        search_term <- tolower(input$search)
+        data <- data[apply(data, 1, function(row) {
+          any(grepl(search_term, tolower(as.character(row))))
+        }), ]
+      }
+
+      data
+    })
+
+    # Render record count
+    output$record_count <- renderText({
+      req(filtered_data())
+      paste0("(", nrow(filtered_data()), " records)")
+    })
+
+    # Render data table
+    output$table <- DT::renderDataTable({
+      req(filtered_data())
+
+      DT::datatable(
+        filtered_data(),
+        options = list(
+          pageLength = 25,
+          scrollX = TRUE,
+          dom = 'Bfrtip',
+          buttons = list()  # No internal buttons - using external controls
+        ),
+        rownames = FALSE
+      )
+    })
+
+    # Download handler
+    output$download <- downloadHandler(
+      filename = function() {
+        paste0(filename_base, "_", format(Sys.Date(), "%Y%m%d"), ".csv")
+      },
+      content = function(file) {
+        req(filtered_data())
+        write.csv(filtered_data(), file, row.names = FALSE)
+      }
+    )
+
+    # Refresh handler
+    observeEvent(input$refresh, {
+      # Trigger data refresh (implementation depends on data source)
+      shinyjs::runjs("Shiny.setInputValue('refresh_trigger', Math.random());")
+    })
+  })
+}
+```
+
+## Subsection 2: Incorrect Implementation (Violates Rule) {#incorrect-implementation}
+
+```r
+# INCORRECT: Download button below table
+badTableUI <- function(id) {
+  ns <- NS(id)
+
+  tagList(
+    h4("Data Table"),
+
+    # Table comes first
+    DT::dataTableOutput(ns("table")),
+
+    # WRONG: Download button below table
+    div(style = "margin-top: 10px;",
+      downloadButton(ns("download"), "Download")
+    )
+  )
+}
+```
+
+**Problems with this implementation:**
+1. Download button is below table, violating the rule
+2. Users must scroll to find download functionality
+3. Inconsistent with other modules and standard patterns
+4. Button appears disconnected from table context
+5. No visual grouping with other table controls
+
+## Subsection 3: Multiple Export Formats {#multiple-export-formats}
+
+**When supporting multiple export formats:**
+
+```r
+# Control bar with multiple download options
+div(class = "table-actions",
+  # Download dropdown with multiple formats
+  div(class = "btn-group",
+    actionButton(ns("download_csv"), "Download CSV",
+                icon = icon("file-csv"),
+                class = "btn-primary"),
+
+    tags$button(
+      class = "btn btn-primary dropdown-toggle dropdown-toggle-split",
+      type = "button",
+      `data-toggle` = "dropdown",
+      `aria-haspopup` = "true",
+      `aria-expanded` = "false",
+      tags$span(class = "sr-only", "Toggle Dropdown")
+    ),
+
+    div(class = "dropdown-menu dropdown-menu-right",
+      downloadLink(ns("download_csv"), "CSV Format",
+                  class = "dropdown-item"),
+      downloadLink(ns("download_excel"), "Excel Format",
+                  class = "dropdown-item"),
+      downloadLink(ns("download_json"), "JSON Format",
+                  class = "dropdown-item")
+    )
+  )
+)
+```
+
+# Section 3: Rationale and Benefits {#rationale-and-benefits}
+
+## Subsection 1: User Experience Rationale {#ux-rationale}
+
+**Why download buttons belong above tables:**
+
+1. **Natural Workflow**: Users typically configure filters/search → preview results → export
+   - Placing download above supports this top-to-bottom flow
+   - Users see export option immediately after configuring view
+
+2. **Discoverability**: Above-table placement ensures download functionality is immediately visible
+   - No need to scroll through table to find export option
+   - Consistently positioned across all tables in the application
+
+3. **Visual Grouping**: Download buttons naturally group with other table controls
+   - Creates a unified "table toolbar" pattern
+   - Users learn to look in one place for all table actions
+
+4. **Mobile/Responsive**: Above-table placement works better on mobile devices
+   - Controls visible before potentially long table content
+   - Avoids issues with infinite scroll or pagination hiding controls
+
+## Subsection 2: Technical Benefits {#technical-benefits}
+
+1. **Consistent Component Structure**: Standardizes table component architecture
+2. **Easier Maintenance**: All table controls in one predictable location
+3. **Better Accessibility**: Screen readers encounter controls before table content
+4. **Performance**: Control bar renders independently of table data loading
+
+## Subsection 3: User Research Findings {#user-research}
+
+**Common user feedback patterns:**
+
+- "I couldn't find the download button" → Users expect controls above content
+- "Why do I have to scroll to download?" → Below-table placement breaks workflow
+- "Some tables have it at the top, some at the bottom" → Inconsistency causes confusion
+
+# Section 4: Exception Cases {#exception-cases}
+
+## Subsection 1: When Additional Download Options Are Acceptable {#additional-options}
+
+**Acceptable secondary download placements:**
+
+1. **Context Menu**: Right-click context menu for row-specific downloads
+   ```r
+   # Row-level download in context menu is acceptable as ADDITION
+   # Primary download button must still be above table
+   ```
+
+2. **Sidebar Summary**: Download button in sidebar for filtered/aggregated data
+   ```r
+   # Sidebar download for summary reports is acceptable as ADDITION
+   # Main table download must still be above table
+   ```
+
+3. **Modal/Dialog**: Download option within data detail modal
+   ```r
+   # Modal-specific download is acceptable for modal content
+   # Does not replace table download button requirement
+   ```
+
+**Critical requirement**: These are **additions**, not replacements. The primary download button must still be above the main table.
+
+## Subsection 2: When Multiple Tables Exist {#multiple-tables}
+
+**Pattern for pages with multiple tables:**
+
+```r
+# Each table has its own control bar with download button
+div(
+  # First table
+  div(class = "table-section",
+    div(class = "table-control-bar",
+      h4("Sales Data"),
+      downloadButton(ns("download_sales"), "Download")
+    ),
+    DT::dataTableOutput(ns("sales_table"))
+  ),
+
+  # Second table
+  div(class = "table-section",
+    div(class = "table-control-bar",
+      h4("Customer Data"),
+      downloadButton(ns("download_customers"), "Download")
+    ),
+    DT::dataTableOutput(ns("customers_table"))
+  )
+)
+```
+
+# Section 5: Migration Guide {#migration-guide}
+
+## Subsection 1: Identifying Violations {#identifying-violations}
+
+**Search patterns to find violations:**
+
+```bash
+# Find tables with download buttons potentially below
+grep -r "dataTableOutput" . | grep -A 10 "downloadButton"
+
+# Check for table followed by download
+grep -r "DTOutput.*downloadButton" .
+```
+
+## Subsection 2: Migration Steps {#migration-steps}
+
+**Step-by-step migration process:**
+
+1. **Identify**: Find all table components with download functionality
+2. **Extract**: Extract download button code
+3. **Create Control Bar**: Build control bar structure above table
+4. **Move Button**: Place download button in control bar
+5. **Test**: Verify functionality and styling
+6. **Document**: Update component documentation
+
+**Example migration:**
+
+```r
+# BEFORE (Violates rule)
+tagList(
+  DT::dataTableOutput(ns("table")),
+  downloadButton(ns("download"), "Download")
+)
+
+# AFTER (Complies with rule)
+tagList(
+  # Added control bar above table
+  div(class = "table-control-bar",
+    style = "display: flex; justify-content: flex-end; margin-bottom: 10px;",
+    downloadButton(ns("download"), "Download", icon = icon("download"))
+  ),
+  DT::dataTableOutput(ns("table"))
+)
+```
+
+# Section 6: Component Template {#component-template}
+
+## Subsection 1: Reusable Table Component Template {#reusable-template}
+
+**Standard template for table components with download:**
+
+```r
+#' Standard Data Table Component Template
+#'
+#' Use this template for all new table components
+#'
+#' @param id Module ID
+#' @param title Table title
+#' @param enable_search Show search input
+#' @param enable_refresh Show refresh button
+#' @param enable_download Show download button
+#' @return UI element
+#' @export
+standardTableUI <- function(id,
+                           title = "Data",
+                           enable_search = TRUE,
+                           enable_refresh = TRUE,
+                           enable_download = TRUE) {
+  ns <- NS(id)
+
+  tagList(
+    # Standard control bar (ALWAYS ABOVE TABLE)
+    div(class = "table-control-bar",
+      style = paste(
+        "display: flex;",
+        "justify-content: space-between;",
+        "align-items: center;",
+        "padding: 10px;",
+        "background: #f8f9fa;",
+        "border-radius: 4px 4px 0 0;",
+        "margin-bottom: 0;"
+      ),
+
+      # Left zone
+      div(class = "table-info",
+        h5(title, style = "margin: 0; display: inline;"),
+        textOutput(ns("count"), inline = TRUE) %>%
+          tagAppendAttributes(
+            class = "badge badge-secondary ml-2",
+            style = "vertical-align: middle;"
+          )
+      ),
+
+      # Right zone
+      div(class = "table-actions",
+        style = "display: flex; gap: 8px; align-items: center;",
+
+        if (enable_search) {
+          textInput(ns("search"), NULL,
+                   placeholder = "Search...",
+                   width = "180px") %>%
+            tagAppendAttributes(style = "margin: 0;")
+        },
+
+        if (enable_refresh) {
+          actionButton(ns("refresh"), NULL,
+                      icon = icon("sync"),
+                      class = "btn-secondary btn-sm",
+                      title = "Refresh data")
+        },
+
+        if (enable_download) {
+          downloadButton(ns("download"), "Download",
+                        class = "btn-primary btn-sm",
+                        icon = icon("download"))
+        }
+      )
+    ),
+
+    # Data table (ALWAYS BELOW CONTROL BAR)
+    div(style = "border: 1px solid #dee2e6; border-top: none;",
+      DT::dataTableOutput(ns("table"))
+    )
+  )
+}
+```
+
+# Section 7: Relationship to Other Principles {#relationship-to-other-principles}
+
+## Subsection 1: Relation to UI_P009 (Single-Line UI Elements) {#relation-to-single-line}
+
+This rule complements UI_P009 by:
+1. **Control Bar Layout**: Enforcing single-line layout for table controls
+2. **Consistent Height**: Ensuring control elements have consistent height
+3. **Visual Alignment**: Supporting horizontal alignment of control elements
+
+## Subsection 2: Relation to UI_R005 (UI Hierarchy Rule) {#relation-to-ui-hierarchy}
+
+This rule supports UI_R005 by:
+1. **Consistent Structure**: Defining a standard structure for table components
+2. **Predictable Layout**: Creating predictable control placement across modules
+3. **Component Organization**: Supporting modular organization of table features
+
+## Subsection 3: Relation to MP019 (Separation of Concerns) {#relation-to-separation}
+
+This rule implements MP019 by:
+1. **Control vs Content**: Separating table controls from table content
+2. **Action vs Display**: Distinguishing action controls from data display
+3. **Component Boundaries**: Clearly defining control bar as separate concern
+
+# Section 8: Testing and Validation {#testing-and-validation}
+
+## Subsection 1: Visual Audit Checklist {#visual-audit}
+
+**Checklist for reviewing table implementations:**
+
+- [ ] Download button is above the table, not below
+- [ ] Download button is part of a control bar
+- [ ] Control bar has consistent styling with other tables
+- [ ] Download button is right-aligned in control bar
+- [ ] Other controls (search, filter, refresh) are also in control bar
+- [ ] Table and control bar are visually connected
+- [ ] Mobile/responsive layout maintains above-table placement
+
+## Subsection 2: Code Review Checklist {#code-review}
+
+**Checklist for code reviews:**
+
+- [ ] `downloadButton()` appears before `dataTableOutput()` in UI code
+- [ ] Control bar structure is used (not standalone button)
+- [ ] Proper styling/classes applied to control bar
+- [ ] Download handler properly implemented
+- [ ] Component follows standard template pattern
+
+# Section 9: Common Mistakes and Solutions {#common-mistakes}
+
+## Subsection 1: Mistake 1: Below-Table Placement {#mistake-below-table}
+
+**Problem:**
+```r
+tagList(
+  DT::dataTableOutput(ns("table")),
+  downloadButton(ns("download"), "Download")  # WRONG
+)
+```
+
+**Solution:**
+```r
+tagList(
+  div(class = "table-control-bar",
+    downloadButton(ns("download"), "Download")  # CORRECT
+  ),
+  DT::dataTableOutput(ns("table"))
+)
+```
+
+## Subsection 2: Mistake 2: Embedded in DT Buttons {#mistake-dt-buttons}
+
+**Problem:**
+```r
+# Using DT's internal buttons instead of external control bar
+DT::datatable(data, extensions = 'Buttons',
+  options = list(
+    dom = 'Bfrtip',
+    buttons = list('csv', 'excel')  # WRONG - should use external control
+  )
+)
+```
+
+**Solution:**
+```r
+# Use external download button in control bar
+# DT table has minimal controls
+DT::datatable(data,
+  options = list(
+    dom = 'frtip'  # No 'B' for buttons
+  )
+)
+# Separate downloadButton in control bar above
+```
+
+## Subsection 3: Mistake 3: Inconsistent Placement Across Modules {#mistake-inconsistent}
+
+**Problem:** Some modules have download above, others below
+
+**Solution:** Apply this rule consistently across ALL table components in ALL modules
+
+---
+
+*Based on: UI Components Law Article 18*
+*Related to: [UI_P009 Single-Line UI Elements](../principles/UI_P009_single_line_ui_elements.qmd), [UI_R005 UI Hierarchy Rule](UI_R005_ui_hierarchy.qmd)*

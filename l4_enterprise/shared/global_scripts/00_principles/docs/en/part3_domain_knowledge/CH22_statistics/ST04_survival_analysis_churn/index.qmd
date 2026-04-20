@@ -1,0 +1,64 @@
+---
+title: "ST04: Customer Churn Modeling — From Survival Analysis to BTYD"
+subtitle: "A framework comparison for non-contractual churn with latent death events"
+chapter: "CH21"
+category: "statistics"
+number: "ST04"
+date-created: "2026-03-02"
+date-modified: "2026-03-03"
+author: "Claude"
+type: "domain_knowledge"
+law: "Statistics"
+article-number: "Knowledge Article 4"
+related_to:
+  - "fn_analysis_btyd.R"
+  - "fn_analysis_dna.R"
+  - "fn_D01_02_core.R"
+  - "ST01_univariate_poisson_regression"
+  - "ST03_missing_data_logistic_regression"
+context:
+  issue: "GitHub Issue #211 — D_RACING nrec_prob NA analysis"
+  problem: "Current binary nrec approach loses time information, requires arbitrary 3-month cutoff, and produces NA for 8/10 product lines"
+  evolution: "Logistic Regression -> ST03 Model Degradation -> GLMM -> Survival Analysis -> BTYD (this article)"
+  status: "IMPLEMENTED — BG/NBD P(alive) deployed in production (2026-03-03)"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+---
+
+# Customer Churn Modeling — From Survival Analysis to BTYD {#overview}
+
+This knowledge article documents the evolution from a broken logistic regression churn model to a proper Buy-Till-You-Die (BTYD) framework, culminating in a successful production deployment with 100% customer coverage.
+
+## Article Structure
+
+| Section | File | Topic |
+|---------|------|-------|
+| 1 | [01_motivation.qmd](01_motivation.qmd) | Why rethink churn? Problems with the binary approach |
+| 2 | [02_framework_comparison.qmd](02_framework_comparison.qmd) | Four frameworks compared: Survival, Renewal, Recurrent, BTYD |
+| 3 | [03_btyd_framework.qmd](03_btyd_framework.qmd) | The BTYD framework: BG/NBD, sufficient statistics, P(alive) |
+| 4 | [04_integration_mapping.qmd](04_integration_mapping.qmd) | What replaces what in the DNA pipeline |
+| 5 | [05_extensions.qmd](05_extensions.qmd) | Beyond parametric BTYD: limitations and future directions |
+| 6 | [06_implementation.qmd](06_implementation.qmd) | Implementation plan and code architecture |
+| **7** | [**07_production_results.qmd**](07_production_results.qmd) | **Production results: Two-Pass Empirical Bayes, 100% coverage** |
+| 8 | [08_practical.qmd](08_practical.qmd) | Practical considerations: cost, data, validation |
+| 9 | [09_gap_time_survival.qmd](09_gap_time_survival.qmd) | Gap-time survival as a complement |
+| 10 | [10_references.qmd](10_references.qmd) | References |
+
+## Key Result
+
+The BG/NBD model with Two-Pass Empirical Bayes (deployed 2026-03-03) achieved:
+
+- **Coverage**: 18,221/18,221 customers (100%) across 10 product lines — up from 0.3% with the old logistic model
+- **Discrimination**: P(alive) ranges from 0 to 1 with median 0.77 — previously all customers received the same `group_mean_prob`
+- **High-risk identification**: 1,135 customers identified as high risk (6.2%) — previously 0
+- **NES validation**: E0 (Core) customers show 75% high risk, confirming the model captures meaningful churn patterns
+
+## Reading Guide
+
+- **For the mathematical framework**: Start with [Section 3](03_btyd_framework.qmd) — includes the BG/NBD likelihood, Fisher-Neyman sufficiency proof, and P(alive) closed form
+- **For why we chose BTYD**: Read [Section 1](01_motivation.qmd) then [Section 2](02_framework_comparison.qmd)
+- **For production results**: Go directly to [Section 7](07_production_results.qmd)
+- **For implementation details**: See [Section 6](06_implementation.qmd) for code architecture

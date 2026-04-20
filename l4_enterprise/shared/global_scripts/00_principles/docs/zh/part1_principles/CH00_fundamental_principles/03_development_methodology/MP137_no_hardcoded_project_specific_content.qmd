@@ -1,0 +1,215 @@
+---
+title: "MP137: No Hardcoded Project-Specific Content"
+subtitle: "All project-variable content must be externalized to configuration or database"
+author: "Claude"
+date: "2025-12-14"
+date-modified: "2025-12-14"
+categories: [meta-principle, configuration, architecture, maintainability, reusability]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Statement
+
+**Any content that varies between projects, companies, or product lines MUST be externalized to configuration files or databases.**
+
+Hardcoding such content in source code is **PROHIBITED**.
+
+## Philosophy
+
+Code should be **universal**. Data should be **specific**.
+
+When a value or mapping might differ across deployments, projects, or clients, it belongs in configuration or a database—never embedded in code.
+
+## Scope of Application
+
+This principle applies to all content that may vary by context:
+
+| Category | Examples | Externalization Method |
+|----------|----------|------------------------|
+| **Company/Brand** | Names, logos, colors, themes | `app_config.yaml` |
+| **Business Rules** | Thresholds, discount rates, limits | Database or YAML |
+| **Lookup Tables** | Translation mappings, category codes | Database (via ETL) |
+| **Localization** | UI text, labels, messages | Database or YAML |
+| **Feature Flags** | Enable/disable features | `app_config.yaml` |
+| **API Configuration** | Endpoints, timeouts | Environment variables |
+| **Credentials** | Keys, passwords, tokens | Environment variables |
+
+## Prohibited Patterns
+
+```r
+# ❌ WRONG: Hardcoded company-specific mapping
+weekday_map <- list(
+  monday = list(zh = "星期一", en = "Monday"),
+  tuesday = list(zh = "星期二", en = "Tuesday")
+)
+
+# ❌ WRONG: Hardcoded business thresholds
+calculate_discount <- function(value) {
+  if (value > 1000) return(value * 0.15)  # Hardcoded!
+  if (value > 500) return(value * 0.10)   # Hardcoded!
+  return(value * 0.05)                     # Hardcoded!
+}
+
+# ❌ WRONG: Hardcoded product-specific options
+turbo_map <- list(
+  high_flow = list(zh = "高流量設計", en = "High-flow")
+)
+```
+
+## Correct Patterns
+
+### Pattern 1: Database-Driven (Preferred for Dynamic Content)
+
+```r
+# ✅ CORRECT: Read from database
+fn_generate_display_name <- function(predictor, locale, cache_con) {
+  # Query externalized metadata
+  db_result <- tbl2(cache_con, "df_metadata") %>%
+    filter(predictor_pattern == !!predictor) %>%
+    collect()
+
+  if (nrow(db_result) > 0) {
+    return(if (locale == "zh_TW") db_result$display_name_zh[1]
+           else db_result$display_name_en[1])
+  }
+
+  return(predictor)  # Fallback
+}
+```
+
+### Pattern 2: Configuration File (Preferred for Static Settings)
+
+```yaml
+# config/business_rules.yaml
+discount:
+  thresholds: [500, 1000, 2000]
+  rates: [0.05, 0.10, 0.15]
+```
+
+```r
+# ✅ CORRECT: Read from configuration
+calculate_discount <- function(value, config) {
+  applicable_rate <- 0
+  for (i in seq_along(config$discount$thresholds)) {
+    if (value >= config$discount$thresholds[i]) {
+      applicable_rate <- config$discount$rates[i]
+    }
+  }
+  return(value * applicable_rate)
+}
+```
+
+### Pattern 3: ETL from External Source
+
+```r
+# ✅ CORRECT: ETL from Google Sheets to database
+# config/metadata_sources.yaml defines the source
+# ETL script reads config and populates database
+# Functions read from database at runtime
+```
+
+## Implementation Hierarchy
+
+```
+1. Configuration Files (YAML/JSON)
+   └── For: Static settings, feature flags, business parameters
+   └── Loaded at: Application initialization
+
+2. Database Tables
+   └── For: Lookup tables, translations, dynamic metadata
+   └── Populated by: ETL from external sources
+   └── Queried at: Runtime
+
+3. Environment Variables
+   └── For: Secrets, credentials, API keys
+   └── Read at: Runtime
+```
+
+## Three-Tier Data Architecture
+
+:::{.callout-important}
+## Critical: Data Placement by Scope
+When externalizing content to databases, **where** to place the data is as important as **how** to externalize it.
+:::
+
+The `global_scripts/` repository is distributed via git subrepo to **ALL companies** (VitalSigns, BrandEdge, InsightForge, MAMBA, etc.). This creates a three-tier data architecture:
+
+| Tier | Location | Scope | Examples |
+|------|----------|-------|----------|
+| **Universal** | `global_scripts/30_global_data/` | ALL companies share | `df_metadata_common` (time, colors, common terms) |
+| **Company** | `{company}/data/app_data/` | Single company (cross-app) | `df_metadata_turbo` (MAMBA only) |
+| **Application** | `{company}/data/app_data/` | Single application | Analysis results, caches |
+
+### Decision Tree for Data Placement
+
+1. **Is this mapping used by ALL companies?**
+   - YES → Universal tier: `global_scripts/30_global_data/`
+   - Example: Time period mappings (month, weekday translations)
+
+2. **Is this mapping specific to ONE company?**
+   - YES → Company tier: `{company}/data/app_data/`
+   - Example: MAMBA turbocharger attributes, CBZ product categories
+
+3. **Is this data specific to ONE application?**
+   - YES → Application tier: `{company}/data/app_data/`
+   - Example: Analysis results, user session data
+
+### Critical Rule
+
+:::{.callout-warning}
+**NEVER place company-specific data in `global_scripts/30_global_data/`.**
+
+Doing so would:
+1. Pollute other companies' environments
+2. Create unnecessary dependencies
+3. Violate separation of concerns
+:::
+
+See **DM_R004 Section 6** for detailed implementation patterns.
+
+## Migration Strategy for Existing Code
+
+When encountering hardcoded content in existing code:
+
+1. **Phase 1**: Add database query as primary source, keep hardcoded as fallback
+2. **Phase 2**: Populate database via ETL from external source
+3. **Phase 3**: Remove hardcoded fallback once database is authoritative
+
+## Related Principles
+
+- **SO_P010**: Config-Driven Customization (company-specific content)
+- **SO_P015**: No Hardcoded Lookup Tables (mapping tables)
+- **DM_R004 Section 6**: Three-Tier Data Storage Architecture
+- **MP098**: Generality Over Specificity
+- **MP136**: Configuration Initialization Pattern
+- **SEC_R001**: No Hardcoded Credentials
+
+## Rationale
+
+| Benefit | Explanation |
+|---------|-------------|
+| **Reusability** | Same codebase serves multiple projects/clients |
+| **Maintainability** | Content changes don't require code deployment |
+| **Testability** | Easy to test with different configurations |
+| **Scalability** | New projects onboard without code changes |
+| **Separation of Concerns** | Code handles logic; config provides context |
+
+## Enforcement
+
+- **Code Review**: Check for hardcoded mappings, thresholds, and translations
+- **Static Analysis**: Scan for list/dictionary definitions that should be externalized
+- **CI/CD**: Flag new hardcoded content in pull requests
+
+## Consequences of Violation
+
+- Code becomes project-specific and non-reusable
+- Content updates require developer intervention and deployment
+- Testing complexity increases exponentially
+- Technical debt accumulates rapidly

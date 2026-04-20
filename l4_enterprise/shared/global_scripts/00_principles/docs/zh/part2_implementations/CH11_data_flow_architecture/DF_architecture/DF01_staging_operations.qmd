@@ -1,0 +1,518 @@
+---
+id: "DF001"
+title: "Staging Operations"
+type: "data-flow"
+date_created: "2025-07-12"
+date_modified: "2025-07-12"
+author: "Claude"
+derives_from:
+  - "DF000": "Data Pipeline Architecture"
+  - "MP0052": "Unidirectional Data Flow"
+influences:
+  - "DF002": "Transformation Operations"
+relates_to:
+  - "MP0006": "Data Source Hierarchy"
+  - "R091": "Universal Data Access"
+---
+
+# DF01: Staging Operations
+
+## Core Principle
+
+Staging operations perform **file-level preprocessing only**, ensuring data can be reliably read by downstream processes without modifying any content values. This layer focuses on technical file format standardization rather than data transformation.
+
+## Purpose and Scope
+
+### What Staging Does
+- **Encoding standardization**: Convert all files to UTF-8, remove BOM
+- **Compression handling**: Extract archives (zip, gz, tar) to individual files
+- **Line ending standardization**: Convert CRLF → LF for cross-platform compatibility
+- **File format validation**: Ensure files can be parsed by standard tools
+- **Metadata logging**: Create audit trail of file processing
+
+### What Staging Does NOT Do
+- **Content modification**: No changes to data values, column names, or structure
+- **Schema changes**: No column reordering, renaming, or type conversion
+- **Data validation**: No business rule validation or quality checks
+- **Aggregation**: No summarization or calculation of derived fields
+
+## Layer Position in Pipeline
+
+```mermaid
+graph LR
+    A[raw_data] --> B[staged_data]
+    B --> C[transformed_data]
+    C --> D[cleansed_data]
+    D --> E[processed_data]
+    E --> F[app_data]
+    
+    B -.-> B1["Staging Layer<br/>• File preprocessing<br/>• Encoding standardization<br/>• Format validation"]
+    
+    style B fill:#e1f5fe
+    style B1 fill:#e1f5fe
+```
+
+**Input**: `raw_data.duckdb` (Layer 1)  
+**Output**: `staged_data.duckdb` (Layer 2)  
+**Directory**: `05_stage/` or `10_ingested/`
+
+## Common File-Level Issues Solved
+
+### 1. Encoding Problems
+Raw data often comes with mixed encodings that break downstream processing:
+
+```r
+# Common encoding issues in raw files
+# - Windows-1252 (Latin1) 
+# - UTF-16 with BOM
+# - Mixed UTF-8/Latin1 in same dataset
+# - Unknown/auto-detected encodings
+
+# Staging solution: Force UTF-8
+txt <- readr::read_lines(file, locale = locale(encoding = "UTF-8-BOM"))
+readr::write_lines(txt, output_file, sep = "\n")
+```
+
+### 2. Line Ending Chaos
+Different operating systems create different line endings:
+
+```r
+# Windows: CRLF (\r\n)
+# Unix/Mac: LF (\n) 
+# Old Mac: CR (\r)
+
+# Staging solution: Standardize to LF
+# read_lines() handles this automatically when writing with sep = "\n"
+```
+
+### 3. Archive and Compression
+Raw data often arrives compressed or archived:
+
+```r
+# Common formats:
+# - ZIP archives with multiple CSV files
+# - GZIP compressed individual files  
+# - TAR archives from Unix systems
+# - Excel files that need conversion to CSV
+
+# Staging solution: Extract all to flat file structure
+```
+
+### 4. Byte Order Mark (BOM) Issues
+UTF-8 BOM breaks many CSV parsers:
+
+```r
+# Problem: Files start with invisible BOM characters
+# read.csv() fails with "invalid UTF-8" or missing first column
+
+# Staging solution: Use UTF-8-BOM locale to automatically handle
+locale(encoding = "UTF-8-BOM")
+```
+
+## Implementation Pattern
+
+### Core Staging Function
+
+```r
+#' Stage raw files for downstream processing
+#' 
+#' Performs file-level preprocessing without modifying content values.
+#' Converts encoding, extracts archives, standardizes line endings.
+#'
+#' @param source_dir Directory containing raw files (default: "00_raw")
+#' @param target_dir Directory for staged files (default: "05_stage") 
+#' @param create_log Whether to create metadata log (default: TRUE)
+#' @return Number of files successfully staged
+#'
+stage_files <- function(source_dir = "00_raw", 
+                       target_dir = "05_stage",
+                       create_log = TRUE) {
+  
+  # Create staging directory if it doesn't exist
+  if (!dir.exists(target_dir)) {
+    dir.create(target_dir, recursive = TRUE)
+    message("Created staging directory: ", target_dir)
+  }
+  
+  # Find all raw files
+  raw_files <- list.files(source_dir, 
+                         pattern = "\\.(csv|txt|tsv)$", 
+                         full.names = TRUE,
+                         recursive = TRUE)
+  
+  if (length(raw_files) == 0) {
+    warning("No CSV/TXT files found in ", source_dir)
+    return(0)
+  }
+  
+  staged_count <- 0
+  
+  for (file_path in raw_files) {
+    tryCatch({
+      staged_count <- staged_count + stage_single_file(
+        file_path, target_dir, create_log
+      )
+    }, error = function(e) {
+      warning("Failed to stage ", file_path, ": ", e$message)
+    })
+  }
+  
+  message("Successfully staged ", staged_count, " files")
+  return(staged_count)
+}
+
+#' Stage a single file
+stage_single_file <- function(file_path, target_dir, create_log = TRUE) {
+  message("Staging: ", basename(file_path))
+  
+  # Read with robust encoding handling
+  tryCatch({
+    # Try UTF-8-BOM first (handles most cases)
+    file_content <- readr::read_lines(
+      file_path, 
+      locale = readr::locale(encoding = "UTF-8-BOM")
+    )
+  }, error = function(e) {
+    # Fallback to encoding detection
+    detected <- readr::guess_encoding(file_path)
+    best_encoding <- detected$encoding[1]
+    
+    message("  UTF-8 failed, trying detected encoding: ", best_encoding)
+    file_content <- readr::read_lines(
+      file_path,
+      locale = readr::locale(encoding = best_encoding)
+    )
+  })
+  
+  # Create output path maintaining directory structure
+  rel_path <- gsub(paste0("^", dirname(file_path), "/"), "", file_path)
+  output_path <- file.path(target_dir, rel_path)
+  output_dir <- dirname(output_path)
+  
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+  
+  # Write with standardized line endings (LF only)
+  readr::write_lines(file_content, output_path, sep = "\n")
+  
+  # Create metadata log entry
+  if (create_log) {
+    create_staging_log_entry(file_path, output_path, file_content)
+  }
+  
+  return(1) # Successfully staged one file
+}
+
+#' Create staging log entry for audit trail
+create_staging_log_entry <- function(source_path, output_path, content) {
+  log_entry <- list(
+    source_file = basename(source_path),
+    staged_file = basename(output_path),
+    stage_timestamp = Sys.time(),
+    source_size_bytes = file.size(source_path),
+    staged_size_bytes = file.size(output_path),
+    row_count = length(content),
+    hash_xxh64 = digest::digest(file = output_path, algo = "xxhash64"),
+    encoding_source = "auto-detected",
+    encoding_target = "UTF-8"
+  )
+  
+  # Append to log file in JSONL format
+  log_path <- file.path(dirname(output_path), "staging_log.jsonl")
+  jsonlite::write_json(
+    log_entry, 
+    log_path, 
+    append = TRUE, 
+    auto_unbox = TRUE
+  )
+}
+```
+
+### Archive Extraction Support
+
+```r
+#' Extract archives before staging
+#' 
+#' Handles ZIP, GZIP, and TAR files commonly found in raw data
+#'
+extract_archives <- function(source_dir = "00_raw", temp_dir = "temp_extract") {
+  
+  # Find archive files
+  archives <- list.files(source_dir, 
+                        pattern = "\\.(zip|gz|tar|tar\\.gz)$",
+                        full.names = TRUE)
+  
+  if (length(archives) == 0) {
+    return(source_dir) # No archives to extract
+  }
+  
+  # Create temporary extraction directory
+  if (!dir.exists(temp_dir)) {
+    dir.create(temp_dir, recursive = TRUE)
+  }
+  
+  for (archive in archives) {
+    message("Extracting: ", basename(archive))
+    
+    if (grepl("\\.zip$", archive)) {
+      utils::unzip(archive, exdir = temp_dir)
+    } else if (grepl("\\.tar(\\.gz)?$", archive)) {
+      utils::untar(archive, exdir = temp_dir)
+    } else if (grepl("\\.gz$", archive) && !grepl("\\.tar\\.gz$", archive)) {
+      # Single GZIP file
+      R.utils::gunzip(archive, destname = file.path(temp_dir, 
+                                                   gsub("\\.gz$", "", basename(archive))))
+    }
+  }
+  
+  return(temp_dir)
+}
+
+#' Complete staging workflow including archive extraction
+stage_complete_workflow <- function(source_dir = "00_raw") {
+  # Step 1: Extract any archives
+  extract_dir <- extract_archives(source_dir)
+  
+  # Step 2: Stage all files (including extracted ones)
+  staged_count <- stage_files(extract_dir, "05_stage")
+  
+  # Step 3: Clean up temporary extraction directory if created
+  if (extract_dir != source_dir) {
+    unlink(extract_dir, recursive = TRUE)
+    message("Cleaned up temporary extraction directory")
+  }
+  
+  return(staged_count)
+}
+```
+
+## Database Integration
+
+### Writing Staged Data to Database
+
+```r
+#' Load staged files into staged_data.duckdb
+#' 
+#' Uses dynamic schema inference since content structure is preserved
+#'
+load_staged_to_database <- function(staged_dir = "05_stage") {
+  # Connect to staging database
+  source("scripts/global_scripts/02_db_utils/tbl2/fn_tbl2.R")
+  staged_conn <- dbConnect_from_list("staged_data")
+  
+  # Find all staged CSV files
+  staged_files <- list.files(staged_dir, 
+                            pattern = "\\.csv$", 
+                            full.names = TRUE,
+                            recursive = TRUE)
+  
+  for (file_path in staged_files) {
+    # Create table name from file path
+    table_name <- create_table_name_from_path(file_path, staged_dir)
+    
+    message("Loading ", basename(file_path), " -> ", table_name)
+    
+    # Read CSV with robust handling
+    data <- readr::read_csv(file_path, 
+                           locale = readr::locale(encoding = "UTF-8"),
+                           show_col_types = FALSE)
+    
+    # Write to database using dynamic schema (MP058 pattern)
+    DBI::dbWriteTable(staged_conn, table_name, data, 
+                     overwrite = TRUE, append = FALSE)
+  }
+  
+  DBI::dbDisconnect(staged_conn)
+  message("Staging database load complete")
+}
+
+#' Create database table name from file path
+create_table_name_from_path <- function(file_path, base_dir) {
+  # Remove base directory and extension
+  rel_path <- gsub(paste0("^", base_dir, "/"), "", file_path)
+  table_name <- gsub("\\.(csv|txt|tsv)$", "", rel_path)
+  
+  # Replace path separators and special characters with underscores
+  table_name <- gsub("[^a-zA-Z0-9]", "_", table_name)
+  
+  # Ensure starts with letter (database requirement)
+  if (!grepl("^[a-zA-Z]", table_name)) {
+    table_name <- paste0("table_", table_name)
+  }
+  
+  return(tolower(table_name))
+}
+```
+
+## Quality Assurance
+
+### Staging Validation Checks
+
+```r
+#' Validate staging operations completed successfully
+#' 
+#' Performs basic checks without examining content
+#'
+validate_staging <- function(source_dir = "00_raw", staged_dir = "05_stage") {
+  
+  validation_results <- list(
+    source_files = length(list.files(source_dir, pattern = "\\.(csv|txt)$", recursive = TRUE)),
+    staged_files = length(list.files(staged_dir, pattern = "\\.(csv|txt)$", recursive = TRUE)),
+    log_exists = file.exists(file.path(staged_dir, "staging_log.jsonl")),
+    encoding_consistent = check_encoding_consistency(staged_dir),
+    line_endings_consistent = check_line_endings(staged_dir)
+  )
+  
+  # File count validation
+  if (validation_results$source_files != validation_results$staged_files) {
+    warning("Mismatch: ", validation_results$source_files, " source files vs ",
+            validation_results$staged_files, " staged files")
+  }
+  
+  # Log validation
+  if (!validation_results$log_exists) {
+    warning("Staging log file not found")
+  }
+  
+  return(validation_results)
+}
+
+#' Check that all staged files have consistent UTF-8 encoding
+check_encoding_consistency <- function(staged_dir) {
+  files <- list.files(staged_dir, pattern = "\\.(csv|txt)$", full.names = TRUE)
+  
+  for (file_path in files) {
+    detected <- readr::guess_encoding(file_path)
+    if (detected$encoding[1] != "UTF-8") {
+      warning("Inconsistent encoding in ", basename(file_path), ": ", detected$encoding[1])
+      return(FALSE)
+    }
+  }
+  
+  return(TRUE)
+}
+
+#' Check that all staged files have consistent LF line endings
+check_line_endings <- function(staged_dir) {
+  files <- list.files(staged_dir, pattern = "\\.(csv|txt)$", full.names = TRUE)
+  
+  for (file_path in files) {
+    # Read file in binary mode to check line endings
+    raw_content <- readBin(file_path, "raw", file.size(file_path))
+    
+    # Check for CRLF sequences
+    if (any(raw_content[-length(raw_content)] == 0x0D & 
+            raw_content[-1] == 0x0A)) {
+      warning("CRLF line endings found in ", basename(file_path))
+      return(FALSE)
+    }
+  }
+  
+  return(TRUE)
+}
+```
+
+## Error Handling and Recovery
+
+### Common Staging Errors
+
+| Error Type | Cause | Solution |
+|------------|-------|----------|
+| **Encoding Detection Failed** | Corrupt or binary files | Add file type validation before processing |
+| **Archive Extraction Failed** | Password-protected or corrupted archives | Manual extraction required |
+| **Insufficient Disk Space** | Large files in staging | Check available space before processing |
+| **Permission Denied** | Read-only source files | Check file permissions |
+| **Invalid File Format** | Non-text files in source | Add file type filtering |
+
+### Recovery Procedures
+
+```r
+#' Recover from staging failures
+#' 
+#' Provides options for handling common staging errors
+#'
+recover_staging_failure <- function(failed_file, error_type) {
+  
+  switch(error_type,
+    "encoding" = {
+      # Try alternative encoding detection
+      message("Attempting encoding recovery for ", basename(failed_file))
+      
+      # Try common encodings in order
+      encodings <- c("UTF-8", "Latin1", "Windows-1252", "ASCII")
+      
+      for (enc in encodings) {
+        tryCatch({
+          content <- readr::read_lines(failed_file, 
+                                     locale = readr::locale(encoding = enc))
+          message("Success with encoding: ", enc)
+          return(list(content = content, encoding = enc))
+        }, error = function(e) {
+          # Continue to next encoding
+        })
+      }
+      
+      stop("All encoding attempts failed for ", failed_file)
+    },
+    
+    "archive" = {
+      # Provide manual extraction guidance
+      stop("Archive extraction failed. Please manually extract ", 
+           basename(failed_file), " and place contents in 00_raw directory")
+    },
+    
+    "space" = {
+      # Check disk space and suggest cleanup
+      available_gb <- as.numeric(system("df -h . | tail -1 | awk '{print $4}'", intern = TRUE))
+      stop("Insufficient disk space. Available: ", available_gb, 
+           "GB. Consider cleaning temporary files or using larger storage.")
+    }
+  )
+}
+```
+
+## Performance Considerations
+
+### Staging Optimization
+
+1. **Batch Processing**: Process multiple files concurrently
+2. **Memory Management**: Stream large files rather than loading entirely
+3. **I/O Optimization**: Use fast storage for staging directory
+4. **Incremental Staging**: Only re-stage files that have changed
+
+```r
+#' High-performance staging for large datasets
+stage_files_optimized <- function(source_dir, target_dir, max_workers = 4) {
+  
+  # Use parallel processing for independent files
+  library(future)
+  plan(multisession, workers = max_workers)
+  
+  files <- list.files(source_dir, pattern = "\\.(csv|txt)$", full.names = TRUE)
+  
+  # Process files in parallel
+  results <- future.apply::future_lapply(files, function(file_path) {
+    stage_single_file(file_path, target_dir, create_log = TRUE)
+  })
+  
+  return(sum(unlist(results)))
+}
+```
+
+## Integration with DF02 (Transformation)
+
+Staging operations prepare data for transformation by ensuring:
+
+1. **Consistent encoding**: All files readable with UTF-8
+2. **Uniform line endings**: Consistent parsing behavior
+3. **Clean file structure**: No compression or archive issues
+4. **Audit trail**: Metadata for tracking data lineage
+
+The transformation layer ([@DF002]) can then focus on schema-level standardization without worrying about file format issues.
+
+## Conclusion
+
+Staging operations provide a crucial buffer between raw external data and structured data processing. By handling file-level preprocessing separately from content transformation, the staging layer ensures downstream processes can operate reliably on well-formatted files while preserving complete data fidelity.
+
+The staged_data layer serves as a clean, technically standardized foundation for all subsequent data processing steps in the five-layer pipeline.

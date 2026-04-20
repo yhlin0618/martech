@@ -1,0 +1,162 @@
+---
+title: "DEV_R020: 物件初始化規則"
+subtitle: "所有物件在使用前必須明確初始化為適當的預設值。這種做法可防止類型錯誤、空引用異常，並提高程式碼可靠性"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R020"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 20
+  title: "物件初始化規則"
+related_to:
+  - "MP047: 函數式編程"
+  - "R019: 物件命名約定"
+  - "R067: 函數封裝"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十條：物件初始化規則 {#overview}
+
+**開發方法法第二十條（物件初始化規則）**
+
+此規則建立了所有物件在使用前必須明確初始化為適當預設值的標準。
+
+:::{.callout-important}
+## 核心需求
+所有物件在使用前必須明確初始化為適當的預設值。這種做法可防止類型錯誤、空引用異常，並提高程式碼可靠性。
+:::
+
+# 第一項：實施原則 {#implementation}
+
+在 R 中處理變數和物件時：
+
+## 第一款：明確初始化 {#explicit-initialization}
+
+所有變數必須在操作中使用前初始化為正確類型的適當預設值。
+
+## 第二款：防禦性預設值 {#defensive-defaults}
+
+選擇合理的預設值，如果對其執行操作不會導致錯誤：
+
+- **數值變數**：使用 `0`、`NA_real_` 或適當的數值預設值
+- **字元變數**：使用 `""`、`NA_character_` 或有意義的占位符
+- **邏輯變數**：使用 `FALSE` 或 `NA`
+- **列表/向量**：使用 `list()` 或 `c()` 或適當類型的空向量
+- **資料框**：使用 `data.frame()` 或適當的骨架結構
+
+## 第三款：初始化區段 {#initialization-section}
+
+將所有變數初始化放在函數或腳本的開頭，以清楚區分初始化和操作程式碼。
+
+## 第四款：類型文檔 {#type-documentation}
+
+使用程式碼註釋或 roxygen 文檔明確指定每個變數的預期類型。
+
+## 第五款：類型檢查 {#type-checking}
+
+對於關鍵函數，在開頭添加明確的類型檢查。
+
+# 第二項：範例 {#examples}
+
+## 第一款：無效模式（違規） {#invalid-pattern}
+
+```r
+# 沒有適當初始化的函數
+process_customer_data <- function(customer_id) {
+  # 沒有初始化 result，容易出錯
+  tryCatch({
+    customer_data <- fetch_customer(customer_id)
+    for(i in 1:nrow(customer_data)) {
+      result[i] <- calculate_metric(customer_data[i,])  # 如果 customer_data 為空則出錯
+    }
+    return(result)  # 如果沒有計算結果則出錯
+  }, error = function(e) {
+    # 錯誤處理器中沒有適當返回
+  })
+}
+```
+
+## 第二款：有效模式（符合規範） {#valid-pattern}
+
+```r
+# 有適當初始化的函數
+process_customer_data <- function(customer_id) {
+  # 將 result 初始化為空數值向量
+  result <- numeric(0)
+  
+  tryCatch({
+    customer_data <- fetch_customer(customer_id)
+    
+    # 在處理前檢查資料有效性
+    if (is.null(customer_data) || nrow(customer_data) == 0) {
+      return(result)  # 返回空但已初始化的結果
+    }
+    
+    # 預先分配正確大小的結果向量
+    result <- numeric(nrow(customer_data))
+    
+    for(i in 1:nrow(customer_data)) {
+      result[i] <- calculate_metric(customer_data[i,])
+    }
+    return(result)
+  }, error = function(e) {
+    warning("處理客戶資料時出錯：", e$message)
+    return(result)  # 返回空但已初始化的結果
+  })
+}
+```
+
+# 第三項：R 語言特殊考量 {#r-considerations}
+
+由於 R 使用延遲評估和動態類型，必須特別注意：
+
+## 第一款：空資料結構 {#empty-data-structures}
+
+使用 `integer(0)`、`numeric(0)`、`character(0)` 等函數初始化具有適當類型的空資料結構。
+
+## 第二款：NA 值 {#na-values}
+
+對於缺失值，使用類型化的 NA 值如 `NA_integer_`、`NA_real_`、`NA_character_` 而非通用的 `NA`。
+
+## 第三款：向量預分配 {#vector-preallocation}
+
+當大小已知時，預先分配正確大小的向量。
+
+## 第四款：列表元件 {#list-components}
+
+初始化所有預期的列表元件，即使是 NULL 或空值。
+
+## 第五款：條件執行 {#conditional-execution}
+
+確保所有分支都初始化稍後將使用的變數。
+
+# 第四項：驗證 {#verification}
+
+- 程式碼審查者應檢查未初始化的變數
+- 可以配置靜態程式碼分析工具來檢測潛在的未初始化變數
+- 單元測試應包含空或 NULL 輸入的邊界情況
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **防止類型錯誤**：避免未初始化變數導致的類型不匹配
+2. **提高可靠性**：減少空引用和未定義行為
+3. **改善可讀性**：明確的初始化使程式碼意圖更清晰
+4. **簡化除錯**：初始化錯誤更容易追蹤和修復
+5. **支援函數式編程**：適當初始化的物件支援具有一致行為的純函數
+
+---
+
+*基於：開發方法法第二十條*  
+*相關連結：[MP047 函數式編程](../../CH00_fundamental_principles/meta_principles/MP047_functional_programming.qmd), [R067 函數封裝](./DEV_R002_functional_encapsulation.qmd)*

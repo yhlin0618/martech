@@ -1,0 +1,238 @@
+---
+title: "MP055: Special Treatment of 'ALL' Category"
+subtitle: "Treat 'ALL' as a meta-category, not a standard category"
+author: "System"
+date: "2025-04-06"
+date-modified: "2026-01-26"
+categories: [meta-principle, data-management, UI-design, query-optimization]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Concept
+
+In any filtering, selection, or classification system, the "ALL" category requires special treatment as a unique meta-category rather than a standard category. This distinction affects data structure, query optimization, UI presentation, and user workflow implementation.
+
+## Rationale
+
+The "ALL" option is fundamentally different from standard categories in both semantics and behavior:
+
+1. **Semantic Difference**: "ALL" represents no filtering rather than an additional filter
+2. **Query Behavior**: "ALL" typically bypasses filters entirely rather than adding conditions
+3. **UI Prominence**: "ALL" serves as both default and escape route in user workflows
+4. **Data Representation**: "ALL" is a meta-value representing the entire set, not a subset
+5. **Performance Impact**: "ALL" may bypass complex filtering operations entirely
+
+## Implementation Guidelines
+
+### Data Representation {#data-representation}
+
+1. **ID Conventions**: Use a unique ID pattern for "ALL"
+   - Zero-based: `"000"`, `0`, `"all"`
+   - Reserved namespace: `"__all__"`, `":all"`, `"*"`
+   - Negative index: `-1` (when zero and positives are used for standard categories)
+
+2. **Database Implementation**:
+   - Avoid storing "ALL" as a regular category in dimension tables
+   - Handle "ALL" selection through application logic, not query constraints
+   - Use NULL constraints or query bypass for "ALL" selection
+
+### UI Presentation {#ui-presentation}
+
+1. **Position**: Always place "ALL" first in selection lists
+2. **Visual Distinction**:
+   - Consider subtle visual differentiation (different background, border, or icon)
+   - May be separated from other options with a divider
+3. **Default Selection**: "ALL" should typically be the default selection
+4. **Persistence**: Remember when users explicitly choose non-"ALL" options
+
+### Query Optimization {#query-optimization}
+
+1. **Bypass Strategy**:
+   ```sql
+   SELECT * FROM data WHERE
+     (:category_id = '000' OR category_id = :category_id)
+   ```
+
+2. **Logic Flow Strategy**:
+   ```r
+   if (category_id == "000") {
+     # Skip filtering entirely
+     result <- get_all_data()
+   } else {
+     # Apply normal filtering
+     result <- filter_data_by_category(category_id)
+   }
+   ```
+
+3. **Performance Considerations**:
+   - "ALL" selection may require a different execution path
+   - Consider pre-computing aggregates for "ALL" vs specific categories
+   - For large datasets, "ALL" may need careful handling
+
+### Semantic Clarity {#semantic-clarity}
+
+1. **Labels**: Use clear, locale-appropriate terms
+   - English: "All", "All Categories", "Everything"
+   - Localize appropriately in all supported languages
+2. **Description**: May include count/total: "All Categories (243)"
+3. **Icon**: Consider universal symbols like "*" or "∀" (universal quantifier)
+
+## DRV Implementation Patterns {#drv-implementation}
+
+When implementing DRV (Derivation) scripts that process data with 'ALL' support, follow these patterns:
+
+### Pattern Declaration
+
+DRV scripts MUST declare 'all' support mode in their header:
+
+```r
+#####
+# ALL_SUPPORT: product_line_id  # Supports 'all' aggregation
+# --- OR ---
+# FORBIDS_ALL: product_line_id  # Does not support 'all'
+#####
+```
+
+### Three Modes for 'ALL' Handling
+
+**Pattern A: Filter Mode (Default)**
+
+- `product_line_id` is used for filtering only
+- Does NOT support 'all' value
+- Returns error if 'all' is received
+
+```r
+run_derivation <- function(platform_id, product_line_id) {
+  if (product_line_id == "all") {
+    stop("This derivation requires a specific product_line_id, not 'all'")
+  }
+  # ... filter by product_line_id
+}
+```
+
+**Pattern B: Aggregation Mode**
+
+- Supports 'all' value
+- Performs cross-category aggregation
+- Must explicitly declare `ALL_SUPPORT`
+
+```r
+#####
+# ALL_SUPPORT: product_line_id, platform_id
+#####
+run_derivation <- function(platform_id = "all", product_line_id = "all") {
+  # Determine processing combinations
+  if (platform_id == "all") {
+    platforms <- get_all_enabled_platforms()
+  } else {
+    platforms <- platform_id
+  }
+
+  if (product_line_id == "all") {
+    # Process all + individual product lines
+    product_lines <- c("all", get_all_product_lines())
+  } else {
+    product_lines <- product_line_id
+  }
+
+  for (plat in platforms) {
+    for (pl in product_lines) {
+      process_combination(plat, pl)
+    }
+  }
+}
+```
+
+**Pattern C: Error Mode**
+
+- Explicitly rejects 'all'
+- Provides clear error message
+
+```r
+#####
+# FORBIDS_ALL: product_line_id
+#####
+run_derivation <- function(product_line_id) {
+  if (product_line_id == "all") {
+    stop("Derivation D04_03 requires specific product_line_id. ",
+         "Available values: ", paste(get_product_lines(), collapse = ", "))
+  }
+  # ...
+}
+```
+
+### Pre-computation for Performance
+
+When 'ALL' requires expensive aggregation, pre-compute at ETL/DRV time:
+
+```r
+# In DRV script: pre-compute both 'all' and individual values
+combinations <- expand.grid(
+  platform_id = c("all", enabled_platforms),
+  product_line_id = c("all", product_lines)
+)
+
+for (i in 1:nrow(combinations)) {
+  compute_and_store(
+    platform_id = combinations$platform_id[i],
+    product_line_id = combinations$product_line_id[i]
+  )
+}
+```
+
+## Implementation Example
+
+### Product Category Selector
+
+```r
+# In Excel parameter file: product_line.xlsx
+# First row:
+# | product_line_id | product_line_name_english | product_line_name_chinese |
+# | "000"           | "All Products"            | "所有產品"                |
+
+# In UI code:
+pickerInput(
+  inputId = "product_category",
+  label = "Product Category",
+  choices = product_line_dictionary,
+  selected = product_line_dictionary[[1]],  # "000" - All Products
+  width = "100%"
+)
+
+# In query logic:
+observe({
+  selected_category <- input$product_category
+
+  filtered_data <- reactive({
+    if (selected_category == "000") {
+      # Special case: ALL - return everything without filtering
+      return(all_products)
+    } else {
+      # Normal filtering
+      return(all_products[all_products$category == selected_category, ])
+    }
+  })
+})
+```
+
+## Benefits
+
+1. **Performance Optimization**: Avoids unnecessary filtering for "ALL" selection
+2. **Semantic Clarity**: Clearly distinguishes "everything" from "something specific"
+3. **Consistent UX**: Creates predictable patterns for users throughout the application
+4. **Optimization Opportunities**: Allows specialized handling for the common "ALL" case
+5. **Architectural Clarity**: Separates the meta-concept of "ALL" from standard categories
+
+## Related Principles
+
+- P18 (Dual Parameter Source)
+- MP011 (Sensible Defaults)
+- MP017 (Separation of Concerns)
+- DM_R044 (Derivation Implementation Standard)

@@ -1,0 +1,188 @@
+---
+title: "SO_R008: App Mode Naming Simplicity Rule"
+subtitle: "In APP_MODE, all data objects must use only rigid identifiers without optional descriptors. This ensures consistency, predictability, and eliminates ambiguity in the application runtime environment"
+chapter: "CH01"
+category: "rule"
+number: "SO_R008"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article-number: 
+  number: 8
+  title: "App Mode Naming Simplicity Rule"
+related_to:
+  - "SO_P003: App Construction Principles"
+  - "SO_P007: app.R Is Global"
+  - "MP077: Object Naming Convention"
+  - "MP003: Operating Modes"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 8: App Mode Naming Simplicity Rule {#overview}
+
+**Structure & Organization Law Article 8 (App Mode Naming Simplicity Rule)**
+
+In APP_MODE, all data objects must use only rigid identifiers without optional descriptors. This ensures consistency, predictability, and eliminates ambiguity in the application runtime environment.
+
+:::{.callout-important}
+## Core Requirement
+By removing optional descriptors in APP_MODE, this rule simplifies code, improves reliability, and creates a clear separation between the development environment (UPDATE_MODE) and the production environment (APP_MODE).
+:::
+
+# Section 1: Detailed Requirements {#detailed-requirements}
+
+## Subsection 1: No Optional Descriptors in APP_MODE {#no-optional-descriptors}
+
+```
+# In APP_MODE:
+# ALLOWED:
+df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001
+
+# NOT ALLOWED:
+df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001___clean
+```
+
+In APP_MODE, all data objects must be referenced by their rigid identifier only, without any optional descriptors after triple underscores. This applies to all object types that support optional descriptors in the naming convention.
+
+## Subsection 2: Canonical Version Selection {#canonical-version-selection}
+
+When transitioning objects from UPDATE_MODE to APP_MODE, a canonical version must be selected from among the potentially multiple versions with different descriptors. This selection process must:
+
+1. **Be deterministic**: Always select the same version given the same inputs
+2. **Be documented and consistent**: Across all components
+3. **Typically prefer**:
+   - Manually edited versions (`___manual`) when available
+   - Fully processed versions (`___clean`) when no manual version exists
+   - Latest versions when no clear qualitative distinction exists
+
+## Subsection 3: Loading Functions for APP_MODE {#loading-functions}
+
+Loading functions in APP_MODE must be simplified to use only rigid identifiers:
+
+```r
+# APP_MODE loading function
+load_app_data <- function(rigid_id) {
+  # Always loads the canonical version without needing descriptors
+  return(data)
+}
+```
+
+## Subsection 4: Implementation Mechanisms {#implementation-mechanisms}
+
+Two approaches are allowed for implementing this rule:
+
+### Pre-processing Approach {#preprocessing-approach}
+
+Before APP_MODE initialization, process all data objects to create canonical versions without optional descriptors:
+
+```r
+# During transition from UPDATE_MODE to APP_MODE
+canonicalize_data <- function(rigid_id) {
+  # Find best version based on prioritization rules
+  best_version <- select_canonical_version(rigid_id)
+  
+  # Load that version
+  data <- load_version(rigid_id, best_version)
+  
+  # Save as canonical version (no descriptor)
+  assign(rigid_id, data)
+  
+  # Optionally persist to disk
+  saveRDS(data, paste0(rigid_id, ".rds"))
+}
+```
+
+### Aliasing Approach {#aliasing-approach}
+
+Create aliases in APP_MODE environment that point to the canonical versions:
+
+```r
+# During APP_MODE initialization
+create_canonical_aliases <- function() {
+  for (rigid_id in get_all_rigid_ids()) {
+    best_version <- select_canonical_version(rigid_id)
+    full_name <- if (best_version == "") rigid_id else paste0(rigid_id, "___", best_version)
+    
+    # Create alias in APP_MODE environment
+    if (exists(full_name)) {
+      assign(rigid_id, get(full_name), envir = app_env)
+    }
+  }
+}
+```
+
+# Section 2: Implementation Examples {#implementation-examples}
+
+## Subsection 1: APP_MODE Data Preparation {#app-mode-data-preparation}
+
+```r
+# During transition to APP_MODE
+prepare_app_data <- function() {
+  # For each data object required by the app
+  required_data <- c(
+    "df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001",
+    "df.sales.transactions.by_customer.at_NY.at_q1_2025.at_000"
+  )
+  
+  for (rigid_id in required_data) {
+    # Get canonical version
+    canonicalize_data(rigid_id)
+  }
+}
+```
+
+## Subsection 2: APP_MODE Data Access {#app-mode-data-access}
+
+```r
+# In APP_MODE
+render_sales_dashboard <- function() {
+  # Access by rigid_id only
+  sales_data <- df.amazon.sales_data.by_product_index.at_ALL.at_now.at_001
+  
+  # Process and visualize
+  plot_sales(sales_data)
+}
+```
+
+# Section 3: Relationship to Other Principles {#relationship-to-other-principles}
+
+## Subsection 1: Implements Principles {#implements-principles}
+
+This rule implements:
+1. **SO_P003 (App Construction Principles)**: By ensuring consistent and predictable data access patterns
+2. **SO_P007 (app.R is Global)**: By standardizing naming in APP_MODE global namespace
+
+## Subsection 2: Relates to Principles {#relates-to-principles}
+
+This rule relates to:
+1. **MP077 (Object Naming Convention)**: By restricting its full application in APP_MODE
+2. **MP003 (Operating Modes)**: By defining specific data object handling for APP_MODE
+
+# Section 4: Benefits {#benefits}
+
+## Subsection 1: Technical Benefits {#technical-benefits}
+
+1. **Simplicity**: Simplifies data access patterns in APP_MODE
+2. **Reliability**: Eliminates ambiguity about which version is used
+3. **Performance**: Reduces lookup overhead in data loading functions
+4. **Clarity**: Makes application code cleaner and more maintainable
+
+## Subsection 2: Development Benefits {#development-benefits}
+
+1. **Error Prevention**: Prevents accidental use of non-canonical data versions
+2. **Environment Separation**: Creates clear boundaries between development and production
+3. **Consistent Experience**: Ensures all users see the same data versions
+4. **Simplified Deployment**: Reduces configuration complexity during deployment
+
+---
+
+*Based on: Structure & Organization Law Article 8*  
+*Related to: [SO_P003 App Construction Principles](../principles/SO_P003_app_construction.qmd), [MP077 Object Naming Convention](../../CH00_fundamental_principles/05_terminology_standards/MP077_object_naming_convention.qmd)*

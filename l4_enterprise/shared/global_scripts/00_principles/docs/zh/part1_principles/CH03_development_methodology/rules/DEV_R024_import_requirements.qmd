@@ -1,0 +1,211 @@
+---
+title: "DEV_R024: 套件匯入需求規則"
+subtitle: "所有套件依賴必須通過集中式初始化腳本匯入，而不是直接在個別腳本檔案中匯入。當直接匯入不可避免時，必須遵循標準化格式"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R024"
+date-created: "2025-04-10"
+date-modified: "2025-08-18"
+author: "Development Team"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 24
+  title: "套件匯入需求規則"
+extends:
+  - "MP017: 關注分離"
+  - "MP018: 不重複自己"
+  - "MP031: 初始化優先"
+aliases:
+  - "套件匯入規則"
+  - "函式庫聲明規則"
+  - "集中式套件管理"
+key_terms:
+  - "依賴管理"
+  - "套件匯入"
+  - "函式庫聲明"
+  - "基於初始化的匯入"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十四條：套件匯入需求規則 {#overview}
+
+**開發方法法第二十四條（套件匯入需求規則）**
+
+此規則確保套件依賴的一致性管理和維護性，通過集中式初始化腳本管理所有套件匯入。
+
+:::{.callout-important}
+## 核心聲明
+所有套件依賴必須通過集中式初始化腳本匯入，而不是直接在個別腳本檔案中匯入。當直接匯入不可避免時，必須遵循標準化格式。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+集中化套件匯入到初始化腳本可以提高代碼的可維護性：
+
+1. 為所有套件依賴提供單一真實來源
+2. 消除多個檔案中的冗餘匯入
+3. 確保整個應用程式中套件版本的一致性
+4. 便於自動化依賴分析和管理
+5. 通過清楚記錄所有依賴簡化新開發人員的入職
+6. 實現更強大的錯誤處理和備用機制
+
+# 第二項：實施方法 {#implementation}
+
+## 第一款：實施步驟 {#implementation-steps}
+
+1. 創建集中式初始化腳本（例如 `initialize_packages.R`）匯入所有必需的套件
+2. 在應用程式執行開始時來源這些初始化腳本
+3. 在初始化腳本中按功能區域組織套件
+4. 在集中位置實施錯誤處理和版本檢查
+5. 當需要直接匯入時，遵循標準化格式
+
+## 第二款：初始化腳本實施範例 {#initialization-script-example}
+
+```r
+#' @file initialize_packages.R
+#' @principle R095 套件匯入需求規則
+#' @author 資料團隊
+#' @date 2025-04-10
+
+# !! 集中式套件管理 !!
+
+# 核心套件
+required_core <- c("shiny", "dplyr", "tidyr", "ggplot2")
+
+# 資料庫套件
+required_db <- c("DBI", "RSQLite", "duckdb")
+
+# 可選視覺化套件
+optional_viz <- c("plotly", "leaflet", "DT")
+
+# 匯入並檢查核心套件（必須有這些）
+missing_core <- required_core[!sapply(required_core, requireNamespace, quietly = TRUE)]
+if (length(missing_core) > 0) {
+  stop("缺少必需的核心套件：", paste(missing_core, collapse = ", "))
+}
+invisible(sapply(required_core, library, character.only = TRUE))
+
+# 匯入帶有版本檢查的資料庫套件
+for (pkg in required_db) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("安裝必需的資料庫套件：", pkg)
+    install.packages(pkg)
+  }
+  library(pkg, character.only = TRUE)
+}
+
+# 如果可用，匯入可選套件
+available_viz <- optional_viz[sapply(optional_viz, requireNamespace, quietly = TRUE)]
+if (length(available_viz) > 0) {
+  invisible(sapply(available_viz, library, character.only = TRUE))
+}
+
+# 匯出可用套件列表供其他腳本參考
+AVAILABLE_PACKAGES <- list(
+  core = required_core,
+  db = required_db,
+  viz = available_viz
+)
+```
+
+## 第三款：使用初始化的應用程式腳本範例 {#application-script-example}
+
+```r
+#' @file app.R
+#' @principle R095 套件匯入需求規則
+#' @author 資料團隊
+#' @date 2025-04-10
+
+# 來源載入所有套件的初始化腳本
+source("initialize_packages.R")
+
+# 這裡不需要直接的 library() 呼叫，因為套件已通過初始化載入
+
+# 函數定義從這裡開始
+...
+```
+
+## 第四款：必要時的直接匯入範例 {#direct-import-example}
+
+在需要直接匯入的罕見情況下：
+
+```r
+#' @file specialized_analysis.R
+#' @principle R095 套件匯入需求規則
+#' @author 分析團隊
+#' @date 2025-04-10
+
+# 檢查是否已通過初始化載入
+if (!exists("AVAILABLE_PACKAGES") || !("randomForest" %in% unlist(AVAILABLE_PACKAGES))) {
+  # !! 直接套件匯入 - 獨立執行所需 !!
+  if (!requireNamespace("randomForest", quietly = TRUE)) {
+    install.packages("randomForest")
+  }
+  library(randomForest)
+}
+
+# 函數定義從這裡開始
+...
+```
+
+# 第三項：與 NSQL 的整合 {#nsql-integration}
+
+此規則通過以下方式補充 NSQL 的結構化文檔方法：
+
+1. 使用視覺突出的特殊注意標記 `!! 集中式套件管理 !!`
+2. 支援 NSQL 的分層檔案組織原則
+3. 加強應用程式結構的初始化優先方法（MP031）
+
+# 第四項：例外情況 {#exceptions}
+
+此規則的例外僅限於：
+
+1. 設計用於在主應用程式外獨立執行的腳本
+2. 有意測試不同套件組合行為的測試腳本
+3. 具有其他地方未使用的專門套件需求的腳本
+
+在這些例外情況下，直接匯入必須：
+- 包含為何不使用集中式匯入的明確文檔
+- 遵循直接匯入的標準化格式
+- 在匯入前檢查套件是否已載入
+
+# 第五項：與其他規則的關係 {#relationship-to-other-rules}
+
+DEV_R024 建立在：
+
+- **MP017（關注分離）**：通過將依賴管理與功能代碼分離
+- **MP018（不重複自己）**：通過消除多個檔案中的冗餘匯入
+- **MP031（初始化優先）**：通過將套件管理移至初始化階段
+- **R013（初始化來源）**：通過在初始化框架內組織匯入
+
+# 第六項：優點 {#benefits}
+
+遵循此規則提供：
+
+1. **單一真實來源**：套件依賴在一個地方定義
+2. **更容易維護**：在一個位置更新依賴
+3. **更好的錯誤處理**：缺少依賴的集中錯誤處理
+4. **減少啟動時間**：在初始化時只載入套件一次
+5. **增強相容性**：整個應用程式中一致的套件版本
+6. **更清晰的依賴文檔**：所有必需套件在一個地方可見
+
+# 第七項：實施檢查清單 {#implementation-checklist}
+
+- [ ] 為套件匯入創建集中式初始化腳本
+- [ ] 在初始化腳本中按功能區域分組套件
+- [ ] 實施缺少或不相容套件的錯誤處理
+- [ ] 在應用程式啟動時來源初始化腳本
+- [ ] 從個別腳本中移除直接的 library() 呼叫
+- [ ] 記錄需要直接匯入的例外情況
+
+---
+
+*基於：開發方法法第二十四條*  
+*相關連結：[MP017 關注分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [MP031 初始化優先](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd)*

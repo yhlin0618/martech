@@ -1,0 +1,197 @@
+---
+title: "DM_R054: 元資料表儲存模式"
+subtitle: "元資料與查找表直接存入 app_data，不走 6-Layer ETL 流程"
+chapter: "CH02"
+category: "rule"
+number: "DM_R054"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 54"
+parent_principle: "MP064"
+related_to:
+  - "DM_R045": "資料庫檔案命名標準"
+  - "DM_R052": "跨平台產品識別"
+  - "DM_R004": "資料儲存組織"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R054: 元資料表儲存模式 {#overview}
+
+元資料和查找表必須直接儲存到 `app_data.duckdb`，跳過 6-Layer ETL 流程（raw → staged → transformed → processed → cleansed → app）。
+
+## 規則陳述
+
+**元資料表（參考資料、查找表、對應表）必須直接寫入 `app_data.duckdb`，不經過 6-Layer ETL 流程。**
+
+## 理由 {#rationale}
+
+### 兩種資料類型
+
+| 類型 | 描述 | 儲存模式 |
+|------|------|----------|
+| **交易資料** | 訂單、銷售、事件、日誌 | 6-Layer ETL 流程 |
+| **元資料** | 查找表、對應表、設定 | 直接寫入 app_data |
+
+### 為何元資料跳過 6-Layer？
+
+1. **不需轉換**：元資料已經是最終形式
+2. **靜態本質**：很少變更，不需增量處理
+3. **立即可用**：應用程式啟動時就需要
+4. **無商業邏輯**：只是參考資料，無需計算
+5. **跨平台範圍**：所有平台都使用，非平台特定
+
+### 6-Layer ETL 專用於交易資料
+
+```
+交易資料流程：
+raw_data (0IM) → staged_data (1ST) → transformed_data (2TR)
+    ↓
+processed_data (3PR) → cleansed_data (4CL) → app_data (5NM)
+
+元資料流程：
+來源 → app_data（直接）
+```
+
+## 表格分類 {#classification}
+
+### 元資料表（→ app_data）
+
+| 表格 | 用途 |
+|------|------|
+| `df_product_mapping` | 跨平台產品 ID 對應 |
+| `df_product_line` | 產品線定義 |
+| `df_category_hierarchy` | 分類樹狀結構 |
+| `df_customer_labels` | 客戶分群標籤 |
+| `df_variable_metadata` | UI 顯示名稱 |
+| `df_platform` | 平台代碼與名稱 |
+| `df_config_*` | 應用程式設定 |
+
+### 交易表（→ 6-Layer ETL）
+
+| 表格 | 用途 |
+|------|------|
+| `df_cbz_orders` | Cyberbiz 訂單 |
+| `df_eby_sales` | eBay 銷售交易 |
+| `df_amz_orders` | Amazon 訂單 |
+| `df_rfm_by_customer` | 計算後的 RFM 分數 |
+| `df_daily_summary` | 彙總的每日指標 |
+
+## 實作模式 {#implementation}
+
+### 元資料 ETL 腳本
+
+```r
+#' @file all_ETL_product_mapping_0IM___MAMBA.R
+#' @description
+#'   遵循: DM_R054（元資料表儲存模式）
+#'   元資料表直接寫入 app_data.duckdb
+
+# 1. INITIALIZE
+autoinit()
+
+# 2. MAIN - 從來源讀取
+df_product_mapping <- read_source_data()
+
+# 3. 直接寫入 app_data（非 raw_data）
+# 遵循 DM_R054: 元資料跳過 6-layer ETL
+app_con <- dbConnect(duckdb::duckdb(),
+  file.path(g_project_root, "data/app_data/app_data.duckdb"))
+
+DBI::dbWriteTable(
+  app_con,
+  "df_product_mapping",
+  df_product_mapping,
+  overwrite = TRUE
+)
+
+# 4. DEINITIALIZE
+autodeinit()
+```
+
+### 與交易 ETL 的主要差異
+
+| 面向 | 交易 ETL | 元資料 ETL |
+|------|----------|------------|
+| **目標 DB** | raw_data.duckdb (0IM) | app_data.duckdb |
+| **階段數** | 0IM → 1ST → 2TR | 單一階段 |
+| **腳本數量** | 每種資料類型 3+ 個腳本 | 1 個腳本 |
+| **命名** | `{platform}_ETL_{type}_0IM.R` | `all_ETL_{type}_0IM.R` |
+
+## 目錄結構 {#structure}
+
+```
+update_scripts/ETL/
+├── cbz/                    # 平台特定的交易 ETL
+│   ├── cbz_ETL_orders_0IM.R
+│   ├── cbz_ETL_orders_1ST.R
+│   └── cbz_ETL_orders_2TR.R
+├── eby/
+│   └── ...
+├── all/                    # 跨平台與元資料 ETL
+│   ├── all_ETL_product_mapping_0IM___MAMBA.R   # 元資料
+│   ├── all_ETL_item_profile_0IM.R              # 元資料來源
+│   └── all_ETL_summary_0IM.R                   # 元資料
+└── ...
+```
+
+## 驗證清單 {#checklist}
+
+建立 ETL 腳本時，請問：
+
+1. **這是交易資料嗎？**（訂單、銷售、事件）
+   - 是 → 使用 6-Layer ETL（raw → staged → transformed）
+   - 否 → 繼續問題 2
+
+2. **這是元資料/查找資料嗎？**（對應表、標籤、設定）
+   - 是 → 直接寫入 `app_data.duckdb`
+   - 否 → 依個案評估
+
+3. **應用程式啟動時需要這個嗎？**
+   - 是 → 可能是元資料，使用 `app_data.duckdb`
+   - 否 → 可能是衍生資料，使用 DRV 模式
+
+## 程式碼註解模式 {#comments}
+
+```r
+# 遵循 DM_R054: 元資料表儲存模式
+# 這是查找/對應表，直接寫入 app_data
+DBI::dbWriteTable(app_con, "df_product_mapping", df, overwrite = TRUE)
+```
+
+## 與其他原則的關係 {#relationships}
+
+| 原則 | 關係 |
+|------|------|
+| **DM_R045** | 定義 `app_data.duckdb` 命名；DM_R054 定義什麼資料放那裡 |
+| **DM_R052** | 產品對應使用 DM_R054 模式 |
+| **DM_R004** | 定義資料目錄；DM_R054 延伸到資料庫選擇 |
+| **MP064** | ETL-DRV 分離；DM_R054 澄清元資料是有特殊目標的 ETL |
+
+## 反模式 {#anti-patterns}
+
+### 錯誤：元資料經過 6-Layer
+
+```r
+# 錯誤：元資料不需要 6-layer
+# all_ETL_product_mapping_0IM.R → raw_data
+# all_ETL_product_mapping_1ST.R → staged_data  # 不必要！
+# all_ETL_product_mapping_2TR.R → transformed_data  # 不必要！
+```
+
+### 錯誤：交易資料直接到 app_data
+
+```r
+# 錯誤：交易資料必須經過 6-layer
+DBI::dbWriteTable(app_con, "df_cbz_orders", orders)  # 應該是 raw_data！
+```
+
+## 結論
+
+DM_R054 建立了交易資料（經過 6-layer ETL 流程）與元資料（直接寫入 app_data）之間的明確區分。這簡化了架構，避免對靜態參考資料進行不必要的中間步驟，同時為複雜的交易處理維持完整的 ETL 流程。

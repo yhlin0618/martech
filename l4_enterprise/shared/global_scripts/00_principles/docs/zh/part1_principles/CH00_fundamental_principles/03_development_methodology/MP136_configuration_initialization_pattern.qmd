@@ -1,0 +1,465 @@
+---
+title: "MP136: Configuration Initialization Pattern"
+subtitle: "Load external configuration files at application startup, not at runtime"
+author: "Claude"
+date: "2025-11-14"
+date-modified: "2025-11-14"
+categories: [meta-principle, initialization, configuration, performance, reliability]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Concept
+
+External configuration files (YAML, JSON, CSV parameter files, etc.) should be loaded during **application initialization**, not at runtime when functions are called.
+
+**Philosophy**: Configuration is a precondition for operation, not a consequence of operation.
+
+## Why This Matters
+
+### Problems with Runtime Loading
+
+```r
+# ❌ WRONG: Loading YAML at function call time
+should_exclude_covariate <- function(var_name, config_path = "config.yaml") {
+  if (!exists(".config")) {
+    .config <<- yaml::read_yaml(config_path)  # Loaded on FIRST call
+  }
+  # Use config...
+}
+```
+
+**Issues**:
+1. **Late Failure**: Configuration errors only discovered during user interaction
+2. **Performance**: YAML parsed repeatedly or on first call (wasted cycles)
+3. **Path Fragility**: Working directory may change between initialization and call
+4. **Hidden Dependencies**: Function appears self-contained but has file I/O side effects
+5. **Testing Difficulty**: Hard to test with different configurations
+
+### Benefits of Initialization-Time Loading
+
+```r
+# ✅ CORRECT: Loading YAML at initialization time
+# In initialization script
+source("fn_initialize_config.R")
+initialize_config()  # Loads YAML immediately
+
+# Later in application
+should_exclude_covariate <- function(var_name) {
+  if (!exists(".config")) {
+    stop("Configuration not initialized. See MP136.")
+  }
+  config <- get(".config")
+  # Use config...
+}
+```
+
+**Benefits**:
+1. **Fail Fast**: Configuration errors caught at startup
+2. **Performance**: Single load, shared across all function calls
+3. **Predictable Paths**: Working directory known at initialization
+4. **Clear Dependencies**: Explicit initialization function
+5. **Easy Testing**: Replace config for testing
+
+## Implementation Pattern
+
+### Standard Structure
+
+```
+global_scripts/
+├── 04_utils/
+│   ├── fn_use_config.R                    # Functions that USE configuration
+│   └── fn_initialize_config.R              # Function that LOADS configuration
+└── 22_initializations/
+    └── sc_Rprofile.R                       # Calls initialize_config()
+```
+
+### Step 1: Create Initialization Function
+
+```r
+# fn_initialize_config.R
+#' Initialize Configuration at Application Startup
+#'
+#' Loads external configuration file and stores in .GlobalEnv.
+#' Following MP136: Configuration Initialization Pattern
+#'
+#' @param config_path Character string. Path to configuration file.
+#'   If NULL, auto-detects from standard locations.
+#' @param verbose Logical. Print diagnostic messages.
+#'
+#' @return Invisible TRUE on success
+#' @export
+initialize_config <- function(config_path = NULL, verbose = TRUE) {
+
+  if (verbose) {
+    cat("📋 Initializing configuration...\n")
+  }
+
+  # Step 1: Auto-detect path if not provided
+  if (is.null(config_path)) {
+    possible_paths <- c(
+      "config/app_config.yaml",                    # From project root
+      "global_scripts/30_global_data/config.yaml",    # From global location
+      file.path(Sys.getenv("MAMBA_ROOT"), "config/app_config.yaml")  # From env var
+    )
+
+    config_path <- NULL
+    for (path in possible_paths) {
+      if (!is.null(path) && file.exists(path)) {
+        config_path <- path
+        break
+      }
+    }
+
+    if (is.null(config_path)) {
+      stop(
+        "Cannot locate configuration file.\n",
+        "Tried: ", paste(possible_paths, collapse = ", "), "\n",
+        "Current working directory: ", getwd()
+      )
+    }
+  }
+
+  # Step 2: Validate file exists
+  if (!file.exists(config_path)) {
+    stop("Configuration file not found: ", config_path)
+  }
+
+  if (verbose) {
+    cat("   Using config file:", config_path, "\n")
+  }
+
+  # Step 3: Load configuration (format-specific)
+  config <- tryCatch({
+    if (grepl("\\.yaml$|\\.yml$", config_path)) {
+      if (!requireNamespace("yaml", quietly = TRUE)) {
+        stop("Package 'yaml' required. Install: install.packages('yaml')")
+      }
+      yaml::read_yaml(config_path)
+    } else if (grepl("\\.json$", config_path)) {
+      jsonlite::fromJSON(config_path)
+    } else if (grepl("\\.csv$", config_path)) {
+      read.csv(config_path, stringsAsFactors = FALSE)
+    } else {
+      stop("Unsupported configuration format: ", config_path)
+    }
+  }, error = function(e) {
+    stop("Failed to parse configuration: ", config_path, "\nError: ", e$message)
+  })
+
+  # Step 4: Validate configuration structure (app-specific)
+  validate_config_structure(config, config_path)
+
+  # Step 5: Store in global environment
+  assign(".app_config", config, envir = .GlobalEnv)
+
+  if (verbose) {
+    cat("✅ Configuration loaded successfully\n")
+  }
+
+  invisible(TRUE)
+}
+
+#' Validate Configuration Structure
+#'
+#' @param config Loaded configuration object
+#' @param config_path Path for error messages
+validate_config_structure <- function(config, config_path) {
+  # Define required sections (app-specific)
+  required_sections <- c("metadata", "settings")
+  missing <- setdiff(required_sections, names(config))
+
+  if (length(missing) > 0) {
+    stop(
+      "Invalid configuration structure: ", config_path, "\n",
+      "Missing sections: ", paste(missing, collapse = ", ")
+    )
+  }
+
+  invisible(TRUE)
+}
+
+# --- Auto-initialization when sourced ---
+# Following MP136: Load configuration at initialization time
+if (!exists(".app_config", envir = .GlobalEnv)) {
+  tryCatch({
+    initialize_config(verbose = FALSE)
+  }, error = function(e) {
+    warning(
+      "Auto-initialization of configuration failed: ", e$message, "\n",
+      "This may be expected if running from non-standard location.\n",
+      "Please call initialize_config() manually if needed."
+    )
+  })
+}
+```
+
+### Step 2: Update Usage Functions
+
+```r
+# fn_use_config.R
+#' Use Pre-Loaded Configuration
+#'
+#' Following MP136: Configuration must be initialized before use
+#'
+#' @param var_name Variable to check in configuration
+#' @return Configuration value
+use_config <- function(var_name) {
+
+  # Check if configuration is initialized (fail fast)
+  if (!exists(".app_config", envir = .GlobalEnv)) {
+    stop(
+      "Configuration not initialized.\n",
+      "Please ensure fn_initialize_config.R is sourced at startup.\n",
+      "See MP136: Configuration Initialization Pattern"
+    )
+  }
+
+  # Get pre-loaded configuration
+  config <- get(".app_config", envir = .GlobalEnv)
+
+  # Use configuration...
+  if (!var_name %in% names(config$settings)) {
+    warning("Configuration key not found: ", var_name)
+    return(NULL)
+  }
+
+  return(config$settings[[var_name]])
+}
+```
+
+### Step 3: Add to Initialization Script
+
+```r
+# sc_Rprofile.R or sc_initialization_app_mode.R
+
+# Load configuration initialization (MP136)
+config_init_path <- file.path(GLOBAL_DIR, "04_utils", "fn_initialize_config.R")
+if (file.exists(config_init_path)) {
+  sys.source(config_init_path, envir = .GlobalEnv)
+  # Note: Auto-initializes when sourced
+} else {
+  warning("Configuration initialization not found: ", config_init_path)
+}
+```
+
+## Hybrid Approach: Explicit + Auto
+
+The recommended pattern combines:
+1. **Explicit initialization function** for clarity and testing
+2. **Auto-initialization when sourced** for convenience
+3. **Add to Rprofile** for guaranteed production initialization
+
+```r
+# At end of fn_initialize_config.R
+if (!exists(".app_config", envir = .GlobalEnv)) {
+  tryCatch({
+    initialize_config(verbose = FALSE)
+  }, error = function(e) {
+    # Don't fail hard - allow manual initialization
+    warning("Auto-init failed: ", e$message)
+  })
+}
+```
+
+## Path Resolution Strategy
+
+Use multiple fallback paths to handle different execution contexts:
+
+```r
+initialize_config <- function(config_path = NULL, verbose = TRUE) {
+  if (is.null(config_path)) {
+    possible_paths <- c(
+      # From project root (APP_MODE)
+      "config/app_config.yaml",
+
+      # From MAMBA root (UPDATE_MODE)
+      "scripts/global_scripts/30_global_data/config.yaml",
+
+      # From environment variable
+      if (nzchar(Sys.getenv("MAMBA_ROOT"))) {
+        file.path(Sys.getenv("MAMBA_ROOT"), "config/app_config.yaml")
+      } else NULL,
+
+      # From initialization constants (if set)
+      if (exists("GLOBAL_PARAMETER_DIR")) {
+        file.path(get("GLOBAL_PARAMETER_DIR"), "config.yaml")
+      } else NULL
+    )
+
+    # Remove NULL entries
+    possible_paths <- possible_paths[!sapply(possible_paths, is.null)]
+
+    # Find first existing path
+    for (path in possible_paths) {
+      if (file.exists(path)) {
+        config_path <- path
+        break
+      }
+    }
+  }
+  # ... rest of initialization
+}
+```
+
+## Error Handling
+
+### Fail Fast at Startup
+
+```r
+# Good: Errors caught immediately
+source("fn_initialize_config.R")
+# Error: Configuration file not found: config.yaml
+# [Application exits before user interaction]
+```
+
+### Clear Error Messages
+
+```r
+if (!file.exists(config_path)) {
+  stop(
+    "Configuration file not found: ", config_path, "\n",
+    "Current working directory: ", getwd(), "\n\n",
+    "Solutions:\n",
+    "1. Set MAMBA_ROOT environment variable\n",
+    "2. Run from MAMBA root directory\n",
+    "3. Provide explicit config_path parameter"
+  )
+}
+```
+
+### Runtime Check
+
+```r
+use_config <- function(var_name) {
+  if (!exists(".app_config", envir = .GlobalEnv)) {
+    stop(
+      "Configuration not initialized. Call initialize_config() first.\n",
+      "See MP136: Configuration Initialization Pattern"
+    )
+  }
+  # ... use config
+}
+```
+
+## Testing Pattern
+
+```r
+# test_config.R
+test_that("Configuration initialization works", {
+  # Clean state
+  if (exists(".app_config", envir = .GlobalEnv)) {
+    rm(".app_config", envir = .GlobalEnv)
+  }
+
+  # Test explicit initialization
+  expect_true(initialize_config(
+    config_path = "tests/fixtures/test_config.yaml",
+    verbose = FALSE
+  ))
+
+  # Test configuration is accessible
+  expect_true(exists(".app_config", envir = .GlobalEnv))
+
+  # Test usage function
+  expect_error(
+    use_config_without_init(),
+    "Configuration not initialized"
+  )
+})
+```
+
+## Common Anti-Patterns
+
+### Anti-Pattern 1: Lazy Loading
+
+```r
+# ❌ WRONG: Load on first call
+my_function <- function() {
+  if (!exists(".config")) {
+    .config <<- yaml::read_yaml("config.yaml")  # Lazy load
+  }
+  # use config...
+}
+```
+
+**Problem**: Error doesn't occur until function is called by user.
+
+### Anti-Pattern 2: No Validation
+
+```r
+# ❌ WRONG: No structure validation
+initialize_config <- function() {
+  config <- yaml::read_yaml("config.yaml")
+  assign(".config", config, envir = .GlobalEnv)
+  # No validation!
+}
+```
+
+**Problem**: Missing required sections only discovered during use.
+
+### Anti-Pattern 3: Hardcoded Paths
+
+```r
+# ❌ WRONG: Single hardcoded path
+initialize_config <- function() {
+  config <- yaml::read_yaml("config/app_config.yaml")  # Only works from one directory
+  # ...
+}
+```
+
+**Problem**: Breaks when working directory changes.
+
+## Correct Pattern Summary
+
+```r
+# 1. Create initialization function with validation
+initialize_config <- function(config_path = NULL, verbose = TRUE) {
+  # Auto-detect path
+  # Validate file exists
+  # Load configuration
+  # Validate structure
+  # Store in .GlobalEnv
+}
+
+# 2. Auto-initialize when sourced (convenience)
+if (!exists(".config")) {
+  tryCatch(initialize_config(verbose = FALSE), error = warning)
+}
+
+# 3. Add to Rprofile (production guarantee)
+source("fn_initialize_config.R")
+
+# 4. Check in usage functions (fail fast)
+use_config <- function() {
+  if (!exists(".config")) stop("Not initialized. See MP136.")
+  # ...
+}
+```
+
+## Related Principles
+
+- **MP045: Universal Initialization** - Philosophical foundation for initialization
+- **MP097: DuckDB Connection Initialization** - Specific case for database connections
+- **R045: Initialization Imports Only** - What belongs in initialization scripts
+
+## Benefits
+
+1. **Fail Fast**: Configuration errors detected at startup, not during user interaction
+2. **Performance**: Single load instead of repeated file reads
+3. **Predictable**: Working directory known at initialization time
+4. **Testable**: Easy to swap configurations for testing
+5. **Maintainable**: Clear separation between initialization and usage
+6. **Reliable**: Guaranteed configuration availability
+
+## Conclusion
+
+The Configuration Initialization Pattern (MP136) establishes that external configuration files should be loaded at application startup, not at runtime. This pattern improves reliability, performance, and testability while providing clear error messages and predictable behavior.
+
+By following this pattern, applications fail fast with configuration errors, avoid repeated file I/O, and maintain clear separation between initialization and operational code.

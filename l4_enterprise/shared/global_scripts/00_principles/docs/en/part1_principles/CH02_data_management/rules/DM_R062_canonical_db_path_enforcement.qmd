@@ -1,0 +1,107 @@
+---
+id: DM_R062
+title: Canonical DB Path Enforcement
+subtitle: 資料檔案必須放在 db_paths.yaml 定義的 canonical 路徑;發現錯位置時移動資料,不改程式
+type: Rule
+category: Data Management
+status: active
+related:
+  - DM_R028  # ETL Data Type Separation
+  - DM_R056  # Mode-Specific DB Paths
+  - MP029    # No Fake Information
+  - SO_P018  # Directory Governance
+version: 1.0.0
+---
+
+## Rule
+
+**所有 `.duckdb` 檔案必須放在 `db_paths.yaml` 的 `databases:` / `domain:` section 定義的路徑下。**
+**偵測到 DB 檔案在非 canonical 位置時,SHALL move the file to the canonical path, NOT change the code to accommodate the wrong location.**
+
+## Rationale
+
+- `db_paths.yaml` 是 6-layer ETL + domain DB 的 single source of truth(DM_R028 已規範)
+- 當 code/config 期望 canonical path 但 file 在其他位置,有兩種修法:
+  1. **改程式**讓 autoinit / helper / orchestration 去嘗試舊路徑 → 增加隱性 state + legacy cruft
+  2. **移動資料**讓檔案回到 canonical 位置 → 一次到位,未來新人不會困惑
+- 選 #2 是因為 data location 是**事實**,程式只是**讀取事實**。事實錯了要改事實,不是改讀取邏輯。
+- 這對應 MP029「No Fake Information」精神:不假設 / 不繞過,回到真實狀態。
+
+## Scope
+
+適用於:
+- 6-layer ETL 底下的 `.duckdb` 檔案(raw/staged/transformed/processed/cleansed/app_data)
+- `db_paths.yaml` 的 `domain:` section 下定義的 SCD type1/2 domain DB
+- 所有經 `autoinit()` 載入 `db_path_list` 的 canonical path
+
+不適用於:
+- Temporary / working data(e.g. `_targets/objects/`, R session tempdir)
+- Archived data(有意保留歷史的檔案,應放 `archived/` 而非散落)
+- 新公司 bootstrap 時 rawdata symlink(target location 可不同,symlink 指向即可)
+
+## Enforcement
+
+### 偵測
+
+- `autoinit()` 的 fail-fast precheck(見 `autoinit-failfast-policy` spec)會對 `db_path_list` 中每個 path 做 `file.exists()` 檢查
+- `pipeline-smart-cache` helper `check_db_layers_presence()` 對 `db_paths.yaml` 定義的所有 DB 做同樣檢查
+- 當檔案不在 canonical path(但可能存在於其他位置),兩者都 **reports missing**
+
+### 修復流程(canonical > code fix)
+
+當錯位置檔案被發現:
+
+1. **Archive**(non-destructive)錯位置的檔案:
+   ```bash
+   mkdir -p <project_root>/data/archived/wrong_location
+   mv <wrong_path> <project_root>/data/archived/wrong_location/<name>_YYYYMMDD.duckdb
+   ```
+
+2. **不要** 改 `db_paths.yaml` 加 fallback path(這會累積 legacy)
+
+3. **不要** 改 autoinit / helper 去嘗試多個候選路徑
+
+4. 若 canonical path 該有檔案但沒檔案 → 跑 ETL rebuild(autoinit 會給 actionable error 提示)
+
+### 新增 / 移除 DB entry
+
+若需新增 DB layer:
+1. 更新 `db_paths.yaml` 的 `databases:` 或 `domain:`
+2. 相關 ETL script PRODUCES 到新 canonical path
+3. 不要在程式的任何地方 hardcode 其他路徑
+
+## Example
+
+### 違反(錯誤)
+
+```r
+# sc_Rprofile.R
+# BAD: fallback logic 讓 raw_data 可在 data/ 根或 data/local_data/
+raw_data_path <- if (file.exists(file.path(base, "data", "raw_data.duckdb"))) {
+  file.path(base, "data", "raw_data.duckdb")
+} else {
+  file.path(base, "data", "local_data", "raw_data.duckdb")
+}
+```
+
+### 符合(正確)
+
+```r
+# sc_Rprofile.R
+# GOOD: 只讀 canonical path,其他位置由使用者移動
+raw_data_path <- file.path(base, db_config$databases$raw_data)
+if (!file.exists(raw_data_path)) {
+  stop("raw_data.duckdb not at canonical path: ", raw_data_path,
+       "\nIf you have this file elsewhere, move it to this path.",
+       "\nDo not add fallback paths to the code.")
+}
+```
+
+## History
+
+- 2026-04-19:新增。觸發事件:#421 Phase 2 debug 發現 QEF_DESIGN 的 `data/raw_data.duckdb` 在錯位置(canonical 是 `data/local_data/raw_data.duckdb`)。使用者明確指示「移動資料,不改程式」,由此 codify 為 principle。
+
+## Related Issues
+
+- #421 autoinit fail-fast + smart cache detection
+- Spectra change: `autoinit-failfast-smart-cache`(design.md Decision 1 的補充 policy)

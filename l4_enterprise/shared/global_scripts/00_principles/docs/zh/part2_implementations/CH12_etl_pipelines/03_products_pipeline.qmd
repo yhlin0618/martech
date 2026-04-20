@@ -1,0 +1,524 @@
+---
+
+title: "Products Pipeline Patterns"
+subtitle: "ETL Patterns for Product Catalog Data"
+category: "ETL Pipelines - Products"
+level: "CH11.03"
+status: "Active"
+created: "2025-08-29"
+modified: "2025-12-26"
+version: "2.1"
+principle_refs:
+  - "MP104: ETL Data Flow Separation"
+  - "MP102: ETL Output Standardization"
+  - "MP107: ETL Pipeline Independence"
+  - "DM_R052: Cross-Platform Product Identification"
+---
+
+# Products Pipeline Patterns
+
+## Overview
+
+The products pipeline handles product catalog data including profiles, properties, and attributes. This pipeline often involves processing data from Google Sheets or APIs with multilingual content.
+
+## Pipeline Architecture
+
+```mermaid
+graph TD
+    subgraph "0IM: Import Phase"
+        A1[Google Sheets] --> B1[Raw Product Profiles]
+        A2[Product API] --> B2[Raw Product Properties]
+        B1 --> C1[df_product_profile_{line}___raw]
+        B2 --> C2[df_product_property___raw]
+    end
+
+    subgraph "1ST: Staging Phase"
+        C1 --> D1[Validate & Optimize]
+        C2 --> D2[Validate & Optimize]
+        D1 --> E1[df_product_profile_{line}___staged]
+        D2 --> E2[df_product_property___staged]
+    end
+
+    subgraph "2TR: Transform Phase"
+        E1 --> F1[df_product_profile_{line}___transformed]
+        E2 --> F2[df_product_property___transformed]
+    end
+```
+
+## Product Profile Pattern
+
+### 0IM: Import Product Profiles
+
+```r
+# {platform}_ETL_products_0IM.R
+autoinit()
+
+tryCatch({
+  # Load product line configuration
+  product_lines <- dbGetQuery(app_data, "SELECT * FROM df_product_line WHERE is_active = 1")
+
+  # Import each product line
+  for (i in 1:nrow(product_lines)) {
+    product_line <- product_lines[i, ]
+    sheet_name <- paste0("product_profile_", product_line$product_line_id)
+
+    # Import from Google Sheets
+    profile_data <- googlesheets4::read_sheet(
+      config$sheet_id,
+      sheet = sheet_name
+    )
+
+    # Add metadata
+    profile_data$import_timestamp <- Sys.time()
+    profile_data$product_line_id <- product_line$product_line_id
+
+    # Write to raw layer
+    table_name <- paste0("df_product_profile_", product_line$product_line_id)
+    dbWriteTable(raw_data, table_name, profile_data, overwrite = TRUE)
+
+    message("Imported ", nrow(profile_data), " products for ", product_line$product_line_id)
+  }
+
+}, error = function(e) {
+  stop("0IM failed: ", e$message)
+})
+
+autodeinit()
+```
+
+### 1ST: Stage Product Profiles
+
+```r
+# {platform}_ETL_products_1ST.R
+autoinit()
+
+tryCatch({
+  # Get all raw product profile tables
+  raw_tables <- dbListTables(raw_data)
+  profile_tables <- raw_tables[grepl("^df_product_profile_", raw_tables)]
+
+  for (table_name in profile_tables) {
+    # Read raw data
+    raw_data_df <- dbReadTable(raw_data, table_name)
+
+    # Apply data type optimization
+    staged_data <- raw_data_df %>%
+      mutate(
+        # Clean numeric fields
+        price = as.numeric(gsub("[^0-9.]", "", price)),
+        rating = as.numeric(rating),
+        num_rating = as.integer(num_rating),
+
+        # Fix encoding
+        product_title = iconv(product_title, to = "UTF-8"),
+        product_brand = iconv(product_brand, to = "UTF-8"),
+
+        # Staging metadata
+        staged_timestamp = Sys.time(),
+        validation_status = "passed"
+      )
+
+    # Write to staged layer
+    staged_table_name <- paste0(table_name, "___staged")
+    dbWriteTable(staged_data_db, staged_table_name, staged_data, overwrite = TRUE)
+  }
+
+}, error = function(e) {
+  stop("1ST failed: ", e$message)
+})
+
+autodeinit()
+```
+
+### 2TR: Transform Product Profiles
+
+```r
+# {platform}_ETL_products_2TR.R
+autoinit()
+
+tryCatch({
+  # Get all staged product profile tables
+  staged_tables <- dbListTables(staged_data)
+  profile_tables <- staged_tables[grepl("___staged$", staged_tables)]
+
+  for (table_name in profile_tables) {
+    # Read staged data
+    staged_data_df <- dbReadTable(staged_data, table_name)
+
+    # Apply column mapping using aliases
+    transformed_data <- staged_data_df %>%
+      rename_with_aliases(config$list_colname_aliases) %>%
+      mutate(
+        # Standardize product ID
+        product_id = as.character(product_id),
+
+        # Calculate derived fields
+        price_tier = case_when(
+          price < 10 ~ "budget",
+          price < 50 ~ "mid",
+          price < 100 ~ "premium",
+          TRUE ~ "luxury"
+        ),
+
+        # Add transformation metadata
+        transform_timestamp = Sys.time(),
+        schema_version = "2TR_v2.0"
+      )
+
+    # Write to transformed layer
+    transformed_table_name <- gsub("___staged$", "___transformed", table_name)
+    dbWriteTable(transformed_data_db, transformed_table_name, transformed_data, overwrite = TRUE)
+  }
+
+}, error = function(e) {
+  stop("2TR failed: ", e$message)
+})
+
+autodeinit()
+```
+
+## Product Properties Pattern
+
+For comment properties, review attributes, and other product-related metadata:
+
+### 0IM: Import Product Properties
+
+```r
+# {platform}_ETL_properties_0IM.R
+autoinit()
+
+tryCatch({
+  # Import from Google Sheets (multi-sheet)
+  properties_all <- list()
+
+  for (product_line in product_lines$product_line_id) {
+    sheet_data <- googlesheets4::read_sheet(
+      config$sheet_id,
+      sheet = product_line
+    )
+
+    sheet_data$product_line_id <- product_line
+    properties_all[[product_line]] <- sheet_data
+  }
+
+  # Combine all product lines
+  properties_raw <- bind_rows(properties_all)
+  properties_raw$import_timestamp <- Sys.time()
+
+  # Write to raw layer
+  dbWriteTable(raw_data, "df_product_property___raw", properties_raw, overwrite = TRUE)
+
+}, error = function(e) {
+  stop("0IM failed: ", e$message)
+})
+
+autodeinit()
+```
+
+### 1ST: Stage Product Properties
+
+```r
+# {platform}_ETL_properties_1ST.R
+autoinit()
+
+tryCatch({
+  # Read raw properties
+  properties_raw <- dbReadTable(raw_data, "df_product_property___raw")
+
+  # Stage with validation
+  properties_staged <- properties_raw %>%
+    mutate(
+      # Clean property fields
+      property_id = as.integer(property_id),
+      property_name = iconv(property_name, to = "UTF-8"),
+      property_name_english = iconv(property_name_english, to = "UTF-8"),
+
+      # Validate required fields
+      is_valid = !is.na(property_id) & !is.na(property_name),
+
+      # Staging metadata
+      staged_timestamp = Sys.time()
+    ) %>%
+    filter(is_valid)
+
+  # Check for duplicates
+  duplicates <- properties_staged %>%
+    group_by(product_line_id, property_id) %>%
+    filter(n() > 1)
+
+  if (nrow(duplicates) > 0) {
+    warning("Found ", nrow(duplicates), " duplicate properties")
+  }
+
+  # Write to staged layer
+  dbWriteTable(staged_data, "df_product_property___staged", properties_staged, overwrite = TRUE)
+
+}, error = function(e) {
+  stop("1ST failed: ", e$message)
+})
+
+autodeinit()
+```
+
+### 2TR: Transform Product Properties
+
+```r
+# {platform}_ETL_properties_2TR.R
+autoinit()
+
+tryCatch({
+  # Read staged properties
+  properties_staged <- dbReadTable(staged_data, "df_product_property___staged")
+
+  # Apply business transformations
+  properties_transformed <- properties_staged %>%
+    mutate(
+      # Generate lookup keys
+      property_lookup_key = paste0(product_line_id, "_", property_id),
+
+      # Calculate completeness score
+      completeness_score = (
+        (!is.na(definition)) * 0.3 +
+        (!is.na(review_1)) * 0.2 +
+        (!is.na(review_2)) * 0.2 +
+        (!is.na(review_3)) * 0.3
+      ),
+
+      # Assign quality rank
+      property_quality_rank = case_when(
+        completeness_score >= 0.8 ~ "A",
+        completeness_score >= 0.5 ~ "B",
+        TRUE ~ "C"
+      ),
+
+      # Flag analysis readiness
+      is_analysis_ready = completeness_score >= 0.5,
+
+      # Transformation metadata
+      transform_timestamp = Sys.time()
+    )
+
+  # Write to transformed layer
+  dbWriteTable(transformed_data, "df_product_property___transformed", properties_transformed, overwrite = TRUE)
+
+}, error = function(e) {
+  stop("2TR failed: ", e$message)
+})
+
+autodeinit()
+```
+
+## Cross-Platform Product Mapping Pattern
+
+*Added 2025-12-26 - Following DM_R052*
+
+For mapping product IDs across platforms (CBZ SKU ↔ eBay item number ↔ Amazon ASIN), a dedicated mapping table with surrogate key supports M:N (many-to-many) relationships.
+
+### Why M:N Relationship Support?
+
+| Scenario | Example |
+|----------|---------|
+| **1 SKU → N eBay** | Same product listed in different colors, each as separate eBay listing |
+| **N SKU → 1 eBay** | Bundle/combo pack containing multiple SKUs |
+
+### 0IM: Import Product Mapping
+
+```r
+# all_ETL_product_mapping_0IM___MAMBA.R
+#' Following: DM_R052 (Cross-Platform Product Identification)
+#' Following: DM_R037 (Company-Specific ETL Naming)
+
+autoinit()
+
+tryCatch({
+  # Read from Excel (product mapping source)
+  excel_path <- file.path(g_project_root,
+    "data/local_data/rawdata_MAMBA/SKUtoeBay numbers/SKUtoeBay number.xlsx")
+
+  df_mapping_raw <- read_excel(excel_path, sheet = "sku details", skip = 5)
+
+  # Standardize columns with surrogate key
+  df_product_mapping <- df_mapping_raw %>%
+    transmute(
+      sku = as.character(SKU),
+      eby_item_id = as.character(`eBay number`),
+      amz_asin = NA_character_,  # Reserved for Amazon
+      product_name = as.character(Name),
+      product_line_name = as.character(`Product Line`),
+      color_variant = NA_character_  # For M:N tracking
+    ) %>%
+    filter(!is.na(sku) | !is.na(eby_item_id)) %>%
+    mutate(mapping_id = row_number())  # Surrogate key
+
+  # Write to app_data (metadata table)
+  dbWriteTable(app_con, "df_product_mapping", df_product_mapping, overwrite = TRUE)
+
+  message("Imported ", nrow(df_product_mapping), " product mappings")
+
+}, error = function(e) {
+  stop("Product mapping ETL failed: ", e$message)
+})
+
+autodeinit()
+```
+
+### Product Mapping Schema (M:N Design)
+
+```yaml
+df_product_mapping:
+  - mapping_id: INTEGER      # PK, auto-increment (Surrogate Key)
+  - sku: STRING              # CBZ/Official SKU (allows duplicates, nullable)
+  - eby_item_id: STRING      # eBay item number (allows duplicates, nullable)
+  - amz_asin: STRING         # Amazon ASIN (reserved, nullable)
+  - product_name: STRING     # Product name
+  - product_line_name: STRING # Product line
+  - color_variant: STRING    # Color variant (optional, for M:N tracking)
+```
+
+### M:N Relationship Examples
+
+| mapping_id | sku | eby_item_id | Explanation |
+|------------|-----|-------------|-------------|
+| 1 | A001 | 12345 | Standard 1:1 mapping |
+| 2 | A001 | 12346 | Same SKU, different color (1:N) |
+| 3 | A002 | 99999 | Bundle product (N:1) |
+| 4 | A003 | 99999 | Bundle product (N:1) |
+
+### Usage in DRV Scripts
+
+```r
+# Join CBZ data with eBay equivalents
+# Following: DM_R052
+cbz_data %>%
+  left_join(tbl2(app_con, "df_product_mapping"), by = "sku")
+
+# Join eBay data with CBZ equivalents
+eby_data %>%
+  left_join(tbl2(app_con, "df_product_mapping"),
+            by = c("ebay_item_number" = "eby_item_id"))
+
+# Handle M:N in aggregation
+cbz_sales %>%
+  left_join(mapping, by = "sku") %>%
+  group_by(sku) %>%
+  summarize(
+    total_sales = sum(amount),
+    eby_listing_count = n_distinct(eby_item_id)
+  )
+```
+
+### Key Design Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Primary Key** | Surrogate (`mapping_id`) | NULL handling, M:N support |
+| **SKU/eBay columns** | Allow duplicates + NULL | Partial data, M:N relationships |
+| **Storage location** | `app_data.duckdb` | Metadata table |
+| **File suffix** | `___MAMBA` | Company-specific mapping |
+
+## Standard Output Schemas
+
+### Product Profile Schema
+
+```yaml
+df_product_profile_{line}___transformed:
+  - product_id: STRING          # Unique product identifier
+  - product_title: STRING       # UTF-8 product name
+  - product_brand: STRING       # Brand name
+  - price: DOUBLE               # Product price
+  - rating: DOUBLE              # Average rating (1-5)
+  - num_rating: INTEGER         # Number of ratings
+  - price_tier: STRING          # budget/mid/premium/luxury
+  - product_line_id: STRING     # Product line identifier
+  - transform_timestamp: TIMESTAMP
+  - schema_version: STRING
+```
+
+### Product Property Schema
+
+```yaml
+df_product_property___transformed:
+  - property_lookup_key: STRING   # Primary lookup key
+  - product_line_id: STRING       # Product line
+  - property_id: INTEGER          # Property identifier
+  - property_name: STRING         # Chinese name
+  - property_name_english: STRING # English name
+  - definition: STRING            # Property definition
+  - completeness_score: DOUBLE    # 0-1 quality score
+  - property_quality_rank: STRING # A/B/C rank
+  - is_analysis_ready: BOOLEAN    # Ready for analysis flag
+  - transform_timestamp: TIMESTAMP
+```
+
+## Configuration-Driven Column Mapping
+
+Use YAML-based column aliases for flexible mapping:
+
+```yaml
+# In app_config.yaml
+list_colname_aliases:
+  standard_names:
+    product_brand:
+      - "brand"
+      - "Brand"
+    product_id:
+      - "asin"
+      - "ASIN"
+      - "product_code"
+    product_title:
+      - "title"
+      - "Title"
+    price:
+      - "Price"
+    rating:
+      - "Rating"
+```
+
+## Special Considerations
+
+### Multi-Product Line Processing
+
+```r
+# Process each product line independently
+for (product_line in active_product_lines) {
+  process_product_line(product_line)
+}
+```
+
+### Google Sheets Timeout Handling
+
+```r
+# Retry mechanism for API timeouts
+max_attempts <- 3
+for (attempt in 1:max_attempts) {
+  result <- tryCatch({
+    googlesheets4::read_sheet(sheet_id, sheet = sheet_name)
+  }, error = function(e) {
+    if (grepl("Timeout", e$message) && attempt < max_attempts) {
+      Sys.sleep(5)
+      NULL
+    } else {
+      stop(e)
+    }
+  })
+  if (!is.null(result)) break
+}
+```
+
+## Validation Requirements
+
+| Phase | Validation | Action |
+|-------|-----------|--------|
+| **0IM** | Sheet exists, rows > 0 | Skip sheet if missing |
+| **1ST** | Required fields present, types valid | Log warnings |
+| **2TR** | No duplicate product_ids | Deduplicate by most recent |
+
+## Related Documentation
+
+- [index.qmd](index.qmd) - CH11 Overview
+- [01_sales_pipeline.qmd](01_sales_pipeline.qmd) - Sales patterns
+- [05_etl_independence.qmd](05_etl_independence.qmd) - Independence requirements
+
+---
+
+*Consolidated from `04_products_pipeline/` directory on 2025-12-24*

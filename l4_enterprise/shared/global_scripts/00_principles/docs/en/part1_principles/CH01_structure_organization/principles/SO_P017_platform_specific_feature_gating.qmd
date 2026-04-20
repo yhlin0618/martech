@@ -1,0 +1,273 @@
+---
+title: "SO_P017: Platform-Specific Feature Gating Principle"
+subtitle: "Features can be enabled or disabled per platform through configuration, allowing platform-specific functionality without code changes"
+chapter: "CH01"
+category: "principle"
+number: "SO_P017"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "principle"
+law: "Structure & Organization Law"
+article-number:
+  number: 17
+  title: "Platform-Specific Feature Gating Principle"
+related_to:
+  - "SO_P010: Config-Driven Customization"
+  - "SO_R005: App YAML Configuration"
+  - "SO_R037: Feature Flag Configuration"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 17: Platform-Specific Feature Gating Principle {#overview}
+
+**Structure & Organization Law Article 17 (Platform-Specific Feature Gating Principle)**
+
+Application features can be enabled or disabled for specific platforms through configuration. This allows the same codebase to serve multiple platforms (e.g., eBay, Cyberbiz, Amazon) with platform-appropriate functionality, controlled entirely through `app_config.yaml`.
+
+:::{.callout-important}
+## Core Principle
+Feature availability is determined by configuration, not code. Use `is_feature_enabled_for_platform()` to check feature state. Default behavior is to enable features when not explicitly configured.
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Configuration-Driven Approach {#config-driven}
+
+**Configuration Over Code:**
+
+Features must be controlled through configuration, not hardcoded if-else statements:
+
+```yaml
+# app_config.yaml
+features:
+  poisson_comment:
+    enabled_for: ["eby"]        # Only enabled for eBay
+  rfm_analysis:
+    enabled_for: ["all"]        # Enabled for all platforms
+  advanced_segmentation:
+    enabled_for: ["cbz", "eby"] # Enabled for Cyberbiz and eBay
+```
+
+**Never Do This:**
+
+```r
+# VIOLATION: Hardcoded platform check
+if (platform == "eby") {
+  show_poisson_comment()
+}
+```
+
+**Do This Instead:**
+
+```r
+# COMPLIANT: Configuration-driven check
+if (is_feature_enabled_for_platform("poisson_comment", platform)) {
+  show_poisson_comment()
+}
+```
+
+## Subsection 2: Default-Enable Behavior {#default-enable}
+
+**Safe Default Pattern:**
+
+When a feature is not explicitly configured, it defaults to **enabled**. This prevents accidentally disabling functionality when features are added.
+
+```r
+is_feature_enabled_for_platform <- function(feature_name, platform) {
+  # Get feature config
+  feature_config <- app_configs$features[[feature_name]]
+
+  # Not configured = enabled (safe default)
+  if (is.null(feature_config)) {
+    return(TRUE)
+  }
+
+  enabled_list <- feature_config$enabled_for
+
+  # Empty list = disabled for all
+  if (is.null(enabled_list) || length(enabled_list) == 0) {
+    return(FALSE)
+  }
+
+  # "all" keyword = enabled for all
+  if ("all" %in% enabled_list) {
+    return(TRUE)
+  }
+
+  # Check if platform is in enabled list
+  return(platform %in% enabled_list)
+}
+```
+
+## Subsection 3: UI Integration {#ui-integration}
+
+**Disabling UI Elements:**
+
+When a feature is disabled for a platform:
+1. Disable the menu item or button (gray out)
+2. Show a helpful tooltip explaining why
+3. Redirect user if they're on the disabled page
+
+```r
+observeEvent(input$platform, {
+  platform_id <- input$platform
+
+  feature_enabled <- is_feature_enabled_for_platform(
+    "poisson_comment",
+    platform_id
+  )
+
+  if (!feature_enabled) {
+    # Disable menu item via JavaScript
+    shinyjs::runjs(sprintf(
+      '$("#sidebarMenu li a[data-value=\\'%s\\']")
+        .addClass("disabled-menu-item")
+        .attr("title", "%s");',
+      "poisson_comment",
+      translate("Comment analysis is not available for this platform")
+    ))
+
+    # Redirect if user is on disabled page
+    if (input$sidebarMenu == "poisson_comment") {
+      updateTabItems(session, "sidebarMenu", "customer_dna")
+    }
+  } else {
+    # Re-enable menu item
+    shinyjs::runjs(sprintf(
+      '$("#sidebarMenu li a[data-value=\\'%s\\']")
+        .removeClass("disabled-menu-item")
+        .removeAttr("title");',
+      "poisson_comment"
+    ))
+  }
+})
+```
+
+# Section 2: Benefits Analysis {#benefits-analysis}
+
+## Subsection 1: Business Flexibility {#business-flexibility}
+
+**Advantages:**
+
+1. **Platform-Specific Features**: Different platforms may have different data, enabling different features
+2. **Gradual Rollout**: Enable features for specific platforms before full rollout
+3. **No Deployment Required**: Change feature availability without code deployment
+4. **A/B Testing Ready**: Easy to enable features for specific platform groups
+
+## Subsection 2: Technical Benefits {#technical-benefits}
+
+**Development Advantages:**
+
+1. **Single Codebase**: One codebase serves all platforms
+2. **Clean Separation**: Feature logic separated from availability logic
+3. **Testability**: Easy to test features in isolation
+4. **Auditability**: Feature availability is documented in config
+
+# Section 3: Use Cases {#use-cases}
+
+## Subsection 1: Data-Dependent Features {#data-dependent}
+
+**Example: Review Analysis**
+
+Some platforms have review/rating data, others don't:
+
+```yaml
+features:
+  # Only eBay has review data
+  poisson_comment:
+    enabled_for: ["eby"]
+
+  # RFM analysis available for all platforms with order data
+  rfm_analysis:
+    enabled_for: ["all"]
+```
+
+## Subsection 2: Premium Features {#premium-features}
+
+**Example: Tiered Access**
+
+```yaml
+features:
+  # Basic features for all
+  basic_analytics:
+    enabled_for: ["all"]
+
+  # Advanced features for specific clients
+  advanced_segmentation:
+    enabled_for: ["cbz", "amz"]
+
+  # Enterprise-only features
+  custom_reports:
+    enabled_for: ["cbz"]
+```
+
+# Section 4: Violations and Compliance {#violations-compliance}
+
+## Subsection 1: Violations {#violations}
+
+**Common Violations:**
+
+```r
+# VIOLATION: Hardcoded platform check
+if (platform == "eby") {
+  show_feature()
+}
+
+# VIOLATION: Negated platform check
+if (platform != "cbz") {
+  hide_feature()
+}
+
+# VIOLATION: Checking in multiple places
+# In server.R
+if (platform == "eby") { ... }
+# In ui.R
+if (platform == "eby") { ... }  # Duplicated logic!
+```
+
+## Subsection 2: Compliant Examples {#compliant}
+
+**Correct Implementation:**
+
+```r
+# COMPLIANT: Centralized feature check
+source("scripts/global_scripts/04_utils/fn_is_feature_enabled_for_platform.R")
+
+if (is_feature_enabled_for_platform("feature_name", platform)) {
+  show_feature()
+}
+
+# COMPLIANT: Reactive feature state
+feature_state <- reactive({
+  is_feature_enabled_for_platform("feature_name", input$platform)
+})
+
+output$feature_ui <- renderUI({
+  if (feature_state()) {
+    feature_ui()
+  } else {
+    disabled_placeholder()
+  }
+})
+```
+
+# Section 5: Principle Relationships {#principle-relationships}
+
+This principle:
+
+1. **Extends SO_P010 (Config-Driven Customization)** to feature-level control
+2. **Implemented By SO_R037 (Feature Flag Configuration)** for specific patterns
+3. **Uses SO_R005 (App YAML Configuration)** for feature definitions
+4. **Enables UI_P012 (Multi-Language UI Support)** for disabled feature messages
+
+---
+
+*Based on: Structure & Organization Law Article 17*
+*Related to: [SO_P010 Config-Driven Customization](SO_P010_config_driven_customization.qmd)*

@@ -1,0 +1,207 @@
+---
+id: "DM_R048"
+title: "Derivation Timestamp Standard Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-12-23"
+date_modified: "2025-12-23"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 48
+implements:
+  - "DM_P001": "Data Integrity Principle"
+  - "MP109": "Derived Data Pipelines Principle"
+related_to:
+  - "DM_R044": "Derivation Implementation Standard Rule"
+  - "MP108": "ETL Phase Sequence Principle"
+  - "DM_R027": "ETL Schema Validation Rule"
+supersedes:
+  - "Legacy derivation patterns without timestamp metadata"
+---
+
+# DM_R048: Derivation Timestamp Standard Rule
+
+## Rule Statement
+
+**All DRV (Derivation) output tables written to app_data MUST include standardized timestamp metadata columns**: This ensures data freshness tracking, batch correlation, and debugging capability across the derivation layer.
+
+## Required Metadata Columns
+
+Every table produced by a DRV script MUST include these columns:
+
+| Column Name | Type | Required | Description |
+|-------------|------|----------|-------------|
+| `derivation_timestamp` | TIMESTAMP | YES | UTC timestamp when row was derived |
+| `derivation_batch_id` | VARCHAR | YES | Execution batch identifier (YYYYMMDD_HHMMSS) |
+| `derivation_script` | VARCHAR | YES | Script name that produced this data |
+
+## Implementation Pattern
+
+### PART 1: INITIALIZE
+
+```r
+# Generate batch_id at script start (consistent across all tables)
+drv_batch_id <- format(Sys.time(), "%Y%m%d_%H%M%S")
+drv_script_name <- "cbz_D01_06"  # Match filename
+
+# Source metadata utility function
+drv_metadata_fn_path <- file.path(GLOBAL_DIR, "04_utils", "fn_add_drv_metadata.R")
+if (file.exists(drv_metadata_fn_path)) source(drv_metadata_fn_path)
+```
+
+### PART 2: MAIN
+
+```r
+# Add metadata before writing each table
+customer_profile <- add_drv_metadata(customer_profile, drv_script_name, drv_batch_id)
+customer_dna <- add_drv_metadata(customer_dna, drv_script_name, drv_batch_id)
+customer_segments <- add_drv_metadata(customer_segments, drv_script_name, drv_batch_id)
+
+dbWriteTable(app_data, "df_profile_by_customer", customer_profile, overwrite = TRUE)
+dbWriteTable(app_data, "df_dna_by_customer", customer_dna, overwrite = TRUE)
+dbWriteTable(app_data, "df_segments_by_customer", customer_segments, overwrite = TRUE)
+```
+
+## Utility Function
+
+Located at `global_scripts/04_utils/fn_add_drv_metadata.R`:
+
+```r
+#' Add DRV Metadata Columns (DM_R048)
+#'
+#' @param df Data frame to modify
+#' @param script_name Name of the DRV script (e.g., "cbz_D01_06")
+#' @param batch_id Optional batch ID. If NULL, generates from current time
+#' @return Data frame with three additional columns
+add_drv_metadata <- function(df, script_name, batch_id = NULL) {
+  if (is.null(batch_id)) {
+    batch_id <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  }
+
+  df %>%
+    dplyr::mutate(
+      derivation_timestamp = Sys.time(),
+      derivation_batch_id = batch_id,
+      derivation_script = script_name
+    )
+}
+```
+
+## Naming Convention Rationale
+
+The naming follows established ETL timestamp patterns:
+
+| Layer | Prefix | Example Column |
+|-------|--------|----------------|
+| ETL 0IM | `import_` | `import_timestamp` |
+| ETL 1ST | `staging_` | `staging_timestamp` |
+| ETL 2TR | `transform_` | `transform_timestamp` |
+| DRV | `derivation_` | `derivation_timestamp` |
+
+## Query Patterns Enabled
+
+### Check Data Freshness
+
+```sql
+SELECT MAX(derivation_timestamp) AS last_update FROM df_dna_by_customer;
+```
+
+### Find All Data from Specific Execution
+
+```sql
+SELECT * FROM df_dna_by_customer WHERE derivation_batch_id = '20251223_143052';
+```
+
+### Identify Data Source for Debugging
+
+```sql
+SELECT DISTINCT derivation_script FROM df_segments_by_customer;
+```
+
+### Verify All Tables Updated in Same Batch
+
+```sql
+SELECT
+  table_name,
+  MAX(derivation_batch_id) as last_batch
+FROM (
+  SELECT 'df_profile_by_customer' as table_name, derivation_batch_id FROM df_profile_by_customer
+  UNION ALL
+  SELECT 'df_dna_by_customer', derivation_batch_id FROM df_dna_by_customer
+  UNION ALL
+  SELECT 'df_segments_by_customer', derivation_batch_id FROM df_segments_by_customer
+)
+GROUP BY table_name;
+```
+
+## Validation Requirements
+
+### PART 3: TEST
+
+DRV scripts SHOULD validate that metadata columns are present:
+
+```r
+required_drv_metadata <- c("derivation_timestamp", "derivation_batch_id", "derivation_script")
+
+for (table_name in output_tables) {
+  columns <- dbListFields(app_data, table_name)
+  missing <- setdiff(required_drv_metadata, columns)
+  if (length(missing) > 0) {
+    warning(sprintf("DM_R048: Table %s missing metadata columns: %s",
+                   table_name, paste(missing, collapse = ", ")))
+  }
+}
+```
+
+## Benefits
+
+### Data Freshness Tracking
+- Immediately know when data was last updated
+- Detect stale data before it causes issues
+
+### Batch Correlation
+- Link all tables from the same execution
+- Verify data consistency across related tables
+
+### Debugging Support
+- Identify which script produced problematic data
+- Trace data lineage through processing pipeline
+
+### Audit Trail
+- Complete history of data derivation
+- Support for regulatory compliance requirements
+
+## Relationship to Other Rules
+
+### Extends
+- **DM_R044**: Adds metadata requirements to derivation standard
+
+### Mirrors
+- **ETL timestamp pattern**: Consistent with 0IM/1ST/2TR timestamp columns
+
+### Supports
+- **DM_P001**: Enables data integrity verification
+- **MP109**: Identifies derived data sources
+
+## Future Extension Path
+
+If execution logging becomes necessary, an enhanced version can be implemented by adding:
+
+1. `drv_execution_log` table in app_data
+2. `drv_execution_id` column linking to log table
+3. Historical tracking of all DRV executions with duration, row counts, and status
+
+This rule provides a stable foundation that supports future enhancement without breaking existing implementations.
+
+## Implementation Checklist
+
+- [ ] Utility function `fn_add_drv_metadata.R` exists in `04_utils/`
+- [ ] DRV script generates `drv_batch_id` in PART 1: INITIALIZE
+- [ ] All output tables have metadata added before `dbWriteTable()`
+- [ ] PART 3: TEST validates metadata columns exist
+- [ ] Script header includes `DM_R048` in PRINCIPLE list
+
+## Conclusion
+
+The Derivation Timestamp Standard (DM_R048) establishes a lightweight but effective metadata framework for all derivation outputs. By adding three columns to each output table, this rule enables data freshness tracking, batch correlation, and debugging capabilities while maintaining minimal implementation overhead and full backward compatibility.

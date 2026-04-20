@@ -1,0 +1,237 @@
+---
+title: "DM_R003: Database Access via tbl() Rule"
+subtitle: "Prioritize dplyr::tbl() for database operations with lazy evaluation and query optimization"
+chapter: "CH02"
+category: "rule"
+number: "DM_R003"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "資料管理法施行細則 (Data Management Law Implementation Rules)"
+article-number: "第3條"
+derives_from:
+  - "CH00.MP016: Modularity"
+  - "CH00.MP017: Separation of Concerns"
+  - "CH03.DEV_P077: Performance Optimization"
+  - "CH02.DM_R092: Universal DBI Approach"
+influences:
+  - "CH01.SO_P003: App Construction Principles"
+  - "CH02.DM_R002: Universal Data Access Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**資料管理法施行細則第3條（使用 tbl() 的資料庫存取規則）**
+
+本條規定從資料庫連接讀取資料時，應優先使用 dplyr 套件的 `tbl()` 函數，而非直接的表格讀取或查詢。`tbl()` 方法允許延遲評估、查詢組合，以及與 tidyverse 生態系統更好的整合。
+
+:::{.callout-important}
+## 核心規則
+從資料庫連接讀取資料時，總是優先使用 dplyr 套件的 `tbl()` 函數，而非直接的表格讀取或查詢。
+:::
+
+# 第一項：實作指導原則 {#implementation-guidelines}
+
+## 第一款：主要存取模式 {#primary-pattern}
+
+- 使用 `dplyr::tbl(conn, table_name)` 後接 `dplyr::collect()` 來檢索資料
+- 對於自訂查詢，使用 `dplyr::tbl(conn, dbplyr::sql(query_string))` 後接 `collect()`
+- 只在 dplyr 不可用時才退回到直接方法（`DBI::dbReadTable`、`DBI::dbGetQuery`）
+
+## 第二款：相依性管理 {#dependency-management}
+
+- 使用 `requireNamespace("dplyr", quietly = TRUE)` 檢查 dplyr 的可用性
+- 使用 `requireNamespace("dbplyr", quietly = TRUE)` 檢查 dbplyr（處理 SQL 查詢時）
+- 當相依套件缺失時實作優雅的退回機制
+
+## 第三款：查詢組合 {#query-composition}
+
+- 在收集結果前，在表格參考上運用 dplyr 動詞
+- 在 tbl 參考上使用 `select()`、`filter()`、`mutate()` 等以優化查詢執行
+
+## 第四款：延遲評估 {#lazy-evaluation}
+
+:::{.callout-note}
+## 延遲評估優勢
+- 利用 tbl 參考的延遲評估特性
+- 只在需要最終結果時呼叫 `collect()`
+- 在除錯時使用 `show_query()` 檢查生成的 SQL
+:::
+
+## 第五款：錯誤處理 {#error-handling}
+
+- 為 tbl 和退回方法實作適當的錯誤處理
+- 記錄所使用的存取方法以便除錯和稽核
+
+# 第二項：實作範例 {#examples}
+
+## 第一款：正確實作 {#correct-implementation}
+
+:::{.panel-tabset}
+
+### 使用 tbl() 的偏好方法
+
+```r
+# 使用 tbl() 的偏好方法
+get_customer_data <- function(conn, customer_id = NULL) {
+  # 取得表格的參考
+  customers_ref <- dplyr::tbl(conn, "customer_profile")
+  
+  # 如需要應用過濾器（這些會推送到資料庫）
+  if (!is.null(customer_id)) {
+    customers_ref <- customers_ref %>% 
+      dplyr::filter(customer_id == !!customer_id)
+  }
+  
+  # 只在最後收集
+  return(dplyr::collect(customers_ref))
+}
+```
+
+### 自訂查詢
+
+```r
+# 使用 tbl() 與 sql() 的自訂查詢
+execute_complex_query <- function(conn, query_string) {
+  result_ref <- dplyr::tbl(conn, dbplyr::sql(query_string))
+  return(dplyr::collect(result_ref))
+}
+```
+
+### 完整實作與退回機制
+
+```r
+# 包含退回機制的完整實作
+get_data_with_fallback <- function(conn, table_name, filters = NULL) {
+  # 檢查 dplyr 可用性
+  if (requireNamespace("dplyr", quietly = TRUE)) {
+    # 偏好的 tbl() 方法
+    tbl_ref <- dplyr::tbl(conn, table_name)
+    
+    # 應用過濾器
+    if (!is.null(filters)) {
+      for (col in names(filters)) {
+        tbl_ref <- dplyr::filter(tbl_ref, 
+                                 .data[[col]] == filters[[col]])
+      }
+    }
+    
+    # 記錄方法
+    message("Using dplyr::tbl() for database access")
+    return(dplyr::collect(tbl_ref))
+    
+  } else {
+    # 退回到直接 DBI 方法
+    message("Falling back to DBI::dbReadTable()")
+    data <- DBI::dbReadTable(conn, table_name)
+    
+    # 在 R 中應用過濾器
+    if (!is.null(filters)) {
+      for (col in names(filters)) {
+        data <- data[data[[col]] == filters[[col]], ]
+      }
+    }
+    
+    return(data)
+  }
+}
+```
+
+:::
+
+## 第二款：錯誤實作 {#incorrect-implementation}
+
+:::{.callout-warning}
+## 避免這些模式
+
+```r
+# 避免直接表格讀取
+get_customer_data <- function(conn, customer_id = NULL) {
+  # 讀取整個表格然後在 R 中過濾是低效的
+  customers <- DBI::dbReadTable(conn, "customer_profile")
+  
+  if (!is.null(customer_id)) {
+    customers <- customers[customers$customer_id == customer_id, ]
+  }
+  
+  return(customers)
+}
+
+# 避免標準操作的直接查詢執行
+execute_query <- function(conn) {
+  # 這繞過了 dplyr 的優化好處
+  return(DBI::dbGetQuery(conn, "SELECT * FROM customer_profile"))
+}
+```
+:::
+
+# 第三項：與通用資料存取器的整合 {#universal-accessor-integration}
+
+## 第一款：實作要求 {#implementation-requirements}
+
+通用資料存取器（DM_R002）必須透過以下方式實作此規則：
+
+1. 在處理資料庫連接時優先使用 tbl() 方法
+2. 為缺少 dplyr/dbplyr 的環境提供退回機制
+3. 實作所使用存取方法的適當記錄
+
+# 第四項：向後相容性 {#backward-compatibility}
+
+## 第一款：維護相容性 {#maintaining-compatibility}
+
+為維護向後相容性：
+
+1. 始終為沒有 dplyr/dbplyr 的環境包含退回方法
+2. 確保無論存取方法為何，結果都有一致的格式
+3. 驗證所有資料庫驅動程式都能與 tbl() 和直接方法配合使用
+4. 記錄使用的方法以協助除錯連接特定問題
+
+# 第五項：效益 {#benefits}
+
+## 第一款：主要優勢 {#main-advantages}
+
+:::{.callout-note}
+## 使用 tbl() 的效益
+- **效能優化**：透過延遲評估優化資料庫操作
+- **程式碼清晰度**：使用 dplyr 語法使資料庫操作更易讀
+- **查詢組合**：能夠逐步建構複雜查詢
+- **Tidyverse 整合**：與其他 tidyverse 套件更好的互操作性
+- **一致介面**：跨不同資料庫後端提供一致的介面
+:::
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## tbl() 存取檢查清單
+
+實作資料庫存取時，確認：
+
+- [ ] 優先使用 `dplyr::tbl()` 而非直接方法
+- [ ] 檢查 dplyr 和 dbplyr 的可用性
+- [ ] 實作退回到 DBI 方法的機制
+- [ ] 在資料庫層級應用過濾器（不是在 R 中）
+- [ ] 使用延遲評估直到需要結果
+- [ ] 記錄所使用的存取方法
+- [ ] 處理連接和查詢錯誤
+- [ ] 確保結果格式一致性
+- [ ] 使用 `show_query()` 進行除錯
+- [ ] 適當地文檔化查詢模式
+:::
+
+# 結論 {#conclusion}
+
+資料庫存取 tbl() 規則建立了與資料庫互動的現代、高效方法。透過優先使用 dplyr 的 tbl() 函數，我們獲得延遲評估、查詢優化和與 tidyverse 生態系統無縫整合的好處，同時透過適當的退回機制維護向後相容性。
+
+---
+
+*依據：資料管理法施行細則第3條*  
+*衍生自：[MP016 模組化](../../CH00_fundamental_principles/MP016_modularity.qmd)、[MP017 關注點分離](../../CH00_fundamental_principles/MP017_separation_of_concerns.qmd)*  
+*影響：[DM_R002 通用資料存取模式](DM_R002_universal_data_access.qmd)*

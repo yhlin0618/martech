@@ -1,0 +1,38 @@
+---
+title: "Section 4: What Replaces What"
+parent: "ST04"
+---
+
+# What Replaces What {#integration}
+
+## 4.1 Component Mapping
+
+| Current Component | BTYD Replacement | Status |
+|-------------------|-----------------|--------|
+| `nrec` (binary churn label) | Not needed — churn is latent | **Eliminated** |
+| `nrec_prob` (logistic regression) | `1 - P(alive)` from BTYD | **Replaced** |
+| `nes_ratio` (gap / ipt_mean) | Model-implied standardized gap | Can coexist as heuristic |
+| D04 Poisson $\hat{\lambda}$ | $= \hat{\lambda}_j$ in BTYD (shared component) | **Complementary** |
+| `ipt_mean` | $E[T \mid \lambda_j] = 1/\hat{\lambda}_j$ | **Subsumed** |
+| `cai` (Coefficient of Arrival Irregularity) | Pareto/GGG shape parameter $k$ | **Generalized** |
+
+## 4.2 Output for App
+
+The BTYD model produces, for each customer:
+
+1. **`churn_risk`** $\in [0,1]$ — replaces `nrec_prob` in RSV classification
+2. **`expected_purchases_next_period`** — $E[N(t) \mid \text{alive}] \cdot P(\text{alive})$
+3. **`expected_spend_next_period`** — combining frequency and monetary models (Gamma-Gamma)
+4. **`clv`** — Customer Lifetime Value with proper discounting and death probability
+
+## 4.3 Advantages Over Current `nrec_prob`
+
+| Aspect | Current (`nrec_prob`) | Proposed (`churn_risk`) |
+|--------|----------------------|------------------------|
+| Cutoff dependency | Fixed 3-month binary | None — latent death model |
+| One-time buyers | NA (no CAI) | Naturally handled (high uncertainty in P(alive)) |
+| Product line effect | Per-slice model (small n, most fail) | Global model with per-PL parameters possible |
+| Customer effect | None | $\lambda_j, \mu_j$ capture individual pattern |
+| Time information | Discarded (binary) | Fully utilized (x, $t_x$, T) |
+| Horizon | Backward-looking ("did they churn?") | Forward-looking ("will they purchase again?") |
+| Data required | f_label + cai (99.7% NA) | x, $t_x$, T, $m_x$ (100% available) |

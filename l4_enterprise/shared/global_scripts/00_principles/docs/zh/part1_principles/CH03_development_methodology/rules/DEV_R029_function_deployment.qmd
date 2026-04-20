@@ -1,0 +1,127 @@
+---
+title: "DEV_R029: 函數部署規則"
+subtitle: "函數必須以適當的範圍考慮正確實施，在應用程式生命週期早期適當初始化，並在需要時明確傳遞給組件"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R029"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 29
+  title: "函數部署規則"
+related_to:
+  - "R102: Shiny 反應式觀察規則"
+  - "MP31: 初始化優先"
+  - "R95: 匯入需求規則"
+  - "R21: 一函數一檔案"
+  - "R67: 函數封裝"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十九條：函數部署規則 {#overview}
+
+**開發方法法第二十九條（函數部署規則）**
+
+此規則建立了在 Shiny 應用程式中部署函數的適當實施模式，確保它們具有適當的範圍、在正確的時間初始化，並在需要時明確傳遞給組件。
+
+:::{.callout-important}
+## 規則定義
+函數必須以適當的範圍考慮正確實施，在應用程式生命週期早期適當初始化，並明確傳遞給需要它們的組件。
+:::
+
+# 第一項：需求 {#requirements}
+
+1. **早期定義**：在任何 UI 組件或伺服器邏輯嘗試使用之前，在初始化過程中早期定義關鍵函數。
+
+2. **適當的全域分配**：對於需要全域範圍的函數，使用明確分配到 `.GlobalEnv` 而不是依賴隱式範圍規則。
+
+3. **明確函數傳遞**：將函數作為參數明確傳遞給組件，而不是依賴它們的全域可用性。
+
+4. **備用機制**：為關鍵函數包含備用機制，以防止函數在預期範圍內不可用時應用程式失敗。
+
+5. **範圍意識**：注意範圍邊界，特別是在反應式上下文中，函數可用性可能會改變。
+
+# 第二項：實施模式 {#implementation-patterns}
+
+## 第一款：全域函數分配 {#global-function-assignment}
+
+```r
+# 在初始化代碼早期：
+my_function <- function(args) {
+  # 函數邏輯
+  return(result)
+}
+
+# 確保需要時的全域可用性
+assign("my_function", my_function, envir = .GlobalEnv)
+```
+
+## 第二款：函數存在檢查 {#function-existence-checking}
+
+```r
+# 在組件初始化中檢查函數存在
+if (!exists("required_function") || !is.function(required_function)) {
+  warning("未找到必需函數。使用備用。")
+  required_function <- function(...) {
+    # 預設實施
+    warning("使用備用實施")
+    return(NULL)
+  }
+}
+```
+
+## 第三款：明確函數傳遞 {#explicit-function-passing}
+
+```r
+# 明確傳遞給組件
+my_component <- createComponent(
+  id = "component_id",
+  data_connection = some_connection,
+  processor_function = my_function  # 明確傳遞函數
+)
+```
+
+# 第三項：應避免的常見問題 {#common-issues}
+
+1. **晚期定義**：在依賴它們的代碼已經執行後定義函數。
+
+2. **錯誤分配**：使用 `<<-` 這是非局部分配運算子，但在 Shiny 上下文中創建真正的全域變數並不可靠。
+
+3. **範圍混淆**：不理解 R 的詞法範圍規則，導致函數在需要的地方無法存取。
+
+4. **缺少備用**：未為關鍵函數提供備用機制。
+
+5. **隱式依賴**：假設函數將可用而不明確傳遞。
+
+# 第四項：相關原則 {#related-principles}
+
+- R102：Shiny 反應式觀察規則
+- MP31：初始化優先
+- R95：匯入需求規則
+- R21：一函數一檔案
+- R67：函數封裝
+
+# 第五項：注意事項 {#notes}
+
+開發具有多個組件的複雜 Shiny 應用程式時，適當的函數部署至關重要。常見問題包括：
+
+1. 函數在應用程式生命週期中定義太晚
+2. 函數未適當分配到適當的環境
+3. 依賴隱式範圍而不是明確函數傳遞
+4. 缺少關鍵功能的備用機制
+
+遵循此規則，可確保整個應用程式中函數的一致可用性，無論執行上下文如何。
+
+---
+
+*基於：開發方法法第二十九條*  
+*相關連結：[R102 Shiny 反應式觀察規則](DEV_R026_shiny_reactive_observation.qmd), [MP31 初始化優先](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd)*

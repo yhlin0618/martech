@@ -1,0 +1,259 @@
+---
+title: "UI_R016: Selectize Input Usage Rule"
+subtitle: "This rule establishes standard approaches for implementing and customizing selectize inputs in Shiny applications, ensuring consistency, performance, and user experience across all selection components"
+chapter: "CH04"
+category: "rule"
+number: "UI_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI Components Law"
+article-number: 
+  number: 16
+  title: "Selectize Input Usage Rule"
+related_to:
+  - "R102: Shiny Reactive Observation Rule"
+  - "P77: Performance Optimization"
+  - "P75: Search Input Optimization"
+  - "P71: Row Aligned Tables"
+  - "SLN05: Avoiding Nested UI Rendering in Shiny"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 16: Selectize Input Usage Rule {#overview}
+
+**UI Components Law Article 16 (Selectize Input Usage Rule)**
+
+This rule establishes standard approaches for implementing and customizing selectize inputs, ensuring consistency and optimized performance for selection interfaces.
+
+:::{.callout-important}
+## Purpose
+This rule establishes standard approaches for implementing and customizing selectize inputs in Shiny applications, ensuring consistency, performance, and user experience across all selection components.
+:::
+
+# Section 1: Definitions {#definitions}
+
+- **Selectize Input**: An enhanced select input based on the selectize.js JavaScript library that provides search capability, custom rendering, and better user experience for selection interfaces.
+- **Client-side Selectize**: Implementation where all options are loaded to the client and filtering is handled by JavaScript.
+- **Server-side Selectize**: Implementation where option filtering is performed on the server based on user input.
+
+# Section 2: Requirements {#requirements}
+
+## Subsection 1: Selection Method Determination {#selection-method-determination}
+
+1. **Base Selection Rule**: Use standard `selectInput()` for simple selection scenarios with fewer than 20 options
+2. **Selectize Requirement**: Use `selectizeInput()` when any of these conditions apply:
+   - Selection list contains more than 20 options
+   - Users need to search within options
+   - Custom option rendering is needed
+   - Multiple selections with tags are required
+3. **Server-side Requirement**: Use server-side selectize when:
+   - Selection list contains more than 100 options
+   - Options need to be dynamically filtered from database or large datasets
+   - Performance optimization is critical
+
+## Subsection 2: Initialization Standards {#initialization-standards}
+
+### Client-side Initialization {#client-side-initialization}
+
+```r
+selectizeInput(
+  inputId = "selection_id",
+  label = "Selection Label",
+  choices = option_list,
+  selected = default_option,
+  multiple = FALSE,
+  options = list(
+    placeholder = "Select an option...",
+    onDropdownOpen = I("function($dropdown) { /* consistency code */ }")
+  )
+)
+```
+
+### Server-side Initialization {#server-side-initialization}
+
+```r
+# In UI
+selectizeInput(
+  inputId = "selection_id",
+  label = "Selection Label",
+  choices = NULL,  # Empty initially
+  multiple = FALSE,
+  options = list(placeholder = "Start typing to search...")
+)
+
+# In Server
+updateSelectizeInput(
+  session = session,
+  inputId = "selection_id",
+  choices = full_option_dataset,
+  server = TRUE,
+  options = list(
+    maxOptions = 15,
+    searchField = c("label", "keywords"),
+    searchConjunction = "and"
+  )
+)
+```
+
+## Subsection 3: Core Configuration Standards {#core-configuration-standards}
+
+1. **Required Option Settings**:
+   - Always specify a `placeholder` option
+   - Always set `maxOptions` to limit displayed products (default: 15)
+   - For multiple selection, set `maxproducts` to establish selection limits
+
+2. **Performance Configuration**:
+   - Use `selectize_throttle = 300` for server-side inputs to limit request frequency
+   - Set `load_throttle = 300` to control search timing
+
+3. **UI Consistency Options**:
+```r
+options = list(
+  plugins = list("remove_button"),
+  render = selectize_render_template,
+  onDropdownOpen = I(standard_dropdown_js),
+  onDropdownClose = I(standard_cleanup_js)
+)
+```
+
+## Subsection 4: Custom Rendering Requirements {#custom-rendering-requirements}
+
+### Standard Render Function {#standard-render-function}
+
+```r
+selectize_render_template <- I('{
+  option: function(product, escape) {
+    return "<div class=\"selectize-option\">" +
+      "<span class=\"option-label\">" + escape(product.label) + "</span>" +
+      (product.description ? "<span class=\"option-description\">" + 
+        escape(product.description) + "</span>" : "") +
+      "</div>";
+  },
+  product: function(product, escape) {
+    return "<div class=\"selectize-selected-product\">" + 
+      escape(product.label) + "</div>";
+  }
+}')
+```
+
+## Subsection 5: Data Structure Requirements {#data-structure-requirements}
+
+1. **Standard Structure**: Client-side selectize data should be prepared as:
+```r
+choices <- c("Option 1" = "value1", "Option 2" = "value2")
+```
+
+2. **Rich Data Structure**: For server-side filtering with extended information:
+```r
+choices_df <- data.frame(
+  label = c("Option 1", "Option 2"),
+  value = c("value1", "value2"),
+  description = c("Description 1", "Description 2"),
+  keywords = c("key1 alt1", "key2 alt2"),
+  stringsAsFactors = FALSE
+)
+```
+
+## Subsection 6: Event Handling Requirements {#event-handling-requirements}
+
+### Standard Observers {#standard-observers}
+
+```r
+observeEvent(input$selection_id, {
+  req(input$selection_id)
+  if(input$selection_id == "") {
+    # Handle empty selection case
+  } else {
+    # Handle selection 
+  }
+})
+```
+
+### Loading States {#loading-states}
+
+```r
+# Show loading indicator during server-side filtering
+options = list(
+  onType = I('function() { 
+    Shiny.setInputValue("selection_id_loading", true);
+  }'),
+  onLoad = I('function() {
+    Shiny.setInputValue("selection_id_loading", false);
+  }')
+)
+```
+
+# Section 3: Examples {#examples}
+
+## Subsection 1: Basic Client-side Example {#basic-client-side-example}
+
+```r
+selectizeInput(
+  inputId = "state",
+  label = "Select State:",
+  choices = state.name,
+  options = list(
+    placeholder = "Select a state...",
+    maxOptions = 10,
+    plugins = list("remove_button")
+  )
+)
+```
+
+## Subsection 2: Server-side Filtering Example {#server-side-filtering-example}
+
+```r
+# UI
+selectizeInput(
+  "customer_id", 
+  "Select Customer:",
+  choices = NULL,
+  options = list(placeholder = "Start typing customer name...")
+)
+
+# Server
+customer_data <- reactive({
+  universal_data_accessor(connection, "customer_profile") %>%
+    select(
+      value = customer_id, 
+      label = customer_name,
+      keywords = search_terms
+    )
+})
+
+observe({
+  updateSelectizeInput(
+    session, 
+    "customer_id",
+    choices = customer_data(),
+    server = TRUE,
+    options = list(
+      valueField = "value",
+      labelField = "label",
+      searchField = c("label", "keywords"),
+      maxOptions = 15
+    )
+  )
+})
+```
+
+# Section 4: Implementation Notes {#implementation-notes}
+
+1. Always wrap JavaScript functions with `I()` to prevent R from escaping the content
+2. Use consistent CSS classes for styling selectize components
+3. For very large datasets (10,000+ options), implement server-side pagination
+4. When `multiple=TRUE`, always handle the empty string case explicitly in observers
+5. Set `closeAfterSelect = TRUE` for better user experience in most cases
+
+---
+
+*Based on: UI Components Law Article 16*  
+*Related to: [R102 Shiny Reactive Observation Rule](../../CH03_development_methodology/rules/DEV_R026_shiny_reactive_observation.qmd), [P75 Search Input Optimization](../../CH04_ui_components/principles/UI_P007_search_input_optimization.qmd)*

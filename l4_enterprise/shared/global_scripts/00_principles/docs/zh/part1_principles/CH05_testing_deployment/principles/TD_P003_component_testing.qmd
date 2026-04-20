@@ -1,0 +1,86 @@
+---
+title: "TD_P003: 元件級測試原則"
+subtitle: "以元件為單位建立可重用測試腳本"
+chapter: "CH05"
+category: "principle"
+number: "TD_P003"
+date-created: "2025-04-07"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "測試部署法"
+article-number:
+  number: 3
+  title: "元件級測試原則"
+derives_from:
+  - "DEV_P001: Debug Principles"
+  - "DEV_P005: Debug Efficiency Exception"
+influences:
+  - "UI_R001: UI-Server-Defaults N-tuple"
+  - "SO_R021: One Function One File"
+related_to:
+  - "TD_P002: Dual Testing Approach"
+  - "TD_R001: Shiny Test Data"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三條：元件級測試原則 {#overview}
+
+**測試部署法第三條（元件級測試原則）**
+
+互動式應用（如 Shiny）必須以元件為單位測試，而非只測整體系統。
+
+:::{.callout-important}
+## 核心原則
+每個元件都必須具備獨立測試腳本與測試資料，能在隔離環境中驗證正常、邊界與錯誤行為。
+:::
+
+# 第一項：為什麼要元件測試 {#why}
+
+- **問題隔離**：快速定位 UI、資料或邏輯問題
+- **可維護性**：修改元件時有安全網
+- **重用性**：測試腳本即使用範例
+- **逐步整合**：降低整體系統耦合
+
+# 第二項：最小測試應用 {#minimal-app}
+
+元件測試需提供最小化測試 app：
+
+```r
+ui <- fluidPage(
+  componentUI("test")
+)
+
+server <- function(input, output, session) {
+  componentServer("test", data = reactive(test_data))
+}
+
+shinyApp(ui, server)
+```
+
+# 第三項：測試資料產生器 {#test-data}
+
+每個元件必須具備測試資料產生器，涵蓋：
+
+- 正常資料
+- 空資料
+- 缺欄位
+- 極端值
+
+# 第四項：標準化輸出 {#standard-output}
+
+測試結果需可重現且可比對：
+
+- 使用固定隨機種子
+- 明確列出預期輸出
+- 測試腳本可在無互動下執行
+
+# 結語 {#conclusion}
+
+元件級測試是保障品質與維護效率的核心方法，應成為所有 Shiny 元件的標準流程。

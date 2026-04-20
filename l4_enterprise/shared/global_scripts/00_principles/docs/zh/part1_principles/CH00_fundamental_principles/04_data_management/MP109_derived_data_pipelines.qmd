@@ -1,0 +1,766 @@
+---
+id: "MP109"
+title: "Derived Data Pipelines Principle - ETLs Creating Composite Business Entities"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-08-29"
+date_modified: "2025-08-29"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 109
+priority: "HIGH"
+complements:
+  - "MP108": "ETL Phase Sequence - Defines phases for base ETLs"
+  - "MP107": "ETL Pipeline Independence - All ETLs remain independent"
+related_to:
+  - "MP108": "ETL Phase Sequence Principle - Base ETL phase progression"
+  - "MP107": "ETL Pipeline Independence Principle"
+  - "MP104": "ETL Data Flow Separation Principle"
+  - "MP102": "ETL Output Standardization"
+  - "DM_R040": "Structural JOIN Pattern Rule"
+implements:
+  - "DERIVED_ENTITIES": "Some entities are created by combining other entities"
+  - "PHASE_FLEXIBILITY": "Derived ETLs can start at any appropriate phase"
+  - "SOURCE_DEPENDENCY": "Derived ETLs depend on base ETL outputs"
+  - "COMPOSITE_RECORDS": "Creating business entities from multiple sources"
+---
+
+# MP109: Derived Data Pipelines Principle - ETLs Creating Composite Business Entities
+
+## Core Statement
+
+**DESIGN PRINCIPLE: ETL pipelines are classified as either BASE ETLs (processing raw source data) or DERIVED ETLs (creating composite entities from other ETL outputs). Base ETLs must implement the full 0IM→1ST→2TR phase sequence, while derived ETLs may start at any phase appropriate to their purpose, typically 2TR.**
+
+This principle recognizes that not all data entities originate from external sources. Many important business entities are derived by combining, aggregating, or transforming data that has already been processed by other ETL pipelines.
+
+### The Two Types of ETL Pipelines
+
+> **BASE ETLs**: Process raw data from external sources (APIs, files, databases)
+> **DERIVED ETLs**: Create new entities by combining outputs from other ETLs
+> 
+> Both types maintain independence (MP107) but have different phase requirements.
+
+## Architectural Model
+
+### Visual Representation of ETL Types
+
+```
+BASE ETL PIPELINES (Full Phase Sequence Required):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│ cbz_orders  │  │cbz_customers│  │cbz_products │
+├─────────────┤  ├─────────────┤  ├─────────────┤
+│    0IM      │  │    0IM      │  │    0IM      │
+│     ↓       │  │     ↓       │  │     ↓       │
+│    1ST      │  │    1ST      │  │    1ST      │
+│     ↓       │  │     ↓       │  │     ↓       │
+│    2TR      │  │    2TR      │  │    2TR      │
+└─────────────┘  └─────────────┘  └─────────────┘
+     Raw              Raw              Raw
+   Sources          Sources          Sources
+
+DERIVED ETL PIPELINES (Start at Appropriate Phase):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│  cbz_sales  │  │customer_360 │  │product_perf │
+├─────────────┤  ├─────────────┤  ├─────────────┤
+│             │  │             │  │    1ST      │
+│    2TR      │  │    2TR      │  │     ↓       │
+│   (only)    │  │   (only)    │  │    2TR      │
+└─────────────┘  └─────────────┘  └─────────────┘
+  orders+details  multiple ETLs   products+sales
+   (from 2TR)      (from 2TR)      (mixed phases)
+```
+
+### ETL Dependency Graph
+
+```yaml
+etl_classification:
+  base_etls:
+    definition: "Direct connection to external data sources"
+    phase_requirement: "MUST implement 0IM → 1ST → 2TR"
+    examples:
+      - name: "cbz_orders"
+        source: "CBZ API: /orders endpoint"
+        phases: ["0IM", "1ST", "2TR"]
+      
+      - name: "cbz_order_details"
+        source: "CBZ API: /order-lines endpoint"
+        phases: ["0IM", "1ST", "2TR"]
+      
+      - name: "cbz_customers"
+        source: "CBZ API: /customers endpoint"
+        phases: ["0IM", "1ST", "2TR"]
+      
+      - name: "eby_BAYORD"
+        source: "eBay orders file"
+        phases: ["0IM", "1ST", "2TR"]
+      
+      - name: "eby_BAYORE"
+        source: "eBay order details file"
+        phases: ["0IM", "1ST", "2TR"]
+
+  derived_etls:
+    definition: "Created from other ETL outputs"
+    phase_requirement: "Start at phase appropriate to purpose"
+    examples:
+      - name: "cbz_sales"
+        sources: ["cbz_orders.2TR", "cbz_order_details.2TR"]
+        phases: ["2TR"]  # Only needs transform phase
+        purpose: "Denormalized sales transactions"
+      
+      - name: "eby_sales"
+        sources: ["eby_BAYORD.2TR", "eby_BAYORE.2TR"]
+        phases: ["2TR"]  # Only needs transform phase
+        purpose: "Complete eBay sales records"
+      
+      - name: "customer_360"
+        sources: ["customers.2TR", "sales.2TR", "reviews.2TR"]
+        phases: ["2TR"]  # Combines multiple transformed sources
+        purpose: "Comprehensive customer view"
+      
+      - name: "inventory_reconciliation"
+        sources: ["products.1ST", "stock_levels.1ST"]
+        phases: ["1ST", "2TR"]  # May need staging before transform
+        purpose: "Reconcile inventory across systems"
+```
+
+## Classification Criteria
+
+### How to Identify Base ETLs
+
+A pipeline is a BASE ETL if it:
+
+1. **Connects directly to external data sources**
+   - APIs (REST, SOAP, GraphQL)
+   - Files (CSV, JSON, XML, Excel)
+   - External databases
+   - FTP/SFTP servers
+   - Message queues
+
+2. **Has no dependency on other ETL outputs**
+   - Stands alone in the data architecture
+   - Can run without any other ETL having run first
+
+3. **Represents raw entity data**
+   - Orders, Customers, Products (from source systems)
+   - Not derived or calculated entities
+
+### How to Identify Derived ETLs
+
+A pipeline is a DERIVED ETL if it:
+
+1. **Sources data from other ETL outputs**
+   - Reads from raw_data.duckdb (0IM outputs)
+   - Reads from staged_data.duckdb (1ST outputs)
+   - Reads from transformed_data.duckdb (2TR outputs)
+
+2. **Creates composite or calculated entities**
+   - Sales = Orders + OrderDetails
+   - Customer360 = Customers + Orders + Reviews + Support
+   - ProductPerformance = Products + Sales + Reviews
+
+3. **Has explicit dependencies on other ETLs**
+   - Cannot run until source ETLs complete
+   - Represents business logic combinations
+
+## Implementation Patterns
+
+### Base ETL Implementation (Full Phases)
+
+```r
+# cbz_ETL_orders_0IM.R - BASE ETL starts with import
+main_execution <- function() {
+  # Connect to external API
+  response <- GET(
+    url = "https://api.cbz.com/orders",
+    add_headers(Authorization = api_key)
+  )
+  
+  # Parse and save raw data
+  orders_raw <- content(response, "parsed")
+  dbWriteTable(raw_data, "cbz_orders_raw", orders_raw)
+  
+  return(list(success = TRUE, phase = "0IM"))
+}
+
+# cbz_ETL_orders_1ST.R - BASE ETL continues with staging
+main_execution <- function() {
+  # Read from raw layer
+  orders_raw <- tbl2(raw_data, "cbz_orders_raw")
+  
+  # Standardize formats
+  orders_staged <- orders_raw %>%
+    mutate(
+      order_date = parse_date(order_date),
+      customer_id = as.character(customer_id)
+    )
+  
+  dbWriteTable(staged_data, "cbz_orders_staged", orders_staged)
+  return(list(success = TRUE, phase = "1ST"))
+}
+
+# cbz_ETL_orders_2TR.R - BASE ETL completes with transform
+main_execution <- function() {
+  # Transform for analysis
+  orders_transformed <- tbl2(staged_data, "cbz_orders_staged") %>%
+    add_business_logic()
+  
+  dbWriteTable(transformed_data, "cbz_orders", orders_transformed)
+  return(list(success = TRUE, phase = "2TR"))
+}
+```
+
+### Derived ETL Implementation (2TR Only)
+
+```r
+# cbz_ETL_sales_2TR.R - DERIVED ETL starts at 2TR
+# No 0IM or 1ST needed - this entity doesn't exist in source systems
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+initialize <- function() {
+  # 1.1 Basic setup
+  library(tidyverse)
+  library(duckdb)
+  source("scripts/global_scripts/02_db_utils/fn_tbl2.R")
+  
+  # 1.2 Database connections - reading from other ETL outputs
+  transformed_data <<- dbConnect(duckdb::duckdb(), 
+                                "data/transformed_data.duckdb")
+}
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+main_execution <- function() {
+  tryCatch({
+    message("Creating derived sales entity from base ETLs...")
+    
+    # Read from BASE ETL outputs (already transformed)
+    orders <- tbl2(transformed_data, "cbz_orders") %>% 
+      collect()
+    
+    order_details <- tbl2(transformed_data, "cbz_order_details") %>% 
+      collect()
+    
+    # Create the derived entity
+    sales <- orders %>%
+      inner_join(order_details, by = "order_id") %>%
+      mutate(
+        # Derived calculations
+        line_total = quantity * unit_price,
+        tax_amount = line_total * tax_rate,
+        total_amount = line_total + tax_amount,
+        
+        # Business classifications
+        sale_type = case_when(
+          total_amount > 1000 ~ "high_value",
+          total_amount > 100 ~ "standard",
+          TRUE ~ "low_value"
+        ),
+        
+        # Metadata for derived entity
+        derived_from = "cbz_orders + cbz_order_details",
+        derivation_timestamp = Sys.time()
+      )
+    
+    # Save the derived entity
+    dbWriteTable(transformed_data, "cbz_sales", sales, overwrite = TRUE)
+    
+    message(sprintf("✅ Created %d sales records (derived entity)", nrow(sales)))
+    return(list(success = TRUE, records = nrow(sales)))
+    
+  }, error = function(e) {
+    message("ERROR creating derived entity: ", e$message)
+    return(list(success = FALSE, error = e$message))
+  })
+}
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+test_execution <- function() {
+  # Verify derived entity was created correctly
+  sales <- tbl2(transformed_data, "cbz_sales")
+  
+  testthat::expect_true(
+    "derived_from" %in% colnames(sales),
+    "Derived entity must include source metadata"
+  )
+}
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+summarize_results <- function() {
+  sales_count <- tbl2(transformed_data, "cbz_sales") %>% 
+    count() %>% 
+    pull(n)
+  
+  message(sprintf("Derived ETL Summary: Created %d sales records", sales_count))
+}
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+deinitialize <- function() {
+  if (exists("transformed_data")) dbDisconnect(transformed_data)
+  autodeinit()
+}
+```
+
+### Complex Derived ETL (Multiple Sources)
+
+```r
+# customer_360_ETL_2TR.R - DERIVED ETL combining many sources
+main_execution <- function() {
+  message("Building Customer 360 view from multiple ETLs...")
+  
+  # Gather from multiple BASE ETL outputs
+  customers <- tbl2(transformed_data, "customers")
+  sales <- tbl2(transformed_data, "sales")  # Also a derived ETL
+  support_tickets <- tbl2(transformed_data, "support_tickets")
+  reviews <- tbl2(transformed_data, "product_reviews")
+  campaigns <- tbl2(transformed_data, "marketing_campaigns")
+  
+  # Create comprehensive customer view
+  customer_360 <- customers %>%
+    left_join(
+      sales %>% 
+        group_by(customer_id) %>%
+        summarize(
+          total_purchases = sum(total_amount),
+          order_count = n(),
+          avg_order_value = mean(total_amount),
+          last_purchase_date = max(order_date)
+        ),
+      by = "customer_id"
+    ) %>%
+    left_join(
+      support_tickets %>%
+        group_by(customer_id) %>%
+        summarize(
+          ticket_count = n(),
+          avg_resolution_time = mean(resolution_hours)
+        ),
+      by = "customer_id"
+    ) %>%
+    left_join(
+      reviews %>%
+        group_by(customer_id) %>%
+        summarize(
+          review_count = n(),
+          avg_rating = mean(rating)
+        ),
+      by = "customer_id"
+    ) %>%
+    mutate(
+      # Derived metrics
+      customer_lifetime_value = calculate_clv(total_purchases, order_count),
+      churn_risk = calculate_churn_risk(last_purchase_date, ticket_count),
+      engagement_score = calculate_engagement(review_count, order_count),
+      
+      # Metadata
+      derived_from = "customers + sales + support + reviews + campaigns",
+      derivation_timestamp = Sys.time()
+    )
+  
+  dbWriteTable(transformed_data, "customer_360", customer_360, overwrite = TRUE)
+  
+  return(list(success = TRUE, entity_type = "derived_composite"))
+}
+```
+
+## Phase Selection Guidelines
+
+### When Derived ETLs Need Only 2TR
+
+Most derived ETLs only need the 2TR phase when:
+
+1. **Source data is already clean** (from other ETL 2TR outputs)
+2. **Purpose is combination/aggregation** not new data import
+3. **No additional standardization needed** beyond source ETLs
+
+Examples:
+- Sales (orders + details)
+- Customer360 (multiple customer touchpoints)
+- Product performance (products + sales + reviews)
+
+### When Derived ETLs Need 1ST + 2TR
+
+Some derived ETLs may need both phases when:
+
+1. **Combining data from different phase outputs** (mixing 0IM and 2TR sources)
+2. **Additional standardization required** before transformation
+3. **Complex reconciliation logic** needs staging area
+
+Example:
+```r
+# inventory_reconciliation_ETL_1ST.R
+# Needs staging to align different inventory formats
+main_execution <- function() {
+  # Read from mixed sources
+  warehouse_raw <- tbl2(raw_data, "warehouse_inventory")  # From 0IM
+  online_transformed <- tbl2(transformed_data, "online_stock")  # From 2TR
+  
+  # Stage for reconciliation
+  inventory_staged <- align_inventory_formats(warehouse_raw, online_transformed)
+  dbWriteTable(staged_data, "inventory_staged", inventory_staged)
+}
+
+# inventory_reconciliation_ETL_2TR.R
+# Transform to final reconciled view
+main_execution <- function() {
+  inventory_reconciled <- tbl2(staged_data, "inventory_staged") %>%
+    perform_reconciliation()
+  dbWriteTable(transformed_data, "inventory_reconciled", inventory_reconciled)
+}
+```
+
+## Dependency Management
+
+### Explicit Dependencies
+
+Derived ETLs must check for their dependencies:
+
+```r
+# Dependency validation for derived ETLs
+validate_derived_etl_dependencies <- function(required_tables) {
+  missing_deps <- c()
+  
+  for (table in required_tables) {
+    if (!table_exists(transformed_data, table)) {
+      missing_deps <- c(missing_deps, table)
+    }
+  }
+  
+  if (length(missing_deps) > 0) {
+    stop(sprintf(
+      "Cannot run derived ETL. Missing dependencies: %s\nRun base ETLs first.",
+      paste(missing_deps, collapse = ", ")
+    ))
+  }
+  
+  return(TRUE)
+}
+
+# Use in derived ETL
+main_execution <- function() {
+  # Check dependencies before processing
+  validate_derived_etl_dependencies(c("cbz_orders", "cbz_order_details"))
+  
+  # Proceed with derivation...
+}
+```
+
+### Orchestration Patterns
+
+```r
+# Orchestrator understanding ETL types
+run_etl_system <- function() {
+  # Phase 1: Run all BASE ETLs (can be parallel)
+  base_etls <- list(
+    "cbz_orders" = c("0IM", "1ST", "2TR"),
+    "cbz_order_details" = c("0IM", "1ST", "2TR"),
+    "cbz_customers" = c("0IM", "1ST", "2TR"),
+    "cbz_products" = c("0IM", "1ST", "2TR")
+  )
+  
+  for (etl in names(base_etls)) {
+    for (phase in base_etls[[etl]]) {
+      run_etl_phase(etl, phase)
+    }
+  }
+  
+  # Phase 2: Run DERIVED ETLs (respecting dependencies)
+  derived_etls <- list(
+    "cbz_sales" = list(
+      depends_on = c("cbz_orders", "cbz_order_details"),
+      phases = c("2TR")
+    ),
+    "customer_360" = list(
+      depends_on = c("cbz_customers", "cbz_sales"),
+      phases = c("2TR")
+    )
+  )
+  
+  for (etl in names(derived_etls)) {
+    # Check dependencies satisfied
+    deps_ready <- all(sapply(
+      derived_etls[[etl]]$depends_on,
+      function(dep) table_exists(transformed_data, dep)
+    ))
+    
+    if (deps_ready) {
+      for (phase in derived_etls[[etl]]$phases) {
+        run_etl_phase(etl, phase)
+      }
+    }
+  }
+}
+```
+
+## Common Patterns and Examples
+
+### Pattern 1: Order-Details Combination
+
+```yaml
+pattern: "Order-Details to Sales"
+base_etls:
+  - orders: "Header information from API"
+  - order_details: "Line items from API"
+derived_etl:
+  - sales: "Complete denormalized transactions"
+implementation:
+  - "sales only needs 2TR phase"
+  - "Combines already-clean data from base ETLs"
+```
+
+### Pattern 2: Multi-Source Aggregation
+
+```yaml
+pattern: "360-Degree View"
+base_etls:
+  - customers: "Core customer data"
+  - transactions: "Purchase history"
+  - support: "Service interactions"
+  - marketing: "Campaign responses"
+derived_etl:
+  - customer_360: "Comprehensive customer profile"
+implementation:
+  - "Starts at 2TR phase"
+  - "Aggregates from multiple transformed sources"
+```
+
+### Pattern 3: Cross-System Reconciliation
+
+```yaml
+pattern: "System Reconciliation"
+base_etls:
+  - system_a_data: "From legacy system"
+  - system_b_data: "From modern system"
+derived_etl:
+  - reconciled_data: "Merged and reconciled view"
+implementation:
+  - "May need 1ST + 2TR phases"
+  - "1ST aligns formats, 2TR performs reconciliation"
+```
+
+## Testing Strategies
+
+### Testing Base vs Derived Classification
+
+```r
+test_etl_classification <- function() {
+  # Test 1: Base ETL has all phases
+  base_etl_phases <- get_etl_phases("cbz_orders")
+  testthat::expect_equal(
+    base_etl_phases,
+    c("0IM", "1ST", "2TR"),
+    "Base ETL must have all three phases"
+  )
+  
+  # Test 2: Derived ETL may have fewer phases
+  derived_etl_phases <- get_etl_phases("cbz_sales")
+  testthat::expect_true(
+    length(derived_etl_phases) <= 3,
+    "Derived ETL can have fewer than three phases"
+  )
+  
+  # Test 3: Derived ETL has dependencies
+  dependencies <- get_etl_dependencies("cbz_sales")
+  testthat::expect_true(
+    length(dependencies) > 0,
+    "Derived ETL must have dependencies on other ETLs"
+  )
+}
+
+# Test dependency validation
+test_derived_etl_dependencies <- function() {
+  # Clean state
+  cleanup_all_databases()
+  
+  # Attempt to run derived ETL without dependencies
+  result <- tryCatch(
+    run_etl_phase("cbz_sales", "2TR"),
+    error = function(e) list(success = FALSE, error = e$message)
+  )
+  
+  testthat::expect_false(result$success)
+  testthat::expect_match(result$error, "Missing dependencies")
+  
+  # Run base ETLs first
+  run_complete_etl_pipeline("cbz", "orders")
+  run_complete_etl_pipeline("cbz", "order_details")
+  
+  # Now derived ETL should work
+  result <- run_etl_phase("cbz_sales", "2TR")
+  testthat::expect_true(result$success)
+}
+```
+
+## Migration Guide
+
+### Identifying Misclassified ETLs
+
+Review your existing ETLs to properly classify them:
+
+```r
+# Audit script to classify ETLs
+audit_etl_classification <- function(etl_dir = "scripts/update_scripts") {
+  etl_files <- list.files(etl_dir, pattern = "ETL.*\\.R$", full.names = TRUE)
+  
+  classification <- data.frame(
+    etl_name = character(),
+    has_0IM = logical(),
+    has_1ST = logical(),
+    has_2TR = logical(),
+    reads_external = logical(),
+    reads_other_etl = logical(),
+    classification = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (file in etl_files) {
+    name <- gsub(".*/(.*?)_[012][A-Z]{2}\\.R", "\\1", file)
+    
+    # Check which phases exist
+    has_0IM <- file.exists(gsub("_[012][A-Z]{2}\\.R", "_0IM.R", file))
+    has_1ST <- file.exists(gsub("_[012][A-Z]{2}\\.R", "_1ST.R", file))
+    has_2TR <- file.exists(gsub("_[012][A-Z]{2}\\.R", "_2TR.R", file))
+    
+    # Check data sources (simplified check)
+    content <- readLines(file)
+    reads_external <- any(grepl("GET\\(|POST\\(|read\\.csv|readxl", content))
+    reads_other_etl <- any(grepl("tbl2\\(.*_data", content))
+    
+    # Classify
+    if (reads_external && has_0IM) {
+      class <- "BASE"
+    } else if (reads_other_etl && !has_0IM) {
+      class <- "DERIVED"
+    } else {
+      class <- "UNCLEAR"
+    }
+    
+    classification <- rbind(classification, data.frame(
+      etl_name = name,
+      has_0IM = has_0IM,
+      has_1ST = has_1ST,
+      has_2TR = has_2TR,
+      reads_external = reads_external,
+      reads_other_etl = reads_other_etl,
+      classification = class
+    ))
+  }
+  
+  return(classification)
+}
+```
+
+### Refactoring Incorrectly Structured Derived ETLs
+
+If you have derived ETLs with unnecessary 0IM/1ST phases:
+
+**Before (Incorrect):**
+```r
+# sales_ETL_0IM.R - WRONG: No external source!
+main_execution <- function() {
+  # This reads from other ETLs, not external sources
+  orders <- tbl2(transformed_data, "orders")
+  details <- tbl2(transformed_data, "order_details")
+  # ...
+}
+```
+
+**After (Correct):**
+```r
+# sales_ETL_2TR.R - CORRECT: Derived ETL starts at 2TR
+main_execution <- function() {
+  # Properly reads from other ETL outputs
+  orders <- tbl2(transformed_data, "orders")
+  details <- tbl2(transformed_data, "order_details")
+  
+  # Creates derived entity
+  sales <- orders %>%
+    inner_join(details, by = "order_id")
+  # ...
+}
+```
+
+## Relationship with Other Principles
+
+### Core Relationships
+
+1. **MP108 (ETL Phase Sequence)**
+   - MP108 defines phase requirements for BASE ETLs
+   - MP109 extends this to allow flexibility for DERIVED ETLs
+   - Together they provide complete ETL architecture
+
+2. **MP107 (ETL Pipeline Independence)**
+   - Both base and derived ETLs maintain independence
+   - Dependencies are data-based, not code-based
+   - Parallel execution still possible within constraints
+
+3. **DM_R040 (Structural JOIN Pattern)**
+   - Structural JOINs in base ETLs happen in 2TR phase
+   - Derived ETLs often ARE the result of structural JOINs
+   - Clear separation of responsibilities
+
+### Visual Summary
+
+```
+ETL Architecture with MP109:
+
+External Sources
+      ↓
+┌─────────────────────────────────┐
+│      BASE ETLs (MP108)          │
+│   Must have: 0IM → 1ST → 2TR   │
+│   Examples: orders, customers   │
+└─────────────────────────────────┘
+      ↓
+┌─────────────────────────────────┐
+│     DERIVED ETLs (MP109)        │
+│   Flexible phases (often 2TR)   │
+│   Examples: sales, customer360  │
+└─────────────────────────────────┘
+      ↓
+Business Analytics & Reporting
+```
+
+## Conclusion
+
+### Key Principles
+
+MP109 establishes that:
+
+1. **Not all ETLs are created equal** - Base vs Derived distinction matters
+2. **Phase requirements depend on ETL type** - Base needs all phases, Derived are flexible
+3. **Derived ETLs are first-class citizens** - Not workarounds or hacks
+4. **Dependencies are explicit and data-based** - Clear, manageable relationships
+
+### Benefits
+
+This principle provides:
+
+- **Clarity**: Clear classification of ETL types
+- **Efficiency**: No unnecessary phases for derived ETLs
+- **Flexibility**: Appropriate phase structure for each ETL's purpose
+- **Maintainability**: Explicit dependencies and simpler derived ETLs
+
+### Final Guidance
+
+When creating a new ETL, ask:
+
+```bash
+1. Does this ETL read from external sources? → BASE ETL (needs 0IM, 1ST, 2TR)
+2. Does this ETL combine other ETL outputs? → DERIVED ETL (flexible phases)
+3. What phases does this derived ETL actually need? → Usually just 2TR
+4. What are the explicit dependencies? → Document and validate them
+```
+
+Remember: The goal is clarity and correctness, not rigid adherence to patterns that don't fit the data flow.

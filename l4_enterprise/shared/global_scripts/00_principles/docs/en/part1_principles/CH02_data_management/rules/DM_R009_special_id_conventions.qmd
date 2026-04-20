@@ -1,0 +1,205 @@
+---
+title: "DM_R009: Special ID Conventions"
+subtitle: "Special category IDs must follow consistent conventions across the system, with reserved patterns for meta-categories and special values to ensure reliable identification and processing"
+chapter: "CH02"
+category: "rule"
+number: "DM_R009"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 9
+  title: "Special ID Convention Rules"
+related_to:
+  - "MP034: Special Treatment of ALL Category"
+  - "DM_P003: Dual ID Format"
+  - "UI_R008: Default Selection Conventions"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 9: Special ID Convention Rules {#overview}
+
+**Data Management Law Article 9 (Special ID Convention Rules)**
+
+This rule establishes consistent conventions for special category identifiers throughout the system.
+
+:::{.callout-important}
+## Core Rule
+Special category IDs must follow consistent conventions across the system, with reserved patterns for meta-categories and special values to ensure reliable identification and processing.
+:::
+
+# Section 1: Reserved ID Patterns {#reserved-patterns}
+
+## Subsection 1: Meta-Categories {#meta-categories}
+
+1. **ALL Category**: `"000"` or `"all"`
+   - Represents all available products
+   - Used for "show everything" options
+   - Example: "All Products", "All Platforms"
+
+2. **None/Not Applicable**: `"999"` or `"none"`
+   - Represents absence of a categorization
+   - Used when product doesn't fit any defined category
+   - Example: "Uncategorized", "Other", "N/A"
+
+3. **Multiple Selection**: `"998"` or `"multiple"`
+   - Represents multiple selected products
+   - Used in summary views when multiple products are selected
+   - Example: "Multiple Selections (3 products)"
+
+4. **Unknown/Unspecified**: `"997"` or `"unknown"`
+   - Represents missing or unknown information
+   - Used when category information is truly unknown
+   - Example: "Unknown Source", "Unspecified Category"
+
+## Subsection 2: ID Formatting {#id-formatting}
+
+1. **Numeric IDs**
+   - Standard categories: `"001"` through `"996"`
+   - Category IDs MUST be zero-padded to ensure consistent length
+   - For hierarchical categories, use dot notation: `"001.002.003"`
+
+2. **String IDs**
+   - Use lowercase with underscores: `"category_name"`
+   - For special categories, use prefixes:
+     - `"all_"`
+     - `"other_"`
+     - `"unknown_"`
+
+3. **Compound IDs**
+   - Format: `"[type]__[id]"`
+   - Example: `"product__001"`, `"platform__002"`
+   - Reserved metadata prefix: `"__meta__"`
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Database Storage {#database-storage}
+
+```sql
+-- Include special category ALL in dimension table
+INSERT INTO product_categories (id, name_en, name_zh) VALUES ('000', 'All Products', '所有產品');
+
+-- Include special category OTHER in dimension table
+INSERT INTO product_categories (id, name_en, name_zh) VALUES ('999', 'Other Products', '其他產品');
+```
+
+## Subsection 2: Code Usage {#code-usage}
+
+```r
+# Define constants for special IDs
+ALL_CATEGORY_ID <- "000"
+OTHER_CATEGORY_ID <- "999"
+MULTIPLE_SELECTION_ID <- "998"
+UNKNOWN_CATEGORY_ID <- "997"
+
+# Special case handling in filtering logic
+filter_products <- function(category_id, products) {
+  if (category_id == ALL_CATEGORY_ID) {
+    return(products)  # Return all products without filtering
+  } else if (category_id == OTHER_CATEGORY_ID) {
+    return(products[is.na(products$category_id) | products$category_id == "", ])
+  } else {
+    return(products[products$category_id == category_id, ])
+  }
+}
+```
+
+## Subsection 3: Excel Parameter Files {#excel-parameters}
+
+```
+# First row in product_line.xlsx:
+| id   | name_en      | name_zh   |
+| "000" | "All Products" | "所有產品" |
+
+# Last row in product_line.xlsx:
+| id   | name_en      | name_zh   |
+| "999" | "Other Products" | "其他產品" |
+```
+
+# Section 3: Implementation Examples {#examples}
+
+## Subsection 1: UI Component Integration {#ui-integration}
+
+```r
+# Using special IDs in dropdown menus
+pickerInput(
+  inputId = "product_filter",
+  label = "Select Product",
+  choices = list(
+    "All Products" = ALL_CATEGORY_ID,
+    "Product A" = "001",
+    "Product B" = "002",
+    "Other Products" = OTHER_CATEGORY_ID
+  ),
+  selected = ALL_CATEGORY_ID  # Default to "All"
+)
+```
+
+## Subsection 2: Data Processing Logic {#data-processing}
+
+```r
+# Handle special categories in data aggregation
+aggregate_by_category <- function(data, category_id) {
+  if (category_id == ALL_CATEGORY_ID) {
+    # Aggregate all data
+    result <- data %>%
+      summarise(
+        total = sum(value, na.rm = TRUE),
+        count = n()
+      )
+  } else if (category_id == MULTIPLE_SELECTION_ID) {
+    # Handle multiple selections
+    result <- data %>%
+      filter(category_id %in% selected_categories) %>%
+      summarise(
+        total = sum(value, na.rm = TRUE),
+        count = n()
+      )
+  } else {
+    # Standard category processing
+    result <- data %>%
+      filter(category_id == !!category_id) %>%
+      summarise(
+        total = sum(value, na.rm = TRUE),
+        count = n()
+      )
+  }
+  return(result)
+}
+```
+
+# Section 4: Benefits {#benefits}
+
+Following this rule will:
+
+1. **Consistent Processing**: Enables reliable special case handling
+2. **Clear Semantics**: Makes code more readable with obvious special cases
+3. **Query Optimization**: Allows efficient database queries for common cases
+4. **Sort Order**: Ensures predictable sorting in UI components
+5. **Translation Support**: Special categories can be translated like regular ones
+
+# Section 5: Validation Checklist {#validation-checklist}
+
+When implementing special ID conventions:
+
+1. ☐ Define all special ID constants
+2. ☐ Create special category records in database
+3. ☐ Implement special case handling logic
+4. ☐ Update Excel parameter files
+5. ☐ Configure UI component defaults
+6. ☐ Test filtering and aggregation logic
+7. ☐ Verify sort order
+8. ☐ Confirm translation support
+
+---
+
+*Based on: Data Management Law Article 9*  
+*Related to: [MP034 Special Treatment of ALL Category](../../CH00_fundamental_principles/meta_principles/MP034_special_treatment_all.qmd), [UI_R008 Default Selection Conventions](../../CH04_ui_components/rules/UI_R008_default_selection_conventions.qmd)*

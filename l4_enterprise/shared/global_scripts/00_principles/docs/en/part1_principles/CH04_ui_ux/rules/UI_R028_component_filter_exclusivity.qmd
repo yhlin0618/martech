@@ -1,0 +1,96 @@
+---
+title: "UI_R028: Component Filter Exclusivity"
+subtitle: "All sidebar filter controls must be delivered through the component's ui$filter — no filter injection at the union/layout level"
+category: "Rule"
+type: "Rule"
+id: "UI_R028"
+derived_from: "UI_R026"
+created: "2026-03-14"
+triggered_by: "Issue #349 — worldMap sidebar 國家篩選器繞過元件架構導致格式不一致"
+---
+
+## Summary
+
+Every Shiny component returns exactly **two UI parts**: `filter` and `display`. All sidebar filter controls — including cross-tab filters like country selection — **must** be delivered through the component's `ui$filter` mechanism. Injecting filter controls outside this architecture (e.g., adding a standalone `uiOutput` in the union layout) is **prohibited**.
+
+## Motivation
+
+When a filter control is injected at the union/layout level instead of going through a component's `ui$filter`:
+
+1. **Format inconsistency**: The injected control has different styling (font size, padding, margins) because it bypasses the `dynamic_filter` container's CSS
+2. **Spurious separators**: A visible gap or `<hr>` appears between the injected control and the component's filter, confusing users
+3. **Display logic duplication**: The union must implement its own `renderUI` + tab-checking logic to show/hide the control, duplicating what `dynamic_filter` already handles
+4. **Architectural violation**: The two-part pattern (`filter` + `display`) is the component contract — bypassing it creates a shadow API
+
+**Real-world example (Issue #349):** The country filter was added as a separate `uiOutput("country_filter_sidebar")` in the union layout, outside the `dynamic_filter` container. This caused a visible separator line and format mismatch between "國家" and "選擇指標" in the worldMap tab.
+
+## Rule
+
+```
+RULE UI_R028_FILTER_EXCLUSIVITY:
+FOR ALL sidebar filter controls F:
+  F MUST be part of some component C's ui$filter
+  F MUST NOT be injected directly into the union/layout sidebar
+COROLLARY:
+  If F needs to appear on multiple tabs:
+    Each tab's component includes F in its own ui$filter
+    NOT: a shared F injected at union level
+```
+
+## Component Contract
+
+Every component returns:
+
+```r
+list(
+  ui = list(
+    filter  = ui_filter,   # → sidebar dynamic_filter container
+    display = ui_display    # → main panel body
+  ),
+  server = server_fn
+)
+```
+
+There are exactly **two** UI slots. No third slot exists for "shared filters" or "local filters".
+
+## Correct Pattern
+
+If multiple tabs need the same filter (e.g., country selection):
+
+```r
+# In worldMap component
+ui_filter <- tagList(
+  selectInput(ns("country"), label = translate("Country"), ...),
+  selectInput(ns("kpi_select"), label = translate("Select KPI"), ...),
+  ai_insight_button_ui(ns, translate)
+)
+
+# In revenuePulse component (if it also needs country)
+ui_filter <- tagList(
+  selectInput(ns("country"), label = translate("Country"), ...),
+  selectInput(ns("time_scale"), label = translate("Time Scale"), ...),
+  ai_insight_button_ui(ns, translate)
+)
+```
+
+Each component owns its own country filter instance. The `dynamic_filter` container handles showing the correct filter when tabs switch.
+
+## Anti-Pattern
+
+```r
+# WRONG: Injecting a filter outside the component architecture
+sidebar = bs4DashSidebar(
+  ...,
+  uiOutput("country_filter_sidebar"),  # ← VIOLATION: not part of any component's ui$filter
+  uiOutput("dynamic_filter")
+)
+```
+
+## YAGNI Corollary
+
+Do not create shared filter infrastructure "in case" multiple tabs need the same filter in the future. Start with the filter in the one component that needs it. When a second component genuinely needs it, add it to that component's `ui$filter` — do not extract it to a shared layer.
+
+## Relationship
+
+- Refines **UI_R026** (Sidebar Layout Hierarchy) — removes the "Local Filter" layer
+- Complements **UI_R001** (UI-Server-Defaults Triple Pattern) — enforces the two-part UI contract

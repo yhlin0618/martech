@@ -1,0 +1,161 @@
+---
+
+title: "D02_03: Customer Aggregation Views"
+subtitle: "Aggregate filtered sales data by customer"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_03"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D02_02_filtered_sales_views"
+outputs_to:
+  - "cleansed_data.filtered.df_sales_by_customer_{condition_key}___cleansed"
+implements:
+  - "DM_R051": "Single Task per Derivation Step"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_03: Customer Aggregation Views {#overview}
+
+This task creates customer-centric views by aggregating filtered sales data at the customer level. DNA integration is handled separately in D02_04.
+
+## Customer View Creation (NSQL) {#customer-view-creation}
+
+```nsql
+# D02_03: Create Customer-Centric Filtered Views [Layer: 4CL]
+CREATE_CUSTOMER_VIEWS D02_03:
+  FOR EACH condition IN condition_grids:
+    # Define customer view name with ___cleansed suffix
+    view_name: "df_sales_by_customer_" + condition.condition_key + "___cleansed"
+
+    # Create aggregated customer view
+    # Read from 4CL, output to 4CL
+    CREATE VIEW cleansed_data.filtered.{view_name} AS:
+      FROM cleansed_data.filtered.df_sales_{condition.condition_key}___cleansed
+
+      # Aggregate by customer
+      GROUP BY customer_id
+
+      # Calculate customer-level metrics
+      SELECT:
+        customer_id
+        COUNT(*) AS transaction_count
+        MIN(transaction_date) AS first_purchase_date
+        MAX(transaction_date) AS last_purchase_date
+        SUM(amount) AS total_spent
+        AVG(amount) AS average_order_value
+        COUNT(DISTINCT product_id) AS distinct_products
+
+        # Preserve filter conditions
+        condition.source_filter AS source_filter
+        condition.time_condition AS time_condition
+        condition.product_line_id_filter AS product_line_id_filter
+        condition.state_filter AS state_filter
+
+    # Layer 4CL: Output to cleansed_data with ___cleansed suffix
+    LOG "Created customer view: {view_name}"
+```
+
+**Layer**: 4CL (Cleanse) - Per MP144, output uses `___cleansed` suffix.
+
+## Customer Aggregation Metrics {#metrics}
+
+| Metric | Calculation | Description |
+|--------|-------------|-------------|
+| `transaction_count` | `COUNT(*)` | Number of transactions |
+| `first_purchase_date` | `MIN(transaction_date)` | First purchase date |
+| `last_purchase_date` | `MAX(transaction_date)` | Most recent purchase |
+| `total_spent` | `SUM(amount)` | Total monetary value |
+| `average_order_value` | `AVG(amount)` | Average transaction value |
+| `distinct_products` | `COUNT(DISTINCT product_id)` | Unique products purchased |
+
+## Component Access Pattern (NSQL) {#access-pattern}
+
+```nsql
+# D02_03: Component Data Access Pattern [Layer: 4CL]
+ACCESS_PATTERN component_data_access:
+  # Connect to cleansed_data database
+  CONNECT TO cleansed_data AS conn
+
+  # Query with filter parameters from UI
+  QUERY:
+    FROM cleansed_data.filtered.df_sales_by_customer___cleansed
+
+    FILTER:
+      source_filter = input.source
+      time_condition = input.time_horizon
+      product_line_id_filter = CAST(input.product_line AS INTEGER)
+      state_filter = input.region
+
+    COLLECT TO customer_data
+
+  # Alternative: Direct view access using condition key
+  condition_key: CONCAT(input.source, '_', input.time_horizon, '_',
+                        input.product_line, '_', LOWER(input.region))
+
+  QUERY_DIRECT:
+    FROM cleansed_data.filtered.df_sales_by_customer_{condition_key}___cleansed
+    COLLECT TO customer_data
+
+  DISCONNECT FROM conn
+```
+
+## Output View Schema {#output-schema}
+
+```nsql
+# Customer-centric view structure
+SCHEMA df_sales_by_customer_{condition_key}:
+  COLUMNS:
+    customer_id: VARCHAR NOT NULL PRIMARY KEY
+    transaction_count: INTEGER NOT NULL
+    first_purchase_date: DATE
+    last_purchase_date: DATE
+    total_spent: NUMERIC
+    average_order_value: NUMERIC
+    distinct_products: INTEGER
+
+    # Filter conditions
+    source_filter: VARCHAR NOT NULL
+    time_condition: VARCHAR NOT NULL
+    product_line_id_filter: INTEGER NOT NULL
+    state_filter: VARCHAR NOT NULL
+
+  TYPE: VIRTUAL VIEW
+```
+
+## Validation (NSQL) {#validation}
+
+```nsql
+# D02_03: Validate Customer View Creation [Layer: 4CL]
+VALIDATE D02_03:
+  FOR EACH condition IN condition_grids:
+    view_name: "df_sales_by_customer_" + condition.condition_key + "___cleansed"
+
+    CHECK view_exists:
+      ASSERT: EXISTS(cleansed_data.filtered.{view_name})
+
+    CHECK customer_unique:
+      QUERY: "SELECT customer_id, COUNT(*) FROM {view_name} GROUP BY customer_id HAVING COUNT(*) > 1"
+      ASSERT: COUNT(*) = 0
+      MESSAGE: "Each customer_id must be unique per view"
+
+    CHECK metrics_valid:
+      QUERY: "SELECT * FROM {view_name} WHERE transaction_count <= 0 OR total_spent < 0"
+      ASSERT: COUNT(*) = 0
+
+  ON_SUCCESS: LOG "D02_03 completed: all customer views created in cleansed_data"
+```
+
+## Related Documentation
+
+- [D02_02_filtered_sales_views.qmd](D02_02_filtered_sales_views.qmd) - Sales views (upstream)
+- [D02_04_dna_integration.qmd](D02_04_dna_integration.qmd) - DNA integration (downstream)
+- [D02_05_execution.qmd](D02_05_execution.qmd) - Execution flow

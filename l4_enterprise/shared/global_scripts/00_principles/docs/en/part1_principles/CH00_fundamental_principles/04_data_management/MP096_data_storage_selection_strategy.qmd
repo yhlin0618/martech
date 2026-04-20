@@ -1,0 +1,454 @@
+---
+title: "MP096: Data Storage Selection Strategy"
+subtitle: "Strategic framework for selecting appropriate data storage formats based on use case, performance requirements, and collaboration needs"
+author: "Claude (Principle Revisor)"
+date: "2025-08-28"
+date-modified: "2025-08-28"
+categories: [meta-principle, data-management, storage-strategy, format-selection]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Principle Statement
+
+**Select data storage formats based on a clear hierarchy: DuckDB for analytical workloads and local processing, CSV for data exchange and archives, YAML for configuration and metadata, and Google Sheets for frequently updated collaborative reference data. Each format serves a specific purpose in the MAMBA ecosystem.**
+
+## Rationale
+
+Different data storage formats excel in different scenarios. This meta-principle provides clear decision criteria for selecting the appropriate storage format based on specific requirements including performance, collaboration needs, data structure, and access patterns. By establishing a clear selection framework, we ensure consistency across the MAMBA system while optimizing for each use case.
+
+## Storage Format Hierarchy
+
+### 1. DuckDB (Default for Analytical Data) {#duckdb}
+
+**Use DuckDB when:**
+- Primary analytical database for MAMBA applications
+- Local data processing and analysis required
+- Complex SQL queries and joins needed
+- OLAP (analytical) workloads predominate
+- Data size exceeds comfortable CSV handling (>100MB)
+- Performance is critical for interactive applications
+- Column-oriented storage benefits the access pattern
+
+**Characteristics:**
+- Embedded analytical database (no server required)
+- Excellent performance for analytical queries
+- Native R/Python integration via DBI
+- Supports complex data types
+- ACID compliance for data integrity
+- Efficient columnar storage format
+
+**Example Use Cases:**
+- Sales data analytics
+- Customer behavior analysis
+- Product performance metrics
+- Time series data storage
+- Aggregation and reporting datasets
+
+### 2. CSV (Data Exchange and Archives) {#csv}
+
+**Use CSV when:**
+- Data exchange between systems required
+- Human-readable format needed
+- Simple tabular data structure
+- Version control tracking important
+- Archival or backup purposes
+- Small to medium datasets (<100MB)
+- Universal compatibility required
+
+**Characteristics:**
+- Universal format support
+- Human-readable plain text
+- Version control friendly
+- Simple structure
+- No type information preserved
+- Limited to flat structures
+
+**Example Use Cases:**
+- Configuration lookup tables
+- Reference data exports
+- Data archive snapshots
+- Cross-system data transfer
+- Audit logs and records
+
+### 3. YAML (Configuration and Metadata) {#yaml}
+
+**Use YAML when:**
+- Hierarchical configuration data
+- Application settings and parameters
+- Metadata and documentation
+- Human-editable configuration needed
+- Complex nested structures required
+- Comments and documentation inline
+- Schema definitions and mappings
+
+**Characteristics:**
+- Human-readable and editable
+- Supports complex nested structures
+- Comments for documentation
+- Type preservation
+- Excellent for configuration
+- Not suitable for large datasets
+
+**Example Use Cases:**
+- `app_config.yaml` files
+- Platform configuration mappings
+- API endpoint definitions
+- Schema definitions
+- Workflow configurations
+- Parameter specifications
+
+### 4. Google Sheets (Collaborative Reference Data) {#google-sheets}
+
+**Use Google Sheets when:**
+- Frequent collaborative editing required
+- Business users need direct access
+- Real-time updates necessary
+- Reference data managed by non-technical users
+- Version history and change tracking needed
+- Small reference datasets
+- Integration with business workflows
+
+**Characteristics:**
+- Real-time collaboration
+- Built-in version history
+- Access control and permissions
+- Formula support
+- Easy business user interface
+- API access for automation
+- Limited to 10 million cells
+
+**Example Use Cases:**
+- Platform ID mappings
+- Product category definitions
+- Business rules and thresholds
+- Campaign parameters
+- Vendor information
+- Pricing matrices
+
+### 5. Parquet (Big Data Archives) {#parquet}
+
+**Use Parquet when:**
+- Large-scale data archival (>1GB)
+- Long-term storage optimization needed
+- Cross-platform big data compatibility
+- Columnar compression benefits
+- Integration with data lake architectures
+- Batch processing pipelines
+
+**Characteristics:**
+- Highly efficient compression
+- Columnar storage format
+- Schema evolution support
+- Cross-platform compatibility
+- Optimized for big data tools
+- Not directly editable
+
+**Example Use Cases:**
+- Historical data archives
+- Data lake storage
+- Batch processing inputs
+- Cross-system data migration
+- Long-term backup storage
+
+### 6. JSON (API and Semi-structured Data) {#json}
+
+**Use JSON when:**
+- API request/response data
+- Semi-structured data storage
+- NoSQL-style documents
+- JavaScript integration needed
+- Nested but irregular structures
+- Web service communication
+
+**Characteristics:**
+- Native web format
+- Flexible schema
+- Good for semi-structured data
+- Human-readable
+- Widely supported
+- Can become verbose
+
+**Example Use Cases:**
+- API response caching
+- User preference storage
+- Event log data
+- Configuration with arrays
+- Document-style records
+
+## Decision Framework
+
+### Selection Flowchart {#flowchart}
+
+```mermaid
+graph TD
+    A[Data Storage Need] --> B{Analytical Workload?}
+    B -->|Yes| C[DuckDB]
+    B -->|No| D{Configuration/Settings?}
+    D -->|Yes| E[YAML]
+    D -->|No| F{Collaborative Editing?}
+    F -->|Yes| G[Google Sheets]
+    F -->|No| H{Data Exchange?}
+    H -->|Yes| I[CSV]
+    H -->|No| J{API/Web Data?}
+    J -->|Yes| K[JSON]
+    J -->|No| L{Large Archive?>1GB]
+    L -->|Yes| M[Parquet]
+    L -->|No| N[CSV/DuckDB]
+```
+
+### Decision Criteria Matrix {#matrix}
+
+| Criteria | DuckDB | CSV | YAML | Google Sheets | Parquet | JSON |
+|----------|---------|-----|------|---------------|---------|------|
+| **Performance** | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
+| **Human Readable** | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ |
+| **Collaboration** | ⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐ |
+| **Version Control** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐⭐ |
+| **Complex Structure** | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **Storage Efficiency** | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| **Query Capability** | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+
+## Implementation Guidelines
+
+### 1. DuckDB Implementation {#duckdb-impl}
+
+```r
+# Standard DuckDB connection pattern
+library(duckdb)
+library(DBI)
+
+# Create or connect to DuckDB
+con <- dbConnect(duckdb(), "app_data/analytics.duckdb")
+
+# Create analytical table
+dbExecute(con, "
+  CREATE OR REPLACE TABLE sales_analytics AS
+  SELECT 
+    date,
+    platform_id,
+    SUM(revenue) as total_revenue,
+    COUNT(DISTINCT customer_id) as unique_customers
+  FROM sales_raw
+  GROUP BY date, platform_id
+")
+
+# Query with dplyr
+library(dplyr)
+sales_summary <- tbl(con, "sales_analytics") %>%
+  filter(date >= '2024-01-01') %>%
+  collect()
+```
+
+### 2. CSV Implementation {#csv-impl}
+
+```r
+# CSV for data exchange
+write.csv(
+  reference_data,
+  "data/exports/platform_reference_20250828.csv",
+  row.names = FALSE,
+  na = ""
+)
+
+# Version-controlled reference data
+platform_ids <- read.csv(
+  "data/reference/platform_ids.csv",
+  stringsAsFactors = FALSE
+)
+```
+
+### 3. YAML Implementation {#yaml-impl}
+
+```yaml
+# app_config.yaml
+app_info:
+  name: "Sales Analytics Dashboard"
+  version: "2.0.0"
+  
+database:
+  type: "duckdb"
+  path: "app_data/analytics.duckdb"
+  
+platforms:
+  shopee:
+    code: "P07"
+    api_endpoint: "https://api.shopee.com/v2"
+  lazada:
+    code: "P08"
+    api_endpoint: "https://api.lazada.com/v1"
+```
+
+### 4. Google Sheets Implementation {#sheets-impl}
+
+```r
+# Read collaborative reference data
+library(googlesheets4)
+
+# Authenticate (one-time setup)
+gs4_auth()
+
+# Read platform mappings maintained by business team
+platform_mappings <- read_sheet(
+  "https://docs.google.com/spreadsheets/d/SHEET_ID",
+  sheet = "Platform_Mappings"
+)
+
+# Cache locally for performance
+saveRDS(platform_mappings, "cache/platform_mappings.rds")
+```
+
+### 5. Format Conversion Patterns {#conversion}
+
+```r
+# CSV to DuckDB for analysis
+con <- dbConnect(duckdb(), "analytics.duckdb")
+dbWriteTable(con, "sales_import", read.csv("sales_export.csv"))
+
+# DuckDB to CSV for sharing
+dbReadTable(con, "summary_stats") %>%
+  write.csv("exports/summary_stats.csv", row.names = FALSE)
+
+# Google Sheets to DuckDB for performance
+platform_data <- read_sheet("SHEET_ID")
+dbWriteTable(con, "platform_reference", platform_data, overwrite = TRUE)
+```
+
+## Migration Strategy
+
+### From Existing Systems {#migration}
+
+1. **Excel to CSV/DuckDB Migration**:
+   - Export reference data to CSV
+   - Import analytical data to DuckDB
+   - Collaborative sheets to Google Sheets
+
+2. **Flat Files to DuckDB**:
+   - Consolidate multiple CSV files
+   - Create indexed tables
+   - Establish relationships
+
+3. **Configuration Migration**:
+   - Convert .ini/.conf files to YAML
+   - Standardize structure
+   - Add schema validation
+
+## Performance Considerations
+
+### Storage Size Comparison {#storage-size}
+
+For a typical 1 million row sales dataset:
+- **CSV**: ~100MB (uncompressed text)
+- **DuckDB**: ~30MB (columnar compression)
+- **Parquet**: ~20MB (optimized compression)
+- **JSON**: ~300MB (verbose format)
+
+### Query Performance {#query-perf}
+
+For analytical queries on 1 million rows:
+- **DuckDB**: <100ms (indexed, columnar)
+- **CSV**: 5-10 seconds (full scan)
+- **Google Sheets**: 30+ seconds (API overhead)
+- **Parquet**: 200-500ms (with appropriate tools)
+
+## Common Antipatterns to Avoid
+
+1. **Using CSV for everything**: While universal, CSV is inefficient for analytical workloads
+2. **Storing large datasets in Google Sheets**: Sheets have cell limits and performance issues
+3. **Using JSON for tabular data**: Unnecessary overhead for structured data
+4. **Binary formats for configuration**: Use YAML for human-editable settings
+5. **Not considering access patterns**: Choose format based on how data will be used
+
+## Relationship to Other Principles
+
+### Related Meta-Principles {#related-principles}
+
+- **MP070: AI-Friendly Formats**: This principle extends MP070 by providing specific selection criteria
+- **MP060: Database Table Creation Strategy**: Complements with specific database selection
+- **MP063: Data Processing Trinity**: Aligns with ETL, Derivation, and Module stages
+- **MP052: Data Source Hierarchy**: Establishes storage as part of data flow
+
+### Supporting Rules {#supporting-rules}
+
+- **DM_R004: Data Storage Organization**: Defines directory structure for chosen formats
+- **DM_R023: Universal DBI Approach**: Applies regardless of storage choice
+- **DM_R025: Type Conversion R-DuckDB**: Specific implementation for DuckDB
+- **DM_R026: JSON Serialization Strategy**: Handles JSON storage cases
+
+## Validation Checklist
+
+When implementing data storage:
+
+1. ☐ Identify primary use case (analytical, config, exchange, collaboration)
+2. ☐ Estimate data size and growth rate
+3. ☐ Determine access patterns (read-heavy, write-heavy, mixed)
+4. ☐ Assess collaboration requirements
+5. ☐ Consider performance requirements
+6. ☐ Evaluate version control needs
+7. ☐ Choose format based on decision framework
+8. ☐ Implement with standard patterns
+9. ☐ Document format choice rationale
+10. ☐ Plan migration strategy if needed
+
+## Examples by Use Case
+
+### Sales Analytics System {#sales-example}
+
+```
+Primary Data: DuckDB (analytics.duckdb)
+- sales_transactions (millions of rows)
+- customer_profiles (analytical views)
+- product_performance (aggregated metrics)
+
+Reference Data: CSV (version controlled)
+- product_categories.csv
+- store_locations.csv
+- currency_rates.csv
+
+Configuration: YAML
+- app_config.yaml (application settings)
+- database_schema.yaml (table definitions)
+
+Collaborative: Google Sheets
+- Platform ID Mappings (business-maintained)
+- Promotion Calendar (marketing team)
+- Vendor Contacts (procurement team)
+```
+
+### ETL Pipeline {#etl-example}
+
+```
+Input: Various
+- API responses (JSON)
+- FTP uploads (CSV)
+- Database exports (Parquet)
+
+Processing: DuckDB
+- staging tables (temporary)
+- transformation views
+- validation queries
+
+Output: Format depends on consumer
+- Analytics: DuckDB tables
+- Reports: CSV exports
+- API: JSON responses
+- Archive: Parquet files
+```
+
+## Conclusion
+
+The Data Storage Selection Strategy provides clear guidance for choosing appropriate storage formats in the MAMBA ecosystem. By establishing DuckDB as the default for analytical workloads while recognizing the specific strengths of CSV, YAML, Google Sheets, and other formats, we ensure optimal performance, collaboration, and maintainability across all system components.
+
+This principle emphasizes that format selection should be intentional and based on specific requirements rather than convenience or familiarity. Each format has its place in the ecosystem, and using the right format for the right purpose is key to system efficiency and maintainability.
+
+---
+
+*Based on: MAMBA system requirements and industry best practices*  
+*Essential for: All data storage decisions in MAMBA applications*  
+*Supersedes: Ad-hoc format selection practices*

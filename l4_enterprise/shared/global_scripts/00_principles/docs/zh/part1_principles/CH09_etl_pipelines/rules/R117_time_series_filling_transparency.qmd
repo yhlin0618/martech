@@ -1,0 +1,441 @@
+---
+id: "R117"
+title: "時間序列填補透明度規則"
+type: "rule"
+category: "etl_pipelines"
+date_created: "2025-11-12"
+date_modified: "2026-01-02"
+author: "principle-product-manager"
+status: "active"
+version: "1.1"
+weight: 117
+implements:
+  - "MP029": "禁止假資料原則"
+  - "MP109": "衍生資料管線"
+  - "MP064": "ETL-衍生分離原則"
+related_to:
+  - "R116": "ETL 1ST 階段貨幣標準化"
+  - "R118": "統計顯著性文件化"
+  - "MP108": "基礎 ETL 流程分離"
+---
+
+# R117: 時間序列填補透明度規則
+
+## 規則聲明
+
+**所有填補或插值的時間序列資料必須明確標記 `data_source` 欄位 ('REAL' vs 'FILLED')，以維持透明度並防止違反 MP029。時間序列完成邏輯預設屬於 DRV 層，但若需要產出標準化時間序列輸入供下游衍生使用，可在 derived ETL 時間序列步驟中實作。**
+
+## 核心要求
+
+### 1. 何時需要時間序列填補
+
+**適用於** 處理不完整時間序列資料時：
+
+```yaml
+requires_time_series_filling:
+  missing_dates:
+    description: "產品在某些日期未銷售 (日/週/月序列中有間隙)"
+    example: "2024-01-01 到 2024-12-31 產品銷售資料缺少 45 天"
+    issue: "分析需要完整時間序列進行趨勢檢測"
+
+  sparse_data:
+    description: "產品間歇性銷售 (零星交易)"
+    example: "季節性產品僅在 Q4 銷售，Q1-Q3 資料缺失"
+    issue: "視覺化中斷，有間隙的趨勢分析失敗"
+
+  multi_product_alignment:
+    description: "不同產品有不同的日期範圍"
+    example: "產品 A: 2024-01 到 2024-12，產品 B: 2024-03 到 2024-10"
+    issue: "跨產品比較需要對齊的時間範圍"
+```
+
+### 2. 實作位置
+
+**關鍵**: 時間序列填補不得在 base ETL 的 0IM/1ST/transaction 2TR 進行，必須在 **derived ETL 時間序列步驟** 或 **DRV 層**：
+
+```yaml
+stage_responsibilities:
+  etl_0im_import:
+    responsibility: "原樣匯入原始交易資料"
+    time_series: "僅匯入實際交易，不填補"
+    rationale: "0IM 保留原始資料完整性"
+
+  etl_1st_standardization:
+    responsibility: "標準化格式、貨幣、維度"
+    time_series: "標準化日期格式，不填補"
+    rationale: "1ST 標準化現有資料，不創建新資料"
+
+  etl_2tr_transformation:
+    responsibility: "應用業務邏輯轉換"
+    time_series: "轉換現有交易，不在 base ETL 填補"
+    rationale: "Base 2TR 轉換真實資料，不合成資料"
+
+  etl_2tr_time_series:  # ⭐ DERIVED ETL 時間序列 (允許)
+    responsibility: "產出標準化時間序列輸入供下游衍生"
+    time_series: |
+      - 使用 fn_complete_time_series() 填補間隙
+      - 新增 data_source 欄位: \"REAL\" 或 \"FILLED\"
+      - 記錄每產品/國家的 fill_rate
+      - 保留原始交易計數
+
+  df_2tr_derivation:  # ⭐ DRV 時間序列 (允許)
+    responsibility: "創建完整時間序列以供分析"
+    time_series: |
+      - 使用 fn_complete_time_series() 填補間隙
+      - 新增 data_source 欄位: \"REAL\" 或 \"FILLED\"
+      - 記錄每產品/國家的 fill_rate
+      - 保留原始交易計數
+```
+
+### 3. 透明度要求
+
+**強制性**: 所有時間序列資料必須指示真實 vs 填補狀態：
+
+```yaml
+required_data_source_column:
+  column_name: "data_source"
+  data_type: "VARCHAR(10)"
+  allowed_values:
+    - "REAL": "來自實際交易/觀察的資料"
+    - "FILLED": "合成資料以完成時間序列"
+
+  implementation:
+    df_stage: "Derived ETL 2TR 或 DRV 2TR - 時間序列完成"
+    function: "fn_complete_time_series(data, mark_filled = TRUE)"
+    validation: "檢查 data_source 欄位存在且所有列已標記"
+
+  metadata_tracking:
+    fill_rate_by_product:
+      description: "每產品填補 vs 真實資料點的百分比"
+      threshold: "如果 fill_rate > 50%，資料品質問題 - 需調查"
+
+    fill_method:
+      description: "用於填補間隙的方法 (前向填補、插值、零填補)"
+      options: ["forward_fill", "linear_interpolation", "zero_fill", "mean_imputation"]
+```
+
+## 原理說明
+
+### 1. 憲法依據 (MP029 - 禁止假資料)
+
+填補時間序列而不標記違反 MP029，將**合成資料呈現為真實**：
+
+```r
+# ❌ 違反 MP029: 填補資料未標記，看起來與真實資料相同
+sales_complete <- sales_raw %>%
+  complete(
+    date = seq(min(date), max(date), by = "1 day"),
+    product_id
+  ) %>%
+  fill(sales_quantity, .direction = "down")  # 前向填補，但沒有標記!
+
+# 使用者無法區分填補和真實資料
+# 這是假資料偽裝成真實資料
+
+# ✅ 正確: 明確標記填補資料
+sales_complete_marked <- sales_raw %>%
+  mutate(data_source = "REAL") %>%  # 標記原始資料為 REAL
+  complete(
+    date = seq(min(date), max(date), by = "1 day"),
+    product_id
+  ) %>%
+  mutate(
+    data_source = ifelse(is.na(data_source), "FILLED", data_source),
+    sales_quantity = ifelse(data_source == "FILLED", 0, sales_quantity)
+  )
+
+# 現在使用者可以分別過濾、分析或視覺化真實 vs 填補資料
+```
+
+### 2. MP109 對齊 (Derived ETL 或 DRV 層職責)
+
+時間序列完成是**衍生任務**，而非轉換：
+
+```yaml
+mp109_derivation_tasks:
+  join_operations:
+    - "結合銷售 + 客戶 + 產品維度"
+    - "合併多個資料來源"
+
+  aggregation:
+    - "按日期/產品彙總銷售"
+    - "計算移動平均"
+
+  time_series_operations:  # ⭐ 包括填補
+    - "完成稀疏時間序列"
+    - "對齊多產品日期範圍"
+    - "填補間隙以進行連續分析"
+
+  calculation:
+    - "計算衍生指標 (增長率等)"
+```
+
+時間序列填補基於現有資料創建**衍生資料** (新列)，使其成為 derived ETL 或 DRV 職責。
+
+## 實作指南
+
+### 1. 標準時間序列完成函數
+
+使用集中式工具函數：
+
+```r
+# Function: fn_complete_time_series
+# Location: scripts/global_scripts/04_utils/fn_complete_time_series.R
+
+fn_complete_time_series <- function(
+  data,
+  time_column = "date",
+  group_columns = c("product_id", "country"),
+  value_columns = c("sales_quantity", "revenue"),
+  fill_method = "zero_fill",      # "zero_fill", "forward_fill", "linear_interpolation"
+  mark_filled = TRUE,
+  min_date = NULL,
+  max_date = NULL
+) {
+  # 1. 標記原始資料為 REAL
+  data_marked <- data %>%
+    mutate(data_source = "REAL")
+
+  # 2. 確定時間範圍
+  if (is.null(min_date)) min_date <- min(data[[time_column]])
+  if (is.null(max_date)) max_date <- max(data[[time_column]])
+
+  time_sequence <- seq(min_date, max_date, by = "1 day")
+
+  # 3. 創建時間 x 群組的完整網格
+  complete_grid <- expand.grid(
+    time = time_sequence,
+    stringsAsFactors = FALSE
+  )
+
+  # 新增群組欄位
+  if (length(group_columns) > 0) {
+    group_combinations <- data %>%
+      select(all_of(group_columns)) %>%
+      distinct()
+
+    complete_grid <- complete_grid %>%
+      crossing(group_combinations)
+  }
+
+  # 4. 與原始資料連接
+  result <- complete_grid %>%
+    rename({{time_column}} := time) %>%
+    left_join(data_marked, by = c(time_column, group_columns))
+
+  # 5. 根據方法填補缺失值
+  result <- result %>%
+    group_by(across(all_of(group_columns))) %>%
+    mutate(
+      data_source = ifelse(is.na(data_source), "FILLED", data_source)
+    )
+
+  # 對值欄位應用填補方法
+  for (col in value_columns) {
+    result <- result %>%
+      mutate(
+        {{col}} := case_when(
+          data_source == "REAL" ~ .data[[col]],
+          fill_method == "zero_fill" ~ 0,
+          fill_method == "forward_fill" ~ zoo::na.locf(.data[[col]], na.rm = FALSE),
+          fill_method == "linear_interpolation" ~ zoo::na.approx(.data[[col]], na.rm = FALSE),
+          TRUE ~ NA_real_
+        )
+      )
+  }
+
+  result <- result %>% ungroup()
+
+  # 6. 計算填補率元資料
+  fill_rate_summary <- result %>%
+    group_by(across(all_of(group_columns))) %>%
+    summarize(
+      total_days = n(),
+      filled_days = sum(data_source == "FILLED"),
+      fill_rate = filled_days / total_days,
+      .groups = "drop"
+    )
+
+  # 記錄填補率摘要
+  message(sprintf("✅ R117: 時間序列已完成。整體填補率: %.1f%%",
+                 mean(fill_rate_summary$fill_rate) * 100))
+
+  # 如果填補率高則警告
+  high_fill_products <- fill_rate_summary %>%
+    filter(fill_rate > 0.5)
+
+  if (nrow(high_fill_products) > 0) {
+    warning(sprintf("R117 警告: %d 個產品的填補率 >50%%。資料品質問題?",
+                   nrow(high_fill_products)))
+  }
+
+  return(list(
+    data = result,
+    fill_rate_summary = fill_rate_summary
+  ))
+}
+```
+
+### 2. Derived ETL 或 DRV 2TR 實作模式
+
+同樣的模式可用於 derived ETL 的時間序列腳本；以下為精準行銷 DRV 2TR 範例：
+
+```r
+# precision_DRV_time_series.R
+# 階段: DRV 2TR - 時間序列衍生
+# 目的: 為所有產品-國家組合創建完整時間序列
+
+precision_time_series_drv <- function() {
+  # 從 ETL 2TR 載入轉換後的資料
+  sales_data <- tbl2(con_transformed, "df_precision_sales___transformed") %>%
+    collect()
+
+  # === 時間序列完成 (R117) ⭐ ===
+
+  # 以明確標記完成時間序列
+  completed_result <- fn_complete_time_series(
+    data = sales_data,
+    time_column = "date",
+    group_columns = c("product_id", "country_iso"),
+    value_columns = c("sales_quantity", "revenue_usd"),
+    fill_method = "zero_fill",  # 缺席的銷售 = 0 銷售
+    mark_filled = TRUE  # ⭐ 明確標記填補資料
+  )
+
+  completed_data <- completed_result$data
+  fill_summary <- completed_result$fill_rate_summary
+
+  # === 驗證 (R117) ===
+
+  # 檢查 data_source 欄位存在
+  if (!"data_source" %in% names(completed_data)) {
+    stop("違反 R117: 時間序列完成後缺少 data_source 欄位")
+  }
+
+  # 檢查所有列已標記
+  unmarked_rows <- completed_data %>%
+    filter(is.na(data_source) | !data_source %in% c("REAL", "FILLED"))
+
+  if (nrow(unmarked_rows) > 0) {
+    stop(sprintf("違反 R117: %d 列的 data_source 值無效",
+                nrow(unmarked_rows)))
+  }
+
+  # === 輸出 ===
+
+  # 寫入 DRV 資料庫
+  dbWriteTable(
+    conn = con_drv,
+    name = "df_precision_time_series___complete",
+    value = completed_data,
+    overwrite = TRUE
+  )
+
+  # 寫入填補率元資料
+  dbWriteTable(
+    conn = con_drv,
+    name = "meta_precision_time_series_fill_rates",
+    value = fill_summary,
+    overwrite = TRUE
+  )
+
+  # 記錄摘要
+  message(sprintf("✅ R117: 時間序列衍生完成"))
+  message(sprintf("  - 總列數: %d", nrow(completed_data)))
+  message(sprintf("  - 真實資料列: %d", sum(completed_data$data_source == "REAL")))
+  message(sprintf("  - 填補資料列: %d", sum(completed_data$data_source == "FILLED")))
+  message(sprintf("  - 整體填補率: %.1f%%",
+                 mean(fill_summary$fill_rate) * 100))
+}
+```
+
+## 常見錯誤避免
+
+### ❌ 錯誤 1: 在 base ETL 層填補
+
+```r
+# 錯誤: 在 base ETL 2TR 填補時間序列
+cbz_ETL_sales_2TR <- function() {
+  sales <- read_staged_data()
+
+  # ❌ 違反 R117: 在 base ETL 層填補時間序列
+  sales_complete <- sales %>%
+    complete(date = seq(min(date), max(date), by = "1 day"))
+
+  write_transformed_data(sales_complete)
+}
+
+# 正確: 使用 derived ETL 時間序列步驟或 DRV 層
+cbz_ETL_sales_2TR <- function() {
+  sales <- read_staged_data()
+  write_transformed_data(sales)  # ✅ ETL 中不填補
+}
+
+cbz_ETL_sales_time_series_2TR <- function() {
+  sales <- read_transformed_data()
+  sales_complete <- fn_complete_time_series(sales, mark_filled = TRUE)
+  write_app_data(sales_complete)  # ✅ derived ETL 時間序列步驟
+}
+
+cbz_DRV_time_series <- function() {
+  sales <- read_transformed_data()
+  sales_complete <- fn_complete_time_series(sales, mark_filled = TRUE)  # ✅ 在 DRV 填補
+  write_drv_data(sales_complete)
+}
+```
+
+### ❌ 錯誤 2: 不標記填補資料
+
+```r
+# 錯誤: 填補而不標記
+sales_complete <- sales_raw %>%
+  complete(date = seq(min(date), max(date), by = "1 day")) %>%
+  replace_na(list(sales_quantity = 0))  # ❌ 沒有 data_source 標記
+
+# 正確: 明確標記
+sales_complete <- sales_raw %>%
+  mutate(data_source = "REAL") %>%
+  complete(date = seq(min(date), max(date), by = "1 day")) %>%
+  mutate(
+    data_source = ifelse(is.na(data_source), "FILLED", data_source),
+    sales_quantity = ifelse(data_source == "FILLED", 0, sales_quantity)
+  )
+```
+
+### ❌ 錯誤 3: 不追蹤填補率
+
+```r
+# 錯誤: 無填補率元資料
+write_drv_data(sales_complete)  # ❌ 填補了多少? 未知。
+
+# 正確: 追蹤並記錄填補率
+result <- fn_complete_time_series(sales_raw, mark_filled = TRUE)
+write_drv_data(result$data)
+write_metadata(result$fill_rate_summary)  # ✅ 記錄填補率
+```
+
+## 合規檢查清單
+
+- [ ] 時間序列填補在 derived ETL 2TR 或 DRV 層實作 (非 base ETL 0IM/1ST/transaction 2TR)
+- [ ] 新增值為 "REAL" 或 "FILLED" 的 `data_source` 欄位
+- [ ] 所有列都有有效的 data_source 標記 (無 NA，無其他值)
+- [ ] 計算並記錄每產品/維度的填補率元資料
+- [ ] 使用 fn_complete_time_series() 工具函數，並設置 mark_filled = TRUE
+- [ ] 記錄填補方法 (zero_fill, forward_fill 等)
+- [ ] 驗證函數通過所有透明度檢查
+- [ ] 如果任何產品的填補率 > 50% 則發出警告
+- [ ] 分析師可以按 data_source 過濾進行分析
+- [ ] UI/報告承認填補資料 (如適用)
+
+## 結論
+
+R117 確保所有填補的時間序列資料明確標記，以維持透明度並防止違反 MP029。通過在 **derived ETL 時間序列步驟** 或 **DRV 層** 處理時間序列完成並要求 `data_source` 欄位標記，系統保留分析完整性，同時實現完整的時間序列分析。
+
+此規則對以下方面至關重要：
+- **透明度**: 使用者知道哪些資料是真實 vs 填補
+- **合規性**: 滿足 MP029 (禁止假資料) 和 MP109 (derived ETL/DRV)
+- **分析完整性**: 實現有真實 vs 填補意識的知情分析
+- **資料品質**: 填補率追蹤揭示資料收集問題
+- **靈活性**: 分析師可以選擇如何處理填補資料
+
+**關鍵提醒**: 時間序列填補是**衍生任務**，屬於 **derived ETL 時間序列步驟** 或 **DRV 2TR**，而非 base ETL 的 0IM/1ST/transaction 2TR。始終使用 `data_source` 欄位標記填補資料，追蹤填補率，並將高填補率 (>50%) 調查為潛在的資料品質問題。

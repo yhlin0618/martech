@@ -1,0 +1,258 @@
+# CH06: Integration & Collaboration
+# Version Control and Synchronization Principles
+# Last updated: 2026-02-11
+
+chapter: "CH06_ic"
+description: "Integration & Collaboration - Version Control Synchronization"
+principle_count: 5
+
+principles:
+  # ============================================================================
+  # IC_P001: Universal Immediate Sync Principle
+  # ============================================================================
+  - id: IC_P001
+    type: principle
+    name: universal_immediate_sync
+    display_name: "Universal Immediate Sync Principle"
+    one_liner: "Every completed feature → commit → pull → push"
+    implements: MP014
+    scope: "all repositories"
+    file_path: "CH06_integration_collaboration/principles/IC_P001_universal_immediate_sync.qmd"
+
+    rule_natural: |
+      Every completed feature or logical unit of work must be immediately
+      synchronized with the remote repository through a commit → pull → push
+      workflow. No batch commits, no end-of-day pushes, no "I'll push later".
+
+    rule_formal: |
+      RULE IC_P001_universal_immediate_sync:
+        WHEN feature_completed(F) OR logical_unit_done(U)
+        THEN MUST execute_sync_workflow(commit, pull, push)
+        WITHIN minutes_of_completion
+
+      PROHIBITED:
+        - batch_commits
+        - end_of_day_pushes
+        - local_only_work
+        - deferred_push
+
+    violations:
+      - "Committing multiple features in one batch at end of day"
+      - "Working locally without pushing for hours"
+      - "Saying 'I'll push later' and forgetting"
+      - "Accumulating changes without syncing"
+    compliant:
+      - "git add <files> && git commit -m '[TYPE] desc' && git pull && git push"
+      - "Committing immediately after completing a function"
+      - "Pushing after every logical change"
+      - "cd shared/global_scripts && git add && git commit && git pull && git push"
+
+    shared_symlink_note: |
+      With the shared symlink architecture (MP122), global_scripts is a standalone
+      git repo in shared/. Use standard git workflow: cd shared/global_scripts &&
+      git commit && git push. No git-subrepo dependency required.
+
+  # ============================================================================
+  # IC_R001: Global Scripts Synchronization Rule
+  # ============================================================================
+  - id: IC_R001
+    type: rule
+    name: global_scripts_synchronization
+    display_name: "Global Scripts Synchronization Rule"
+    one_liner: "Strict immediate sync specifically for global_scripts shared repo"
+    implements: IC_P001
+    scope: "global_scripts shared repo"
+    file_path: "CH06_integration_collaboration/rules/IC_R001_global_scripts_synchronization.qmd"
+
+    rule_natural: |
+      The global_scripts shared repo requires STRICT immediate synchronization
+      because it is shared across multiple projects via symlinks. Any delay in syncing
+      can cause version conflicts and inconsistencies across dependent projects.
+
+    rule_formal: |
+      RULE IC_R001_global_scripts_sync:
+        EXTENDS IC_P001
+        APPLIES_TO global_scripts_shared_repo
+        STRICTNESS elevated
+
+      ADDITIONAL_REQUIREMENTS:
+        - sync_before_switching_projects
+        - verify_no_uncommitted_changes
+        - check_shared_repo_status_daily
+
+    violations:
+      - "Making changes to global_scripts without immediate push"
+      - "Switching to another project with uncommitted global_scripts changes"
+      - "Having local-only global_scripts modifications overnight"
+
+    compliant:
+      - "cd shared/global_scripts && git add . && git commit -m '[FIX] ...' && git pull && git push"
+      - "Checking global_scripts status before ending work session"
+      - "For tracked issues: GitHub issue → branch → PR → merge"
+
+    shared_symlink_note: |
+      With the shared symlink architecture (MP122), global_scripts is a standalone
+      git repo in shared/. Normal changes use direct push workflow. Issue/PR workflow
+      is only for specific tracked bugs/issues needing formal review.
+
+  # ============================================================================
+  # IC_R007: GitHub Issue Attachment Workflow
+  # ============================================================================
+  - id: IC_R007
+    type: rule
+    name: github_issue_attachments
+    display_name: "GitHub Issue Attachment Workflow"
+    one_liner: "Upload attachments to Release assets, reference via download URL"
+    implements: MP029
+    scope: "all private repositories"
+    file_path: "CH06_integration_collaboration/rules/IC_R007_github_issue_attachments.qmd"
+
+    rule_natural: |
+      All issue attachments (screenshots, diagrams, documents) in private repositories
+      MUST be uploaded to the 'attachments' Release and referenced via the release
+      download URL. Private repo raw URLs require auth tokens that expire, making them
+      unreliable. Release assets are accessible to anyone with repo read access.
+
+    rule_formal: |
+      RULE IC_R007_github_issue_attachments:
+        WHEN attaching_file_to_issue(F, I) AND repo_is_private(R)
+        THEN MUST upload_to_release("attachments", F)
+        AND reference_via_release_url(F, I)
+
+      SETUP (one-time per repo):
+        gh release create attachments --title "Issue Attachments"
+
+      UPLOAD:
+        gh release upload attachments <file> --clobber
+
+      NAMING:
+        filename MUST match pattern: issue_{number}_{description}.{ext}
+
+      REFERENCE:
+        ![desc](https://github.com/{owner}/{repo}/releases/download/attachments/{filename})
+
+    violations:
+      - "Using raw.githubusercontent.com URLs in private repo issues"
+      - "Embedding images without uploading to release first"
+      - "Using non-standard filename patterns for attachments"
+      - "Uploading attachments without issue number prefix"
+
+    compliant:
+      - "gh release upload attachments issue_147_screenshot.png --clobber"
+      - "Referencing via https://github.com/.../releases/download/attachments/issue_147_screenshot.png"
+      - "Using naming pattern issue_{number}_{description}.{ext}"
+
+  # ============================================================================
+  # IC_R008: GitHub Issue Scope Governance Rule
+  # ============================================================================
+  - id: IC_R008
+    type: rule
+    name: github_issue_scope_governance
+    display_name: "GitHub Issue Scope Governance Rule"
+    one_liner: "Create every issue in global_scripts and classify with scope labels"
+    implements: MP012
+    scope: "all issue tracking"
+    file_path: "CH06_integration_collaboration/rules/IC_R008_github_issue_scope_governance.qmd"
+
+    rule_natural: |
+      All issues must be created in kiki830621/ai_martech_global_scripts and labeled
+      with company:<COMPANY_CODE> or module:<ModuleName> for correct routing and
+      board mapping. Local changelog/issues/ directories are legacy only.
+
+    rule_formal: |
+      RULE IC_R008_github_issue_scope_governance:
+        WHEN creating_issue(I)
+        THEN MUST create_in_repo("kiki830621/ai_martech_global_scripts")
+        AND MUST label_with_scope(company OR module)
+
+    violations:
+      - "Creating local issue files in changelog/issues/"
+      - "Creating issues without scope labels"
+      - "Using project:* or app:* labels instead of company:* or module:*"
+
+    compliant:
+      - "gh issue create --label 'company:D_RACING' ..."
+      - "Adding issue to matching company project board after creation"
+
+  # ============================================================================
+  # IC_R009: Bidirectional Commit-Issue Traceability Rule
+  # ============================================================================
+  - id: IC_R009
+    type: rule
+    name: bidirectional_commit_issue_traceability
+    display_name: "Bidirectional Commit-Issue Traceability Rule"
+    one_liner: "Every commit references an issue; every issue has a resolving commit"
+    implements: MP012
+    scope: "all repositories"
+    file_path: "CH06_integration_collaboration/rules/IC_R009_bidirectional_commit_issue_traceability.qmd"
+
+    rule_natural: |
+      Every Git commit MUST reference at least one GitHub Issue number in its message.
+      Every GitHub Issue MUST have at least one commit that addresses it before closing.
+      There are NO EXCEPTIONS — even single-line typo fixes require a corresponding issue.
+      This ensures complete bidirectional traceability between decisions and implementations.
+
+    rule_formal: |
+      RULE IC_R009_bidirectional_commit_issue_traceability:
+        WHEN committing(C)
+        THEN MUST reference_issue(C, at_least_one_issue_number)
+
+        WHEN closing_issue(I)
+        THEN MUST have_commit(I, at_least_one_commit)
+
+      NO_EXCEPTIONS:
+        - typo_fixes REQUIRE issue
+        - minor_corrections REQUIRE issue
+        - small_improvements REQUIRE issue
+
+      BATCH_ALLOWED:
+        - multiple_small_fixes MAY share single housekeeping issue
+
+    violations:
+      - "Committing without any issue reference in message"
+      - "Closing an issue without a corresponding commit"
+      - "Saying 'this is too small for an issue'"
+
+    compliant:
+      - "git commit -m '[FIX] Correct typo (#301)' and Closes #301"
+      - "Creating lightweight issue for small fix before committing"
+      - "Batch housekeeping issue covering multiple minor fixes"
+
+# ============================================================================
+# Relationship Hierarchy
+# ============================================================================
+hierarchy:
+  - level: meta_principle
+    id: MP014
+    name: "Change Tracking Principle"
+    description: "Establishes the need for change tracking"
+
+  - level: principle
+    id: IC_P001
+    name: "Universal Immediate Sync Principle"
+    description: "Defines the universal sync pattern for all repositories"
+    implements: MP014
+
+  - level: rule
+    id: IC_R001
+    name: "Global Scripts Synchronization Rule"
+    description: "Strict implementation for global_scripts shared repo"
+    implements: IC_P001
+
+  - level: rule
+    id: IC_R007
+    name: "GitHub Issue Attachment Workflow"
+    description: "Upload attachments to Release assets for private repos"
+    implements: MP029
+
+  - level: rule
+    id: IC_R008
+    name: "GitHub Issue Scope Governance Rule"
+    description: "Create every issue in global_scripts with scope labels"
+    implements: MP012
+
+  - level: rule
+    id: IC_R009
+    name: "Bidirectional Commit-Issue Traceability Rule"
+    description: "Every commit references an issue; every issue has a resolving commit"
+    implements: MP012

@@ -1,0 +1,258 @@
+---
+title: "DEV_R001: Apply Functions Over For Loops"
+subtitle: "Prefer lapply() and apply family functions over explicit for loops in R"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R001"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法施行細則 (Development Methodology Law Implementation Rules)"
+article-number: "第1條"
+implements:
+  - "CH00.MP030: Vectorization Principle"
+  - "CH00.MP016: Modularity"
+  - "CH00.MP023: Language Preferences"
+related_to:
+  - "CH01.SO_P013: Language Standard Adherence"
+  - "CH03.DEV_R048: Switch Over If-Else"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**開發方法法施行細則第1條（Apply 函數優於 For 迴圈）**
+
+本條規定在 R 中迭代資料結構時，應優先使用 `lapply()` 和其他 apply 系列函數，而非明確的 `for` 迴圈，以遵循 R 的函數式和向量化程式設計範式。
+
+:::{.callout-important}
+## 核心規則
+在 R 中迭代資料結構時，優先使用 `lapply()` 和其他 apply 系列函數，而非明確的 `for` 迴圈，以遵循 R 的函數式和向量化程式設計範式。
+:::
+
+# 第一項：基本原理 {#rationale}
+
+## 第一款：使用 Apply 函數的理由 {#reasons}
+
+在 R 中使用 apply 函數而非明確的 for 迴圈：
+
+1. **遵循向量化原則（MP030）**：運用 R 的原生向量化資料處理方法
+2. **提高程式碼可讀性**：清楚表達轉換意圖
+3. **減少潛在錯誤**：避免明確迴圈中常見的錯誤（錯誤索引、變數範圍問題）
+4. **可能提升效能**：透過優化的 C 實作
+5. **消除手動結果累積**：避免預先配置的考量
+6. **促進函數式程式設計**：符合 R 的設計理念
+
+# 第二項：實作指導原則 {#implementation}
+
+## 第一款：Apply 函數選擇指南 {#selection-guide}
+
+根據特定需求選擇適當的 apply 函數：
+
+| 函數 | 輸入 | 輸出 | 使用案例 |
+|------|------|------|----------|
+| `lapply()` | 列表、向量、資料框架 | 列表 | 對每個元素應用函數，保持列表結構 |
+| `sapply()` | 列表、向量、資料框架 | 盡可能簡化 | 應用函數，嘗試簡化結果 |
+| `vapply()` | 列表、向量、資料框架 | 預定義類型 | sapply 的類型安全版本 |
+| `mapply()` | 多個列表 | 盡可能簡化 | 對多個列表的平行元素應用函數 |
+| `apply()` | 矩陣、陣列 | 向量、矩陣、陣列 | 對行/列/維度應用函數 |
+| `tapply()` | 向量、因子 | 陣列 | 對因子定義的子集應用函數 |
+
+## 第二款：正確使用範例 {#correct-usage}
+
+:::{.panel-tabset}
+
+### 基本轉換
+
+```r
+# 轉換列表中的每個元素
+result_list <- lapply(my_list, function(x) {
+  # 處理每個元素
+  transformed <- some_operation(x)
+  return(transformed)
+})
+
+# 處理資料框架中的每一列
+result_df <- as.data.frame(lapply(df, function(col) {
+  # 處理每一列
+  if (is.numeric(col)) {
+    return(scale(col))
+  } else {
+    return(col)
+  }
+}))
+```
+
+### 條件處理
+
+```r
+# 使用 sapply 條件處理元素
+result_vec <- sapply(values, function(x) {
+  if (x > threshold) {
+    return(transform_a(x))
+  } else {
+    return(transform_b(x))
+  }
+})
+
+# 使用 vapply 進行類型安全計算
+result_means <- vapply(list_of_vectors, mean, numeric(1), na.rm = TRUE)
+```
+
+### 常見模式
+
+```r
+# 使用多個函數的序列轉換
+result <- lapply(data, function(x) {
+  x %>% step1() %>% step2() %>% step3()
+})
+
+# 使用額外參數處理
+result <- lapply(elements, process_function, param1 = value1, param2 = value2)
+
+# 保留名稱的命名列表輸出
+result <- lapply(names(input_list), function(name) {
+  process(input_list[[name]])
+})
+names(result) <- names(input_list)
+
+# 從向量創建命名列表
+result <- setNames(lapply(unique_ids, function(id) {
+  get_data_for_id(id)
+}), unique_ids)
+```
+
+:::
+
+# 第三項：For 迴圈與 Apply 函數比較 {#comparison}
+
+## 第一款：何時仍使用 For 迴圈 {#when-for-loops}
+
+For 迴圈可能在以下情況下適用：
+
+:::{.callout-note}
+## For 迴圈適用場景
+1. **複雜狀態管理**：迭代之間需要複雜的狀態管理
+2. **提前終止**：需要根據計算值提前終止
+3. **副作用**：主要目的是副作用（例如繪圖、列印）
+4. **明確索引存取**：需要對當前和其他元素進行明確索引存取
+:::
+
+## 第二款：錯誤與正確實作 {#incorrect-vs-correct}
+
+:::{.panel-tabset}
+
+### 錯誤實作
+
+```r
+# 在迴圈內增長向量（低效）
+result <- c()
+for (i in 1:length(values)) {
+  processed <- some_function(values[i])
+  result <- c(result, processed)  # 昂貴的記憶體操作
+}
+```
+
+### 正確的 For 迴圈
+
+```r
+# 預先配置向量
+result <- vector("list", length(values))
+for (i in seq_along(values)) {
+  result[[i]] <- some_function(values[i])
+}
+```
+
+### 更好的方法
+
+```r
+# 使用 lapply 的函數式方法
+result <- lapply(values, some_function)
+```
+
+:::
+
+# 第四項：與其他 R 範式的整合 {#integration}
+
+## 第一款：data.table {#data-table}
+
+使用 data.table 時，考慮其優化方法：
+
+```r
+# 不使用 lapply 進行分組操作
+dt[, result := process(.SD), by = group]
+
+# 計算多個摘要
+dt[, lapply(.SD, sum), by = group, .SDcols = patterns("^value")]
+```
+
+## 第二款：purrr 套件 {#purrr}
+
+為了更一致的函數式程式設計，考慮 purrr：
+
+```r
+library(purrr)
+
+# 在列表上映射函數
+result <- map(my_list, process_function)
+
+# 使用兩個輸入映射
+result <- map2(list1, list2, ~func(.x, .y))
+
+# 使用索引映射
+result <- imap(my_list, ~func(.x, .y))  # .y 是索引/名稱
+```
+
+# 第五項：效能考量 {#performance}
+
+## 第一款：效能指南 {#performance-guide}
+
+1. **基準測試關鍵程式碼**：透過明確計時驗證效能改進
+2. **考慮平行化**：對於計算密集操作，考慮 `parallel::mclapply` 或 `future.apply`
+3. **注意函數呼叫開銷**：對於大型列表上的簡單操作，優化的 for 迴圈可能更快
+
+# 第六項：效益 {#benefits}
+
+## 第一款：主要優勢 {#main-benefits}
+
+:::{.callout-note}
+## Apply 函數的效益
+1. **專注於轉換邏輯**：強調做什麼，而非如何迭代
+2. **一致的返回結構**：Apply 函數自動處理結果收集
+3. **函數組合**：更容易與其他函數組合
+4. **隱含的平行化潛力**：需要時更容易轉換為平行版本
+:::
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## Apply 函數檢查清單
+
+使用 apply 函數時，確認：
+
+- [ ] 選擇適當的 apply 函數類型
+- [ ] 避免在迴圈中增長向量
+- [ ] 使用 vapply 進行類型安全操作
+- [ ] 保留必要的名稱屬性
+- [ ] 考慮平行化需求
+- [ ] 基準測試關鍵效能路徑
+- [ ] 適當處理錯誤情況
+- [ ] 文檔化複雜的轉換邏輯
+:::
+
+# 結論 {#conclusion}
+
+Apply 函數優於 For 迴圈規則促進了更符合 R 語言特性的函數式程式設計風格。透過優先使用 apply 系列函數，我們的程式碼變得更可讀、更不容易出錯，並且更符合 R 的向量化範式。
+
+---
+
+*依據：開發方法法施行細則第1條*  
+*實作：[MP030 向量化原則](../../CH00_fundamental_principles/MP030_vectorization_principle.qmd)、[MP016 模組化](../../CH00_fundamental_principles/MP016_modularity.qmd)、[MP023 語言偏好](../../CH00_fundamental_principles/MP023_language_preferences.qmd)*  
+*相關：[SO_P013 語言標準遵循](../../CH01_structure_organization/principles/SO_P013_language_standard_adherence.qmd)*

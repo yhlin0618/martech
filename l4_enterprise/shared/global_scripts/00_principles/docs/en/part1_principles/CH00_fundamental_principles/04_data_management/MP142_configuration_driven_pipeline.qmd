@@ -1,0 +1,740 @@
+---
+id: "MP142"
+title: "Configuration-Driven Pipeline"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-12-23"
+date_modified: "2025-12-30"
+author: "Claude"
+status: "active"
+version: "1.1"
+weight: 142
+priority: "HIGH"
+related_to:
+  - "MP140": "Pipeline Orchestration Principle - On-demand execution model"
+  - "MP141": "Scheduled Execution Pattern - Scheduling and observability"
+  - "MP108": "ETL Phase Sequence Principle - 6-layer phase ordering"
+  - "MP064": "ETL-Derivation Separation - Directory structure"
+  - "MP065": "Platform Configuration Management - Platform catalog authority"
+  - "DF00": "Pipeline Architecture - 6-layer symmetric data flow"
+  - "SO_P016": "Configuration Scope Hierarchy - Three-layer config architecture"
+  - "MP122": "Triple-Track Subrepo Architecture - Config at Track 3"
+implements:
+  - "SINGLE_SOURCE_OF_TRUTH": "One configuration file for pipeline definition"
+  - "DECLARATIVE_CONFIGURATION": "YAML-based pipeline specification"
+  - "AUTO_DISCOVERY": "Script scanning and metadata extraction"
+  - "VERSION_CONTROLLED": "Configuration tracked in git"
+  - "THREE_LAYER_CONFIG": "Universal template + Company override + Generated output"
+---
+
+# MP142: Configuration-Driven Pipeline
+
+## Core Statement
+
+**All pipeline definitions MUST be centralized in a single configuration file using standardized YAML format, supporting multi-platform and multi-layer (ETL/DRV) orchestration with automatic script discovery and explicit dependency specification.**
+
+### The Golden Rule of Configuration
+
+> **"The configuration file is the single source of truth for what pipelines exist, how they relate, and in what order they execute."**
+
+## Three-Layer Configuration Architecture (SO_P016)
+
+Per **SO_P016 Configuration Scope Hierarchy** and **MP122 Triple-Track Subrepo**, pipeline configuration follows a three-layer architecture:
+
+```
+Configuration Layer Architecture
+================================
+
+Layer 1: Universal (Base Template)
+┌─────────────────────────────────────────────────────────────┐
+│ global_scripts/templates/_targets_config.base.yaml          │
+│ - Schema definitions                                        │
+│ - Phase ordering (6-layer: 0IM→5NM)                        │
+│ - Default execution settings                                │
+│ - Excluded patterns                                         │
+│ ✗ NO company-specific settings                              │
+│ 📦 Shared via git subrepo (Track 1)                         │
+└─────────────────────────────────────────────────────────────┘
+                              ↓ merge
+Layer 2: Company (Override)
+┌─────────────────────────────────────────────────────────────┐
+│ app_config.yaml > pipeline: section                         │
+│ - Platform enabled flags                                    │
+│ - DRV groups selection                                      │
+│ - Execution overrides (workers, timeout)                    │
+│ - Scheduling configuration                                  │
+│ 📁 At project root (Track 3)                                │
+└─────────────────────────────────────────────────────────────┘
+                              ↓ generates
+Layer 3: Generated (Final Config)
+┌─────────────────────────────────────────────────────────────┐
+│ {project_root}/_targets_config.yaml                         │
+│ - Complete merged configuration                             │
+│ - Ready for targets execution                               │
+│ - Auto-generated, version controlled                        │
+│ 📁 At project root (Track 3)                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Why Project Root?
+
+Since `update_scripts/` is also a **git subrepo** (shared across projects), the generated `_targets_config.yaml` MUST be at the **project root** (Company scope), not inside the subrepo.
+
+```
+{project_root}/                          ← Company scope (Track 3)
+├── app_config.yaml                      ← Company settings
+├── _targets_config.yaml                 ← Generated config (HERE!)
+└── scripts/
+    ├── global_scripts/                  ← git subrepo #1 (Track 1)
+    │   └── templates/
+    │       └── _targets_config.base.yaml
+    └── update_scripts/                  ← git subrepo #2 (Track 2)
+        ├── _targets.R                   ← Reads ../../_targets_config.yaml
+        └── Makefile                     ← CLI entry point
+```
+
+## Configuration File Standard
+
+### Location and Naming
+
+```yaml
+configuration_standard:
+  # Generated output (Company scope - Track 3)
+  location: "{project_root}/_targets_config.yaml"
+
+  # Base template (Universal scope - Track 1)
+  base_template: "global_scripts/templates/_targets_config.base.yaml"
+
+  # Company override source
+  override_source: "app_config.yaml > pipeline:"
+
+  format: "YAML 1.2"
+  encoding: "UTF-8"
+  version_controlled: true
+```
+
+### Top-Level Structure
+
+```yaml
+# _targets_config.yaml
+
+# Pipeline metadata
+version: "1.0"
+last_updated: "2025-12-23"
+
+# 6-layer phase ordering (from DF00)
+phase_order:
+  - "0IM"   # Import (ETL)
+  - "1ST"   # Staging (ETL)
+  - "2TR"   # Transform (ETL)
+  - "3PR"   # Process (DRV)
+  - "4CL"   # Cleanse (DRV)
+  - "5NM"   # Normalize (DRV)
+
+# Platform definitions
+platforms:
+  cbz:
+    name: "Cyberbiz"
+    drv_groups: ["D01", "D04"]
+
+  amz:
+    name: "Amazon"
+    drv_groups: ["D01", "D04"]
+
+  eby:
+    name: "eBay"
+    drv_groups: ["D01", "D04"]
+
+  all:
+    name: "Cross-Platform"
+    depends_on_platforms: ["cbz", "amz", "eby"]
+    drv_groups: ["D04"]
+
+# Auto-discovery settings
+discovery:
+  etl_pattern: "{platform}_ETL_{datatype}_{phase}.R"
+  drv_pattern: "{platform}_D{group}_{seq}.R"
+  scan_directories:
+    etl: "ETL/{platform}/"
+    drv: "DRV/{platform}/"
+```
+
+### Company Override in app_config.yaml
+
+The `pipeline:` section in `app_config.yaml` provides company-specific overrides:
+
+```yaml
+# app_config.yaml (Company Scope)
+pipeline:
+  # Enable/disable platforms for this company
+  platforms:
+    cbz:
+      enabled: true
+      drv_groups: ["D01", "D04"]
+    amz:
+      enabled: true
+      drv_groups: ["D01", "D03"]
+    eby:
+      enabled: true
+      drv_groups: ["D01", "D04"]
+    all:
+      enabled: true
+      depends_on_platforms: ["cbz", "amz", "eby"]
+    precision:
+      enabled: true
+
+  # Override default execution settings
+  execution:
+    parallel_workers: 2  # Conservative for this server
+
+  # Scheduling configuration
+  scheduling:
+    mode: "manual"  # "manual" or "scheduled"
+    schedule: "0 2 * * 0"  # Sunday 2:00 AM (if scheduled)
+```
+
+### Project Execution Scope with Shared Scripts
+
+`update_scripts/` is a shared subrepo across projects (MP122). The pipeline configuration defines the project execution scope; platform directories and scripts remain part of the global inventory even when disabled for a specific project. **Never delete or archive platform scripts to control scope.** Scope is controlled in `app_config.yaml` and the generated `_targets_config.yaml`.
+
+```yaml
+# app_config.yaml (Company scope)
+pipeline:
+  platforms:
+    cbz: { enabled: true }
+    eby: { enabled: true }
+    amz: { enabled: false } # Present in inventory, disabled for this project
+```
+
+## Configuration Merge Function
+
+### fn_merge_pipeline_config.R
+
+The merge function combines base template with company overrides:
+
+```r
+# global_scripts/04_utils/fn_merge_pipeline_config.R
+merge_pipeline_config <- function(
+  base_path = NULL,
+  app_config_path = NULL,
+  output_path = NULL,
+  scan_scripts = FALSE,
+  verbose = TRUE
+) {
+  # Default paths (relative to update_scripts/)
+  if (is.null(base_path)) {
+    base_path <- file.path("..", "global_scripts", "templates",
+                           "_targets_config.base.yaml")
+  }
+  if (is.null(app_config_path)) {
+    app_config_path <- file.path("..", "..", "app_config.yaml")
+  }
+  if (is.null(output_path)) {
+    output_path <- file.path("..", "..", "_targets_config.yaml")
+  }
+
+  # 1. Read base template (Universal scope)
+  base <- yaml::read_yaml(base_path)
+
+  # 2. Read company override (from app_config.yaml pipeline: section)
+  app_config <- yaml::read_yaml(app_config_path)
+  override <- app_config$pipeline %||% list()
+
+  # 3. Deep merge (override wins)
+  merged <- modifyList(base, override)
+
+  # 4. Update metadata
+  merged$last_updated <- format(Sys.time(), "%Y-%m-%d")
+  merged$template_type <- "merged"
+
+  # 5. Write output
+  yaml::write_yaml(merged, output_path)
+
+  message("✓ Pipeline config merged: ", output_path)
+  invisible(merged)
+}
+```
+
+### Makefile Configuration Commands
+
+```makefile
+# In update_scripts/Makefile
+# Per SO_P016: Configuration Scope Hierarchy
+
+config-merge:
+	@echo "Merging pipeline configuration..."
+	@$(R) -e "source('$(GLOBAL_SCRIPTS)/04_utils/fn_merge_pipeline_config.R'); \
+	  merge_pipeline_config()"
+
+config-scan:
+	@echo "Scanning ETL/DRV directories and updating script lists..."
+	@$(R) -e "source('$(GLOBAL_SCRIPTS)/04_utils/fn_merge_pipeline_config.R'); \
+	  config <- yaml::read_yaml('$(CONFIG_PATH)'); \
+	  config <- scan_and_update_scripts(config); \
+	  yaml::write_yaml(config, '$(CONFIG_PATH)')"
+
+config-full:
+	@echo "Full configuration: merge + scan + validate"
+	$(MAKE) config-merge
+	$(MAKE) config-scan
+	$(MAKE) config-validate
+
+config-validate:
+	@echo "Validating $(CONFIG_PATH)..."
+	@$(R) -e "config <- yaml::read_yaml('$(CONFIG_PATH)'); \
+	  cat('✓ Platforms:', paste(names(config\$$platforms), collapse=', '))"
+```
+
+### Configuration Workflow
+
+```
+Developer Workflow:
+
+1. Modify app_config.yaml pipeline: section
+   ↓
+2. make config-merge    # Merge base + override
+   ↓
+3. make config-scan     # Scan actual scripts, update dependencies
+   ↓
+4. make config-validate # Validate configuration
+   ↓
+5. make run             # Execute pipeline
+```
+
+## Auto-Discovery Logic
+
+### ETL Script Discovery
+
+The system automatically discovers ETL scripts based on directory structure and naming patterns:
+
+```yaml
+etl_discovery:
+  scan_pattern: "ETL/{platform}/*.R"
+
+  filename_parsing:
+    example: "cbz_ETL_sales_2TR.R"
+    extracted:
+      platform: "cbz"
+      datatype: "sales"
+      phase: "2TR"
+
+  auto_dependencies:
+    rule: "Same datatype, earlier phase"
+    example: |
+      cbz_ETL_sales_1ST depends on cbz_ETL_sales_0IM
+      cbz_ETL_sales_2TR depends on cbz_ETL_sales_1ST
+```
+
+### DRV Script Discovery
+
+```yaml
+drv_discovery:
+  scan_pattern: "DRV/{platform}/*.R"
+
+  filename_parsing:
+    example: "cbz_D04_02.R"
+    extracted:
+      platform: "cbz"
+      group: "D04"
+      sequence: "02"
+
+  auto_dependencies:
+    within_group: "Earlier sequence number"
+    cross_group: "From DEPENDS_ON_DRV markers"
+```
+
+### Marker Extraction
+
+During discovery, the system reads script headers for explicit dependencies:
+
+```yaml
+marker_extraction:
+  scan_lines: "First 20 lines of each script"
+
+  markers_extracted:
+    - "CONSUMES"
+    - "PRODUCES"
+    - "DEPENDS_ON_ETL"
+    - "DEPENDS_ON_DRV"
+
+  override_behavior: "Explicit markers override auto-discovery"
+```
+
+## Explicit Dependency Configuration
+
+### When Auto-Discovery is Insufficient
+
+Some dependencies cannot be inferred from naming alone. These MUST be explicitly configured:
+
+```yaml
+# Explicit dependency overrides
+explicit_dependencies:
+  drv:
+    cbz_D04_02:
+      depends_on_etl:
+        - "cbz_ETL_sales_2TR"
+      depends_on_drv:
+        - "cbz_D04_01"
+      note: "D04_02 needs sales data and D04_01 output"
+
+    all_D04_08:
+      depends_on_drv:
+        - "cbz_D04_02"
+        - "eby_D04_02"
+        - "amz_D04_02"
+      note: "Cross-platform summary requires all platform outputs"
+```
+
+### ETL Cross-Datatype Dependencies (Rare)
+
+```yaml
+# Rare case: ETL depends on another ETL's datatype
+etl_special_dependencies:
+  cbz_ETL_orders_2TR:
+    depends_on_etl:
+      - "cbz_ETL_customers_2TR"
+    note: "Orders JOIN requires customer reference data"
+```
+
+## Generated Configuration Example
+
+### Complete _targets_config.yaml
+
+```yaml
+# _targets_config.yaml
+# Auto-generated + manually verified
+# Last scan: 2025-12-23T14:30:00
+
+version: "1.0"
+last_updated: "2025-12-23"
+
+phase_order: ["0IM", "1ST", "2TR", "3PR", "4CL", "5NM"]
+
+platforms:
+  cbz:
+    name: "Cyberbiz"
+    drv_groups: ["D01", "D04"]
+
+    etl:
+      # Auto-discovered ETL pipelines
+      customers:
+        phases: ["0IM", "1ST", "2TR"]
+        scripts:
+          - { script: "cbz_ETL_customers_0IM.R", phase: "0IM" }
+          - { script: "cbz_ETL_customers_1ST.R", phase: "1ST", depends: ["cbz_ETL_customers_0IM"] }
+          - { script: "cbz_ETL_customers_2TR.R", phase: "2TR", depends: ["cbz_ETL_customers_1ST"] }
+
+      orders:
+        phases: ["0IM", "1ST", "2TR"]
+        scripts:
+          - { script: "cbz_ETL_orders_0IM.R", phase: "0IM" }
+          - { script: "cbz_ETL_orders_1ST.R", phase: "1ST", depends: ["cbz_ETL_orders_0IM"] }
+          - { script: "cbz_ETL_orders_2TR.R", phase: "2TR", depends: ["cbz_ETL_orders_1ST"] }
+
+      sales:
+        phases: ["0IM", "1ST", "2TR"]
+        scripts:
+          - { script: "cbz_ETL_sales_0IM.R", phase: "0IM" }
+          - { script: "cbz_ETL_sales_1ST.R", phase: "1ST", depends: ["cbz_ETL_sales_0IM"] }
+          - { script: "cbz_ETL_sales_2TR.R", phase: "2TR", depends: ["cbz_ETL_sales_1ST"] }
+
+    drv:
+      # Auto-discovered DRV scripts with explicit dependencies
+      D01:
+        - { script: "cbz_D01_03.R", depends_etl: ["cbz_ETL_customers_2TR", "cbz_ETL_orders_2TR"] }
+        - { script: "cbz_D01_04.R", depends_drv: ["cbz_D01_03"] }
+        - { script: "cbz_D01_05.R", depends_drv: ["cbz_D01_04"] }
+        - { script: "cbz_D01_06.R", depends_drv: ["cbz_D01_05"] }
+        - { script: "cbz_D01_07.R", depends_drv: ["cbz_D01_06"] }
+
+      D04:
+        - { script: "cbz_D04_01.R", depends_etl: ["cbz_ETL_sales_2TR"] }
+        - { script: "cbz_D04_02.R", depends_drv: ["cbz_D04_01"] }
+        - { script: "cbz_D04_03.R", depends_drv: ["cbz_D04_02"] }
+        - { script: "cbz_D04_04.R", depends_drv: ["cbz_D04_03"] }
+        - { script: "cbz_D04_05.R", depends_drv: ["cbz_D04_04"] }
+        - { script: "cbz_D04_06.R", depends_drv: ["cbz_D04_05"] }
+
+  all:
+    name: "Cross-Platform"
+    depends_on_platforms: ["cbz", "amz", "eby"]
+
+    drv:
+      D04:
+        - { script: "all_D04_08.R", depends_drv: ["cbz_D04_02", "amz_D04_02", "eby_D04_02"] }
+```
+
+## Configuration Generator
+
+### Scan and Generate Script
+
+```r
+# R script to generate _targets_config.yaml from directory scan
+generate_targets_config <- function(base_path = "update_scripts") {
+  config <- list(
+    version = "1.0",
+    last_updated = format(Sys.time(), "%Y-%m-%d"),
+    # 6-Layer Symmetric Pipeline (revised 2025-12-24)
+    phase_order = c("0IM", "1ST", "2TR", "3PR", "4CL", "5NM"),
+    platforms = list()
+  )
+
+  platforms <- c("cbz", "amz", "eby", "all")
+
+  for (platform in platforms) {
+    config$platforms[[platform]] <- list(
+      name = get_platform_name(platform),
+      etl = scan_etl_scripts(base_path, platform),
+      drv = scan_drv_scripts(base_path, platform)
+    )
+  }
+
+  yaml::write_yaml(config, file.path(base_path, "_targets_config.yaml"))
+  message("Generated _targets_config.yaml")
+}
+
+scan_etl_scripts <- function(base_path, platform) {
+  etl_dir <- file.path(base_path, "ETL", platform)
+  if (!dir.exists(etl_dir)) return(list())
+
+  scripts <- list.files(etl_dir, pattern = "\\.R$")
+  # Parse and organize by datatype and phase...
+}
+
+scan_drv_scripts <- function(base_path, platform) {
+  drv_dir <- file.path(base_path, "DRV", platform)
+  if (!dir.exists(drv_dir)) return(list())
+
+  scripts <- list.files(drv_dir, pattern = "\\.R$")
+  # Parse and extract dependency markers...
+}
+```
+
+### CLI Command
+
+```bash
+# Generate configuration from directory scan
+make config-generate
+
+# Validate configuration against actual scripts
+make config-validate
+
+# Show differences between config and actual state
+make config-diff
+```
+
+## Configuration Validation
+
+### Required Validations
+
+```yaml
+validation_rules:
+  structural:
+    - "All referenced scripts must exist"
+    - "All dependencies must be defined"
+    - "No circular dependencies"
+    - "Phase order is valid"
+
+  naming:
+    - "Script names follow naming conventions"
+    - "Platforms match directory structure"
+    - "Groups follow DM_R042 numbering"
+
+  completeness:
+    - "All scripts in directories are in config"
+    - "No orphan entries (config without script)"
+    - "Marker dependencies match config"
+```
+
+### Validation Output
+
+```bash
+$ make config-validate
+
+Validating _targets_config.yaml...
+
+✓ All 47 referenced scripts exist
+✓ All dependencies are defined
+✓ No circular dependencies detected
+✓ Phase order is valid
+
+⚠ Warning: 2 scripts not in config:
+  - ETL/cbz/cbz_ETL_reviews_0IM.R (new?)
+  - DRV/cbz/cbz_D04_07.R (new?)
+
+Run 'make config-generate' to add new scripts.
+```
+
+## Configuration Updates
+
+### When Configuration Must Update
+
+```yaml
+update_triggers:
+  automatic:
+    - "New script added to ETL/ or DRV/"
+    - "Script renamed or removed"
+    - "New platform directory created"
+
+  manual:
+    - "Dependency markers changed in script"
+    - "Cross-platform dependencies added"
+    - "Special ETL cross-datatype dependency"
+```
+
+### Update Workflow
+
+```bash
+# 1. Make code changes (add/modify scripts)
+
+# 2. Regenerate config to capture changes
+make config-generate
+
+# 3. Review and verify changes
+git diff _targets_config.yaml
+
+# 4. Validate the updated config
+make config-validate
+
+# 5. Commit config with code changes
+git add _targets_config.yaml
+git commit -m "Update pipeline configuration"
+```
+
+## Integration with targets Package
+
+### Reading Configuration
+
+```r
+# In _targets.R
+library(targets)
+library(yaml)
+
+# Load configuration
+config <- yaml::read_yaml("_targets_config.yaml")
+
+# Get selected platform from environment
+platform <- Sys.getenv("MAMBA_PLATFORM", "all")
+
+# Build targets from configuration
+build_targets_from_config <- function(config, platform) {
+  targets_list <- list()
+
+  # Add ETL targets
+  for (datatype in names(config$platforms[[platform]]$etl)) {
+    for (script_def in config$platforms[[platform]]$etl[[datatype]]$scripts) {
+      target <- tar_target_raw(
+        name = tools::file_path_sans_ext(script_def$script),
+        command = substitute(run_etl_script(script), list(script = script_def$script)),
+        deps = script_def$depends
+      )
+      targets_list <- c(targets_list, list(target))
+    }
+  }
+
+  # Add DRV targets...
+
+  return(targets_list)
+}
+```
+
+## Benefits of Configuration-Driven Approach
+
+```yaml
+configuration_benefits:
+  single_source_of_truth:
+    - "One file describes entire pipeline"
+    - "No scattered dependency information"
+    - "Easy to audit and review"
+
+  version_controlled:
+    - "Changes tracked in git"
+    - "Configuration history available"
+    - "Review via pull requests"
+
+  auto_discovery:
+    - "New scripts detected automatically"
+    - "Reduces manual configuration"
+    - "Convention over configuration"
+
+  explicit_when_needed:
+    - "Override auto-discovery for special cases"
+    - "Clear documentation of exceptions"
+    - "Cross-platform dependencies explicit"
+
+  validation:
+    - "Catch errors before execution"
+    - "Detect orphan scripts"
+    - "Verify dependency consistency"
+```
+
+## Compliance Checklist
+
+### For Three-Layer Configuration
+
+```yaml
+layer_compliance:
+  layer_1_universal:
+    ✓ Base template at global_scripts/templates/_targets_config.base.yaml
+    ✓ Contains schema only (no company settings)
+    ✓ Defines phase_order matching DF00
+    ✓ Shared via git subrepo (Track 1)
+
+  layer_2_company:
+    ✓ pipeline: section in app_config.yaml
+    ✓ Contains enabled platforms
+    ✓ Contains execution overrides
+    ✓ At project root (Track 3)
+
+  layer_3_generated:
+    ✓ Output at {project_root}/_targets_config.yaml
+    ✓ Generated via make config-merge
+    ✓ Valid YAML syntax
+    ✓ Committed to version control
+```
+
+### For Configuration File
+
+```yaml
+config_compliance:
+  ✓ Located at {project_root}/_targets_config.yaml
+  ✓ Valid YAML syntax
+  ✓ Contains version and last_updated
+  ✓ Contains template_type: "merged"
+  ✓ Defines phase_order matching DF00
+  ✓ All platforms have etl and drv sections
+  ✓ All scripts have depends defined
+  ✓ No circular dependencies
+  ✓ Committed to version control
+```
+
+### For Pipeline Workflow
+
+```yaml
+workflow_compliance:
+  ✓ config-merge command available
+  ✓ config-scan command available
+  ✓ config-full command available
+  ✓ config-validate command available
+  ✓ Config regenerated when app_config.yaml changes
+  ✓ Config committed with code changes
+  ✓ CI validates config on PR
+```
+
+## Conclusion
+
+The Configuration-Driven Pipeline principle ensures MAMBA pipelines are:
+
+1. **Centralized**: Single configuration file for all pipeline definitions
+2. **Discoverable**: Auto-scan directories for new scripts
+3. **Explicit**: Special dependencies clearly documented
+4. **Validated**: Errors caught before execution
+5. **Version-Controlled**: Full history and review capability
+
+**Key Mandates:**
+- All pipelines MUST be defined in `_targets_config.yaml`
+- Auto-discovery MUST be the default for standard patterns
+- Explicit configuration MUST be used for cross-platform and special dependencies
+- Configuration MUST be validated before execution
+- Configuration changes MUST be committed with code changes
+- Platform execution scope MUST be controlled via pipeline config (do not delete shared platform scripts)

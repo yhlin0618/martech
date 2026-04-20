@@ -1,0 +1,323 @@
+---
+title: "TD_P004: No Parallel Processing in Shiny Cloud (CLOUD_P001)"
+subtitle: "Prohibition of furrr/future parallel processing in Posit Connect Cloud and shinyapps.io"
+chapter: "CH05"
+category: "principle"
+number: "TD_P004"
+alias: "CLOUD_P001"
+date-created: "2025-01-08"
+date-modified: "2025-01-08"
+author: "Claude"
+type: "principle"
+law: "Testing & Deployment Law"
+article-number: "Article 4"
+derives_from:
+  - "CH00.MP099: Realtime Progress Reporting"
+  - "TD_P001: Deployment Patterns"
+influences:
+  - "Future parallel processing implementations"
+  - "OpenAI API integration patterns"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Testing & Deployment Law Article 4 (No Parallel Processing in Shiny Cloud)**
+
+Also known as **CLOUD_P001**, this principle establishes a prohibition on using `furrr::future_map()` or `future::multisession` parallel processing in Shiny applications deployed to Posit Connect Cloud or shinyapps.io.
+
+:::{.callout-important}
+## Core Principle
+**NEVER use `furrr` parallel processing in Shiny Cloud environments.** Functions defined within Shiny reactive contexts capture their entire parent environment (closure), which can exceed the `future.globals.maxSize` limit and cause deployment failures.
+:::
+
+# Section 1: Problem Statement {#problem}
+
+## Subsection 1: The Closure Capture Problem {#closure-capture}
+
+When a function is defined inside a Shiny reactive context, R captures the entire parent environment as a closure. This includes:
+
+- All reactive values
+- Data frames in memory
+- Session objects
+- Global environment references
+
+### Example of the Problem
+
+```r
+# ❌ This will FAIL in Shiny Cloud
+observeEvent(input$run_scoring, {
+
+  # This function captures the ENTIRE parent environment
+  score_review <- function(review, attributes) {
+    # ... scoring logic
+  }
+
+  # furrr attempts to serialize score_review to send to workers
+  # But the closure includes 800+ MB of parent environment!
+  results <- furrr::future_map(reviews, score_review)
+})
+```
+
+## Subsection 2: Error Message {#error-message}
+
+The characteristic error message:
+
+```
+The total size of the 13 globals exported for future expression is 817.59 MiB.
+This exceeds the maximum allowed size 500.00 MiB (future.globals.maxSize)
+
+The three largest globals are:
+- 'score_review' (817.51 MiB)  ← The function closure!
+- 'chat_api' (26.68 KiB)
+- 'review_texts' (14.65 KiB)
+```
+
+## Subsection 3: Why This Happens {#why-happens}
+
+1. **Shiny's reactive model**: Functions defined in reactive contexts inherit their environment
+2. **future's serialization**: `future::multisession` must serialize all globals to send to workers
+3. **Size limitation**: `future.globals.maxSize` defaults to 500MB
+4. **Cloud constraints**: Posit Connect Cloud has limited memory and stricter resource controls
+
+# Section 2: Prohibited Patterns {#prohibited}
+
+## Subsection 1: Direct Prohibition {#direct-prohibition}
+
+The following patterns are **PROHIBITED** in Shiny Cloud deployments:
+
+```r
+# ❌ PROHIBITED: furrr parallel processing
+library(future)
+library(furrr)
+
+future::plan(future::multisession, workers = 4)
+results <- furrr::future_map(data, process_fn)
+future::plan(future::sequential)
+```
+
+## Subsection 2: Also Prohibited {#also-prohibited}
+
+```r
+# ❌ PROHIBITED: future with multisession
+future::plan(future::multisession)
+results <- future::future_lapply(data, process_fn)
+
+# ❌ PROHIBITED: parallel package in Shiny
+library(parallel)
+cl <- makeCluster(4)
+results <- parLapply(cl, data, process_fn)
+stopCluster(cl)
+```
+
+# Section 3: Approved Alternatives {#alternatives}
+
+## Subsection 1: Sequential Processing with Progress {#sequential-progress}
+
+**APPROVED PATTERN**: Use sequential `for` loops with `setProgress()` for user feedback.
+
+```r
+# ✅ APPROVED: Sequential processing with progress
+results <- withProgress(message = "Processing...", value = 0.1, {
+  results_list <- list()
+  total <- length(data)
+
+  for (i in seq_len(total)) {
+    setProgress(
+      value = 0.1 + 0.8 * (i / total),
+      detail = sprintf("Item %d/%d", i, total)
+    )
+
+    results_list[[i]] <- tryCatch({
+      process_fn(data[[i]])
+    }, error = function(e) {
+      message(sprintf("Error at %d: %s", i, e$message))
+      NA
+    })
+  }
+
+  setProgress(value = 0.9, detail = "Finalizing...")
+  results_list
+})
+```
+
+## Subsection 2: Batch API Calls {#batch-api}
+
+**APPROVED PATTERN**: Reduce API calls by batching requests.
+
+```r
+# ❌ BEFORE: 750 API calls (50 reviews × 15 attributes)
+for (review in reviews) {
+  for (attr in attributes) {
+    score <- call_api(review, attr)  # 15 calls per review
+  }
+}
+
+# ✅ AFTER: 50 API calls (1 per review, all attributes at once)
+for (review in reviews) {
+  scores <- call_api_batch(review, all_attributes)  # 1 call per review
+}
+```
+
+## Subsection 3: Background Queue System {#queue-system}
+
+For very long operations, consider implementing a queue system:
+
+```r
+# ✅ APPROVED: Queue-based processing
+# 1. User submits job → stored in database
+# 2. Background worker processes jobs
+# 3. User notified when complete
+
+# This is out of scope for this principle but mentioned as an alternative
+```
+
+# Section 4: Implementation Examples {#examples}
+
+## Subsection 1: BrandEdge Scoring (Before/After) {#brandedge-example}
+
+### Before (Broken)
+```r
+# ❌ This caused crashes
+n_workers <- min(4, parallel::detectCores() - 1)
+future::plan(future::multisession, workers = n_workers)
+
+scores_list <- furrr::future_map(
+  seq_len(total_reviews),
+  function(i) {
+    score_review(review_texts[i], attributes)
+  },
+  .options = furrr::furrr_options(seed = TRUE)
+)
+
+future::plan(future::sequential)
+```
+
+### After (Fixed)
+```r
+# ✅ Sequential processing with progress
+all_scores <- withProgress(message = "Scoring...", value = 0.1, {
+  scores_list <- list()
+  for (i in seq_len(total_reviews)) {
+    setProgress(
+      value = 0.1 + 0.8 * (i / total_reviews),
+      detail = sprintf("%d/%d (%s)", i, total_reviews, review_brands[i])
+    )
+    scores_list[[i]] <- tryCatch({
+      score_review(review_texts[i], attributes, review_idx = i)
+    }, error = function(e) {
+      rep(NA_real_, length(attributes))
+    })
+  }
+  scores_list
+})
+```
+
+## Subsection 2: InsightForge Scoring (Efficiency Fix) {#insightforge-example}
+
+### Before (Inefficient + Broken)
+```r
+# ❌ 750 API calls + parallel crash
+# For each review, call API 15 times (once per attribute)
+for (review in reviews) {
+  prompts <- lapply(attributes, function(attr) {
+    prepare_prompt(var_id = "score_attribute", attr = attr)  # singular
+  })
+  scores <- lapply(prompts, function(p) chat_api(p))  # 15 calls!
+}
+```
+
+### After (Efficient + Fixed)
+```r
+# ✅ 50 API calls, sequential, stable
+for (i in seq_len(total_reviews)) {
+  setProgress(value = i / total_reviews)
+
+  # One API call per review, scores ALL attributes at once
+  prompt <- prepare_prompt(
+    var_id = "score_attributes",  # PLURAL - batch scoring
+    attributes = paste(attrs, collapse = ", "),
+    review_text = review_texts[i]
+  )
+
+  response <- chat_api(prompt)
+  scores <- parse_json_scores(response)
+}
+```
+
+# Section 5: Scope and Exceptions {#scope}
+
+## Subsection 1: Applies To {#applies-to}
+
+This principle applies to:
+
+- **Posit Connect Cloud** (connect.posit.cloud)
+- **shinyapps.io** (all plans)
+- Any resource-constrained Shiny hosting environment
+
+## Subsection 2: Exceptions {#exceptions}
+
+This principle does NOT apply to:
+
+- **Local development**: Parallel processing works fine locally
+- **Self-hosted Posit Connect Server**: Can configure `future.globals.maxSize` and allocate more resources
+- **Non-Shiny R scripts**: Scripts without reactive context don't have closure capture issues
+
+# Section 6: Performance Comparison {#performance}
+
+## Subsection 1: BrandEdge Results {#brandedge-results}
+
+| Metric | Before (Parallel) | After (Sequential) |
+|--------|-------------------|-------------------|
+| Stability | ❌ Crashes in Cloud | ✅ Stable |
+| API Calls (50 reviews) | 50 | 50 |
+| Speed | ~2-3 min (when working) | ~3-5 min |
+| User Experience | ❌ Frozen screen | ✅ Real-time progress |
+
+## Subsection 2: InsightForge Results {#insightforge-results}
+
+| Metric | Before (Per-attr × Parallel) | After (Batch × Sequential) |
+|--------|------------------------------|----------------------------|
+| Stability | ❌ Crashes | ✅ Stable |
+| API Calls (50 reviews × 15 attrs) | 750 | **50** |
+| Speed | ~15-30 min (theoretical) | **~3-5 min** |
+| Efficiency Gain | - | **15x fewer API calls** |
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## CLOUD_P001 Compliance Checklist
+
+When deploying Shiny apps to Cloud environments:
+
+- [ ] No `library(furrr)` in production code
+- [ ] No `library(future)` with `multisession` plan
+- [ ] No `parallel::makeCluster()` usage
+- [ ] All long operations use `withProgress()` + `setProgress()`
+- [ ] API calls are batched where possible
+- [ ] Sequential `for` loops are used instead of parallel map
+- [ ] Error handling with `tryCatch()` in loops
+- [ ] Progress messages are user-friendly
+:::
+
+# Related Principles {#related}
+
+- **MP099**: Realtime Progress Reporting - Use progress indicators for user feedback
+- **TD_P001**: Deployment Patterns - General deployment guidelines
+- **Issue #141**: Parallel Scoring Implementation - Origin of this principle
+
+# Conclusion {#conclusion}
+
+The `furrr` parallel processing approach that works locally will fail in Shiny Cloud environments due to closure serialization limits. Always use sequential processing with real-time progress updates for Cloud deployments. The performance penalty is minimal when combined with batch API optimizations, and the stability gain is essential for production use.
+
+---
+
+*Based on: Testing & Deployment Law Article 4*
+*Origin: Issue #141 - Parallel Scoring Implementation failure in Posit Connect Cloud*
+*Date: 2025-01-08*

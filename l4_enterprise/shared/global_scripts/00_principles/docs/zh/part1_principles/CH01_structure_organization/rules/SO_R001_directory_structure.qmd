@@ -1,0 +1,342 @@
+---
+title: "SO_R001: Directory Structure"
+subtitle: "Implementation rules for organizing files and directories"
+chapter: "CH01"
+category: "rule"
+number: "SO_R001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法施行細則 (Structure & Organization Law Implementation Rules)"
+article-number: "第1條"
+implements:
+  - "CH00.MP002: Structural Blueprint"
+  - "CH00.MP093: Script Separation Principle"
+  - "CH01.SO_P001: Project Principles"
+related_to:
+  - "CH01.SO_R002: File Naming Convention"
+  - "CH01.SO_R003: Principle Documentation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**結構組織法施行細則第1條（目錄結構）**
+
+本條建立組織檔案與目錄之具體規則，確保專案結構一致性。
+
+:::{.callout-important}
+## 核心概念
+程式碼庫必須遵循標準化目錄結構，清楚表明不同組件的用途和載入順序，維持適當的關注點分離，並促進導航和維護。
+:::
+
+# 第一項：目錄層級 {#directory-hierarchy}
+
+系統組織為以下主要目錄：
+
+```
+precision_marketing_app/
+├── app.R                         # 主應用程式進入點
+├── app_configs/                  # 應用程式配置檔案
+├── app_data/                     # 應用程式專屬資料
+│   ├── scd_type1/                # 靜態參考資料
+│   └── scd_type2/                # 半靜態參考資料
+├── data/                         # 應用程式資料檔案
+│   └── processed/                # 可使用的處理後資料
+├── rsconnect/                    # 部署配置
+├── update_scripts/               # 可執行腳本 (ETL, derivation, updates)
+│   ├── cbz_ETL01_*.R            # Platform-specific ETL scripts
+│   ├── cbz_D01_*.R              # Platform-specific derivation scripts
+│   └── sc_*.R                   # System change scripts
+└── scripts/
+    └── global_scripts/           # 可重用函數、模組和原則
+    │   ├── 00_principles/        # 系統原則和文件
+    │   ├── 01_db/                # 資料庫建立函數
+    │   ├── 02_db_utils/          # 資料庫工具函數
+    │   ├── 03_config/            # 配置工具
+    │   ├── 04_utils/             # 一般工具函數
+    │   ├── 05_data_processing/   # 資料處理函數
+    │   ├── 06_queries/           # 資料查詢函數
+    │   ├── 07_models/            # 統計模型
+    │   ├── 08_ai/                # AI 相關函數
+    │   ├── 09_python_scripts/    # Python 整合腳本
+    │   ├── 10_rshinyapp_components/ # Shiny 組件定義
+    │   ├── 11_rshinyapp_utils/   # Shiny 工具函數
+    │   ├── 26_platform_apis/     # Platform API implementations
+    │   └── 27_company_info/      # Company information and branding assets
+    ├── records/                  # 變更記錄和文件
+    └── 99_archive/               # 存檔檔案和版本
+```
+
+# 第二項：腳本分離架構 {#script-separation}
+
+## 第一款：執行層與函式庫層 {#execution-vs-library}
+
+:::{.callout-important}
+## MP093: 腳本分離原則
+系統維持執行腳本（update_scripts/）與可重用組件（global_scripts/）之間的明確分離：
+
+- **update_scripts/**: 包含所有執行實際操作的腳本（ETL、衍生、更新）
+- **global_scripts/**: 包含可重用函數、模組、組件和文件
+- 執行腳本引用（source）可重用組件，但絕不反向引用
+:::
+
+範例依賴模式：
+```r
+# ✅ 正確：update_scripts 引用 global_scripts
+# 在 update_scripts/cbz_ETL01_0IM.R 中
+source("scripts/global_scripts/01_db/dbConnect.R")
+source("scripts/global_scripts/04_utils/fn_process_data.R")
+
+# ❌ 錯誤：global_scripts 絕不應引用 update_scripts
+# 在 global_scripts 中絕不這樣做
+source("../../update_scripts/cbz_ETL01.R")  # 禁止
+```
+
+## 第二款：編號目錄 {#numbered-directories}
+
+:::{.callout-note}
+## 編號規則
+- 全域腳本目錄必須使用數字前綴（00_, 01_ 等）
+- 數字表示載入順序和相依層級
+- 較低編號的目錄不應依賴較高編號的目錄
+:::
+
+## 第二款：功能分組 {#functional-grouping}
+
+每個目錄必須包含功能相關的腳本：
+
+- 資料庫工具必須在 `01_db` 或 `02_db_utils`
+- 一般工具必須在 `04_utils`
+- Shiny 組件必須在 `10_rshinyapp_components` 和 `11_rshinyapp_utils`
+
+## 第三款：組件結構 {#component-structure}
+
+`10_rshinyapp_components` 必須按應用程式區段組織：
+
+```
+10_rshinyapp_components/
+├── common/             # 跨區段使用的共用組件
+├── data/               # 資料來源組件
+├── macro/              # 宏觀概覽組件
+├── micro/              # 微觀客戶組件
+└── target/             # 目標分析組件
+```
+
+## 第四款：最小巢狀 {#minimal-nesting}
+
+- 目錄結構應盡可能保持扁平
+- global_scripts 內不超過 3 層巢狀
+- 每個目錄應有清晰、單一的用途
+
+## 第五款：平台 API 組織 {#platform-api-organization}
+
+`26_platform_apis` 必須按平台代碼組織（參見 MP094）：
+
+```
+26_platform_apis/
+├── README.md              # API architecture documentation
+├── api_registry.yaml      # Central registry of all APIs
+├── common/                # Shared API utilities
+│   ├── fn_api_rate_limiter.R
+│   ├── fn_api_error_handler.R
+│   └── fn_api_authenticator.R
+├── cbz/                   # Cyberbiz platform
+│   ├── api_config.yaml
+│   ├── fn_cbz_*.R
+│   └── tests/
+├── eby/                   # eBay platform
+│   ├── api_config.yaml
+│   ├── fn_eby_*.R
+│   └── tests/
+└── amz/                   # Amazon platform
+    ├── api_config.yaml
+    ├── fn_amz_*.R
+    └── tests/
+```
+
+## 第六款：公司資訊組織 {#company-info-organization}
+
+`27_company_info` 必須按公司組織，提供可透過 `includeMarkdown()` 包含的內容：
+
+```
+27_company_info/
+├── README.md                     # 目錄使用文件
+├── template/                     # 新公司的模板結構
+│   ├── about.md                 # 公司描述模板
+│   ├── contacts.md              # 聯絡資訊模板
+│   ├── services.md              # 服務項目模板
+│   ├── testimonials.md          # 客戶推薦模板
+│   └── branding/                # 品牌資產模板
+├── [company_name]/               # 特定公司目錄
+│   ├── about.md                 # 公司概述和歷史
+│   ├── contacts.md              # 聯絡詳情和地點
+│   ├── services.md              # 提供的產品和服務
+│   ├── testimonials.md          # 客戶回饋和案例研究
+│   ├── team.md                  # 團隊成員和專業知識
+│   ├── values.md                # 公司價值觀和使命
+│   └── branding/                # 公司特定品牌
+│       ├── logos/               # 標誌變體
+│       ├── colors.yaml          # 品牌顏色定義
+│       └── fonts.yaml           # 字型規格
+└── shared/                       # 跨多個公司共享
+    ├── legal/                   # 法律聲明
+    └── certifications/          # 行業認證
+```
+
+### 公司資訊使用規則：
+
+- 每個公司必須有自己的子目錄，使用公司名稱或代碼命名
+- 標準檔案（about.md、contacts.md 等）應遵循模板結構
+- Markdown 檔案應使用清晰的標題和結構化內容
+- 品牌資產應組織在 `branding/` 子目錄中
+- 共享內容應放在 `shared/` 目錄中
+- 應用程式應使用 `includeMarkdown()` 動態包含內容
+
+# 第三項：執行腳本組織 {#update-scripts-organization}
+
+## 第一款：執行腳本類型 {#executable-types}
+
+`update_scripts/` 目錄包含以下類型的可執行腳本：
+
+- **ETL 腳本** (`platform_ETL01_*.R`): 資料提取、轉換、載入操作
+- **衍生腳本** (`platform_D01_*.R`): 資料衍生和計算
+- **系統變更腳本** (`sc_*.R`): 資料庫結構或配置變更
+- **資料更新腳本**: 定期資料更新操作
+- **遷移腳本**: 一次性系統遷移
+
+## 第二款：命名慣例 {#naming-convention}
+
+執行腳本遵循嚴格的命名模式：
+```
+platform_type_number_stage.R
+```
+其中：
+- `platform`: 平台代碼（cbz、eby、amz 等）
+- `type`: 操作類型（ETL、D、sc）
+- `number`: 順序識別碼
+- `stage`: 可選階段（0IM、1ST、2TR 等）
+
+# 第四項：特殊目錄規則 {#special-directories}
+
+## 第一款：原則目錄（00_principles）{#principles-directory}
+
+:::{.callout-important}
+## 原則目錄要求
+- 必須包含所有系統原則和文件
+- 必須使用最低編號（00）表示其基礎角色
+- 必須包含解釋原則組織的 README.md
+:::
+
+## 第二款：文件目錄 {#documentation-directories}
+
+- 變更記錄必須在 `update_scripts/records/`
+- 記錄必須使用日期前綴命名慣例：`YYYY-MM-DD_description.md`
+- 存檔必須在 `update_scripts/99_archive/`
+
+## 第三款：資料目錄 {#data-directories}
+
+- 所有應用程式專屬資料必須在 `app_data/`
+- 配置檔案必須在 `app_configs/`
+- 緩慢變化維度資料必須按類型組織：
+  - 靜態參考資料在 `app_data/scd_type1/`
+  - 半靜態參考資料在 `app_data/scd_type2/`
+
+# 第四項：目錄建立規則 {#directory-creation}
+
+## 第一款：建立新目錄時 {#creating-directories}
+
+建立新目錄時必須：
+
+1. 驗證目錄尚不存在
+2. 根據內容的用途選擇適當位置
+3. 如果在 global_scripts 中，使用正確的數字前綴
+4. 在 README.md 中記錄目錄的用途
+
+## 第二款：global_scripts 中的新頂層目錄 {#new-top-level}
+
+新增頂層目錄必須：
+
+- 經核准並記錄在 MP002（結構藍圖）中
+- 遵循數字前綴模式
+- 具有現有目錄未涵蓋的清晰、獨特用途
+
+# 第五項：實作範例 {#implementation-examples}
+
+## 範例 1：新增工具函數 {#example-utility}
+
+新增資料處理的工具函數時：
+
+```r
+# 如果是一般工具，放在 04_utils
+update_scripts/global_scripts/04_utils/fn_process_data.R
+
+# 如果專門用於資料處理，放在 05_data_processing
+update_scripts/global_scripts/05_data_processing/fn_process_customer_data.R
+```
+
+## 範例 2：新增 Shiny 組件 {#example-shiny}
+
+為微觀客戶區段新增 Shiny 組件時：
+
+```r
+# UI 組件
+update_scripts/global_scripts/10_rshinyapp_components/micro/ui_micro_customer_profile.R
+
+# Server 組件
+update_scripts/global_scripts/10_rshinyapp_components/micro/server_micro_customer_profile.R
+
+# 預設值
+update_scripts/global_scripts/10_rshinyapp_components/micro/defaults_micro_customer_profile.R
+```
+
+# 第六項：維護指導原則 {#maintenance}
+
+## 第一款：定期審查 {#periodic-review}
+
+定期審查目錄結構以發現：
+
+- 未使用或已棄用的目錄
+- 過大需要細分的目錄
+- 與這些規則的不一致
+
+## 第二款：重組時 {#reorganization}
+
+重組時必須：
+
+1. 在 `update_scripts/records/` 中記錄變更
+2. 更新受影響檔案中的引用
+3. 盡可能維持向後相容性
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 目錄結構檢查清單
+
+建立或維護目錄結構時，確認：
+
+- [ ] 全域腳本目錄使用數字前綴
+- [ ] 每個目錄有清晰、單一的用途
+- [ ] 巢狀層級保持最少
+- [ ] 原則在 00_principles 目錄中
+- [ ] 資料檔案在適當的資料目錄中
+- [ ] 變更記錄在 records 目錄中
+- [ ] README.md 記錄每個目錄的用途
+:::
+
+# 結論 {#conclusion}
+
+遵循這些目錄結構規則確保程式碼庫一致、可導航和可維護。該結構提供清晰的邏輯組織，促進功能發現，並在整個專案中強制執行適當的關注點分離。
+
+---
+
+*依據：結構組織法施行細則第1條*  
+*實作：[MP002 結構藍圖](../../CH00_fundamental_principles/02_structure_organization/MP002_structural_blueprint.qmd)、[MP093 腳本分離原則](../../CH00_fundamental_principles/02_structure_organization/MP093_script_separation_principle.qmd)、[SO_P001 專案原則](../principles/SO_P001_project_principles.qmd)*  
+*相關規則：[SO_R002 檔案命名慣例](SO_R002_file_naming_convention.qmd)

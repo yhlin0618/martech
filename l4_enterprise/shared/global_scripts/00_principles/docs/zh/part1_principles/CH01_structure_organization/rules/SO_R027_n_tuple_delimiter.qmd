@@ -1,0 +1,261 @@
+---
+title: "SO_R019: N-Tuple 分隔符規則"
+subtitle: "建立明確、一致的模式，使用 '####component.name####' 分隔符模式視覺分隔 n 元組（特別是 UI-server-defaults 三元組）中的元件。這通過清晰劃分相關元件之間的邊界來增強程式碼可讀性和可維護性"
+chapter: "CH01"
+category: "rule"
+number: "SO_R019"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 19
+  title: "N-Tuple 分隔符規則"
+implements:
+  - "R009: UI Server Defaults 三元組"
+  - "MP017: 關注點分離"
+  - "R019: 物件命名約定"
+related_to:
+  - "R021: 一函數一檔案"
+  - "P072: UI 套件一致性"
+  - "P073: Server-to-UI 資料流"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十九條：N-Tuple 分隔符規則 {#overview}
+
+**結構組織法第十九條（N-Tuple 分隔符規則）**
+
+此規則建立了使用分隔符模式視覺分隔 n 元組元件的標準。
+
+:::{.callout-important}
+## 核心需求
+建立明確、一致的模式，使用 `####component.name####` 分隔符模式視覺分隔 n 元組（特別是 UI-server-defaults 三元組）中的元件。
+:::
+
+# 第一項：實施原則 {#implementation}
+
+## 第一款：分隔符模式 {#delimiter-pattern}
+
+在實施 n 元組（如 UI-server-defaults 三元組）時，使用以下分隔符模式分隔元件：
+
+```
+####component.name####
+```
+
+其中：
+- 分隔符由兩側各四個井號 (`####`) 組成
+- `component.name` 遵循 R19 的物件命名約定
+- 分隔符內不應使用空格
+
+## 第二款：UI-Server-Defaults 實施 {#ui-server-defaults-implementation}
+
+對於 UI-server-defaults 三元組，按如下方式實施分隔符模式：
+
+```r
+####ui.component_name####
+# UI 元件實施
+ui.component_name <- function(id) {
+  # UI 實施
+}
+
+####server.component_name####
+# Server 元件實施
+server.component_name <- function(id, data) {
+  # Server 實施
+}
+
+####defaults.component_name####
+# 元件的預設值
+defaults.component_name <- list(
+  # 預設值
+)
+```
+
+## 第三款：檔案組織選項 {#file-organization-options}
+
+分隔符模式可以兩種方式使用：
+
+### 單檔案實施 {#single-file}
+
+```r
+# 檔案：component_name.R
+
+####ui.component_name####
+ui.component_name <- function(id) {
+  # UI 實施
+}
+
+####server.component_name####
+server.component_name <- function(id, data) {
+  # Server 實施
+}
+
+####defaults.component_name####
+defaults.component_name <- list(
+  # 預設值
+)
+```
+
+### 多檔案實施 {#multiple-files}
+
+當遵循 R0021（一函數一檔案）時，在每個檔案開頭使用一致的分隔符註釋：
+
+```r
+# 檔案：fn_ui_component_name.R
+####ui.component_name####
+ui.component_name <- function(id) {
+  # UI 實施
+}
+```
+
+```r
+# 檔案：fn_server_component_name.R
+####server.component_name####
+server.component_name <- function(id, data) {
+  # Server 實施
+}
+```
+
+```r
+# 檔案：defaults_component_name.R
+####defaults.component_name####
+defaults.component_name <- list(
+  # 預設值
+)
+```
+
+## 第四款：擴展 N 元組 {#extended-n-tuples}
+
+對於超過三個部分的元件，保持相同的分隔符模式：
+
+```r
+####ui.component_name####
+# UI 實施
+
+####server.component_name####
+# Server 實施
+
+####defaults.component_name####
+# Defaults 實施
+
+####tests.component_name####
+# Tests 實施
+
+####docs.component_name####
+# Documentation 實施
+```
+
+# 第二項：範例 {#examples}
+
+## 第一款：客戶檔案元件三元組 {#customer-profile-triple}
+
+```r
+####ui.customer_profile####
+ui.customer_profile <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    class = "profile-container",
+    h3("客戶檔案"),
+    textOutput(ns("customer_name")),
+    textOutput(ns("customer_email")),
+    valueBoxOutput(ns("total_purchases"))
+  )
+}
+
+####server.customer_profile####
+server.customer_profile <- function(id, customer_data) {
+  moduleServer(id, function(input, output, session) {
+    output$customer_name <- renderText({
+      customer_data()$name
+    })
+    
+    output$customer_email <- renderText({
+      customer_data()$email
+    })
+    
+    output$total_purchases <- renderValueBox({
+      valueBox(
+        customer_data()$purchase_count,
+        "總購買次數",
+        icon = icon("shopping-cart")
+      )
+    })
+  })
+}
+
+####defaults.customer_profile####
+defaults.customer_profile <- list(
+  empty_customer = list(
+    name = "未選擇客戶",
+    email = "N/A",
+    purchase_count = 0
+  ),
+  refresh_interval = 30,
+  max_history_products = 10
+)
+```
+
+## 第二款：帶文檔的資料篩選元件 {#data-filter-with-docs}
+
+```r
+####ui.data_filter####
+ui.data_filter <- function(id) {
+  # UI 實施
+}
+
+####server.data_filter####
+server.data_filter <- function(id, data_source) {
+  # Server 實施
+}
+
+####defaults.data_filter####
+defaults.data_filter <- list(
+  # Defaults 實施
+)
+
+####docs.data_filter####
+# 資料篩選元件
+# 
+# 此元件為表格資料提供篩選功能。
+# 支援：
+# - 文字搜尋
+# - 日期範圍篩選
+# - 類別選擇
+# - 數值範圍篩選
+#
+# 用法：
+# ```r
+# ui.data_filter("my_filter")
+# server.data_filter("my_filter", reactive(my_data))
+# ```
+```
+
+# 第三項：優點 {#benefits}
+
+1. **視覺清晰性**：在元件部分之間創建清晰的視覺分隔
+2. **一致的結構**：為程式碼組織建立可預測的模式
+3. **可搜尋性**：使用分隔符模式輕鬆搜尋特定元件
+4. **組織性**：即使在包含多個元件的較大檔案中也有助於保持組織
+5. **可讀性**：改善程式碼可讀性和導航
+6. **文檔化**：作為自我文檔化的程式碼結構
+
+# 第四項：實施指導 {#implementation-guidance}
+
+1. 將此模式應用於所有新元件開發
+2. 修改現有元件時添加分隔符
+3. 使用尋找和替換批量向現有程式碼庫添加分隔符
+4. 考慮在 IDE 中為這些分隔符添加語法高亮以增強可見性
+
+---
+
+*基於：結構組織法第十九條*  
+*相關連結：[R009 UI Server Defaults 三元組](../../CH04_ui_components/rules/UI_R001_ui_server_defaults_ntuple.qmd), [MP017 關注點分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd)*

@@ -1,0 +1,227 @@
+---
+id: SO_P018
+title: Directory Structure Governance
+subtitle: Strict control over directory and file creation in core system folders
+category: Structure Organization
+type: Principle
+status: Active
+version: "1.3"
+created: 2025-12-26
+last_updated: 2026-02-11
+related_principles: [MP011, MP014, SO_R001]
+implementation_spec: SO_P018_governance_spec.yaml
+---
+
+## Statement
+
+Core system directories (`00_principles/` and `global_scripts/`) AND the **project root directory** MUST have a fixed, documented structure. Both directories AND root-level files require governance. New directories or file patterns require explicit principle approval before creation.
+
+> **Update (2026-02-11):** Issue tracking source of truth is **GitHub Issues**.  
+> Local `changelog/issues/` is legacy archive only.
+
+## Implementation Specification
+
+For detailed, machine-readable specifications, see the companion file:
+**`SO_P018_governance_spec.yaml`** (in the same directory)
+
+This YAML file serves as "case law" - providing concrete implementation details while this QMD file defines the principles.
+
+## Rationale
+
+Without governance, directories proliferate organically, leading to:
+- Confusion about where to place new files
+- Duplicate or overlapping directories (e.g., `utils/`, `templates/` appearing in multiple places)
+- Difficulty for AI agents to understand the codebase structure
+- Maintenance burden from cleaning up unused directories
+
+## Canonical Directory Structures
+
+### Project Root (e.g., MAMBA/, WISER/) - Allowed Files
+
+The project root directory should contain only essential application and configuration files:
+
+```
+{project_root}/
+├── app.R                 # Main application entry point
+├── app_config.yaml       # Application configuration
+├── _targets_config.yaml  # Pipeline configuration (generated, git-ignored)
+├── README.md            # Project overview
+├── CLAUDE.md            # AI assistant guidelines
+├── CLAUDE.local.md      # Local AI overrides (git-ignored)
+├── manifest.json        # Deployment manifest
+├── .gitignore           # Git ignore rules
+├── .Rprofile            # R profile (optional)
+├── .Renviron            # R environment (git-ignored)
+├── scripts/             # All R/Python scripts
+├── data/                # Company-specific data
+├── validation/          # Validation outputs (CSV only, no .md)
+├── www/                 # Static web assets
+├── tests/               # Integration tests
+└── .claude/             # Claude Code configuration
+```
+
+### Project Root - Prohibited Patterns
+
+| Pattern | Destination | Reason |
+|---------|-------------|--------|
+| `*_REPORT.md` | `CHANGELOG/reports/` | Reports belong in CHANGELOG |
+| `*_DEBUG*.md` | `CHANGELOG/reports/` | Debug reports are local evidence linked to GitHub issues |
+| `*_GUIDE.md` | `CHANGELOG/features/` or docs | Guides should be organized |
+| `MIGRATION_*.md` | `CHANGELOG/migrations/` | Migration docs belong in CHANGELOG |
+| `test_*.R` | `scripts/global_scripts/98_test/` | Test scripts belong in 98_test |
+
+### 00_principles/ - Allowed Directories
+
+```
+00_principles/
+├── .claude/           # Claude Code configuration (agents, rules, skills, settings)
+├── .quarto/           # Quarto build artifacts (auto-generated, gitignored)
+├── CHANGELOG/         # Change history and issue resolutions
+├── docs/              # Natural language documentation
+│   ├── en/           # English version
+│   │   ├── part1_principles/    # Core principles by chapter
+│   │   └── part2_implementations/  # Implementation guides
+│   └── zh/           # Chinese version (same structure)
+├── llm/              # LLM-optimized YAML files for AI consumption
+├── _quarto.yml       # Quarto configuration
+├── INDEX.md          # Main index
+├── README.md         # Overview
+├── QUICK_REFERENCE.md  # Fast lookup guide
+└── NAVIGATION.md     # Navigation helper
+```
+
+### 00_principles/ - Allowed Root Files
+
+Only these files are permitted in the root directory:
+
+| Category | Files |
+|----------|-------|
+| **System** | `.gitignore`, `.quartoignore` |
+| **Quarto** | `_quarto.yml`, `_quarto-en.yml`, `_quarto-zh.yml`, `index.qmd`, `styles.css`, `parameters.yaml` |
+| **Documentation** | `INDEX.md`, `README.md`, `QUICK_REFERENCE.md`, `NAVIGATION.md` |
+
+### 00_principles/ - Prohibited File Patterns
+
+| Pattern | Destination | Reason |
+|---------|-------------|--------|
+| `ISSUE_*.md` | GitHub Issues | Issues are tracked remotely; local issue files are legacy-only |
+| `*_REPORT.md` | `CHANGELOG/reports/` | Reports belong in CHANGELOG |
+| `*_DEBUG*.md` | `CHANGELOG/reports/` | Debug reports are issue evidence |
+| `MIGRATION_*.md` | `CHANGELOG/migrations/` | Migration docs belong in CHANGELOG |
+| `README_*.md` | `archive/` | Only one README.md allowed |
+| `*.yaml` (except allowed) | `llm/` | YAML files belong in llm/ |
+
+**Prohibited in 00_principles/**:
+- `utils/` - Use `global_scripts/04_utils/` instead
+- `templates/` - Use `global_scripts/templates/` instead
+- `scripts/` - Use appropriate numbered directory in `global_scripts/`
+- Any unnumbered utility directories
+
+### global_scripts/ - Allowed Directories
+
+```
+global_scripts/
+├── 00_principles/     # Principles system (see above)
+├── 01_db/            # Database connection scripts
+├── 02_db_utils/      # Database utilities
+├── 03_config/        # Configuration loaders
+├── 04_utils/         # General utilities
+├── 05_etl_utils/     # ETL helper functions
+├── 06_queries/       # Query templates
+├── 07_models/        # Statistical models
+├── 08_ai/            # AI integration
+├── 09_python_scripts/ # Python scripts
+├── 10_rshinyapp_components/  # Shiny UI components
+├── 11_rshinyapp_utils/       # Shiny utilities
+├── 12_bash/          # Shell scripts
+├── 13_modules/       # Reusable modules
+├── 14_sql_utils/     # SQL utilities
+├── 15_cleanse/       # Data cleansing
+├── 17_transform/     # Data transformation
+├── 18_AIMETA_Language/  # AI meta-language
+├── 19_CSS/           # Stylesheets
+├── 20_R_packages/    # R package management
+├── 21_rshinyapp_templates/  # App templates
+├── 22_initializations/      # Initialization scripts
+├── 23_deployment/    # Deployment scripts
+├── 24_assets/        # Static assets
+├── 25_scripts/       # Miscellaneous scripts
+├── 26_platform_apis/ # Platform API integrations
+├── 27_company_info/  # Company-specific data
+├── 28_migration_scripts/    # Migration utilities
+├── 96_things_todo/   # Pending tasks
+├── 97_proposal/      # Proposals
+├── 98_test/          # Test scripts
+├── 99_archive/       # Archived code
+├──X_global_data/      # Shared data files
+├── nsql/             # NSQL language (subrepo)
+└── templates/        # Global templates
+```
+
+**Reserved ranges**:
+- `00-29`: Core functionality
+- `30-89`: Reserved for future use (requires principle amendment)
+- `90-99`: Meta-directories (test, archive, proposals)
+
+## Enforcement Rules
+
+### Rule 1: No Ad-Hoc Directory Creation
+Before creating a new directory in `00_principles/` or `global_scripts/`:
+1. Check if an existing directory serves the purpose
+2. If not, propose amendment to this principle
+3. Get explicit approval before creating
+
+### Rule 2: Directory Purpose Documentation
+Each numbered directory MUST have a README.md explaining:
+- Purpose of the directory
+- What files belong here
+- What files do NOT belong here
+
+### Rule 3: Periodic Audit
+Quarterly review of directory structure to:
+- Identify directories that have grown beyond original scope
+- Archive unused directories
+- Consolidate overlapping directories
+
+## Implementation
+
+### For AI Agents
+When asked to create new files:
+1. Check this principle for appropriate location
+2. Never create new directories without explicit user approval
+3. Prefer existing directories over creating new ones
+
+### For Developers
+When proposing new directories:
+1. Document the need in a CHANGELOG entry
+2. Reference this principle
+3. Update this principle after approval
+
+## Examples
+
+### Correct Placement
+
+| File Type | Correct Location |
+|-----------|------------------|
+| Database utility function | `02_db_utils/fn_*.R` |
+| Shiny UI component | `10_rshinyapp_components/{component}/` |
+| ETL helper | `05_etl_utils/` |
+| Report template | `templates/TEMPLATE_*.md` |
+| Principle document | `00_principles/docs/en/part1_principles/` |
+
+### Incorrect (Avoid)
+
+| Anti-pattern | Why Wrong | Correct Alternative |
+|--------------|-----------|---------------------|
+| `00_principles/utils/` | Utils belong in global_scripts | `04_utils/` |
+| `00_principles/templates/` | Templates belong at root | `templates/` |
+| `global_scripts/helpers/` | Unnumbered directory | `04_utils/` or numbered dir |
+| `global_scripts/my_scripts/` | Personal namespace | Use appropriate numbered dir |
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.2 | 2025-12-30 | Added project root directory governance; expanded CHANGELOG subdirectories |
+| 1.1 | 2025-12-26 | Added root file governance; created companion spec YAML |
+| 1.0 | 2025-12-26 | Initial creation after cleanup audit |

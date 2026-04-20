@@ -1,0 +1,196 @@
+---
+id: DOC_R008
+type: rule
+name: wiki_term_r_code_section
+display_name: "Wiki Term Page R Code Section Structure"
+implements: DOC_R002, DOC_R003
+scope: "GitHub Wiki Term-*.md pages — R code implementation sections"
+---
+
+# DOC_R008: Wiki Term Page R Code Section Structure
+
+## One-Liner
+
+Every Wiki Term page MUST include an R code section with three parts: actual source code excerpt, plain-language explanation, and source file reference.
+
+## Rationale
+
+Wiki Term pages serve two audiences with different needs:
+
+1. **Non-technical readers** (clients, managers) need to understand what the system does without reading code
+2. **Semi-technical readers** (data analysts, marketing ops) need to verify that the documentation matches the actual implementation
+
+The three-part R code section bridges this gap: it shows the real code (DOC_R003 compliance), explains it in plain language (DOC_R002 customer perspective), and points to the source file for verification (DOC_R003 traceability).
+
+Without this structure, Term pages risk becoming either too abstract (clients can't connect formulas to reality) or too technical (clients can't understand the code blocks). The three-part structure ensures every reader finds value.
+
+## Rule
+
+### Required Structure
+
+Each Wiki Term page MUST end with an "R Code Implementation" section (`## R 程式碼實作`) containing exactly three parts in this order:
+
+#### Part 1: Source Code Excerpt
+
+A fenced R code block containing the **actual code** from the production source file, with minimal context-setting comments.
+
+Requirements:
+
+- Code MUST be excerpted from the actual source file, not rewritten or simplified
+- Include only the lines directly relevant to this indicator's calculation
+- Add 1-2 comment lines above the code for context (e.g., what data structures are expected)
+- Do NOT include the full function — only the core logic block
+- If the code is too long (>20 lines), extract the most critical subsection
+
+Template:
+
+````markdown
+## R 程式碼實作
+
+以下是系統實際計算 {INDICATOR} 的核心邏輯（摘錄自 `{source_file}`）：
+
+```r
+# {1-2 line context comment}
+{actual code from source file}
+```
+````
+
+#### Part 2: Plain-Language Explanation
+
+A numbered list under the heading `### 白話解讀` that explains each step of the code in non-technical language.
+
+Requirements:
+
+- Each numbered item corresponds to a logical step in the code
+- Use **bold text** for the step name, followed by a colon and the explanation
+- Explanations must be in 臺灣正體中文 (UI_R025) and avoid jargon
+- If a technical term is unavoidable, provide a parenthetical explanation
+- Aim for 3-5 items; never exceed 7
+- Connect the explanation back to business meaning where possible
+
+Template:
+
+````markdown
+### 白話解讀
+
+1. **{Step name}**：{plain language explanation}
+2. **{Step name}**：{plain language explanation}
+3. **{Step name}**：{plain language explanation}
+````
+
+#### Part 3: Source File Reference
+
+A blockquote at the end pointing to the exact source file and code section.
+
+Requirements:
+
+- Use `>` blockquote syntax
+- Format: `**程式碼來源**：{relative_path}（{section_name} 區塊）`
+- The path is relative to `global_scripts/` (e.g., `04_utils/fn_analysis_dna.R`)
+- Include the section name or comment marker if the file has multiple calculation blocks
+
+Template:
+
+````markdown
+> **程式碼來源**：`{relative_path}`（{section_name} 區塊）
+````
+
+### Complete Example
+
+For the CAI (Customer Activity Index) term page:
+
+````markdown
+## R 程式碼實作
+
+以下是系統實際計算 CAI 的核心邏輯（摘錄自 `fn_analysis_dna.R`）：
+
+```r
+# 只對「非首購 且 購買次數 >= ni_threshold」的交易記錄計算
+cai_dt <- dt[times != 1 & ni >= ni_threshold, .(
+  mle  = sum(ipt * (1/(ni-1))),
+  wmle = sum(ipt * ((times-1) / sum(times-1)))
+), by = customer_id]
+
+if (nrow(cai_dt) > 0) {
+  cai_dt[, cai := (mle - wmle) / mle]
+  cai_dt[, cai_ecdf := ecdf(cai)(cai)]
+  cai_dt[, cai_label := cut(cai_ecdf,
+    breaks = c(0, 0.1, 0.9, 1),
+    labels = c("Gradually Inactive", "Stable", "Increasingly Active"),
+    right = FALSE, ordered_result = TRUE)]
+}
+```
+
+### 白話解讀
+
+1. **篩選條件**：只取「不是第一筆交易」且「購買次數達門檻」的交易紀錄
+2. **MLE（等權平均）**：把每段購買間隔除以 `(購買次數-1)`，全部加起來
+3. **WMLE（加權平均）**：用交易序號作為權重，越晚的交易權重越高
+4. **CAI 值**：`(MLE - WMLE) / MLE`，MLE 比 WMLE 大 → 近期買得更密 → CAI > 0
+5. **分群**：最低 10% = 趨向不活躍、中間 80% = 穩定、最高 10% = 趨向活躍
+
+> **程式碼來源**：`04_utils/fn_analysis_dna.R`（CAI Calculation 區塊）
+````
+
+### Placement
+
+The R code section MUST be placed:
+
+- **After** all existing DOC_R002 required sections (definition, formula, variables, example, dashboard location)
+- **Before** the end of the file
+- As the **last major section** of the page
+
+This follows UX_P002 (Progressive Disclosure): non-technical readers see the business explanation first, and only encounter the code if they scroll further.
+
+### Cross-Reference with Source Code (DOC_R003)
+
+When adding or updating the R code section:
+
+1. **Read the actual source file** listed in the DOC_R003 source code map before writing
+2. **Copy the exact code** — do not paraphrase, simplify, or rewrite the logic
+3. **If the source code changes**, the Wiki code excerpt MUST be updated (enforced by DOC_R006 hook)
+
+### Relationship to Other Term Page Sections
+
+The R code section complements but does not replace the mathematical formula section:
+
+| Section | Purpose | Audience |
+|---------|---------|----------|
+| Mathematical formula (`$$`) | Formal definition | Semi-technical readers who understand math notation |
+| R code section | Implementation proof | Readers who want to verify or understand the actual system behavior |
+| Plain-language explanation | Accessibility | All readers including non-technical stakeholders |
+
+## Relationship
+
+- **Implements**: DOC_R002 (Wiki Content Standards — adds a sixth required section for Term pages)
+- **Implements**: DOC_R003 (Formula Cross-Verification — R code excerpts serve as verifiable evidence)
+- **Related**: DOC_R005 (Wiki Math Formula Syntax — formulas and code must be consistent)
+- **Related**: DOC_R006 (Wiki Synchronization Trigger — source code changes trigger Wiki updates)
+- **Related**: UI_R025 (Taiwan Traditional Chinese — plain-language explanations must follow)
+
+## Scope Update to DOC_R002
+
+With DOC_R008 in effect, the required sections for Term pages expand from 5 to 6:
+
+1. Definition (existing)
+2. Mathematical formula (existing)
+3. Variable descriptions (existing)
+4. Example (existing)
+5. Dashboard location (existing)
+6. **R code implementation** (new — DOC_R008)
+
+## Examples
+
+### Compliant
+
+- Term-RFM.md includes actual code from `fn_analysis_dna.R`, 4-point 白話解讀, and source reference
+- Term-P-alive.md includes code from `fn_analysis_btyd.R`, explains BG/NBD in plain terms, cites source file
+- Code excerpt matches the current version of the source file
+
+### Violation
+
+- Term page has a "## R Code" section but the code is rewritten/simplified instead of excerpted from source
+- Plain-language explanation uses jargon without parenthetical definition (e.g., "ECDF" without explaining it)
+- Source file reference is missing or points to wrong file
+- Code excerpt is outdated (source file has changed but Wiki wasn't updated)
+- R code section is placed before the definition or formula sections (wrong placement)

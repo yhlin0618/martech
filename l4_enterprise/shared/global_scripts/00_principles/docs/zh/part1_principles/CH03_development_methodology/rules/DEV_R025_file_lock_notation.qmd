@@ -1,0 +1,170 @@
+---
+title: "DEV_R025: 檔案鎖定標記規則"
+subtitle: "不應直接修改的關鍵檔案必須在檔案開頭使用標準化的 #LOCK FILE 標記清楚標示，並確保不與 Roxygen2 等文檔工具衝突"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R025"
+date-created: "2025-04-10"
+date-modified: "2025-08-18"
+author: "Development Team"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 25
+  title: "檔案鎖定標記規則"
+extends:
+  - "MP017: 關注分離"
+  - "MP037: 僅為暫時或不確定的註釋"
+aliases:
+  - "檔案鎖定註釋"
+  - "LOCK FILE 標記"
+key_terms:
+  - "檔案鎖定"
+  - "檔案保護"
+  - "鎖定標記"
+  - "代碼保護"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第二十五條：檔案鎖定標記規則 {#overview}
+
+**開發方法法第二十五條（檔案鎖定標記規則）**
+
+此規則確保關鍵系統檔案受到保護，防止意外修改，並提供一致的檔案狀態識別模式。
+
+:::{.callout-important}
+## 核心聲明
+不應直接修改的關鍵檔案必須在檔案開頭使用標準化的 `#LOCK FILE` 標記清楚標示，並確保不與 Roxygen2 等文檔工具衝突。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+將檔案標記為鎖定提供了幾個優點：
+
+1. 防止對關鍵系統檔案的意外修改
+2. 明確哪些檔案只能通過批准的流程更改
+3. 確保自動化工具和腳本可以識別受保護的檔案
+4. 建立識別檔案狀態的一致模式
+5. 降低通過不當編輯破壞核心功能的風險
+
+# 第二項：實施指南 {#implementation-guidelines}
+
+檔案應使用以下三種核准方法之一標記為鎖定，所有方法都確保與 Roxygen2 和其他文檔工具的相容性：
+
+## 第一款：檔案頂部方法 {#top-of-file-method}
+
+將鎖定標記作為檔案的第一行，單獨一行：
+
+```r
+#LOCK FILE
+
+# 檔案內容的其餘部分...
+```
+
+## 第二款：許可證或標頭後方法 {#after-header-method}
+
+將鎖定標記放在任何檔案前言、版權聲明或許可證標頭之後，但在任何 Roxygen2 文檔之前：
+
+```r
+# Copyright (c) 2025 公司名稱
+# License: MIT
+
+#LOCK FILE
+
+#' @title 函數標題
+#' @description 函數描述
+```
+
+## 第三款：Shebang 後方法 {#after-shebang-method}
+
+對於包含 shebang 行的可執行腳本，將鎖定標記立即放在 shebang 之後：
+
+```r
+#!/usr/bin/env Rscript
+
+#LOCK FILE
+
+# 腳本的其餘部分...
+```
+
+# 第三項：附加標記 {#additional-notation}
+
+對於包含需要獨立保護的多個部分的檔案，使用次要鎖定標記：
+
+```r
+#LOCK ON
+# 受保護內容開始
+...受保護的代碼...
+#LOCK OFF
+
+# 未受保護的部分
+...可修改的代碼...
+
+#LOCK ON
+# 另一個受保護部分開始
+...受保護的代碼...
+#LOCK OFF
+```
+
+# 第四項：驗證規則 {#validation-rules}
+
+1. 鎖定標記必須始終單獨一行
+2. 使用常規註釋（`#`）而非 Roxygen2 註釋（`#'`）
+3. 放在任何 Roxygen2 文檔區塊之前
+4. 確保它不在函數或代碼區塊內
+
+# 第五項：應用範圍 {#application-scope}
+
+此檔案鎖定標記應用於：
+
+1. 作為應用程式進入點的核心應用程式檔案（如 app.R）
+2. 建立應用程式環境的初始化和配置腳本
+3. 實施關鍵業務邏輯和核心功能的檔案
+4. 定義集中流程（如身份驗證或日誌記錄）的檔案
+5. 任何未受控制的更改可能破壞整個應用程式的檔案
+
+# 第六項：與其他規則的關係 {#relationship-to-other-rules}
+
+- **MP017（關注分離）**：通過明確標記哪些檔案扮演關鍵系統角色
+- **MP037（僅為暫時或不確定的註釋）**：通過建立具有特定含義的標準註釋模式
+- **R073（App.R 更改權限）**：通過提供實施權限限制的機制
+
+# 第七項：實施流程 {#implementation-process}
+
+1. 識別應受保護的關鍵檔案
+2. 按照三種核准方法之一添加鎖定標記
+3. 在相關專案文檔中記錄鎖定狀態
+4. 更新構建和部署流程以尊重鎖定標記
+5. 教育團隊成員關於鎖定檔案的含義和目的
+
+# 第八項：優點 {#benefits}
+
+- **降低風險**：降低對關鍵組件意外修改的機會
+- **清晰邊界**：明確指示哪些檔案不應直接修改
+- **增強文檔**：更好地理解系統架構
+- **流程支援**：自動化工具可以檢測和執行檔案鎖定狀態
+- **團隊一致**：對檔案狀態的共同理解
+
+# 第九項：相關概念 {#related-concepts}
+
+## Shebang 行（Hashbang）
+
+Shebang 行（`#!/usr/bin/env Rscript`）是在腳本檔案開頭使用的特殊標記，用於指定應用於執行腳本的解釋器。這允許 R 腳本從命令行直接作為可執行程式運行。
+
+使用 shebang 行的優點：
+- **可移植性**：使用 `/usr/bin/env` 在使用者環境中定位解釋器
+- **命令行工具**：允許腳本直接執行，無需明確調用 R
+- **整合**：使 R 腳本更容易包含在系統工作流程中
+
+與鎖定標記一起使用時，始終將 shebang 放在最頂部，然後是鎖定標記。
+
+---
+
+*基於：開發方法法第二十五條*  
+*相關連結：[MP017 關注分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [MP037 僅為暫時或不確定的註釋](../../CH00_fundamental_principles/meta_principles/MP037_comment_only_for_temporary_or_uncertain.qmd)*

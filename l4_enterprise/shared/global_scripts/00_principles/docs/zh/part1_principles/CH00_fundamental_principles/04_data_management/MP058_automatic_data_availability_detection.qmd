@@ -1,0 +1,491 @@
+---
+title: "MP045: 自動數據可用性檢測元原則 (Automatic Data Availability Detection)"
+subtitle: "應用程式組件必須基於系統中的實際數據自動檢測和適應數據可用性"
+author: "Claude"
+date: "2025-04-07"
+date-modified: "2025-08-16"
+categories: [meta-principle, data-management, reactive-systems, self-discovery]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+**應用程式組件必須基於系統中的實際數據自動檢測和適應數據可用性，而不是依賴手動配置或靜態映射。數據的存在、完整性和有效性應該通過運行時的系統檢查內在地確定。**
+
+## 概念框架
+
+自動數據可用性檢測元原則建立了一種數據依賴功能的基本方法，該方法：
+
+1. **消除手動配置**：消除手動指定數據可用性的需要
+2. **確保呈現的真實性**：保證 UI 反映實際數據狀態
+3. **動態適應**：無需干預即可響應數據狀態的變化
+4. **保持透明度**：向用戶清楚地傳達可用性狀態
+5. **實施自我發現**：使組件能夠發現自己的數據依賴
+
+此元原則消除了配置的數據可用性與實際數據可用性之間的脫節，創建了一個內在地知道它擁有什麼數據並可以使用的系統。
+
+## 實施要求
+
+### 1. 運行時數據檢查 {#runtime-inspection}
+
+1. **系統探測**：組件必須實施系統數據檢查以確定可用性：
+   ```r
+   checkDataAvailability <- function(data_source, dimension) {
+     tryCatch({
+       # 嘗試檢索數據
+       data <- getDataFromSource(data_source, dimension)
+       # 驗證數據滿足最低要求
+       return(!is.null(data) && nrow(data) > 0)
+     }, error = function(e) {
+       logDataAvailabilityFailure(data_source, dimension, e)
+       return(FALSE)
+     })
+   }
+   ```
+
+2. **全面檢查**：可用性檢查必須涵蓋：
+   - 資料庫存在
+   - 表/集合存在
+   - 關鍵維度的數據完整性
+   - 架構有效性
+   - 訪問權限
+
+3. **深度檢查**：對於複雜的數據依賴，實施深度檢查：
+   ```r
+   deepInspectAvailability <- function(data_source, required_dimensions) {
+     availability <- list()
+     
+     # 單獨檢查每個維度
+     for (dim in required_dimensions) {
+       availability[[dim]] <- checkDimensionData(data_source, dim)
+     }
+     
+     # 檢查跨維度要求
+     for (dim_pair in getCriticalDimensionPairs()) {
+       dim1 <- dim_pair[1]
+       dim2 <- dim_pair[2]
+       if (availability[[dim1]] && availability[[dim2]]) {
+         availability[[paste0(dim1, "_x_", dim2)]] <- 
+           checkCrossDimensionalData(data_source, dim1, dim2)
+       }
+     }
+     
+     return(availability)
+   }
+   ```
+
+### 2. 集中式可用性註冊表 {#centralized-registry}
+
+1. **全域可用性狀態**：維護集中式可用性註冊表：
+   ```r
+   initializeAvailabilityRegistry <- function() {
+     # 初始化空註冊表
+     registry <- reactiveVal(list())
+     
+     # 設置自動刷新機制
+     autoInvalidate <- reactiveTimer(300000) # 5分鐘刷新
+     
+     observeEvent(autoInvalidate(), {
+       refreshAvailabilityRegistry(registry)
+     })
+     
+     return(registry)
+   }
+   ```
+
+2. **標準註冊模式**：使用一致的註冊模式：
+   ```r
+   registerDataAvailability <- function(registry, domain, dimension, is_available) {
+     current <- registry()
+     if (is.null(current[[domain]])) {
+       current[[domain]] <- list()
+     }
+     current[[domain]][[dimension]] <- is_available
+     registry(current)
+   }
+   ```
+
+3. **分層可用性**：實施級聯可用性：
+   ```r
+   isAvailable <- function(registry, domain, dimension = NULL) {
+     current <- registry()
+     
+     # 如果沒有請求特定維度，檢查領域是否有任何可用維度
+     if (is.null(dimension)) {
+       return(!is.null(current[[domain]]) && 
+              any(unlist(current[[domain]], recursive = TRUE)))
+     }
+     
+     # 檢查特定維度
+     return(!is.null(current[[domain]]) && 
+            !is.null(current[[domain]][[dimension]]) && 
+            current[[domain]][[dimension]])
+   }
+   ```
+
+### 3. 初始化時發現 {#initialization-discovery}
+
+1. **引導發現過程**：在初始化期間實施發現：
+   ```r
+   discoverDataAvailability <- function() {
+     registry <- initializeAvailabilityRegistry()
+     
+     # 發現資料庫可用性
+     databases <- discoverDatabases()
+     for (db in databases) {
+       registerDataAvailability(registry, "database", db$name, db$available)
+       
+       if (db$available) {
+         # 發現可用資料庫中的表
+         tables <- discoverTables(db$name)
+         for (table in tables) {
+           registerDataAvailability(registry, "table", 
+                                   paste0(db$name, ".", table$name), 
+                                   table$available)
+         }
+       }
+     }
+     
+     # 發現維度可用性
+     dimensions <- c("channel", "category", "region", "time")
+     for (dim in dimensions) {
+       available <- checkDimensionAvailability(dim)
+       registerDataAvailability(registry, "dimension", dim, available)
+       
+       # 發現維度內的值
+       if (available) {
+         values <- getDimensionValues(dim)
+         for (val in values) {
+           registerDataAvailability(registry, dim, val$id, val$has_data)
+         }
+       }
+     }
+     
+     return(registry)
+   }
+   ```
+
+2. **依賴鏈解析**：構建和解析數據依賴鏈：
+   ```r
+   resolveDependencyChain <- function(registry) {
+     # 定義組件依賴
+     dependencies <- list(
+       micro_channel_selection = list(domain = "channel", 
+                                     dimensions = c("amazon", "officialwebsite")),
+       micro_category_selection = list(domain = "category", 
+                                      dimensions = c("000", "001", "002", "003")),
+       # ... 其他組件依賴
+     )
+     
+     # 解析依賴
+     resolved <- list()
+     for (component_id in names(dependencies)) {
+       dep <- dependencies[[component_id]]
+       component_availability <- list()
+       
+       # 檢查每個維度值的可用性
+       for (dim in dep$dimensions) {
+         component_availability[[dim]] <- isAvailable(registry, dep$domain, dim)
+       }
+       
+       resolved[[component_id]] <- component_availability
+     }
+     
+     return(resolved)
+   }
+   ```
+
+### 4. 反應式更新 {#reactive-updating}
+
+1. **數據變更觀察器**：實施對數據變更的反應性：
+   ```r
+   observeDataChanges <- function(registry) {
+     # 監視資料庫變更
+     observe({
+       # 檢查新表或結構變更
+       db_changes <- detectDatabaseChanges()
+       
+       if (length(db_changes) > 0) {
+         for (change in db_changes) {
+           refreshAvailabilityForDomain(registry, change$domain, change$dimension)
+         }
+       }
+     })
+     
+     # 監視數據導入
+     observeEvent(input$import_data, {
+       # 導入後，刷新受影響的領域
+       affected_domains <- getAffectedDomains(input$import_source)
+       for (domain in affected_domains) {
+         refreshAvailabilityForDomain(registry, domain)
+       }
+     })
+   }
+   ```
+
+2. **無效化事件**：定義標準無效化事件：
+   ```r
+   invalidateAvailability <- function(registry, domain, dimension = NULL) {
+     # 獲取當前狀態
+     current <- registry()
+     
+     # 如果指定了維度，僅無效化該維度
+     if (!is.null(dimension)) {
+       if (!is.null(current[[domain]]) && !is.null(current[[domain]][[dimension]])) {
+         current[[domain]][[dimension]] <- NULL
+       }
+     } else {
+       # 無效化整個領域
+       current[[domain]] <- NULL
+     }
+     
+     # 更新註冊表
+     registry(current)
+     
+     # 觸發無效化條目的刷新
+     refreshAvailabilityForDomain(registry, domain, dimension)
+   }
+   ```
+
+3. **自動恢復**：實施從數據變更的恢復：
+   ```r
+   enableAutoRecovery <- function(registry) {
+     observe({
+       # 監視數據恢復事件
+       restoration_events <- detectDataRestorationEvents()
+       
+       for (event in restoration_events) {
+         # 重新檢查恢復數據的可用性
+         is_available <- checkDataAvailability(
+           event$data_source, 
+           event$dimension
+         )
+         
+         # 更新註冊表
+         registerDataAvailability(
+           registry, 
+           event$domain, 
+           event$dimension, 
+           is_available
+         )
+       }
+     })
+   }
+   ```
+
+### 5. UI 集成 {#ui-integration}
+
+1. **組件級適應**：實施適應可用性的 UI：
+   ```r
+   renderAdaptiveControl <- function(input_id, label, domain, values, registry) {
+     renderUI({
+       # 檢查每個值的可用性
+       available_values <- list()
+       disabled_states <- list()
+       
+       for (name in names(values)) {
+         value <- values[[name]]
+         is_available <- isAvailable(registry, domain, value)
+         available_values[[name]] <- value
+         disabled_states[[value]] <- !is_available
+       }
+       
+       # 使用可用性指示器渲染
+       radioButtons(
+         input_id,
+         label,
+         choices = available_values,
+         selected = getFirstAvailable(available_values, disabled_states),
+         choiceNames = lapply(names(available_values), function(name) {
+           value <- available_values[[name]]
+           if (disabled_states[[value]]) {
+             div(
+               style = "color: #aaa; cursor: not-allowed;",
+               paste0(name, " (無數據)")
+             )
+           } else {
+             name
+           }
+         }),
+         choiceValues = unname(available_values)
+       )
+     })
+   }
+   ```
+
+2. **可用性指示器**：實施一致的指示器：
+   ```r
+   createAvailabilityIndicator <- function(domain, dimension, registry) {
+     renderUI({
+       is_available <- isAvailable(registry, domain, dimension)
+       
+       if (is_available) {
+         tags$span(
+           class = "data-available",
+           icon("check-circle"), 
+           "數據可用"
+         )
+       } else {
+         tags$span(
+           class = "data-unavailable",
+           icon("exclamation-triangle"), 
+           "數據不可用"
+         )
+       }
+     })
+   }
+   ```
+
+## 自我發現 vs. 註冊
+
+元原則定義了兩種互補的方法：
+
+### 1. 絕對自我發現 {#absolute-self-discovery}
+
+組件實施完全自我發現，無需中央配置即可確定可用性。
+
+### 2. 基於註冊表的發現 {#registry-based-discovery}
+
+組件從中央註冊表檢索可用性以保持一致性。
+
+## 範例
+
+### 範例 1：行銷渠道可用性檢測 {#channel-availability}
+
+```r
+detectMarketingChannelAvailability <- function() {
+  # 定義所有潛在的行銷渠道
+  channels <- c("amazon", "officialwebsite", "retail", "wholesale")
+  availability <- list()
+  
+  # 檢查每個渠道的數據可用性
+  for (channel in channels) {
+    # 嘗試獲取樣本數據以驗證渠道有數據
+    tryCatch({
+      # 嘗試獲取此渠道的數據
+      query <- paste0("SELECT COUNT(*) as count FROM sales WHERE channel = '", channel, "'")
+      result <- DBI::dbGetQuery(app_data_conn, query)
+      
+      # 如果計數 > 0，則渠道有數據
+      availability[[channel]] <- result$count[1] > 0
+      
+      # 記錄結果
+      message("渠道 ", channel, " 可用性：", availability[[channel]])
+    }, error = function(e) {
+      message("檢查渠道 ", channel, " 可用性時出錯：", e$message)
+      availability[[channel]] <- FALSE
+    })
+  }
+  
+  return(availability)
+}
+```
+
+### 範例 2：時間範圍可用性檢測 {#time-range-availability}
+
+```r
+detectTimeRangeAvailability <- function(source_table) {
+  # 檢查數據範圍可用性
+  available_ranges <- list()
+  
+  tryCatch({
+    # 獲取最小和最大日期
+    query <- paste0("SELECT MIN(date) as min_date, MAX(date) as max_date FROM ", source_table)
+    result <- DBI::dbGetQuery(app_data_conn, query)
+    
+    if (!is.null(result) && nrow(result) > 0 && !is.na(result$min_date[1])) {
+      min_date <- result$min_date[1]
+      max_date <- result$max_date[1]
+      
+      # 定義可用性範圍
+      available_ranges$full <- list(
+        start = min_date,
+        end = max_date,
+        available = TRUE
+      )
+      
+      # 定義標準範圍並檢查它們是否在可用數據內
+      standard_ranges <- list(
+        "last_7_days" = list(start = Sys.Date() - 7, end = Sys.Date()),
+        "last_30_days" = list(start = Sys.Date() - 30, end = Sys.Date()),
+        "last_90_days" = list(start = Sys.Date() - 90, end = Sys.Date()),
+        "last_year" = list(start = Sys.Date() - 365, end = Sys.Date())
+      )
+      
+      # 檢查哪些標準範圍有數據
+      for (range_name in names(standard_ranges)) {
+        range <- standard_ranges[[range_name]]
+        # 如果與可用數據重疊，則範圍可用
+        range_available <- !(range$end < min_date || range$start > max_date)
+        available_ranges[[range_name]] <- list(
+          start = range$start,
+          end = range$end,
+          available = range_available
+        )
+      }
+    } else {
+      # 沒有可用的日期數據
+      available_ranges$full <- list(
+        start = NULL,
+        end = NULL,
+        available = FALSE
+      )
+    }
+  }, error = function(e) {
+    message("檢測時間範圍可用性時出錯：", e$message)
+    available_ranges$full <- list(
+      start = NULL,
+      end = NULL,
+      available = FALSE
+    )
+  })
+  
+  return(available_ranges)
+}
+```
+
+## 與其他原則的關係
+
+### 與預設拒絕的關係（MP0002）
+
+此原則通過以下方式擴展 MP0002：
+1. **數據懷疑**：假設數據不可用，直到證明可用
+2. **先驗證**：在啟用功能之前需要驗證
+3. **防禦性處理**：防止嘗試使用不可用的數據
+
+### 與資訊流透明度的關係（MP0010）
+
+此原則通過以下方式實施 MP0010：
+1. **數據可追溯性**：使數據存在和缺失明確
+2. **流程監控**：通過系統組件追蹤數據
+3. **透明溝通**：向用戶清楚地傳達數據狀態
+
+### 與完整輸入顯示的關係（P70）
+
+此原則通過以下方式支持 P70：
+1. **可用性狀態來源**：為可用性狀態提供真相來源
+2. **動態適應**：實現對變化數據狀態的適應
+3. **統一可見性**：創建數據狀態的一致系統視圖
+
+## 好處
+
+1. **減少配置**：消除手動數據可用性配置的需要
+2. **基於真相的 UI**：確保 UI 反映實際系統狀態
+3. **自我修復**：當數據變得可用時系統自動適應
+4. **一致的呈現**：所有組件共享相同的可用性理解
+5. **彈性**：從數據變更中優雅地恢復
+6. **透明度**：清楚地傳達數據限制
+7. **減少錯誤**：防止嘗試使用不可用的數據
+
+## 結論
+
+自動數據可用性檢測元原則確立了系統應該內在地確定哪些數據可用，而不是依賴手動配置。通過實施系統檢查和自我發現，應用程式可以動態適應其數據的實際狀態，同時為用戶維護透明和一致的體驗。
+
+這種方法消除了配置和實際數據可用性之間的脫節，創建了更有彈性、自我意識的系統，準確地向用戶表示其能力。

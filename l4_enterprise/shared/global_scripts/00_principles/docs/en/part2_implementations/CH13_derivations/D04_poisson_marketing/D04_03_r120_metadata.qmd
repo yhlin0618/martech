@@ -1,0 +1,75 @@
+---
+
+title: "D04_03: R120 Metadata Enrichment (CBZ)"
+subtitle: "Enrich Poisson analysis outputs with variable range metadata"
+parent: "D04_poisson_marketing"
+chapter: "CH12"
+category: "derivation-task"
+number: "D04_03"
+date-created: "2025-12-14"
+date-modified: "2025-12-30"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D04_02_poisson_analysis"
+outputs_to:
+  - "processed_data.df_cbz_poisson_analysis_{product_line}"
+implements:
+  - script: "cbz_D04_03.R"
+    path: "update_scripts/DRV/cbz/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D04_03: R120 Metadata Enrichment (CBZ) {#overview}
+
+This task enriches CBZ Poisson analysis tables with **R120 variable range
+metadata**, enabling correct interpretation of dummy variables and numeric
+predictor ranges.
+
+## Implementation Scripts
+
+| Platform | Script | Location | Output |
+|----------|--------|----------|--------|
+| Cyberbiz | `cbz_D04_03.R` | `update_scripts/DRV/cbz/` | `processed_data.df_cbz_poisson_analysis_{product_line}` |
+
+## Inputs
+
+- `processed_data.df_cbz_poisson_analysis_{product_line}` (per-product-line Poisson results)
+- `app_data.df_cbz_sales_complete_time_series` (source values for range checks)
+
+## Outputs
+
+- `processed_data.df_cbz_poisson_analysis_{product_line}` (R120-enriched)
+
+## Task Definition (NSQL)
+
+```nsql
+ENRICH processed_data.df_cbz_poisson_analysis_{product_line}
+WITH r120_metadata FROM app_data.df_cbz_sales_complete_time_series
+OUTPUT TO processed_data.df_cbz_poisson_analysis_{product_line}
+```
+
+## R120 Fields Added
+
+- `predictor_min`
+- `predictor_max`
+- `predictor_range`
+- `predictor_is_binary`
+- `track_multiplier`
+- `r120_enrichment_method`
+
+## Notes
+
+- CBZ-only; no EBY or ALL implementation.
+- This step preserves MP029 (no fake data) by deriving ranges from actual
+  source tables.
+- Execution order: this step runs **after** D04_02 outputs exist.
+
+## Next Task
+
+Proceed to [D04_01: Time Label Enrichment](D04_01_time_label_enrichment.qmd) if
+label enrichment is required for UI display.

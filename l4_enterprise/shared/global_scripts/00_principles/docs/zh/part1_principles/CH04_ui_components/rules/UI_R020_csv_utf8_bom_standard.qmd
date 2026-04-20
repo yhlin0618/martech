@@ -1,0 +1,413 @@
+---
+title: "UI_R020: CSV Download UTF-8 BOM Standard"
+subtitle: "All data downloads must use CSV format with UTF-8 BOM encoding to ensure Excel compatibility for Chinese characters"
+chapter: "CH04"
+category: "rule"
+number: "UI_R020"
+date-created: "2025-11-05"
+date-modified: "2025-11-05"
+author: "principle-revisor"
+type: "rule"
+law: "UI Components Law"
+article-number:
+  number: 20
+  title: "CSV Download UTF-8 BOM Standard"
+related_to:
+  - "UI_R018: Table Download Button Placement"
+  - "MP114: Input Validation"
+  - "MP122: Transparency Principle"
+  - "ISSUE_245: Download UTF-8 Encoding Fix"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 20: CSV Download UTF-8 BOM Standard {#overview}
+
+**UI Components Law Article 20 (CSV Download UTF-8 BOM Standard)**
+
+All data download functionality within the application must adhere to the following encoding standards:
+
+1. **CSV Format Only**: All downloads must use CSV format (not Excel .xlsx)
+2. **UTF-8 BOM Encoding**: All CSV files must include UTF-8 BOM (Byte Order Mark)
+3. **Standard Tool Functions**: Use `write_utf8_csv_with_bom()` or `create_utf8_csv_download_handler()`
+4. **Excel Compatibility**: Ensure files open correctly in Excel without encoding issues
+
+:::{.callout-important}
+## Core Requirement
+Excel on Windows defaults to system encoding (Big5 for Traditional Chinese). Without BOM, Excel cannot auto-detect UTF-8, causing Chinese characters to display as gibberish (������). Adding the 3-byte BOM (EF BB BF) at the start of the file signals to Excel that the file is UTF-8 encoded.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: The Excel Encoding Problem {#excel-encoding-problem}
+
+When users download CSV files containing Chinese characters and open them in Excel:
+
+1. **Without UTF-8 BOM**: Excel defaults to system encoding (Big5 on Windows Traditional Chinese)
+2. **Character Corruption**: Chinese characters display as gibberish: ������
+3. **User Friction**: Users must manually import the file with correct encoding settings
+4. **Poor UX**: Non-technical users cannot access their data
+
+## Subsection 2: Why UTF-8 BOM? {#why-utf8-bom}
+
+**UTF-8 BOM (Byte Order Mark)**:
+- 3-byte sequence at file start: `EF BB BF` (hexadecimal)
+- Signals to Excel: "This file is UTF-8 encoded"
+- File size impact: +3 bytes (negligible)
+- Performance impact: <100ms for typical datasets
+
+**Alternative Solutions Rejected**:
+- **UTF-8 without BOM**: Standard but Excel can't detect
+- **Big5 Encoding**: Windows-only, breaks on other systems
+- **UTF-16 LE**: Excel compatible but doubles file size
+- **Excel .xlsx**: Requires additional dependencies, larger files
+
+## Subsection 3: Why CSV Over Excel? {#why-csv}
+
+1. **Simplicity**: No need for Excel libraries (`writexl`, `openxlsx`)
+2. **Universality**: Opens in any spreadsheet software or text editor
+3. **Size**: Smaller file sizes for faster downloads
+4. **Dependencies**: Reduces package dependencies
+5. **Reliability**: Fewer compatibility issues across Excel versions
+
+# Section 2: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Standard Tool Functions {#standard-tool-functions}
+
+All CSV downloads must use the standardized utility functions located at:
+```
+scripts/global_scripts/04_utils/fn_write_utf8_csv.R
+```
+
+### Method 1: Using `create_utf8_csv_download_handler()` (Recommended)
+
+```r
+# For simple downloads with standard filename pattern
+output$download_data <- create_utf8_csv_download_handler(
+  data_reactive = filtered_data,
+  filename_prefix = "analysis_results",
+  date_format = "%Y%m%d",
+  include_time = FALSE
+)
+```
+
+**Benefits**:
+- Handles edge cases (NULL data, empty data frame)
+- Consistent filename formatting
+- Built-in validation
+- Minimal boilerplate code
+
+### Method 2: Using `write_utf8_csv_with_bom()` (Custom Logic)
+
+```r
+# For downloads requiring custom data processing
+output$download_data <- downloadHandler(
+  filename = function() {
+    paste0("custom_data_", Sys.Date(), ".csv")
+  },
+  content = function(file) {
+    # Custom data preparation
+    data <- filtered_data() %>%
+      filter(status == "active") %>%
+      select(col1, col2, col3) %>%
+      mutate(col4 = round(col4, 2))
+
+    # Write with UTF-8 BOM
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+```
+
+## Subsection 2: UI Component Integration {#ui-component-integration}
+
+Download buttons must follow UI_R018 (Table Download Button Placement):
+
+```r
+# UI: Download button ABOVE table
+div(class = "table-control-bar",
+    style = "display: flex; justify-content: flex-end; margin-bottom: 15px;",
+    downloadButton(ns("download_btn"),
+                   translate("Download Data"),
+                   class = "btn-success",
+                   icon = icon("download")))
+```
+
+## Subsection 3: Required Source Statement {#required-source-statement}
+
+Components using UTF-8 BOM functions must document the dependency:
+
+```r
+# Following UI_R020: All downloads use CSV with UTF-8 BOM
+# Requires: source("scripts/global_scripts/04_utils/fn_write_utf8_csv.R")
+output$download_data <- downloadHandler(
+  # ... implementation
+)
+```
+
+# Section 3: Anti-Patterns {#anti-patterns}
+
+## Subsection 1: Incorrect Implementations {#incorrect-implementations}
+
+### ❌ Anti-Pattern 1: UTF-8 without BOM
+
+```r
+# INCORRECT - Excel cannot detect UTF-8
+write.csv(data, file, fileEncoding = "UTF-8", row.names = FALSE)
+```
+
+**Problem**: Excel opens with system encoding, Chinese characters appear as gibberish.
+
+### ❌ Anti-Pattern 2: Using Excel Format
+
+```r
+# INCORRECT - Unnecessary dependency and complexity
+writexl::write_xlsx(data, path = file)
+```
+
+**Problem**: Requires additional package, larger file size, potential version compatibility issues.
+
+### ❌ Anti-Pattern 3: No Encoding Specification
+
+```r
+# INCORRECT - System-dependent encoding
+write.csv(data, file, row.names = FALSE)
+```
+
+**Problem**: Encoding depends on system locale, breaks portability.
+
+# Section 4: Verification Checklist {#verification-checklist}
+
+## Subsection 1: Implementation Verification {#implementation-verification}
+
+For each download handler, verify:
+
+- [ ] Uses `write_utf8_csv_with_bom()` or `create_utf8_csv_download_handler()`
+- [ ] Filename ends with `.csv` (not `.xlsx`)
+- [ ] Includes source requirement comment
+- [ ] Follows UI_R018 (button above table)
+- [ ] Handles empty data gracefully
+
+## Subsection 2: Testing Verification {#testing-verification}
+
+Manual testing procedure:
+
+1. Download the file
+2. **Without opening**: Verify first 3 bytes are `EF BB BF` using hex editor
+3. **Double-click to open** in Excel (don't use Import)
+4. Verify Chinese characters display correctly
+5. Check data completeness and accuracy
+
+Programmatic verification:
+
+```r
+# Verify UTF-8 BOM in downloaded file
+verify_utf8_bom("downloaded_file.csv")  # Should return TRUE
+```
+
+# Section 5: Real-World Examples {#real-world-examples}
+
+## Subsection 1: poissonFeatureAnalysis.R {#example-poisson-feature}
+
+**Component**: Precision marketing feature analysis
+**Line**: 892-964
+**Change**: Excel (.xlsx) → CSV with UTF-8 BOM
+
+```r
+# Following ISSUE_245: UTF-8 BOM for Excel compatibility
+# Following UI_R020: All downloads use CSV with UTF-8 BOM
+output$download_significant <- downloadHandler(
+  filename = function() {
+    paste0("InsightForge_顯著屬性分析_", Sys.Date(), ".csv")
+  },
+  content = function(file) {
+    req(positive_data())
+
+    # Data preparation
+    table_data <- positive_data() %>%
+      filter(p_value < 0.05) %>%
+      select(...) %>%
+      mutate(...)
+
+    # Set Chinese column names
+    colnames(table_data) <- c("屬性名稱", "賽道倍數", ...)
+
+    # Write with UTF-8 BOM
+    write_utf8_csv_with_bom(table_data, file)
+  }
+)
+```
+
+## Subsection 2: positionTable.R {#example-position-table}
+
+**Component**: Position table data export
+**Line**: 884-913
+**Pattern**: Empty data handling
+
+```r
+# Following UI_R018: Table Download Button Placement Rule
+# Following ISSUE_245: UTF-8 BOM for Excel compatibility
+# Following UI_R020: All downloads use CSV with UTF-8 BOM
+output$download_position_data <- downloadHandler(
+  filename = function() {
+    paste0("position_data_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+  },
+  content = function(file) {
+    data <- filtered_data()
+
+    # Handle empty data
+    if (is.null(data) || nrow(data) == 0) {
+      write_utf8_csv_with_bom(
+        data.frame(Message = "No data available"),
+        file
+      )
+      return()
+    }
+
+    # Data processing
+    data <- simple_filter_position_table(data)
+    if ("product_line_id" %in% colnames(data)) {
+      data <- data %>% select(-product_line_id)
+    }
+
+    # Write with UTF-8 BOM
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+```
+
+## Subsection 3: macroTrend.R {#example-macro-trend}
+
+**Component**: Sales trend data export
+**Line**: 987-1009
+**Pattern**: Using standard helper function
+
+```r
+# Following ISSUE_245: UTF-8 BOM for Excel compatibility
+# Following UI_R020: All downloads use CSV with UTF-8 BOM
+output$download_data <- downloadHandler(
+  filename = function() {
+    paste("sales_trend_data_", format(Sys.Date(), "%Y-%m-%d"), ".csv", sep = "")
+  },
+  content = function(file) {
+    data <- filtered_data()
+    if (is.null(data) || nrow(data) == 0) {
+      empty_data <- data.frame(
+        date = character(),
+        category = character(),
+        sales_amount = numeric()
+      )
+      write_utf8_csv_with_bom(empty_data, file)
+    } else {
+      write_utf8_csv_with_bom(data, file)
+    }
+  }
+)
+```
+
+# Section 6: Technical Details {#technical-details}
+
+## Subsection 1: UTF-8 BOM Specification {#utf8-bom-specification}
+
+**Byte Sequence**: `EF BB BF` (hexadecimal)
+**Position**: First 3 bytes of file
+**Purpose**: Signal UTF-8 encoding to software
+**File Size Impact**: +3 bytes (0.001% for typical 10KB-1MB files)
+
+## Subsection 2: Tool Function Implementation {#tool-function-implementation}
+
+The `write_utf8_csv_with_bom()` function implements:
+
+1. Write CSV to temporary file with UTF-8 encoding (no BOM)
+2. Read temporary file as binary
+3. Prepend UTF-8 BOM bytes (`EF BB BF`)
+4. Write final file with BOM + content
+5. Clean up temporary file
+
+Performance: <100ms additional overhead for typical datasets.
+
+## Subsection 3: Cross-Platform Compatibility {#cross-platform-compatibility}
+
+Verified compatibility:
+- ✅ Excel 2016+ (Windows)
+- ✅ Excel 2019+ (macOS)
+- ✅ Office 365
+- ✅ Google Sheets
+- ✅ LibreOffice Calc
+- ✅ macOS Numbers
+
+The UTF-8 BOM approach is universally compatible while maintaining standard CSV format.
+
+# Section 7: Relationship to Other Principles {#relationship-to-other-principles}
+
+## Subsection 1: Related Rules {#related-rules}
+
+This rule works together with:
+
+1. **UI_R018 (Table Download Button Placement)**: Download buttons must be placed ABOVE tables in independent control bars
+2. **MP114 (Input Validation)**: Validate data before export, handle edge cases
+3. **MP122 (Transparency)**: Clear error messages when data is unavailable
+
+## Subsection 2: Implements Issue {#implements-issue}
+
+This rule formalizes the solution to:
+
+**ISSUE_245**: Download UTF-8 Encoding Fix
+**Date**: 2025-11-05
+**Problem**: Downloaded CSV files showing Chinese characters as gibberish in Excel
+**Solution**: Standardize on CSV with UTF-8 BOM for all downloads
+
+## Subsection 3: Migration Path {#migration-path}
+
+For existing components using Excel format:
+
+```r
+# BEFORE: Excel format
+output$download <- downloadHandler(
+  filename = function() paste0("data_", Sys.Date(), ".xlsx"),
+  content = function(file) {
+    writexl::write_xlsx(data, path = file)
+  }
+)
+
+# AFTER: CSV with UTF-8 BOM
+output$download <- downloadHandler(
+  filename = function() paste0("data_", Sys.Date(), ".csv"),
+  content = function(file) {
+    write_utf8_csv_with_bom(data, file)
+  }
+)
+```
+
+# Section 8: Benefits {#benefits}
+
+## Subsection 1: User Benefits {#user-benefits}
+
+1. **No Manual Steps**: Users can double-click to open files in Excel
+2. **Correct Display**: Chinese characters display correctly immediately
+3. **Universal Access**: Works across Windows, macOS, and web-based tools
+4. **Smaller Files**: CSV files are smaller and download faster
+
+## Subsection 2: Developer Benefits {#developer-benefits}
+
+1. **Standardization**: Single pattern for all downloads
+2. **Fewer Dependencies**: No need for Excel libraries
+3. **Easier Testing**: Simple verification process
+4. **Better Maintenance**: Centralized in utility functions
+
+## Subsection 3: Business Benefits {#business-benefits}
+
+1. **Reduced Support**: Fewer encoding-related support requests
+2. **Better UX**: Professional, polished user experience
+3. **Reliability**: Consistent behavior across all features
+4. **Future-Proof**: Standard approach scalable to new features
+
+---
+
+*Based on: UI Components Law Article 20*
+*Implements: GitHub Issue #245 (Download UTF-8 Encoding Fix)*
+*Related to: [UI_R018 Table Download Button Placement](UI_R018_table_download_button_placement.qmd)*

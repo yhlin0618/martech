@@ -1,0 +1,142 @@
+---
+title: "SO_R016: 資料夾層級源碼載入"
+subtitle: "元件和相依性應該在初始化期間以資料夾層級載入，而非在應用程式代碼中個別載入"
+chapter: "CH01"
+category: "rule"
+number: "SO_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 16
+  title: "資料夾層級源碼載入規則"
+related_to:
+  - "MP031: 初始化優先"
+  - "SO_P013: N元組獨立載入"
+  - "SO_R015: 元件資料夾組織"
+  - "MP017: 關注點分離"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十六條：資料夾層級源碼載入規則 {#overview}
+
+**結構組織法第十六條（資料夾層級源碼載入規則）**
+
+此規則建立了通過資料夾層級載入來管理元件相依性的標準方法。
+
+:::{.callout-important}
+## 核心規則
+元件和相依性應該在初始化期間以資料夾層級載入，而非在應用程式代碼中個別載入。這確保了正確的初始化順序並減少相依性問題。
+:::
+
+# 第一項：背景說明 {#background}
+
+以資料夾而非個別方式載入檔案促進了更乾淨的初始化、更好的組織，並消除了循環相依或缺少前置條件的風險。這種方法：
+
+1. 通過確保在初始化期間載入所有必需的元件，與 MP031（初始化優先）保持一致
+2. 強制元件定義和元件使用之間的明確分離
+3. 通過目錄結構使相依關係明確
+4. 通過可預測的載入模式簡化持續維護
+5. 防止由缺少相依性引起的執行時錯誤
+
+# 第二項：實施指導原則 {#implementation}
+
+## 第一款：元件組織 {#component-organization}
+
+- 將相關元件分組到有意義的目錄結構中
+- 使用反映其包含元件用途的目錄名稱
+- 在設計資料夾結構時遵循 SO_R015（元件資料夾組織）
+
+## 第二款：載入策略 {#sourcing-strategy}
+
+- 載入整個資料夾而非個別檔案
+- 在初始化期間使用遞迴目錄遍歷演算法
+- 按照方面類型的順序載入（先 UI，然後 Server 等），遵循 SO_P013
+- 為除錯目的記錄載入操作
+
+## 第三款：初始化腳本 {#initialization-script}
+
+- 在初始化腳本中為元件載入創建專用部分
+- 按照基於方面的順序遍歷元件目錄結構
+- 為載入相關函數使用一致的命名模式
+
+# 第三項：實施範例 {#example}
+
+```r
+# 在 initialization.R 中：
+
+# 定義遞迴載入函數
+source_directory <- function(dir_path, pattern = "\\.R$", 
+                            recursive = TRUE, verbose = FALSE) {
+  # 確保目錄存在
+  if (!dir.exists(dir_path)) {
+    warning("找不到目錄：", dir_path)
+    return(invisible(FALSE))
+  }
+  
+  # 取得所有匹配的檔案
+  files <- list.files(
+    path = dir_path,
+    pattern = pattern,
+    full.names = TRUE,
+    recursive = recursive
+  )
+  
+  # 排序檔案以確保一致的順序
+  files <- sort(files)
+  
+  # 載入每個檔案
+  for (file in files) {
+    if (verbose) message("載入中：", file)
+    source(file, local = FALSE)
+  }
+  
+  return(invisible(TRUE))
+}
+
+# 按方面類型載入元件
+# 首先是 UI 元件
+source_directory("components", pattern = "UI\\.R$")
+
+# 然後是 Server 元件
+source_directory("components", pattern = "Server\\.R$")
+
+# 然後是工具函數
+source_directory("components", pattern = "Filters\\.R$")
+source_directory("components", pattern = "Defaults\\.R$")
+```
+
+# 第四項：優點 {#benefits}
+
+採用此規則將：
+
+1. **確保載入順序**：元件總是以正確的順序載入
+2. **減少相依性問題**：降低相依性問題或循環引用的風險
+3. **提高可維護性**：通過集中載入邏輯使代碼庫更易維護
+4. **減少認知負荷**：開發期間減少開發者的心智負擔
+5. **加速初始化**：通過高效的載入模式加快初始化速度
+
+# 第五項：相關檢查清單 {#checklist}
+
+實施資料夾層級載入時：
+
+1. ☐ 識別元件目錄結構
+2. ☐ 創建遞迴載入函數
+3. ☐ 定義載入順序（UI → Server → Utilities）
+4. ☐ 實施錯誤處理
+5. ☐ 添加詳細記錄選項
+6. ☐ 測試載入順序
+7. ☐ 文檔化載入策略
+
+---
+
+*基於：結構組織法第十六條*  
+*相關連結：[MP031 初始化優先](../../CH00_fundamental_principles/meta_principles/MP031_initialization_first.qmd), [SO_R015 元件資料夾組織](SO_R015_component_folder_organization.qmd)*

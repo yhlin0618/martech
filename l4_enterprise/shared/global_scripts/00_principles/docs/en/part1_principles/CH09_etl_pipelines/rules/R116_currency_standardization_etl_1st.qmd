@@ -1,0 +1,532 @@
+---
+id: "R116"
+title: "Currency Standardization in ETL 1ST Stage"
+type: "rule"
+category: "etl_pipelines"
+date_created: "2025-11-12"
+date_modified: "2025-11-12"
+author: "principle-product-manager"
+status: "active"
+version: "1.0"
+weight: 116
+implements:
+  - "MP029": "No Fake Data Principle"
+  - "MP102": "Standardization Principle"
+  - "MP108": "Base ETL Pipeline Separation"
+related_to:
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+  - "MP064": "ETL-Derivation Separation Principle"
+---
+
+# R116: Currency Standardization in ETL 1ST Stage
+
+## Rule Statement
+
+**All monetary values MUST be converted to a single standard currency (USD) in the ETL 1ST (Standardization) stage, with original currency and conversion metadata preserved for auditability.**
+
+## Core Requirements
+
+### 1. When Currency Standardization is Required
+
+**MANDATORY** for all datasets containing monetary values:
+
+```yaml
+requires_currency_standardization:
+  mixed_currency_sources:
+    description: "Data contains prices in different currencies (USD, EUR, TWD, etc.)"
+    example: "Google Sheets product catalog with international pricing"
+    violation: "Comparing TWD 1000 vs USD 1000 creates fake/misleading comparison"
+
+  cross_platform_analysis:
+    description: "Combining data from multiple platforms with different currencies"
+    example: "Amazon (USD) + eBay (EUR) + Cyberbiz (TWD)"
+    violation: "Aggregating mixed currencies produces meaningless totals"
+
+  time_series_analysis:
+    description: "Historical data where currency values have changed over time"
+    example: "Product prices from 2020-2024 with fluctuating exchange rates"
+    violation: "Comparing non-standardized historical prices distorts trends"
+```
+
+### 2. Implementation Location
+
+**CRITICAL**: Currency conversion MUST happen in ETL 1ST stage, NOT in DRV or UI layers:
+
+```yaml
+etl_stage_responsibilities:
+  etl_0im_import:
+    responsibility: "Import raw data AS-IS, no transformations"
+    currency_handling: "Import original currency values unchanged"
+
+  etl_1st_standardization:  # ⭐ CURRENCY CONVERSION HAPPENS HERE
+    responsibility: "Standardize all data to uniform formats"
+    currency_handling: |
+      - Convert ALL monetary columns to USD
+      - Add metadata columns: original_currency, conversion_rate, conversion_date
+      - Use fn_convert_currency_to_usd() utility function
+      - Document exchange rate source (ECB, FRED, etc.)
+
+  etl_2tr_transformation:
+    responsibility: "Business logic transformations"
+    currency_handling: "All currencies already standardized, no conversion needed"
+
+  drv_derivation:
+    responsibility: "JOIN, aggregate, calculate derived metrics"
+    currency_handling: "Use standardized USD values for calculations"
+```
+
+### 3. Conversion Metadata Requirements
+
+**MANDATORY**: Preserve complete conversion audit trail:
+
+```yaml
+required_metadata_columns:
+  original_price:
+    type: "DOUBLE"
+    description: "Original price value before conversion"
+    example: "1299.00"
+
+  original_currency:
+    type: "VARCHAR(3)"
+    description: "ISO 4217 currency code (USD, EUR, TWD, etc.)"
+    example: "TWD"
+
+  price_usd:
+    type: "DOUBLE"
+    description: "Converted price in USD (standard currency)"
+    example: "41.58"
+    calculation: "original_price * conversion_rate"
+
+  conversion_rate:
+    type: "DOUBLE"
+    description: "Exchange rate used for conversion (to USD)"
+    example: "0.0320"
+    source: "ECB/FRED/custom API"
+
+  conversion_date:
+    type: "DATE"
+    description: "Date of exchange rate used"
+    example: "2025-11-12"
+    note: "Should match ETL execution date or historical rate date"
+```
+
+## Rationale
+
+### 1. Constitutional Justification (MP029 - No Fake Data)
+
+Mixing currencies without standardization violates MP029 by creating **synthetic comparisons**:
+
+```r
+# ❌ VIOLATION: Comparing mixed currencies creates fake comparison
+product_prices <- data.frame(
+  product_id = c("A001", "A002", "A003"),
+  price = c(1000, 1000, 1000),        # Numbers look identical
+  currency = c("TWD", "USD", "EUR")   # But represent vastly different values!
+)
+
+# TWD 1000 ≈ USD 32
+# USD 1000 ≈ USD 1000
+# EUR 1000 ≈ USD 1080
+# Treating these as equal creates FAKE DATA
+
+# ✅ CORRECT: Standardize to USD in ETL 1ST
+product_prices_standardized <- data.frame(
+  product_id = c("A001", "A002", "A003"),
+  original_price = c(1000, 1000, 1000),
+  original_currency = c("TWD", "USD", "EUR"),
+  price_usd = c(32.00, 1000.00, 1080.00),  # True comparative values
+  conversion_rate = c(0.0320, 1.0000, 1.0800),
+  conversion_date = rep("2025-11-12", 3)
+)
+```
+
+### 2. MP108 Alignment (1ST = Standardization)
+
+ETL 1ST stage exists specifically for standardization tasks:
+
+```yaml
+mp108_standardization_tasks:
+  data_types:
+    - "Convert all dates to ISO 8601 format"
+    - "Standardize text encoding to UTF-8"
+    - "Normalize boolean values to TRUE/FALSE"
+
+  dimensions:
+    - "Standardize country codes to ISO 3166-1"
+    - "Normalize product categories to taxonomy"
+
+  measures:
+    - "Convert all currencies to USD"  # ⭐ Currency standardization
+    - "Standardize units (kg, lb → kg)"
+    - "Normalize percentages (0-100 vs 0-1)"
+```
+
+Currency standardization is a **measurement standardization task**, perfectly aligned with 1ST stage responsibilities.
+
+### 3. Auditability and Transparency
+
+Preserving original values ensures:
+- **Verification**: Can validate conversion calculations
+- **Debugging**: Can trace issues back to source currency
+- **Compliance**: Regulatory requirements for financial data
+- **Flexibility**: Can recalculate with updated exchange rates if needed
+
+## Implementation Guidelines
+
+### 1. Standard Conversion Function
+
+Use the centralized utility function:
+
+```r
+# Function: fn_convert_currency_to_usd
+# Location: scripts/global_scripts/04_utils/fn_convert_currency_to_usd.R
+
+fn_convert_currency_to_usd <- function(
+  data,
+  price_column = "price",
+  currency_column = "currency",
+  rate_source = "ECB",           # "ECB", "FRED", "CUSTOM"
+  rate_date = Sys.Date(),
+  output_columns = c("price_usd", "conversion_rate", "conversion_date")
+) {
+  # 1. Fetch exchange rates from source
+  exchange_rates <- fetch_exchange_rates(
+    source = rate_source,
+    date = rate_date,
+    currencies = unique(data[[currency_column]])
+  )
+
+  # 2. Join rates to data
+  data_with_rates <- data %>%
+    left_join(exchange_rates, by = c({{currency_column}} := "currency"))
+
+  # 3. Convert prices to USD
+  result <- data_with_rates %>%
+    mutate(
+      original_price = .data[[price_column]],
+      original_currency = .data[[currency_column]],
+      price_usd = original_price * conversion_rate,
+      conversion_date = rate_date
+    )
+
+  return(result)
+}
+```
+
+### 2. ETL 1ST Implementation Pattern
+
+Example from precision marketing ETL 1ST:
+
+```r
+# precision_ETL_products_1ST.R
+# STAGE: Standardization (1ST)
+# PURPOSE: Standardize all product profile data including currency conversion
+
+precision_products_1st <- function() {
+  # Load raw imported data (from 0IM stage)
+  raw_products <- tbl2(con_raw, "df_precision_products___raw") %>%
+    collect()
+
+  # === STANDARDIZATION TASKS ===
+
+  # 1. Currency Standardization (R116) ⭐
+  products_with_usd <- fn_convert_currency_to_usd(
+    data = raw_products,
+    price_column = "price",
+    currency_column = "currency",
+    rate_source = "ECB",
+    rate_date = Sys.Date()
+  )
+
+  # 2. Other standardization tasks
+  standardized_products <- products_with_usd %>%
+    # Country code standardization
+    mutate(country_iso = fn_standardize_country_code(country)) %>%
+    # Date standardization
+    mutate(date_standardized = as.Date(date)) %>%
+    # Text encoding standardization
+    mutate(product_title = enc2utf8(product_title))
+
+  # Write to staged database
+  dbWriteTable(
+    conn = con_staged,
+    name = "df_precision_products___staged",
+    value = standardized_products,
+    overwrite = TRUE
+  )
+
+  # Log completion
+  message(sprintf("✅ R116: Currency standardization complete. %d products converted to USD.",
+                 nrow(standardized_products)))
+}
+```
+
+### 3. Validation Pattern
+
+Always validate currency conversion results:
+
+```r
+# Function: validate_currency_conversion
+validate_currency_conversion <- function(data) {
+  # Check 1: All required metadata columns exist
+  required_cols <- c("original_price", "original_currency", "price_usd",
+                     "conversion_rate", "conversion_date")
+  missing_cols <- setdiff(required_cols, names(data))
+
+  if (length(missing_cols) > 0) {
+    stop(sprintf("VIOLATION R116: Missing currency metadata columns: %s",
+                paste(missing_cols, collapse = ", ")))
+  }
+
+  # Check 2: All prices converted (no NA in price_usd)
+  if (any(is.na(data$price_usd))) {
+    na_count <- sum(is.na(data$price_usd))
+    stop(sprintf("VIOLATION R116: %d products have NA price_usd values", na_count))
+  }
+
+  # Check 3: Conversion rates are reasonable (0.001 to 1000)
+  invalid_rates <- data %>%
+    filter(conversion_rate < 0.001 | conversion_rate > 1000)
+
+  if (nrow(invalid_rates) > 0) {
+    warning(sprintf("R116 WARNING: %d products have unusual conversion rates",
+                   nrow(invalid_rates)))
+  }
+
+  # Check 4: Verify conversion calculation
+  calculation_errors <- data %>%
+    mutate(
+      calculated_usd = original_price * conversion_rate,
+      diff = abs(price_usd - calculated_usd)
+    ) %>%
+    filter(diff > 0.01)  # Allow 1 cent rounding difference
+
+  if (nrow(calculation_errors) > 0) {
+    stop(sprintf("VIOLATION R116: %d products have incorrect USD conversion",
+                nrow(calculation_errors)))
+  }
+
+  message("✅ R116 Validation: Currency conversion passed all checks")
+  return(TRUE)
+}
+```
+
+## Integration with Other Principles
+
+### 1. MP102 (Standardization Principle)
+
+R116 is a specific application of MP102's standardization mandate:
+
+```yaml
+mp102_standardization_hierarchy:
+  meta_principle: "MP102 - All data must be standardized"
+
+  specific_rules:
+    - "R116: Currency standardization to USD"
+    - "DM_R028: Country code standardization to ISO 3166"
+    - "DM_R006: Date standardization to ISO 8601"
+
+  implementation_stage: "ETL 1ST (Standardization)"
+```
+
+### 2. MP029 (No Fake Data Principle)
+
+R116 prevents currency-mixing violations of MP029:
+
+```yaml
+mp029_violations_prevented:
+  fake_comparisons:
+    violation: "Comparing TWD 1000 vs USD 1000 as equal"
+    prevention: "R116 converts both to standardized USD values"
+
+  fake_aggregations:
+    violation: "Summing TWD + USD + EUR without conversion"
+    prevention: "R116 ensures all values in single currency before aggregation"
+
+  fake_trends:
+    violation: "Time series with mixed currencies shows fake patterns"
+    prevention: "R116 standardizes historical prices to USD equivalent"
+```
+
+### 3. MP108 (ETL Stage Separation)
+
+R116 enforces proper stage assignment:
+
+```yaml
+mp108_stage_compliance:
+  correct_assignment:
+    stage: "ETL 1ST (Standardization)"
+    task: "Currency conversion"
+    rationale: "Standardization is 1ST responsibility"
+
+  violations_prevented:
+    wrong_stage_0im:
+      issue: "Converting currency during import"
+      why_wrong: "0IM should import raw data unchanged"
+
+    wrong_stage_2tr:
+      issue: "Converting currency during transformation"
+      why_wrong: "2TR assumes standardization already complete"
+
+    wrong_stage_drv:
+      issue: "Converting currency during derivation"
+      why_wrong: "DRV should work with standardized data"
+```
+
+## Exchange Rate Sources
+
+### Recommended Sources
+
+```yaml
+exchange_rate_sources:
+  ecb:
+    name: "European Central Bank"
+    url: "https://www.ecb.europa.eu/stats/eurofxref/"
+    coverage: "Major currencies vs EUR"
+    update_frequency: "Daily (weekdays)"
+    reliability: "High (official central bank data)"
+
+  fred:
+    name: "Federal Reserve Economic Data"
+    url: "https://fred.stlouisfed.org/"
+    coverage: "Major currencies vs USD"
+    update_frequency: "Daily"
+    reliability: "High (official US Fed data)"
+
+  openexchangerates:
+    name: "Open Exchange Rates API"
+    url: "https://openexchangerates.org/"
+    coverage: "170+ currencies"
+    update_frequency: "Hourly"
+    reliability: "Medium (commercial aggregator)"
+    cost: "Free tier available, paid for historical data"
+
+  custom:
+    name: "Company-specific rates"
+    use_case: "When company has negotiated special exchange rates"
+    note: "Must document source and justification"
+```
+
+### Historical Rates Handling
+
+For time series analysis with historical data:
+
+```r
+# Use historical exchange rates matching transaction dates
+fn_convert_currency_historical <- function(data, date_column = "transaction_date") {
+  result <- data %>%
+    rowwise() %>%
+    mutate(
+      conversion_rate = fetch_historical_rate(
+        currency = original_currency,
+        date = .data[[date_column]]
+      ),
+      price_usd = original_price * conversion_rate,
+      conversion_date = .data[[date_column]]
+    ) %>%
+    ungroup()
+
+  return(result)
+}
+```
+
+## Common Mistakes to Avoid
+
+### ❌ Mistake 1: Converting in Wrong ETL Stage
+
+```r
+# WRONG: Converting in 0IM (Import stage)
+precision_products_0im <- function() {
+  raw_data <- read_google_sheets(sheet_id)
+
+  # ❌ VIOLATION R116: Conversion happening in 0IM, not 1ST
+  converted_data <- raw_data %>%
+    mutate(price_usd = price * 0.032)  # Hardcoded rate!
+
+  write_to_raw_db(converted_data)
+}
+
+# CORRECT: Import as-is in 0IM, convert in 1ST
+precision_products_0im <- function() {
+  raw_data <- read_google_sheets(sheet_id)
+  write_to_raw_db(raw_data)  # ✅ Import unchanged
+}
+
+precision_products_1st <- function() {
+  raw_data <- read_from_raw_db()
+  converted_data <- fn_convert_currency_to_usd(raw_data)  # ✅ Convert in 1ST
+  write_to_staged_db(converted_data)
+}
+```
+
+### ❌ Mistake 2: Missing Metadata Columns
+
+```r
+# WRONG: Converting without preserving original values
+products_bad <- raw_products %>%
+  mutate(
+    price = price * 0.032  # ❌ Overwrites original, loses currency info
+  )
+
+# CORRECT: Add new columns, preserve original
+products_good <- raw_products %>%
+  mutate(
+    original_price = price,
+    original_currency = currency,
+    price_usd = price * conversion_rate,
+    conversion_rate = 0.032,
+    conversion_date = Sys.Date()
+  )
+```
+
+### ❌ Mistake 3: Hardcoding Exchange Rates
+
+```r
+# WRONG: Hardcoded, non-auditable rates
+mutate(price_usd = price * 0.032)  # ❌ What currency? What date? What source?
+
+# CORRECT: Fetch from authoritative source with metadata
+fn_convert_currency_to_usd(
+  data = products,
+  rate_source = "ECB",
+  rate_date = "2025-11-12"
+)
+```
+
+### ❌ Mistake 4: Applying to Data Artifacts
+
+```r
+# WRONG: Adding currency suffix to table names
+# (Company suffixes apply only to scripts per DM_R037, not data)
+dbWriteTable(con, "df_products___usd", products)  # ❌ WRONG
+
+# CORRECT: Standard table names, currency is attribute within data
+dbWriteTable(con, "df_products___staged", products)  # ✅ CORRECT
+# Data has price_usd column, no need for table name suffix
+```
+
+## Compliance Checklist
+
+- [ ] Currency conversion implemented in ETL 1ST stage (not 0IM, 2TR, or DRV)
+- [ ] All monetary columns converted to USD
+- [ ] Metadata columns present: original_price, original_currency, price_usd
+- [ ] Metadata columns present: conversion_rate, conversion_date
+- [ ] Exchange rate source documented (ECB, FRED, etc.)
+- [ ] Conversion validation function passes all checks
+- [ ] Historical rates used for time series data (if applicable)
+- [ ] No hardcoded exchange rates in production code
+- [ ] fn_convert_currency_to_usd() utility function used
+- [ ] Currency column preserved in data for reference
+
+## Conclusion
+
+R116 ensures all monetary data is standardized to a single currency (USD) during the ETL 1ST stage, preventing MP029 violations from currency mixing. By preserving original values and conversion metadata, the system maintains full auditability while enabling accurate cross-currency analysis.
+
+This rule is essential for:
+- **Accuracy**: Prevents meaningless comparisons of mixed currencies
+- **Compliance**: Satisfies MP029 (No Fake Data) and MP108 (ETL Stage Separation)
+- **Auditability**: Preserves complete conversion audit trail
+- **Maintainability**: Centralizes conversion logic in 1ST stage
+- **Scalability**: Supports multi-currency, multi-platform data sources
+
+**Critical Reminder**: Currency standardization is a **standardization task** that belongs in ETL 1ST, not DRV or UI layers. Always convert early, preserve original values, and document conversion metadata.

@@ -1,0 +1,400 @@
+---
+title: "DEV_P007: Initialization Assumption Principle"
+subtitle: "Functions should assume proper initialization has occurred"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P007"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "Development Methodology Law"
+article-number: "Article 7"
+derives_from:
+  - "CH00.MP003: Operating Modes"
+  - "CH00.MP004: Mode Hierarchy"
+  - "CH00.MP031: Initialization First"
+related_to:
+  - "DEV_R013: Initialization Sourcing"
+  - "SO_P007: App.R is Global"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Development Methodology Law Article 7 (Initialization Assumption Principle)**
+
+This article establishes that every behavior, function, and operation within the system can and should assume that proper initialization has occurred before execution, creating a clean separation between initialization concerns and operational logic.
+
+:::{.callout-important}
+## Core Principle
+Functions and operations should assume initialization is complete, avoiding redundant checks and focusing on their core logic. The system guarantees proper initialization before any operational code executes.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Design Philosophy {#philosophy}
+
+In a robustly designed system, initialization establishes the foundation for all operations. This principle creates clear boundaries and simplifies code:
+
+1. **Separation of Concerns**: Initialization logic remains isolated from operational logic
+2. **Simplified Code**: Functions don't need to repeatedly verify initialization state
+3. **Clearer Error Boundaries**: When errors occur, they are either initialization failures or operational failures
+4. **Reduced Redundancy**: Removes the need for repeated environment checks
+5. **Consistent State Guarantees**: All code operates with consistent guarantees about the environment
+
+## Subsection 2: Benefits {#benefits}
+
+第一項：程式碼簡化 (Code simplification)
+
+- Functions focus on their core purpose
+- No repetitive initialization checks
+- Cleaner, more readable code
+- Reduced cyclomatic complexity
+
+第二項：效能改善 (Performance improvement)
+
+- Eliminate redundant checks
+- Faster function execution
+- Reduced overhead in hot paths
+- Better resource utilization
+
+第三項：維護性提升 (Improved maintainability)
+
+- Clear separation of initialization and operation
+- Easier to debug initialization vs. operational issues
+- Consistent patterns across codebase
+- Simplified testing requirements
+
+# Section 2: What Code Should Assume {#assumptions}
+
+## Subsection 1: Environment Setup {#environment}
+
+第一項：模式設定 (Mode configuration)
+
+```r
+# Code can assume mode is already set
+# No need to check:
+# if (!exists("APP_MODE") && !exists("UPDATE_MODE")) { ... }
+
+# Just use the mode directly:
+if (APP_MODE) {
+  # App-specific logic
+} else if (UPDATE_MODE) {
+  # Update-specific logic
+}
+```
+
+第二項：路徑配置 (Path configuration)
+
+```r
+# Assume paths are properly configured
+data_path <- file.path(DATA_DIR, "customer_data.csv")
+# No need to verify DATA_DIR exists or is set
+```
+
+## Subsection 2: Library and Function Availability {#libraries}
+
+第一項：必要套件載入 (Required library loading)
+
+```r
+# Assume required libraries are loaded
+# Just use them directly:
+result <- dplyr::filter(data, value > 0)
+
+# NOT:
+# if (!require(dplyr)) {
+#   install.packages("dplyr")
+#   library(dplyr)
+# }
+```
+
+第二項：工具函數可用性 (Utility function availability)
+
+```r
+# Assume utility functions are available
+processed_data <- process_with_standard_metrics(customer_data)
+
+# No need to check if function exists
+# if (exists("process_with_standard_metrics")) { ... }
+```
+
+## Subsection 3: Configuration Parameters {#configuration}
+
+第一項：設定參數載入 (Configuration loading)
+
+```r
+# Assume configuration is loaded
+db_config <- config$database
+api_key <- config$api$key
+
+# No need to check if config exists or is loaded
+```
+
+# Section 3: What Code Should NOT Assume {#non-assumptions}
+
+## Subsection 1: Data Availability {#data}
+
+第一項：資料檔案存在性 (Data file existence)
+
+```r
+# CORRECT: Always check for data files
+data_file <- "customer_transactions.csv"
+if (file.exists(data_file)) {
+  data <- read.csv(data_file)
+} else {
+  stop(paste("Required data file not found:", data_file))
+}
+
+# INCORRECT: Assuming file exists
+# data <- read.csv("customer_transactions.csv")  # May fail
+```
+
+## Subsection 2: External Dependencies {#external}
+
+第一項：網路連線 (Network connectivity)
+
+```r
+# CORRECT: Verify network-dependent operations
+tryCatch({
+  api_response <- httr::GET(api_url)
+  if (httr::status_code(api_response) != 200) {
+    warning("API request failed")
+  }
+}, error = function(e) {
+  warning(paste("Network error:", e$message))
+})
+```
+
+第二項：外部服務可用性 (External service availability)
+
+```r
+# CORRECT: Check database connections
+con <- tryCatch({
+  dbConnect(RPostgres::Postgres(), 
+            host = db_config$host,
+            dbname = db_config$name)
+}, error = function(e) {
+  stop(paste("Database connection failed:", e$message))
+})
+```
+
+## Subsection 3: Operational State {#operational}
+
+第一項：前置步驟完成 (Previous step completion)
+
+```r
+# CORRECT: Validate operational dependencies
+if (!exists("processed_data") || is.null(processed_data)) {
+  stop("Data processing must be completed before analysis")
+}
+
+analyze_results(processed_data)
+```
+
+# Section 4: Implementation Patterns {#patterns}
+
+## Subsection 1: Correct Implementation {#correct}
+
+```r
+# Function assumes initialization has occurred
+calculate_customer_metrics <- function(customer_data) {
+  # Directly use initialized components
+  
+  # Use functions made available during initialization
+  standardized <- standardize_data(customer_data)
+  
+  # Use loaded libraries without checking
+  summarized <- dplyr::summarise(
+    standardized,
+    avg_value = mean(value, na.rm = TRUE)
+  )
+  
+  # Use configuration values directly
+  if (config$metrics$include_advanced) {
+    summarized <- add_advanced_metrics(summarized)
+  }
+  
+  return(summarized)
+}
+```
+
+## Subsection 2: Incorrect Implementation {#incorrect}
+
+```r
+# Function unnecessarily checks initialization state
+calculate_customer_metrics <- function(customer_data) {
+  # DON'T: Check for mode existence
+  if (!exists("APP_MODE") && !exists("UPDATE_MODE")) {
+    stop("System not properly initialized")
+  }
+  
+  # DON'T: Check and load libraries
+  if (!require(dplyr)) {
+    install.packages("dplyr")
+    library(dplyr)
+  }
+  
+  # DON'T: Verify utility functions exist
+  if (!exists("standardize_data")) {
+    source("utils/standardize_data.R")
+  }
+  
+  # DON'T: Check configuration loading
+  if (!exists("config")) {
+    config <- yaml::read_yaml("config.yaml")
+  }
+  
+  # Actual logic buried under initialization checks
+  result <- process_with_standard_metrics(customer_data)
+  return(result)
+}
+```
+
+# Section 5: Exception Handling {#exceptions}
+
+## Subsection 1: When Verification is Needed {#verification}
+
+If a function genuinely requires verification that specific initialization has occurred:
+
+第一項：文檔要求 (Documentation requirements)
+
+```r
+#' Calculate Advanced Metrics
+#' 
+#' @description Calculates advanced customer metrics
+#' @param customer_data Customer data frame
+#' @note REQUIRES: Advanced metrics module must be initialized
+#' @note REQUIRES: GPU acceleration must be available
+calculate_advanced_metrics <- function(customer_data) {
+  # Specific initialization check with clear message
+  if (!exists("GPU_ACCELERATION_ENABLED")) {
+    stop("Advanced metrics require GPU acceleration. 
+          Please run initialize_gpu() first.")
+  }
+  
+  # Proceed with computation
+  # ...
+}
+```
+
+第二項：驗證函數模式 (Validation function pattern)
+
+```r
+# Create dedicated validation function
+validate_advanced_initialization <- function() {
+  checks <- list(
+    gpu = exists("GPU_ACCELERATION_ENABLED"),
+    models = exists("ADVANCED_MODELS_LOADED"),
+    memory = check_available_memory() > 8e9
+  )
+  
+  failed <- names(checks)[!unlist(checks)]
+  if (length(failed) > 0) {
+    stop(paste("Advanced initialization incomplete:",
+               paste(failed, collapse = ", ")))
+  }
+  
+  invisible(TRUE)
+}
+
+# Use in function
+calculate_advanced_metrics <- function(customer_data) {
+  validate_advanced_initialization()
+  # Proceed with computation
+  # ...
+}
+```
+
+# Section 6: Testing Strategies {#testing}
+
+## Subsection 1: Unit Testing {#unit-tests}
+
+```r
+# Test assumes initialization
+test_that("calculate_metrics works correctly", {
+  # No need to initialize in each test
+  # Initialization handled by test setup
+  
+  test_data <- data.frame(
+    customer_id = 1:3,
+    value = c(100, 200, 300)
+  )
+  
+  result <- calculate_customer_metrics(test_data)
+  
+  expect_equal(nrow(result), 3)
+  expect_true("avg_value" %in% names(result))
+})
+```
+
+## Subsection 2: Integration Testing {#integration-tests}
+
+```r
+# Integration test verifies initialization
+test_that("system initialization enables operations", {
+  # Test initialization
+  source("initialization.R")
+  expect_true(exists("APP_MODE") || exists("UPDATE_MODE"))
+  
+  # Test operations assuming initialization
+  result <- run_complete_pipeline()
+  expect_true(!is.null(result))
+})
+```
+
+# Section 7: Best Practices {#best-practices}
+
+1. **Clear Initialization Entry Points**: Make initialization explicit and visible
+2. **Fail Fast**: If initialization fails, stop immediately with clear error
+3. **Document Requirements**: Clearly state any special initialization needs
+4. **Consistent Patterns**: Use the same initialization assumptions throughout
+5. **Test Both Paths**: Test both successful initialization and initialization failures
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Initialization Assumption Checklist
+
+**Code Should Assume:**
+- [ ] Mode (APP_MODE, UPDATE_MODE, etc.) is set
+- [ ] Required libraries are loaded
+- [ ] Path variables are configured
+- [ ] Utility functions are available
+- [ ] Configuration is loaded
+
+**Code Should NOT Assume:**
+- [ ] Specific parameter values
+- [ ] Data file existence
+- [ ] Network connectivity
+- [ ] External service availability
+- [ ] Previous operational steps completed
+
+**Exception Handling:**
+- [ ] Document special requirements
+- [ ] Create validation functions for special cases
+- [ ] Provide clear error messages
+- [ ] Point to initialization requirements
+
+**Testing:**
+- [ ] Unit tests assume initialization
+- [ ] Integration tests verify initialization
+- [ ] Test initialization failures
+- [ ] Document test setup requirements
+:::
+
+# Conclusion {#conclusion}
+
+The Initialization Assumption Principle simplifies code by establishing clear boundaries between initialization and operation. By assuming proper initialization, functions can focus on their core logic, resulting in cleaner, more maintainable, and more efficient code. This principle, combined with robust initialization procedures, creates a solid foundation for system reliability.
+
+---
+
+*Based on: Development Methodology Law Article 7*  
+*Derives from: [MP003 Operating Modes](../../CH00_fundamental_principles/MP003_operating_modes.qmd), [MP004 Mode Hierarchy](../../CH00_fundamental_principles/MP004_mode_hierarchy.qmd), [MP031 Initialization First](../../CH00_fundamental_principles/MP031_initialization_first.qmd)*  
+*Related to: [SO_P007 App.R is Global](../../CH01_structure_organization/principles/SO_P007_app_r_is_global.qmd)*

@@ -1,0 +1,525 @@
+---
+
+title: "GUIDE04: Environment Usage Patterns in R"
+subtitle: "Creating and managing separate environments for modular R applications"
+chapter: "CH17"
+category: "guide"
+number: "GUIDE04"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "guide"
+law: "Implementation Patterns"
+article-number: "Guide 4"
+related_to:
+  - "MP016_modularity"
+  - "MP017_separation_of_concerns"
+  - "DEV_R002_functional_encapsulation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Overview {#overview}
+
+This guide documents the principle "Create a new environment if we want R to do something separately" with consistent naming conventions and object-oriented properties.
+
+## Core Principle {#principle}
+
+Environments in R provide isolated namespaces for:
+- Configuration management
+- Cache storage
+- State management
+- Module isolation
+- Avoiding global namespace pollution
+
+## Naming Conventions {#naming}
+
+### Standard Environment Naming
+
+```r
+# Environment names should:
+# - Begin with a period (.) to indicate semi-private status
+# - Use CamelCase for the descriptive part
+# - End with "Env" suffix to clearly identify as environment
+
+.ConfigEnv <- new.env(parent = emptyenv())
+.CacheEnv <- new.env(parent = globalenv())
+.LoggingEnv <- new.env(parent = globalenv())
+.StateEnv <- new.env(parent = emptyenv())
+.ModuleEnv <- new.env(parent = globalenv())
+```
+
+### Common Environment Names
+
+| Pattern | Purpose | Parent |
+|---------|---------|--------|
+| `.InitEnv` | Initialization parameters | `emptyenv()` |
+| `.ConfigEnv` | Configuration storage | `emptyenv()` |
+| `.CacheEnv` | Cached computations | `globalenv()` |
+| `.TempEnv` | Temporary storage | `emptyenv()` |
+| `.StateEnv` | Application state | `emptyenv()` |
+| `.ModuleEnv` | Module namespace | `globalenv()` |
+
+## Parent Environment Inheritance {#inheritance}
+
+### Inheritance Patterns
+
+```r
+# 1. Isolated environment (no inheritance)
+.IsolatedEnv <- new.env(parent = emptyenv())
+.IsolatedEnv$x <- 10
+# Cannot access variables from other environments
+
+# 2. Global inheritance
+.SharedEnv <- new.env(parent = globalenv())
+global_var <- "visible to SharedEnv"
+.SharedEnv$local_var <- "only in SharedEnv"
+# .SharedEnv can access global_var
+
+# 3. Custom parent chain
+.ParentEnv <- new.env(parent = emptyenv())
+.ParentEnv$parent_var <- "parent value"
+
+.ChildEnv <- new.env(parent = .ParentEnv)
+# .ChildEnv can access parent_var
+
+# 4. Hierarchical structure
+.AppEnv <- new.env(parent = emptyenv())
+.ModuleEnv <- new.env(parent = .AppEnv)
+.ComponentEnv <- new.env(parent = .ModuleEnv)
+# Creates searchpath: .ComponentEnv -> .ModuleEnv -> .AppEnv -> emptyenv()
+```
+
+### Inheritance Decision Tree
+
+```mermaid
+graph TD
+    A[Create Environment] --> B{Need parent variables?}
+    B -->|No| C[parent = emptyenv()]
+    B -->|Yes| D{Which variables?}
+    D -->|Global only| E[parent = globalenv()]
+    D -->|Specific env| F[parent = .SpecificEnv]
+    D -->|Package namespace| G[parent = asNamespace('pkg')]
+```
+
+## Object-Oriented Properties {#oop}
+
+### Environment as Object
+
+```r
+# Create a counter object using environment
+create_counter <- function(initial = 0) {
+  .CounterEnv <- new.env(parent = emptyenv())
+  .CounterEnv$count <- initial
+  
+  .CounterEnv$increment <- function() {
+    .CounterEnv$count <- .CounterEnv$count + 1
+    .CounterEnv$count
+  }
+  
+  .CounterEnv$decrement <- function() {
+    .CounterEnv$count <- .CounterEnv$count - 1
+    .CounterEnv$count
+  }
+  
+  .CounterEnv$get <- function() {
+    .CounterEnv$count
+  }
+  
+  .CounterEnv$reset <- function() {
+    .CounterEnv$count <- initial
+  }
+  
+  .CounterEnv
+}
+
+# Usage
+counter <- create_counter(10)
+counter$increment()  # 11
+counter$get()        # 11
+counter$reset()      # Back to 10
+```
+
+### Method Binding
+
+```r
+# Bind methods to environment
+.DataStoreEnv <- new.env(parent = emptyenv())
+.DataStoreEnv$data <- list()
+
+# Add methods
+.DataStoreEnv$add <- function(key, value) {
+  .DataStoreEnv$data[[key]] <- value
+}
+
+.DataStoreEnv$get <- function(key) {
+  .DataStoreEnv$data[[key]]
+}
+
+.DataStoreEnv$remove <- function(key) {
+  .DataStoreEnv$data[[key]] <- NULL
+}
+
+.DataStoreEnv$list_keys <- function() {
+  names(.DataStoreEnv$data)
+}
+```
+
+## Practical Patterns {#patterns}
+
+### 1. Configuration Management
+
+```r
+# Global configuration environment
+.ConfigEnv <- new.env(parent = emptyenv())
+
+# Load configuration
+load_config <- function(file = "config.yaml") {
+  config <- yaml::read_yaml(file)
+  list2env(config, envir = .ConfigEnv)
+  invisible(.ConfigEnv)
+}
+
+# Access configuration
+get_config <- function(key, default = NULL) {
+  if (exists(key, envir = .ConfigEnv)) {
+    get(key, envir = .ConfigEnv)
+  } else {
+    default
+  }
+}
+
+# Update configuration
+set_config <- function(key, value) {
+  assign(key, value, envir = .ConfigEnv)
+}
+```
+
+### 2. Cache Management
+
+```r
+# Cache environment with TTL
+.CacheEnv <- new.env(parent = emptyenv())
+.CacheEnv$.timestamps <- new.env(parent = emptyenv())
+
+cache_set <- function(key, value, ttl = 3600) {
+  assign(key, value, envir = .CacheEnv)
+  assign(key, Sys.time(), envir = .CacheEnv$.timestamps)
+}
+
+cache_get <- function(key, ttl = 3600) {
+  if (!exists(key, envir = .CacheEnv)) return(NULL)
+  
+  # Check TTL
+  timestamp <- get(key, envir = .CacheEnv$.timestamps)
+  if (Sys.time() - timestamp > ttl) {
+    rm(list = key, envir = .CacheEnv)
+    rm(list = key, envir = .CacheEnv$.timestamps)
+    return(NULL)
+  }
+  
+  get(key, envir = .CacheEnv)
+}
+
+cache_clear <- function() {
+  rm(list = ls(envir = .CacheEnv), envir = .CacheEnv)
+  rm(list = ls(envir = .CacheEnv$.timestamps), 
+     envir = .CacheEnv$.timestamps)
+}
+```
+
+### 3. Module Isolation
+
+```r
+# Create isolated module environment
+create_module <- function(name) {
+  .ModuleEnv <- new.env(parent = globalenv())
+  .ModuleEnv$.name <- name
+  .ModuleEnv$.private <- new.env(parent = emptyenv())
+  
+  # Public interface
+  .ModuleEnv$init <- function(...) {
+    # Initialize module
+    .ModuleEnv$.private$initialized <- TRUE
+    list2env(list(...), envir = .ModuleEnv$.private)
+  }
+  
+  .ModuleEnv$execute <- function() {
+    if (!isTRUE(.ModuleEnv$.private$initialized)) {
+      stop("Module not initialized")
+    }
+    # Module logic here
+  }
+  
+  .ModuleEnv
+}
+
+# Usage
+data_module <- create_module("DataProcessor")
+data_module$init(source = "database")
+data_module$execute()
+```
+
+### 4. State Management
+
+```r
+# Application state environment
+.StateEnv <- new.env(parent = emptyenv())
+.StateEnv$.observers <- list()
+
+# State management functions
+update_state <- function(key, value) {
+  old_value <- if (exists(key, envir = .StateEnv)) {
+    get(key, envir = .StateEnv)
+  } else {
+    NULL
+  }
+  
+  assign(key, value, envir = .StateEnv)
+  
+  # Notify observers
+  for (observer in .StateEnv$.observers) {
+    if (!is.null(observer[[key]])) {
+      observer[[key]](old_value, value)
+    }
+  }
+}
+
+get_state <- function(key, default = NULL) {
+  if (exists(key, envir = .StateEnv)) {
+    get(key, envir = .StateEnv)
+  } else {
+    default
+  }
+}
+
+observe_state <- function(key, callback) {
+  id <- length(.StateEnv$.observers) + 1
+  .StateEnv$.observers[[id]] <- list()
+  .StateEnv$.observers[[id]][[key]] <- callback
+  id  # Return observer ID
+}
+```
+
+### 5. Resource Management
+
+```r
+# Resource pool environment
+.ResourcePoolEnv <- new.env(parent = emptyenv())
+.ResourcePoolEnv$connections <- list()
+.ResourcePoolEnv$max_connections <- 10
+
+acquire_connection <- function() {
+  if (length(.ResourcePoolEnv$connections) >= 
+      .ResourcePoolEnv$max_connections) {
+    stop("Connection pool exhausted")
+  }
+  
+  conn <- DBI::dbConnect(...)  # Create connection
+  id <- length(.ResourcePoolEnv$connections) + 1
+  .ResourcePoolEnv$connections[[id]] <- conn
+  
+  id  # Return connection ID
+}
+
+release_connection <- function(id) {
+  if (id <= length(.ResourcePoolEnv$connections)) {
+    DBI::dbDisconnect(.ResourcePoolEnv$connections[[id]])
+    .ResourcePoolEnv$connections[[id]] <- NULL
+  }
+}
+
+# Cleanup on exit
+on.exit({
+  for (conn in .ResourcePoolEnv$connections) {
+    if (!is.null(conn)) {
+      try(DBI::dbDisconnect(conn), silent = TRUE)
+    }
+  }
+})
+```
+
+## Environment Utilities {#utilities}
+
+### Inspection Functions
+
+```r
+# List environment contents
+env_ls <- function(env) {
+  ls(envir = env, all.names = TRUE)
+}
+
+# Get environment size
+env_size <- function(env) {
+  sum(sapply(ls(envir = env), function(x) {
+    object.size(get(x, envir = env))
+  }))
+}
+
+# Copy environment
+env_copy <- function(env, parent = parent.env(env)) {
+  new_env <- new.env(parent = parent)
+  for (name in ls(envir = env, all.names = TRUE)) {
+    assign(name, get(name, envir = env), envir = new_env)
+  }
+  new_env
+}
+
+# Clear environment
+env_clear <- function(env) {
+  rm(list = ls(envir = env, all.names = TRUE), envir = env)
+}
+```
+
+### Debugging Helpers
+
+```r
+# Print environment hierarchy
+env_hierarchy <- function(env) {
+  envs <- list()
+  current <- env
+  while (!identical(current, emptyenv())) {
+    envs <- append(envs, environmentName(current))
+    current <- parent.env(current)
+  }
+  paste(envs, collapse = " -> ")
+}
+
+# Environment snapshot
+env_snapshot <- function(env) {
+  list(
+    objects = ls(envir = env),
+    size = env_size(env),
+    parent = environmentName(parent.env(env)),
+    locked = environmentIsLocked(env)
+  )
+}
+```
+
+## Best Practices {#best-practices}
+
+### 1. Consistent Naming
+
+```r
+# GOOD: Clear, consistent naming
+.ConfigEnv <- new.env()
+.CacheEnv <- new.env()
+.StateEnv <- new.env()
+
+# BAD: Inconsistent naming
+config_env <- new.env()
+CACHE <- new.env()
+State.Environment <- new.env()
+```
+
+### 2. Appropriate Parent Selection
+
+```r
+# Configuration: isolated
+.ConfigEnv <- new.env(parent = emptyenv())
+
+# Module: needs global functions
+.ModuleEnv <- new.env(parent = globalenv())
+
+# Cache: isolated but could use global
+.CacheEnv <- new.env(parent = emptyenv())
+```
+
+### 3. Cleanup and Lifecycle
+
+```r
+# Register cleanup
+reg.finalizer(.CacheEnv, function(e) {
+  # Cleanup code
+  message("Cleaning up cache environment")
+}, onexit = TRUE)
+
+# Session cleanup
+onSessionEnded(function() {
+  env_clear(.CacheEnv)
+  env_clear(.StateEnv)
+})
+```
+
+### 4. Thread Safety Considerations
+
+```r
+# Use locks for concurrent access
+.LockedEnv <- new.env(parent = emptyenv())
+lockEnvironment(.LockedEnv, bindings = FALSE)
+
+# Or use separate environments per session
+create_session_env <- function(session_id) {
+  env_name <- paste0(".Session", session_id, "Env")
+  assign(env_name, new.env(parent = emptyenv()), 
+         envir = .GlobalEnv)
+  get(env_name)
+}
+```
+
+## Common Pitfalls {#pitfalls}
+
+### 1. Memory Leaks
+
+```r
+# BAD: Circular reference
+.EnvA <- new.env()
+.EnvB <- new.env()
+.EnvA$ref <- .EnvB
+.EnvB$ref <- .EnvA  # Circular reference!
+
+# GOOD: Weak references or careful design
+.EnvA <- new.env()
+.EnvB <- new.env()
+.EnvA$ref_id <- "EnvB"  # Store identifier instead
+```
+
+### 2. Global Namespace Pollution
+
+```r
+# BAD: Creating in global environment
+my_env <- new.env()  # Pollutes global
+
+# GOOD: Use consistent naming with period
+.MyEnv <- new.env()  # Semi-private convention
+```
+
+### 3. Forgetting Parent Environment
+
+```r
+# BAD: Unexpected inheritance
+.DataEnv <- new.env()  # Inherits from global!
+
+# GOOD: Explicit parent
+.DataEnv <- new.env(parent = emptyenv())  # No inheritance
+```
+
+## Testing Environments {#testing}
+
+```r
+test_that("environment isolation works", {
+  .TestEnv <- new.env(parent = emptyenv())
+  .TestEnv$x <- 10
+  
+  expect_equal(.TestEnv$x, 10)
+  expect_false(exists("x"))  # Not in global
+  expect_error(get("global_var", envir = .TestEnv))  # No access to global
+})
+
+test_that("environment inheritance works", {
+  .ParentEnv <- new.env(parent = emptyenv())
+  .ParentEnv$x <- 10
+  
+  .ChildEnv <- new.env(parent = .ParentEnv)
+  expect_equal(get("x", envir = .ChildEnv), 10)
+})
+```
+
+---
+
+*This guide provides comprehensive patterns for using environments in R to achieve modularity, isolation, and clean code organization.*

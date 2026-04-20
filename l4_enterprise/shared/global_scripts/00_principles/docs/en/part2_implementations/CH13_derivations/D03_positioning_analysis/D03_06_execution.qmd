@@ -1,0 +1,294 @@
+---
+
+title: "D03_06: Master Execution Flow"
+subtitle: "Complete D03 execution orchestration and ETL integration"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_06"
+date-created: "2025-12-24"
+date-modified: "2026-02-13"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_00_consume_etl_output"
+  - "D03_01_comment_property_rating"
+  - "D03_02_rate_reviews"
+  - "D03_03_process_reviews"
+  - "D03_04_query_by_asin"
+  - "D03_05_position_table"
+outputs_to:
+  - "execution_result"
+implements:
+  - script: "amz_D03_00.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_08.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_06.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_09.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_07.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_10.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_11.R"
+    path: "update_scripts/DRV/amz/"
+related_principles:
+  - "DM_R002: Universal Data Access Pattern"
+  - "MP150: Dataflow Tracking and Execution Telemetry"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_06: Master Execution Flow {#overview}
+
+This task orchestrates the complete D03 derivation pipeline, coordinating all subtasks and managing the ETL-Derivation integration pattern for positioning analysis.
+
+## Implementation Scripts
+
+| Platform | Script | Location |
+|----------|--------|----------|
+| Amazon | `amz_D03_00.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_08.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_06.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_09.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_07.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_10.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_11.R` | `update_scripts/DRV/amz/` |
+
+Each listed AMZ platform script follows the DM_R044 five-part derivation structure (Initialize → Main → Test → Summarize → Deinitialize) with `autoinit()` at the start and `autodeinit()` as the final statement.
+
+### ETL07 Competitor Sales Import Behavior
+
+- `amz_D03_10.R` invokes `core_import_df_amz_competitor_sales()` (ETL07 companion logic).
+- Empty folders under `raw_data/competitor_sales/<folder>` are treated as **non-fatal skips** and logged in the summary output.
+- Import summary output must include:
+  - `checked_folders`: number of folders scanned
+  - `imported_files`: number of files written
+  - `imported_rows`: number of rows written
+  - `skipped_folders_no_supported_files`: list of folders with no readable `csv/xlsx/xls` source file (non-fatal)
+  - `skipped_folders_no_rows`: list of folders that had source files but no inserted rows
+  - `skipped_folders_invalid_reference`: list of folders with unmapped/invalid product-line identifiers
+- The step is considered failed only when the importer reports **zero imported rows** after scanning all folders (i.e., no usable competitor-sales data at all).
+- Log behavior: missing-folder details are reported in the summary logs and treated as telemetry events for dataflow traceability.
+
+### MP150 Telemetry Mapping
+
+- Mandatory telemetry fields for ETL07 import paths:
+  - `step_name`: `D03_10`
+  - `status`: `SKIPPED` for unsupported/missing folders, `PASSED` when rows are imported, `FAILED` only for hard fail
+  - `missing_critical_inputs`: details of invalid/missing references when hard stop is raised
+  - `rows_input`, `rows_output`, `rows_written_delta`
+- Missing-folder and empty-folder cases must be persisted as execution metadata so downstream stages can distinguish “expected no input” from “silent miss”.
+
+Mandatory Competitor-Sales Folder Checklist (summary scope):
+
+1. `checked_folders`: folders inspected in this run
+2. `skipped_folders_no_supported_files`: folders with zero readable files (`csv/xlsx/xls`)
+3. `skipped_folders_no_rows`: folders whose readable files produced zero insertable rows
+4. `skipped_folders_invalid_reference`: folders with invalid `ddd_` format or unmapped product_line_id
+
+## Master Execution Flow (NSQL) {#master-execution-nsql}
+
+```nsql
+# D03 Master Execution Flow
+EXECUTE D03_complete:
+  CONTEXT:
+    start_time: CURRENT_TIMESTAMP
+    derivation_name: "D03_Positioning_Analysis"
+    platform_id: REQUIRED_TEXT  # AMZ-only in current implementation
+
+  # Verify prerequisites
+  PREREQUISITE:
+    ASSERT etl03_result.success = TRUE
+    ELSE: ABORT "D03 requires ETL03 product profiles"
+    ASSERT etl05_result.success = TRUE
+    ELSE: ABORT "D03 requires ETL05 comment properties"
+    ASSERT etl06_result.success = TRUE
+    ELSE: ABORT "D03 requires ETL06 review data"
+
+  # Execute steps in sequence
+  SEQUENCE:
+    STEP 1: D03_00_consume_etl_output
+      ON_SUCCESS: LOG "ETL outputs validated"
+      ON_FAILURE: ABORT "Failed to validate ETL outputs"
+
+    STEP 2: D03_01_comment_property_rating
+      ON_SUCCESS: LOG "Comment property rating completed: {review_count} reviews"
+      ON_FAILURE: ABORT "Failed to process comment property ratings"
+
+    STEP 3: D03_02_rate_reviews
+      ON_SUCCESS: LOG "AI rating completed: {rating_count} ratings"
+      ON_FAILURE: ABORT "Failed to rate reviews"
+
+    STEP 4: D03_03_process_reviews
+      ON_SUCCESS: LOG "Review processing completed"
+
+    STEP 5: D03_04_query_by_asin
+      ON_SUCCESS: LOG "ASIN aggregation completed: {product_count} products"
+
+    STEP 6: D03_05_position_table
+      ON_SUCCESS: LOG "Position table created"
+
+    STEP 7: WRITE_to_app_data
+      ACTION:
+        BEGIN TRANSACTION
+        DELETE FROM app_data.df_position WHERE platform_id = :platform_id;
+        APPEND app_data.df_position WITH position_table (platform_id REQUIRED VARCHAR);
+        COMMIT
+
+  # Calculate execution metrics
+  FINALIZE:
+    execution_time: DATEDIFF(seconds, start_time, CURRENT_TIMESTAMP)
+    product_count: COUNT(*) FROM app_data.df_position
+    property_count: COUNT(DISTINCT property_columns)
+    avg_position_score: MEAN(position_score) FROM app_data.df_position
+
+  RETURN:
+    success: TRUE
+    derivation_name: derivation_name
+    product_count: product_count
+    property_count: property_count
+    avg_position_score: avg_position_score
+    execution_time_secs: execution_time
+    output_tables: ['df_position']
+```
+
+### App-Data Write Policy
+
+- Platform binding: every row must include `platform_id` (text) from platform_ids.
+- PK preservation: never `overwrite=TRUE`; instead delete rows for current `platform_id` and append.
+- Transactional writes: wrap deletes + appends in a single transaction.
+
+## Execution Sequence Diagram
+
+```
+┌─────────────────┐
+│ ETL03-07 Output │
+│ (prerequisite)  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D03_00        │
+│ Consume ETL     │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D03_01        │
+│ Comment Rating  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D03_02        │
+│ Rate Reviews    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D03_03        │
+│ Process Reviews │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D03_04        │
+│ Query by ASIN   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   D03_05        │
+│ Position Table  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Execution Result│
+└─────────────────┘
+```
+
+## Five-Part Structure Compliance (DM_R044) {#five-part}
+
+Each platform script (`{platform}_D03_master.R`) MUST follow the five-part structure:
+
+| Part | Purpose | Key Elements |
+|------|---------|--------------|
+| **PART 1: INITIALIZE** | Setup environment | `autoinit()`, `dbConnect_universal()`, config loading |
+| **PART 2: MAIN** | Execute D03_00-D03_05 | Core business logic wrapped in `tryCatch()` |
+| **PART 3: TEST** | Validate outputs | Schema checks, position score validation |
+| **PART 4: SUMMARIZE** | Report metrics | Execution time, product counts, coverage stats |
+| **PART 5: DEINITIALIZE** | Cleanup | `autodeinit()` (MUST be final statement) |
+
+### Implementation Reference
+
+See [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) for complete Five-Part Structure template.
+
+Platform implementation scripts:
+- **Amazon**:
+  - `update_scripts/DRV/amz/amz_D03_00.R`
+  - `update_scripts/DRV/amz/amz_D03_08.R`
+  - `update_scripts/DRV/amz/amz_D03_06.R`
+  - `update_scripts/DRV/amz/amz_D03_09.R`
+  - `update_scripts/DRV/amz/amz_D03_07.R`
+  - `update_scripts/DRV/amz/amz_D03_10.R`
+  - `update_scripts/DRV/amz/amz_D03_11.R`
+
+## ETL-Derivation Integration Pattern {#integration}
+
+### Complete Pipeline Execution (NSQL)
+
+```nsql
+# Complete ETL → DRV Pipeline for Positioning Analysis
+EXECUTE complete_pipeline:
+  PHASE 1 (ETL): execute_etl03_07_complete()
+    OUTPUT: etl_result.success
+
+  PHASE 2 (DRV): IF etl_result.success THEN execute_d03_complete(etl_result)
+    OUTPUT: d03_result.product_count, d03_result.property_count
+
+  PHASE 3 (REPORT): LOG pipeline_summary
+```
+
+### Clean Separation of Concerns
+
+**ETL03-07 Responsibilities (Data Preparation)**:
+- Import product profiles, reviews, competitor data
+- Standardize formats and encoding
+- Map schema and convert types
+- Output: Clean, validated data
+
+**D03 Responsibilities (Business Logic)**:
+- Comment property rating analysis
+- AI-powered review analysis
+- Property aggregation by product
+- Position table generation
+
+## Execution Result Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | BOOLEAN | Whether execution completed |
+| `derivation_name` | VARCHAR | Name identifier |
+| `product_count` | INTEGER | Number of products analyzed |
+| `property_count` | INTEGER | Number of properties rated |
+| `avg_position_score` | FLOAT | Average position score |
+| `execution_time_secs` | NUMERIC | Total execution time |
+| `output_tables` | ARRAY | List of output table names |
+
+## Key Principle
+
+D03 exemplifies the **ETL-Derivation Separation Principle (MP064)** by:
+
+1. **Consuming clean data**: All data preparation is handled by ETL03-07
+2. **Focusing on business logic**: Only positioning analysis and AI rating
+3. **Clear boundaries**: No data cleansing in derivation steps
+4. **Modular design**: Each step can be tested independently
+
+This separation ensures maintainable, scalable, and testable data processing systems.

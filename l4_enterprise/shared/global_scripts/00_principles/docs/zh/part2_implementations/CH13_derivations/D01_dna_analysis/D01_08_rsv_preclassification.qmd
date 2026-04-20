@@ -1,0 +1,68 @@
+---
+
+title: "D01_08: RSV 預分類"
+subtitle: "使用 RSV（近期、消費、購買量）模型預分類客戶"
+parent: "D01_dna_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D01_08"
+date-created: "2026-03-13"
+date-modified: "2026-03-13"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D01_05_app_views"
+implements:
+  - "DM_R044": "Derivation Implementation Standard"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D01_08: RSV 預分類 {#overview}
+
+此任務使用 RSV（Recency-Spending-Volume）模型預分類客戶，並將結果寫入 `app_data`，供 TagPilot RSV 矩陣分頁使用。
+
+## 目的 {#purpose}
+
+將 RSV 分類從執行期（Shiny server）移至 pipeline（DRV），使儀表板載入預計算結果，無需每次瀏覽時重新計算。
+
+## 腳本 {#script}
+
+- **執行腳本**: `update_scripts/DRV/all/all_D01_08.R`
+- **分類函數**: `10_rshinyapp_components/tagpilot/fn_rsv_classification.R`
+
+## 輸入 {#input}
+
+| 表格 | 資料庫 | 說明 |
+|------|--------|------|
+| `df_dna_by_customer` | `app_data` | 客戶 DNA 分數（來自 D01_05） |
+
+## 輸出 {#output}
+
+| 表格 | 資料庫 | 說明 |
+|------|--------|------|
+| `df_rsv_classified` | `app_data` | 包含 RSV 分類欄位的客戶資料 |
+
+## 關鍵欄位 {#columns}
+
+輸出表格為每位客戶新增 RSV 分類欄位：
+
+- `customer_type`: RSV 區段標籤（如 "VIP"、"Potential Loyalist"）
+- `r_class`, `s_class`, `v_class`: 個別 R/S/V 層級分配
+
+## 依賴關係 {#dependencies}
+
+```
+D01_05 (df_dna_by_customer)
+  └─> D01_08 (df_rsv_classified)
+        └─> TagPilot RSV 矩陣分頁（執行期）
+```
+
+## 相關原則 {#principles}
+
+- **DM_R044**: Derivation Implementation Standard
+- **MP064**: ETL-Derivation Separation
+- **MP029**: No Fake Data

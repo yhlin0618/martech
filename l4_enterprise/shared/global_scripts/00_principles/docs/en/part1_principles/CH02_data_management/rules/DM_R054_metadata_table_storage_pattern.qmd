@@ -1,0 +1,239 @@
+---
+title: "DM_R054: Metadata Table Storage Pattern"
+subtitle: "Metadata tables live exclusively in meta_data.duckdb — the 7th layer, parallel to raw_data"
+chapter: "CH02"
+category: "rule"
+number: "DM_R054"
+date-created: "2025-12-26"
+date-modified: "2026-04-19"
+version: "2.1"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 54"
+parent_principle: "MP064"
+related_to:
+  - "DM_R045": "Database File Naming Standard"
+  - "DM_R052": "Cross-Platform Product Identification"
+  - "DM_R004": "Data Storage Organization"
+  - "DM_R061": "Database Rebuildability Classification"
+  - "DM_R062": "Canonical DB Path Enforcement"
+version_history:
+  - v1.0 (2025-12-26): Initial — metadata MUST go to app_data.duckdb
+  - v2.0 (2026-04-19): **Revised** — metadata MUST live in meta_data.duckdb (7th layer, non-rebuildable, survives app_data rebuild). Motivation: #422 + spectra change `metadata-to-meta-data-duckdb`.
+  - v2.1 (2026-04-19): **Addendum** — (a) Runtime MAY NOT read CSV seeds; (b) Readers SHALL reach `meta_data.duckdb` through `fn_load_product_lines`; (c) APP_MODE `autoinit()` SHALL populate `db_path_list$meta_data`. Motivation:#424 + spectra change `dm-r054-v2-migration-complete`.
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R054: Metadata Table Storage Pattern {#overview}
+
+Metadata tables (reference data, lookup tables, mapping tables) must be stored exclusively in `meta_data.duckdb`, the dedicated "7th layer" parallel to `raw_data.duckdb`. Metadata does not flow through the 6-layer ETL pipeline, and must not be written to `app_data.duckdb`.
+
+## Rule Statement
+
+**Metadata tables (reference, lookup, mapping tables) MUST live in `meta_data.duckdb`, NOT in `app_data.duckdb` nor in the 6-layer ETL files (`raw_data`, `staged_data`, `transformed_data`, `processed_data`, `cleansed_data`).**
+
+**A given metadata table SHALL have exactly one canonical physical location — no duplication across DBs.**
+
+## Rationale {#rationale}
+
+### Two Partitions of Data
+
+Data in this project falls into one of two partitions determined by **rebuildability** (DM_R061):
+
+| Partition | Examples | Storage |
+|---|---|---|
+| **Non-rebuildable** (delete = data loss) | raw business data, manual-input lookups, diagnostic artifacts | `raw_data.duckdb` + `meta_data.duckdb` |
+| **Rebuildable** (delete = re-run pipeline) | staged / transformed / processed / cleansed / app_data | 6-layer ETL files |
+
+Metadata (`df_platform`, `df_product_line`, SCD domain dictionaries) belongs in the **non-rebuildable** partition because it is manual / seeded content that should survive pipeline re-runs.
+
+### Why Metadata Does NOT Live in app_data
+
+1. **`app_data.duckdb` is rebuildable (DM_R061)**. The workflow `rm app_data.duckdb && make run` is a common, intentional operation to rebuild derived layers. If metadata lived in app_data, this workflow would destroy metadata as a side effect.
+2. **Source of truth integrity**. Before v2 of this rule, metadata existed both in `app_data.duckdb` and `meta_data.duckdb` in some deployments, with row-count drift. Centralising metadata in one DB eliminates the ambiguity.
+3. **Deployment scope separation**. Metadata is small and portable; bundling it with transactional `app_data` complicates backup / ship / diff.
+
+### Why meta_data.duckdb is "the 7th Layer"
+
+The six layers in the ETL flow describe transaction data moving through stages (0IM → 1ST → 2TR → 3PR → 4CL → 5NM). `meta_data.duckdb` sits **outside** that flow, parallel to `raw_data.duckdb`:
+
+```
+Transaction data flow (6 layers, rebuildable except raw):
+  raw_data (0IM, non-rebuildable)
+     ↓
+  staged_data → transformed_data → processed_data → cleansed_data → app_data
+  (1ST)          (2TR)                (3PR)            (4CL)          (5NM)
+
+Metadata (parallel, non-rebuildable):
+  meta_data.duckdb  ← written by ETL producer (e.g., all_ETL_meta_init_0IM)
+  ↖ read by Shiny / DRV via DuckDB ATTACH as needed
+```
+
+Both `raw_data` and `meta_data` are **non-rebuildable sources** that feed the ETL pipeline; their contents must survive any downstream rebuild.
+
+## Required Behaviour
+
+### 1. Producer Contract
+
+Metadata tables MUST have an **explicit producer ETL script**. Example:
+
+- `shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` produces `df_platform`, `df_product_line` into `meta_data.duckdb`
+
+The producer SHALL:
+
+- Declare `CONSUMES` and `PRODUCES` annotations per MP140
+- Be idempotent (running twice with same inputs yields identical output)
+- Leave tables it does not own untouched (e.g., `__COMPANY`-suffixed diagnostic tables)
+
+### 2. Canonical Path
+
+`meta_data.duckdb` location is declared in `shared/global_scripts/30_global_data/parameters/scd_type1/db_paths.yaml`:
+
+```yaml
+databases:
+  meta_data: data/local_data/meta_data.duckdb
+```
+
+This is the **only** path allowed. No fallback branches, no alias. (DM_R062)
+
+### 3. Reader Pattern — DuckDB ATTACH
+
+Code paths that read metadata SHALL access `meta_data.duckdb`, either via direct connection or via DuckDB `ATTACH`:
+
+```r
+# Option 1: direct connection (ETL, standalone scripts)
+# Use tbl2() + collect() — DM_R023 v1.2 forbids raw SELECT via dbGetQuery().
+con_meta <- dbConnectDuckdb(db_path_list$meta_data, read_only = TRUE)
+df_platform <- tbl2(con_meta, "df_platform") %>% collect()
+
+# Option 2: ATTACH (DRV, Shiny; allows cross-DB JOIN)
+# Always quote the path with DBI::dbQuoteString() so single quotes / special
+# characters in the filesystem path cannot break out of the ATTACH statement.
+attach_sql <- paste0(
+  "ATTACH DATABASE ", DBI::dbQuoteString(con_app, db_path_list$meta_data),
+  " AS meta (READ_ONLY)"
+)
+dbExecute(con_app, attach_sql)
+result <- tbl2(con_app, dbplyr::in_schema("meta", "df_platform")) %>% collect()
+```
+
+### 4. Rebuild Safety
+
+Operations that rebuild `app_data.duckdb` (including `rm app_data.duckdb`, `tar_destroy()` limited to app_data scope, `make run FORCE=1`) SHALL NOT modify or delete `meta_data.duckdb`. The DRV pipeline SHALL be able to rebuild app_data while reading a pre-existing `meta_data.duckdb` via ATTACH.
+
+### 5. Cross-DB Duplication is Forbidden
+
+If a table is found duplicated across `meta_data.duckdb` and `app_data.duckdb` (or any other DB), the `meta_data.duckdb` instance is canonical; the duplicate SHALL be dropped once all readers have been migrated.
+
+### 6. Runtime MAY NOT Read CSV Seeds (v2.1)
+
+Any process other than the canonical producer ETL (`shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R`) SHALL NOT read metadata CSV seed files (e.g., `data/app_data/parameters/scd_type1/df_product_line.csv`) at runtime. CSV seeds are bootstrap inputs consumed exclusively by the producer ETL to initialize `meta_data.duckdb`; all downstream code (Shiny UI entry points, UPDATE_MODE init, DRV scripts, ETL scripts that consume metadata) SHALL read from `meta_data.duckdb` via the canonical reader (Section 7).
+
+This closes DM_R062's canonical-path principle for metadata: **there is exactly one runtime source (`meta_data.duckdb`) and zero fallback paths**. If `meta_data.duckdb` is missing, the correct answer is always "run the producer ETL", never "silently fall back to CSV".
+
+### 7. Readers SHALL Reach `meta_data.duckdb` Through `fn_load_product_lines` (v2.1)
+
+Every runtime consumer of `df_product_line` SHALL route through `shared/global_scripts/04_utils/fn_load_product_lines.R`. Callers MAY NOT open a direct connection to `meta_data.duckdb` and call `DBI::dbReadTable(con, "df_product_line")` or `tbl2(con, "df_product_line") %>% collect()` outside that helper, because the helper is the single point where schema validation, encoding handling, and canonical-path error messages are enforced.
+
+Cross-DB JOINs via `ATTACH DATABASE` (Section 3 Option 2) remain permitted for ad-hoc analytics inside a DRV or SQL query — but any **in-memory assignment** of the result to a program variable used for downstream logic SHALL still reach the canonical reader. `df_platform` is not yet bound by this requirement (no canonical reader function for it yet); the rule SHALL extend to `df_platform` when `fn_load_platforms()` is introduced.
+
+### 8. APP_MODE `autoinit()` SHALL Populate `db_path_list$meta_data` (v2.1)
+
+When `autoinit()` runs in APP_MODE (Shiny application startup), it SHALL add `meta_data` to the `db_path_list` namelist alongside `app_data`:
+
+```r
+db_path_list <- list(
+  app_data  = file.path(project_root, db_paths$databases$app_data),
+  meta_data = file.path(project_root, db_paths$databases$meta_data)  # required by DM_R054 v2.1
+)
+```
+
+Without this, downstream readers see `db_path_list$meta_data == NULL`, fall through to the canonical reader's no-fallback `stop()` (Section 6), and the Shiny app fails to start. UPDATE_MODE already populates all 6+1 DB paths via the pipeline initializer and is not affected.
+
+## Examples
+
+### Compliant
+
+```r
+# all_ETL_meta_init_0IM.R (producer)
+con <- dbConnectDuckdb(db_path_list$meta_data, read_only = FALSE)
+df_platform <- construct_from_app_config("platforms")  # reads app_config.yaml
+dbWriteTable(con, "df_platform", df_platform, overwrite = TRUE)
+dbDisconnect(con, shutdown = TRUE)
+```
+
+```r
+# DRV script reading metadata
+con_proc <- dbConnectDuckdb(db_path_list$processed_data, read_only = FALSE)
+attach_sql <- paste0(
+  "ATTACH DATABASE ", DBI::dbQuoteString(con_proc, db_path_list$meta_data),
+  " AS meta (READ_ONLY)"
+)
+dbExecute(con_proc, attach_sql)
+result <- tbl2(con_proc, dbplyr::in_schema("meta", "df_platform")) %>%
+  inner_join(tbl2(con_proc, "df_sales"), by = "platform_id") %>%
+  collect()
+```
+
+### Violating
+
+```r
+# ❌ Writing metadata to app_data — breaks rebuild safety
+con_app <- dbConnectDuckdb(db_path_list$app_data, read_only = FALSE)
+dbWriteTable(con_app, "df_platform", df_platform, overwrite = TRUE)
+```
+
+```r
+# ❌ Maintaining duplicates across two DBs
+dbWriteTable(meta_con, "df_platform", df, overwrite = TRUE)
+dbWriteTable(app_con,  "df_platform", df, overwrite = TRUE)  # duplicate!
+```
+
+```r
+# ❌ Adding fallback to multiple locations (DM_R062 violation too)
+path <- if (file.exists(app_path)) app_path else meta_path
+```
+
+```r
+# ❌ Runtime reader silently falling back to CSV (v2.1 §6)
+if (file.exists(db_path_list$meta_data)) {
+  df_product_line <- tbl2(meta_con, "df_product_line") %>% collect()
+} else {
+  df_product_line <- read.csv("data/app_data/parameters/scd_type1/df_product_line.csv")
+}
+```
+
+```r
+# ❌ Shiny entry reading CSV directly (v2.1 §6 + §7)
+df_product_line <- read.csv("data/app_data/parameters/scd_type1/df_product_line.csv")
+```
+
+```r
+# ❌ Bypassing the canonical reader (v2.1 §7)
+meta_con <- DBI::dbConnect(duckdb::duckdb(), db_path_list$meta_data, read_only = TRUE)
+df_product_line <- DBI::dbReadTable(meta_con, "df_product_line")  # caller skipped fn_load_product_lines
+```
+
+## Migration Notes
+
+Deployments that still have metadata tables inside `app_data.duckdb` (pre-v2 pattern) should migrate as follows:
+
+1. Ensure `meta_data.duckdb` has the canonical copy (re-run producer ETL if missing)
+2. Identify all readers still querying `app_data.table` → refactor to ATTACH meta_data
+3. Drop the duplicate table from `app_data.duckdb` (once readers are migrated)
+4. Run `rm app_data.duckdb && make run` to verify rebuild does not touch metadata
+
+See spectra changes `metadata-to-meta-data-duckdb` (#422, v2 foundation) and `dm-r054-v2-migration-complete` (#424, v2.1 runtime path cleanup — archive legacy writers, remove CSV fallback, migrate runtime readers) for the end-to-end migration of this codebase.
+
+## Related Principles
+
+- **MP064**: ETL-Derivation Separation — metadata sits outside both layers as a separate "7th layer"
+- **DM_R061**: Database Rebuildability Classification — defines the rebuildable vs non-rebuildable partition that this rule leverages
+- **DM_R062**: Canonical DB Path Enforcement — metadata files must be at the canonical path in db_paths.yaml, no fallback logic
+- **MP140**: Pipeline Orchestration — producer ETL declares CONSUMES/PRODUCES
+- **MP029**: No Fake Information — canonical location is a fact, not a negotiable convention

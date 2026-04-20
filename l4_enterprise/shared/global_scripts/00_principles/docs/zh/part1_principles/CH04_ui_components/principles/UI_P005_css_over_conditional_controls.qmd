@@ -1,0 +1,332 @@
+---
+title: "UI_P005: CSS 控制優於條件渲染原則"
+subtitle: "使用 CSS 控制元素可見性以提升效能"
+chapter: "CH04"
+category: "principle"
+number: "UI_P005"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "UI 組件法"
+article-number: "第五條"
+related_to:
+  - "CH00.MP039: 啟動時一次性操作"
+  - "CH00.MP016: 模組化"
+  - "CH00.MP017: 關注點分離"
+  - "UI_P003: 側邊欄純篩選"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**UI 組件法第五條（CSS 控制優於條件渲染原則）**
+
+對於頻繁切換的 UI 元素、複雜小工具或需要在隱藏時保持狀態的元素，優先使用基於 CSS 的可見性控制，而非 Shiny 的條件渲染構造（如 `conditionalPanel` 或 `renderUI`），以獲得更好的效能。
+
+:::{.callout-important}
+## 核心原則
+當UI元素需要頻繁切換顯示狀態且應保持內部狀態時，使用CSS控制visibility而非重新渲染DOM。
+:::
+
+# 第一項：技術原理 {#technical-rationale}
+
+## 第一款：效能差異 {#performance-difference}
+
+**條件渲染的開銷**：
+- Shiny 條件渲染會從 DOM 中完全移除並重建元素
+- 每次切換都觸發完整的渲染週期
+- 輸入值和狀態會在重建時丟失
+
+**CSS 控制的優勢**：
+- 元素始終存在於 DOM 中，僅改變可見性
+- 切換僅涉及樣式屬性修改
+- 輸入值和狀態完全保留
+
+## 第二款：實作機制 {#implementation-mechanism}
+
+```r
+# CSS 控制方式（推薦）
+div(
+  id = ns("filter_panel"),
+  class = "sidebar-filters",
+  style = "padding: 10px 15px; display: none;",  # 初始隱藏
+  
+  # 內容在隱藏時保持狀態
+  selectInput(ns("region"), "地區", choices = regions),
+  dateRangeInput(ns("dates"), "日期範圍")
+)
+
+# 伺服器端控制
+observeEvent(input$tab, {
+  if(input$tab == "analysis") {
+    shinyjs::show("filter_panel")  # 簡單的 CSS 切換
+  } else {
+    shinyjs::hide("filter_panel")  # 狀態不會丟失
+  }
+})
+```
+
+# 第二項：適用場景 {#use-cases}
+
+## 第一款：適合使用 CSS 控制的情況 {#when-css}
+
+1. **頻繁切換的元素**
+   - Tab 頁內容切換
+   - 展開/摺疊面板
+   - 工具提示和彈出窗口
+
+2. **需要保持狀態的元素**
+   - 篩選器設定
+   - 表單輸入值
+   - 使用者選擇項目
+
+3. **複雜小工具**
+   - DataTable 元件
+   - 圖表元件
+   - 地圖元件
+
+## 第二款：適合使用條件渲染的情況 {#when-conditional}
+
+1. **基於複雜邏輯的內容**
+   ```r
+   conditionalPanel(
+     condition = "input.data_source == 'api' && input.load_status == 'complete'",
+     ns = ns,
+     downloadButton(ns("export"), "匯出 API 資料")
+   )
+   ```
+
+2. **安全性相關元素**
+   - 需要權限才能顯示的功能
+   - 敏感資料的存取控制
+
+3. **資源密集型元件**
+   - 只在需要時才載入的大型元件
+   - 動態生成的內容
+
+# 第三項：選擇指南 {#selection-guide}
+
+## 第一款：比較表 {#comparison-table}
+
+| 因素 | CSS 控制 | 條件渲染 |
+|------|----------|----------|
+| 切換效能 | ✅ 快速 | ❌ 較慢（重建 DOM） |
+| 狀態保持 | ✅ 保留輸入值 | ❌ 重置值 |
+| 記憶體使用 | ✅ 較低（元素始終存在） | ❌ 較高（重建元素） |
+| 反應性 | ❌ 需手動實作 | ✅ 自動依賴追蹤 |
+| 複雜條件 | ❌ 需自訂邏輯 | ✅ 簡單宣告式條件 |
+| 使用者體驗 | ✅ 平滑過渡 | ❌ 可能閃爍 |
+
+## 第二款：混合方法 {#mixed-approach}
+
+```r
+# 優良實踐：混合方法
+# 外層使用 conditionalPanel 處理不頻繁的存在性變更
+conditionalPanel(
+  condition = "input.module == 'analysis'",
+  ns = ns,
+  
+  # 內層使用 CSS 處理頻繁的可見性切換
+  div(
+    id = ns("subtab1"),
+    style = "display: block;",
+    # Tab 1 內容
+  ),
+  div(
+    id = ns("subtab2"),
+    style = "display: none;", 
+    # Tab 2 內容 - 隱藏但保持狀態
+  )
+)
+```
+
+# 第四項：實作模式 {#implementation-patterns}
+
+## 第一款：基本 CSS 控制 {#basic-css}
+
+```r
+# UI 定義
+ui <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # 使用 shinyjs 支援
+    shinyjs::useShinyjs(),
+    
+    # 切換按鈕
+    actionButton(ns("toggle"), "顯示/隱藏篩選器"),
+    
+    # 可切換的面板
+    div(
+      id = ns("filters"),
+      style = "display: none;",  # 初始隱藏
+      
+      h4("篩選選項"),
+      selectInput(ns("category"), "類別", choices = categories),
+      sliderInput(ns("range"), "範圍", min = 0, max = 100, value = c(20, 80))
+    )
+  )
+}
+
+# 伺服器邏輯
+server <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    # 切換可見性
+    observeEvent(input$toggle, {
+      shinyjs::toggle("filters")
+    })
+  })
+}
+```
+
+## 第二款：進階條件控制 {#advanced-conditional}
+
+```r
+# 使用自訂 CSS 類別
+tags$style("
+  .hidden-panel { display: none !important; }
+  .visible-panel { display: block; }
+  .panel-transition { transition: all 0.3s ease; }
+")
+
+# 動態類別切換
+observeEvent(input$view_mode, {
+  if (input$view_mode == "compact") {
+    shinyjs::addClass("details_panel", "hidden-panel")
+    shinyjs::removeClass("details_panel", "visible-panel")
+  } else {
+    shinyjs::removeClass("details_panel", "hidden-panel")
+    shinyjs::addClass("details_panel", "visible-panel")
+  }
+})
+```
+
+# 第五項：最佳實踐 {#best-practices}
+
+## 第一款：效能測量 {#performance-measurement}
+
+在選擇方法前測試效能影響：
+
+```r
+# 測量切換時間
+measure_toggle_performance <- function() {
+  start_time <- Sys.time()
+  
+  # CSS 方法
+  for(i in 1:100) {
+    shinyjs::show("element")
+    shinyjs::hide("element")
+  }
+  css_time <- Sys.time() - start_time
+  
+  # 比較條件渲染時間
+  # ...
+  
+  list(css = css_time, conditional = conditional_time)
+}
+```
+
+## 第二款：文件說明 {#documentation}
+
+明確註解選擇理由：
+
+```r
+# 使用 CSS 可見性控制以提升效能
+# 在切換標籤時保留篩選器狀態
+div(
+  id = ns("filters"), 
+  style = "display: none;",
+  # ...
+)
+
+# 使用 conditionalPanel 因為內容依賴於使用者權限
+# 只有管理員才能看到此功能
+conditionalPanel(
+  condition = "output.is_admin == true",
+  ns = ns,
+  # ...
+)
+```
+
+# 第六項：反模式 {#anti-patterns}
+
+## 第一款：過度使用 CSS {#overuse-css}
+
+**避免**：
+```r
+# 錯誤：對條件性內容使用 CSS
+div(
+  id = "api_panel",
+  style = "display: none;",  # 初始隱藏
+  # API 專用控制項，對其他資料來源無意義
+)
+
+# 需要複雜的伺服器端管理
+observe({
+  if (input$data_source == "api" && 
+      input$authenticated == TRUE && 
+      !is.null(credentials$permissions$api_access)) {
+    shinyjs::show("api_panel")
+  } else {
+    shinyjs::hide("api_panel")
+  }
+})
+```
+
+## 第二款：過度使用條件渲染 {#overuse-conditional}
+
+**避免**：
+```r
+# 錯誤：對簡單標籤切換使用 conditionalPanel
+conditionalPanel(
+  condition = "input.currentTab == 'tab1'",
+  ns = ns,
+  # Tab 1 內容，切換標籤時輸入值會丟失
+)
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## CSS 控制實作檢查清單
+
+**評估階段**：
+- [ ] 識別需要頻繁切換的 UI 元素
+- [ ] 確定哪些元素需要保持狀態
+- [ ] 測量切換效能影響
+- [ ] 選擇適當的控制方法
+
+**實作階段**：
+- [ ] 為 CSS 控制元素設定初始樣式
+- [ ] 實作 shinyjs 或自訂 CSS 類別
+- [ ] 設定適當的切換邏輯
+- [ ] 確保狀態正確保留
+
+**混合方法**：
+- [ ] 外層使用條件渲染處理主要邏輯
+- [ ] 內層使用 CSS 處理頻繁切換
+- [ ] 測試兩種方法的交互作用
+- [ ] 確認效能改善
+
+**文件記錄**：
+- [ ] 註解說明方法選擇理由
+- [ ] 記錄狀態保持需求
+- [ ] 說明切換邏輯
+- [ ] 提供效能測試結果
+:::
+
+# 結論 {#conclusion}
+
+CSS 控制優於條件渲染原則提供了一個清晰的指導方針，幫助開發者在效能和功能之間做出最佳選擇。通過理解兩種方法的優缺點，並在適當的場景中應用正確的技術，可以創建既高效又響應迅速的使用者介面。記住，最佳方法往往是混合使用兩種技術，根據具體需求選擇最適合的解決方案。
+
+---
+
+*基於：UI 組件法第五條*  
+*相關：[MP039 啟動時一次性操作](../../CH00_fundamental_principles/MP039_one_time_operations_at_start.qmd)、[MP016 模組化](../../CH00_fundamental_principles/MP016_modularity.qmd)*

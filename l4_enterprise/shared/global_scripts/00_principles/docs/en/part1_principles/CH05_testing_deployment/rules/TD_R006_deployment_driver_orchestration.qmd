@@ -1,0 +1,92 @@
+---
+title: "TD_R006: Deployment Driver Orchestration"
+subtitle: "When deployment depends on data synchronization, use a deployment driver to enforce order, repeatability, and traceability"
+chapter: "CH05"
+category: "rule"
+number: "TD_R006"
+date-created: "2026-01-25"
+date-modified: "2026-01-25"
+author: "Claude"
+type: "rule"
+law: "Testing & Deployment"
+article-number:
+  number: 6
+  title: "Deployment Driver Orchestration"
+related_to:
+  - "MP064: ETL-Derivation Separation"
+  - "DM_R056: Posit Connect Deployment Assets"
+  - "MP140: Pipeline Orchestration"
+  - "SO_R007: One Function One File"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 6: Deployment Driver Orchestration {#overview}
+
+**Testing & Deployment Law - Article 6 (Deployment Driver Orchestration)**
+
+When deployment relies on data synchronization (e.g., DuckDB → Supabase), you must use an explicit deployment driver to orchestrate the steps. This ensures a clear order, repeatable execution, and reduces missed steps.
+
+:::{.callout-important}
+## Core Requirement
+Deployments must be orchestrated by a driver script with a strict order: **data sync → deployment assets → version control/deploy**.
+:::
+
+# Section 1: Definition and Scope {#definition}
+
+A deployment driver is an **operations layer** for deployment flow and is **not** part of the DRV (derivation) layer:
+
+- **DRV layer**: Produces derived data (`df_*`), follows MP140/DM_R042, and lives under `update_scripts/DRV/`.
+- **Deployment driver**: Orchestrates deployment steps and must not be scanned/executed as a derivation script.
+
+Therefore, deployment drivers **must not use the `drv_` prefix** and **must not be placed under `update_scripts/DRV/`**.
+
+# Section 2: Standard Sequence {#standard-sequence}
+
+Deployment drivers must follow this sequence:
+
+1. **Data synchronization** (e.g., DuckDB → Supabase upload)
+2. **Deployment asset updates** (e.g., update `manifest.json`, required file checks)
+3. **Version control & deploy** (git add/commit/push or CI/CD trigger)
+
+If any step fails, the driver must stop immediately and skip subsequent steps.
+
+# Section 3: Implementation Requirements {#implementation}
+
+## Clause 1: Naming and Location {#naming-location}
+
+- Use clear deployment-focused names, for example:
+  - `deploy_app_driver.R`
+  - `deploy_supabase_driver.R`
+- Recommended location: `scripts/global_scripts/23_deployment/03_deploy/`
+
+## Clause 2: Controllable Execution {#controllable-execution}
+
+Drivers must provide opt-out flags for individual steps, for example:
+
+```bash
+Rscript scripts/global_scripts/23_deployment/03_deploy/deploy_app_driver.R
+Rscript scripts/global_scripts/23_deployment/03_deploy/deploy_app_driver.R --skip-upload
+```
+
+## Clause 3: Environment Variable Checks {#env-check}
+
+When deployment depends on external services (e.g., Supabase), the driver must validate required environment variables before execution and halt if missing.
+
+# Section 4: Alignment with Existing Principles {#alignment}
+
+- **MP064**: Data synchronization precedes application deployment, preserving separation of concerns.
+- **DM_R056**: Ensures deployment assets (manifest) are updated before deploy.
+- **MP140**: Deployment orchestration is not DRV pipeline execution and must remain separate.
+
+# Section 5: Benefits {#benefits}
+
+1. **Clear order**: Prevents skipped upload or manifest updates
+2. **Repeatability**: Single entry point, consistent behavior
+3. **Traceability**: Explicit logs and stop conditions
+4. **Safety**: Fails fast when prerequisites are missing

@@ -1,0 +1,135 @@
+---
+id: DOC_R007
+type: rule
+name: claude_rules_writing_convention
+display_name: "Claude Rules File Writing Convention"
+implements: DOC_P001
+scope: "All .claude/rules/*.md files"
+---
+
+# DOC_R007: Claude Rules File Writing Convention
+
+## One-Liner
+
+`.claude/rules/*.md` files must be **brief operational summaries** that reference detailed principle documents — not contain the full principle content themselves.
+
+## Rationale
+
+The `.claude/rules/` directory serves as a **quick-reference layer** for AI agents during conversation. These files are loaded into context automatically, so they consume context window tokens. Detailed content belongs in the principles system (`docs/en/part1_principles/`), which agents can read on demand.
+
+Duplicating full principle content in rules files creates:
+
+1. **Maintenance burden** — two places to update when a principle changes
+2. **Context waste** — verbose rules files consume tokens without proportional benefit
+3. **Authority confusion** — unclear whether the rules file or the .qmd file is the source of truth
+
+## Rule
+
+### Structure of a Rules File
+
+Each `.claude/rules/*.md` file should follow this pattern:
+
+```markdown
+# {Topic Title}
+
+**Use case**: {when this rule applies}
+
+---
+
+## {Section Name} (PRINCIPLE_ID)
+
+{1-3 sentence summary of the core rule}
+
+**Key points**:
+- Point 1
+- Point 2
+
+**Details**: `docs/en/part1_principles/{chapter}/rules/{ID}_{name}.qmd`
+```
+
+### Guidelines
+
+| Aspect | Do | Don't |
+|--------|-----|-------|
+| Length per section | 5-15 lines | 50+ lines with full code examples |
+| Code examples | 1 minimal example if essential | Multiple before/after comparisons |
+| Rationale | 1 sentence "why" | Full paragraph explaining history |
+| Cross-references | Link to .qmd or Issue | Inline the full principle text |
+| Tables | Summary tables OK | Exhaustive lookup tables |
+
+### What Belongs in Rules Files
+
+- Trigger conditions (when does this rule apply?)
+- Core constraint in 1-3 sentences
+- Key file paths or commands needed immediately
+- Reference link to the detailed principle
+
+### What Belongs in Principle Docs (.qmd)
+
+- Full rationale and design decisions
+- Comprehensive code examples (correct vs. incorrect)
+- Edge cases and exceptions
+- Historical context and related issues
+- Exhaustive lookup tables
+
+### Exceptions
+
+Some operational content has no corresponding principle doc (e.g., login credentials, port numbers, test commands). These can be detailed directly in the rules file since there is no other canonical location.
+
+## Relationship
+
+- **Implements**: DOC_P001 (Documentation System Architecture — principles layer serves developers and AI agents)
+- **Related**: SO_P018 (Directory Governance — rules files are part of the `.claude/` allowed directory)
+
+## Examples
+
+### Compliant
+
+```markdown
+## DEBUG_MODE — Dashboard Output Logging (DEV_R054)
+
+When `SHINY_DEBUG_MODE=TRUE`, all `render*()` outputs must call `debug_log_output()` before returning.
+
+- Tool functions: `04_utils/fn_debug_mode.R`
+- Issue: [#286](https://github.com/kiki830621/ai_martech_global_scripts/issues/286)
+
+**Details**: `docs/en/.../CH05_.../rules/DEV_R054_debug_mode_dashboard_logging.qmd`
+```
+
+### Violation
+
+```markdown
+## DEBUG_MODE — Dashboard Output Logging (DEV_R054)
+
+### Core Rule
+When SHINY_DEBUG_MODE=TRUE...
+### How to Enable
+\```r
+Sys.setenv(SHINY_DEBUG_MODE = "TRUE")
+\```
+### Tool Functions
+| Function | Purpose |
+|----------|---------|
+| is_debug_mode() | Check... |
+| debug_log() | Log... |
+| debug_log_output() | Log output... |
+### Implementation Requirements
+Every render*() block must...
+\```r
+output$kpi_cards <- renderUI({
+  cards <- build_kpi_cards(data)
+  debug_log_output("revenuePulse", "kpi_cards", cards)
+  cards
+})
+\```
+### Log Format
+...
+### Why
+- NULL outputs appear as blank panels...
+- E2E tests can grep...
+### Related
+- Issue: #286
+- E2E setup: ...
+```
+
+(This is too verbose — the code examples, function table, log format, and full rationale should be in the .qmd file.)

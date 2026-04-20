@@ -1,0 +1,230 @@
+---
+title: "MP098: Generality Over Specificity Principle"
+subtitle: "Prefer general, reusable functions over specific implementations"
+author: "MAMBA Architecture Team"
+date: "2025-08-28"
+version: "1.0.0"
+category: "Meta-Principle"
+tags: ["development", "methodology", "design-patterns", "reusability", "maintainability"]
+---
+
+## Statement
+
+**Always prefer general, reusable functions over specific implementations unless there is a compelling technical reason to do otherwise.**
+
+## Rationale
+
+Software systems evolve through abstraction and generalization. By designing functions that work with interfaces rather than specific implementations, we create code that is:
+
+1. **More Reusable**: A single function can serve multiple contexts
+2. **More Maintainable**: Changes to implementations don't require function modifications
+3. **More Testable**: General functions can be tested with mock implementations
+4. **More Flexible**: New implementations can leverage existing functions
+5. **Less Redundant**: Avoids duplicating logic across similar functions
+
+## Core Guidelines
+
+### 1. Use Interfaces Over Implementations
+
+```r
+# GOOD: Works with any DBI-compliant connection
+dbCopyTable <- function(source_con, target_con, table_name, ...) {
+  data <- dbReadTable(source_con, table_name)
+  dbWriteTable(target_con, table_name, data, ...)
+}
+
+# BAD: Specific to one database type
+dbCopyDuckDBTable <- function(source_path, target_path, table_name) {
+  # DuckDB-specific logic
+}
+
+dbCopyPostgresTable <- function(source_config, target_config, table_name) {
+  # PostgreSQL-specific logic
+}
+```
+
+### 2. Accept Parameters for Variations
+
+```r
+# GOOD: Parameterized behavior
+processData <- function(data, method = c("standard", "robust", "fast")) {
+  method <- match.arg(method)
+  switch(method,
+    standard = processStandard(data),
+    robust = processRobust(data),
+    fast = processFast(data)
+  )
+}
+
+# BAD: Separate functions for each variation
+processDataStandard <- function(data) { ... }
+processDataRobust <- function(data) { ... }
+processDataFast <- function(data) { ... }
+```
+
+### 3. Avoid Hard-Coding Specific Behaviors
+
+```r
+# GOOD: Configuration-driven
+connectDatabase <- function(config) {
+  dbConnect(
+    drv = getDriver(config$type),
+    host = config$host,
+    port = config$port,
+    ...
+  )
+}
+
+# BAD: Hard-coded specifics
+connectProductionDB <- function() {
+  dbConnect(RPostgres::Postgres(),
+    host = "prod.example.com",
+    port = 5432,
+    ...
+  )
+}
+```
+
+## When Specific Functions Are Acceptable
+
+### 1. Performance-Critical Paths
+
+When general solutions introduce unacceptable overhead:
+
+```r
+# Acceptable: Optimized for specific database features
+duckdb_bulk_insert <- function(con, table, data) {
+  # Uses DuckDB's specific bulk insert capabilities
+  # that are 100x faster than general dbWriteTable
+}
+```
+
+### 2. Database-Specific Features
+
+When functionality doesn't exist in the general interface:
+
+```r
+# Acceptable: PostgreSQL-specific feature
+postgres_create_partition <- function(con, table, partition_spec) {
+  # Uses PostgreSQL's partitioning features
+  # not available in general DBI interface
+}
+```
+
+### 3. Complex Operations That Would Be Unclear
+
+When generalization would make the code harder to understand:
+
+```r
+# Acceptable: Clear, specific purpose
+calculate_customer_lifetime_value <- function(customer_data, transaction_data) {
+  # Complex business logic specific to this calculation
+  # Generalization would obscure the business rules
+}
+```
+
+## Implementation Strategy
+
+### Directory Organization
+
+```
+module/
+├── core/              # General, reusable functions (priority)
+│   ├── fn_dbCopyTable.R
+│   ├── fn_processData.R
+│   └── fn_validateInput.R
+├── specific/          # Implementation-specific functions
+│   ├── duckdb/
+│   │   └── fn_duckdb_bulk_ops.R
+│   └── postgres/
+│       └── fn_postgres_partitions.R
+└── README.md          # Documents when to use specific vs general
+```
+
+### Migration Path
+
+1. **Identify Redundant Specific Functions**: Look for patterns like `fnDatabaseTypeOperation()`
+2. **Extract Common Logic**: Create general function with interface parameters
+3. **Preserve Specific Optimizations**: Keep truly specific functions in subdirectories
+4. **Document Decisions**: Explain why certain functions remain specific
+
+## Examples
+
+### Example 1: Table Operations
+
+```r
+# General function (preferred)
+copyTableBetweenDatabases <- function(source_con, target_con, table_name, 
+                                     overwrite = FALSE, append = FALSE) {
+  # Works with any DBI connection
+  if (overwrite) {
+    if (dbExistsTable(target_con, table_name)) {
+      dbRemoveTable(target_con, table_name)
+    }
+  }
+  
+  data <- dbReadTable(source_con, table_name)
+  dbWriteTable(target_con, table_name, data, append = append)
+}
+
+# Can be used with any database:
+copyTableBetweenDatabases(duckdb_con, postgres_con, "customers")
+copyTableBetweenDatabases(sqlite_con, mysql_con, "products")
+```
+
+### Example 2: Data Validation
+
+```r
+# General validation framework (preferred)
+validateData <- function(data, rules) {
+  results <- lapply(rules, function(rule) {
+    rule$check(data)
+  })
+  
+  list(
+    passed = all(sapply(results, `[[`, "passed")),
+    details = results
+  )
+}
+
+# Specific validators plug into general framework
+email_rule <- list(
+  name = "email",
+  check = function(x) {
+    list(passed = grepl("@", x), message = "Invalid email")
+  }
+)
+
+# Usage
+validateData(customer_data$email, list(email_rule))
+```
+
+## Benefits
+
+1. **Code Reuse**: One function serves many purposes
+2. **Maintainability**: Updates benefit all use cases
+3. **Testing**: Test once, use everywhere
+4. **Documentation**: Single source of truth
+5. **Onboarding**: Easier to understand consistent patterns
+
+## Relationship to Other Principles
+
+- **MP032 (DRY)**: Reduces repetition through generalization
+- **MP031 (Separation of Concerns)**: General functions focus on one concern
+- **MP044 (Functional Programming)**: General functions are more composable
+- **MP014 (Modularity)**: General functions enhance module reusability
+
+## Enforcement
+
+1. **Code Review**: Check for function proliferation patterns
+2. **Refactoring**: Regularly consolidate similar functions
+3. **Documentation**: Justify when specific functions are necessary
+4. **Testing**: Ensure general functions have comprehensive tests
+
+## Consequences of Violation
+
+- **Code Duplication**: Multiple functions doing similar things
+- **Maintenance Burden**: Changes must be made in multiple places
+- **Inconsistent Behavior**: Similar functions may diverge over time
+- **Reduced Flexibility**: Hard to adapt to new requirements
+- **Increased Complexity**: More functions to understand and maintain

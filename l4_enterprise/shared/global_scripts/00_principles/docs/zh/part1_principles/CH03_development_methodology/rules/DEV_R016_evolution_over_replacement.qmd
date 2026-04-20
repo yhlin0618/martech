@@ -1,0 +1,191 @@
+---
+title: "DEV_R016: 漸進式演化優於替換"
+subtitle: "當增強或修改功能時，在現有可用函數旁創建新函數，而不是直接替換或修改它們"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R016"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 16
+  title: "漸進式演化規則"
+related_to:
+  - "MP042: 可執行優先開發"
+  - "MP038: 增量單功能發布"
+  - "MP037: 僅為臨時或不確定的代碼註釋"
+  - "SO_R007: 一個函數一個檔案"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十六條：漸進式演化規則 {#overview}
+
+**開發方法法第十六條（漸進式演化規則）**
+
+此規則建立了通過平行實現而非直接替換來增強功能的標準。
+
+:::{.callout-important}
+## 核心規則
+當增強或修改功能時，在現有可用函數旁創建新函數，而不是直接替換或修改它們。這允許在測試新實現時無縫回退到可用代碼。
+:::
+
+# 第一項：背景說明 {#background}
+
+此規則承認現有、可用的代碼具有在增強期間應保留的証明價值。通過創建新實現作為獨立函數：
+
+1. 原始功能保持完整且可用
+2. 增強功能可以獨立測試而不危及核心功能
+3. 回退路徑內建於系統中
+4. 漸進式採用新功能成為可能
+
+# 第二項：實施指導原則 {#implementation}
+
+## 第一款：帶數字後綴的平行實現模式 {#parallel-implementation}
+
+```r
+# 原始函數保持不變
+process_data1 <- function(params) {
+  # 經過驗證的可用實現
+  result <- compute_result(params)
+  return(result)
+}
+
+# 新增強版本作為獨立函數
+process_data2 <- function(params) {
+  # 帶有改進的新實現
+  enhanced_result <- compute_better_result(params)
+  return(enhanced_result)
+}
+
+# 使用功能標誌進行受控採用
+process_data <- function(data, version = 1) {
+  if (version == 2 && is_version2_stable()) {
+    return(process_data2(data))
+  } else {
+    return(process_data1(data))  # 安全回退
+  }
+}
+```
+
+## 第二款：數字後綴演化模式 {#numerical-suffix}
+
+```r
+# 原始實現
+get_customer_data1 <- function(customer_id) {
+  # 原始實現
+}
+
+# 增強實現
+get_customer_data2 <- function(customer_id) {
+  # 效能更佳的改進實現
+}
+
+# 進一步增強的實現
+get_customer_data3 <- function(customer_id) {
+  # 帶有額外功能和優化的實現
+}
+
+# 當前推薦實現（轉發到最新穩定版本）
+get_customer_data <- function(customer_id) {
+  return(get_customer_data1(customer_id))  # 穩定後改為 2 或 3
+}
+```
+
+## 第三款：漸進式採用策略 {#graduated-adoption}
+
+```r
+# 配置參數定義採用級別
+adoption_level <- config$features$new_algorithm_level  # 0-3
+
+# 實現不同採用級別的函數
+calculate_result <- function(data, level = adoption_level) {
+  if (level == 0) {
+    return(original_algorithm(data))  # 完全經過驗證
+  } else if (level == 1) {
+    return(enhanced_preprocessing(data) |> original_algorithm())  # 部分採用
+  } else if (level == 2) {
+    return(enhanced_algorithm(data))  # 完全採用，密切監控
+  } else {
+    return(experimental_algorithm(data))  # 尖端測試
+  }
+}
+```
+
+# 第三項：反模式 {#anti-patterns}
+
+## 第一款：直接修改可用函數 {#direct-modification}
+
+避免：
+```r
+# 錯誤：直接修改可用函數
+process_orders <- function(orders) {
+  # 原始可用代碼被新代碼修改
+  # 如果新代碼失敗，一切都失敗
+}
+```
+
+## 第二款：不完整的功能標誌 {#incomplete-flags}
+
+避免：
+```r
+# 錯誤：部分功能標誌未涵蓋所有變更
+if (USE_NEW_ALGORITHM) {
+  result <- new_algorithm()  # 受標誌保護
+} else {
+  result <- old_algorithm()  # 受標誌保護
+}
+# 錯誤：這些變更總是應用，無論標誌如何
+post_process(result)  # 用新代碼修改，未受標誌保護
+```
+
+## 第三款：缺乏版本文檔 {#lack-of-documentation}
+
+避免：
+```r
+# 錯誤：沒有版本指示或文檔
+process_data_enhanced <- function() {
+  # 這是 2？3？改變了什麼？從名稱或文檔不清楚
+}
+
+# 錯誤：沒有明確版本的模糊命名
+process_data_new <- function() {
+  # 「新」相對於什麼？當更新版本出現時會混淆
+}
+
+# 正確：清晰的數字後綴
+process_data2 <- function() {
+  # 明確是此函數的第二版
+}
+```
+
+# 第四項：實際應用 {#practical-application}
+
+此規則特別有價值於：
+
+1. 重構效能關鍵代碼時
+2. 實施演算法改進時
+3. 重大功能增強期間
+4. 修復可能引入新問題的複雜錯誤時
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **失敗安全**：總是可以立即回退到可用代碼
+2. **A/B 測試**：可以比較和評估不同的實現
+3. **漸進式採用**：新功能可以逐步推出
+4. **保留可用代碼**：已知良好的實現保持不變
+5. **開發者信心**：創建增強功能時壓力較小
+
+---
+
+*基於：開發方法法第十六條*  
+*相關連結：[MP042 可執行優先開發](../../CH00_fundamental_principles/meta_principles/MP042_runnable_first.qmd), [SO_R007 一個函數一個檔案](../../CH01_structure_organization/rules/SO_R007_one_function_one_file.qmd)*

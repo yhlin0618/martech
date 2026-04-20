@@ -1,0 +1,362 @@
+# ========================================
+# CH11: Modules and Tools
+# Version: 1.1
+# Last Updated: 2025-12-14
+# (Renumbered from CH10 to CH11 per dependency-based reorganization)
+#
+# Contains: M00-M48 (Utility modules and tools)
+# Total: ~5 modules documented
+# ========================================
+
+chapter: "CH13_modules"
+description: "Utility Modules and Development Tools"
+module_count: 5
+
+# Note: Modules implement functors that map operations to implementations
+# following MP044 (Functor-Module Correspondence).
+
+modules:
+
+  # ====================
+  # M00: RENUMBERING
+  # ====================
+
+  - id: M00
+    type: module
+    name: renumbering_principles
+    display_name: "Principle Renumbering System"
+    one_liner: "Automated renumbering and reorganization of principle documents"
+    file_path: "part2_implementations/CH14_modules_tools/M00_renumbering_principles.qmd"
+    implements: ["MP002", "MP007"]
+
+    rule_natural: |
+      The renumbering module provides:
+      - Automated detection of principle files
+      - Intelligent renumbering with reference updates
+      - Verification of consistency
+      - Batch operations for multiple files
+      - Rollback capabilities
+
+      Key functions:
+      - fn_renumber_resource.R: Renumber single resource
+      - fn_verify_consistency.R: Check numbering consistency
+      - fn_batch_renumber_resources.R: Batch operations
+      - fn_verify_unique.R: Verify uniqueness
+
+    rule_formal: |
+      RULE M00_RENUMBER:
+      fn_renumber_resource(old_number, new_number)
+        validates input_format
+        updates file_name AND file_content AND references
+
+      fn_verify_consistency(type)
+        detects duplicates AND gaps
+        returns consistency_report
+
+    functions:
+      - name: "fn_renumber_resource"
+        location: "global_scripts/04_utils/fn_renumber_resource.R"
+        purpose: "Renumber a single resource file"
+      - name: "fn_verify_consistency"
+        location: "global_scripts/04_utils/fn_verify_consistency.R"
+        purpose: "Verify principle numbering consistency"
+      - name: "fn_batch_renumber_resources"
+        location: "global_scripts/04_utils/fn_batch_renumber_resources.R"
+        purpose: "Batch renumber multiple resources"
+
+    violations:
+      - "Manual renumbering without updating references"
+      - "Creating duplicate principle numbers"
+    compliant:
+      - "Use fn_renumber_resource with dry_run first"
+      - "Run fn_verify_consistency after changes"
+
+  # ====================
+  # M01: DATABASE SUMMARIZATION
+  # ====================
+
+  - id: M01
+    type: module
+    name: database_summarization
+    display_name: "Database Summarization Module"
+    one_liner: "Automated database structure documentation in Markdown format"
+    file_path: "part2_implementations/CH14_modules_tools/M01_database_summarization.qmd"
+    implements: ["MP043", "MP007", "MP010"]
+    functor: "summarize database"
+
+    rule_natural: |
+      The database summarization module provides:
+      - Automated extraction of database schema information
+      - Generation of comprehensive Markdown documentation
+      - Sample data inclusion for better understanding
+      - Support for multiple database types (DuckDB, SQLite)
+      - Batch documentation of multiple databases
+
+      Output includes:
+      - Table names and row counts
+      - Column specifications (names, types)
+      - Sample data (optional)
+      - Database type and version info
+
+    rule_formal: |
+      RULE M01_SUMMARIZE:
+      summarize_database(db_connection, output_file)
+        connects TO database
+        lists ALL tables
+        FOR EACH table:
+          gets row_count
+          extracts column_names AND types
+          includes sample_data IF enabled
+        generates markdown_documentation
+        writes TO output_file
+
+    functions:
+      - name: "summarize_database"
+        location: "global_scripts/04_utils/fn_summarize_database.R"
+        purpose: "Generate comprehensive database summary"
+      - name: "summarize_app_database"
+        location: "global_scripts/04_utils/fn_summarize_database.R"
+        purpose: "Convenience function for app database"
+      - name: "document_all_databases"
+        location: "global_scripts/04_utils/fn_summarize_database.R"
+        purpose: "Document all project databases"
+
+    snsql_commands:
+      - "summarize database 'app_data.duckdb'"
+      - "document all databases in 'docs/database'"
+
+    violations:
+      - "Manual database documentation that becomes outdated"
+      - "No documentation of database schema"
+    compliant:
+      - "Automated documentation generation after schema changes"
+      - "Version control documentation files"
+
+  # ====================
+  # M02: DATA EXPORT
+  # ====================
+
+  - id: M02
+    type: module
+    name: data_export_utility
+    display_name: "Data Export Utility Module"
+    one_liner: "Platform-independent data export to various formats"
+    file_path: "part2_implementations/CH14_modules_tools/M02_data_export_utility.qmd"
+    implements: ["MP047", "DM_R022"]
+
+    rule_natural: |
+      The data export module provides:
+      - Export to CSV, Excel, JSON formats
+      - Platform-specific formatting (Amazon, eBay, Cyberbiz)
+      - Date range filtering
+      - Batch export capabilities
+      - Automated distribution options
+
+      Key features:
+      - Encoding and localization settings
+      - Header/footer customization
+      - Branding elements
+      - Multiple distribution channels
+
+    rule_formal: |
+      RULE M02_EXPORT:
+      export_data(data, format, export_path)
+        process date_columns
+        create directory IF NOT exists
+        write TO file IN format
+
+      execute_data_export(data_source, format, platform)
+        applies platform_specific_formatting
+        exports TO specified_format
+
+    functions:
+      - name: "export_data_to_csv"
+        purpose: "Export data to CSV format"
+      - name: "export_data_to_excel"
+        purpose: "Export data to Excel with formatting"
+      - name: "export_data_to_json"
+        purpose: "Export data to JSON format"
+      - name: "execute_data_export"
+        purpose: "Main export function with platform support"
+      - name: "execute_batch_export"
+        purpose: "Batch export for multiple configurations"
+
+    platforms:
+      - code: "01/AMZ"
+        name: "Amazon"
+        features: ["FBA formatting", "USD currency", "Seller Central compatible"]
+      - code: "06/EBY"
+        name: "eBay"
+        features: ["Seller Hub format", "eBay identifiers"]
+      - code: "07/CBZ"
+        name: "Cyberbiz"
+        features: ["E-commerce reporting", "Custom templates"]
+
+  # ====================
+  # M03: S02 DATA EXPORT
+  # ====================
+
+  - id: M03
+    type: module
+    name: s02_sequence_data_export
+    display_name: "S02 Sequence Data Export"
+    one_liner: "Debug data export for ETL pipeline inspection"
+    file_path: "part2_implementations/CH14_modules_tools/M03_s02_sequence_data_export.qmd"
+    implements: ["MP093", "DEV_P001"]
+
+    rule_natural: |
+      S02 sequence exports data at each ETL phase for debugging:
+      - Export raw data after 0IM
+      - Export staged data after 1ST
+      - Export transformed data after 2TR
+      - Compare data across phases
+      - Identify transformation issues
+
+      Usage pattern:
+      1. Run ETL phase
+      2. Run all_S02_00.R to export
+      3. Inspect exported files
+      4. Repeat for next phase
+
+    rule_formal: |
+      RULE M03_S02:
+      debug_etl(phase):
+        run etl_phase_script
+        run all_S02_00.R
+        inspect exported_data IN data/database_to_csv/
+
+    violations:
+      - "Debugging ETL without data inspection"
+      - "Only checking final output without intermediate phases"
+    compliant:
+      - "Run S02 after each phase to verify transformations"
+      - "Compare data across phases"
+
+  # ====================
+  # M48: CODE FUNCTIONALIZATION
+  # ====================
+
+  - id: M48
+    type: module
+    name: code_functionalization
+    display_name: "Code Functionalization Module"
+    one_liner: "Convert procedural code blocks to functional form"
+    file_path: "part2_implementations/CH14_modules_tools/M48_code_functionalization.qmd"
+    implements: ["MP047", "DEV_R002", "SO_R007"]
+
+    rule_natural: |
+      The functionalization module converts procedural code to functional:
+      - Automated analysis of code dependencies
+      - Extraction of input and output variables
+      - Generation of properly structured functions
+      - Creation of roxygen documentation
+      - Proper file organization (fn_ prefix)
+
+      Process:
+      1. Parse the code block
+      2. Identify inputs (used but not defined)
+      3. Identify outputs (returned or last assigned)
+      4. Infer purpose from code patterns
+      5. Generate function code with documentation
+      6. Write to appropriate file
+
+    rule_formal: |
+      RULE M48_FUNCTIONALIZE:
+      functionalize(code_block, target_directory):
+        parse code_block
+        identify inputs (used NOT defined)
+        identify outputs (returned OR last_assigned)
+        infer purpose FROM patterns
+        generate function_code WITH roxygen_docs
+        write TO fn_{function_name}.R
+
+    functions:
+      - name: "functionalize"
+        location: "global_scripts/04_utils/fn_functionalize.R"
+        purpose: "Main functionalization function"
+      - name: "parse_code_block"
+        purpose: "Parse code to identify dependencies"
+      - name: "find_assigned_symbols"
+        purpose: "Find variables assigned in code"
+      - name: "find_output_symbols"
+        purpose: "Find likely output variables"
+      - name: "infer_purpose"
+        purpose: "Infer code purpose from patterns"
+      - name: "generate_function_code"
+        purpose: "Generate function with roxygen docs"
+
+    purpose_detection:
+      - pattern: "db|conn|query|sql"
+        purpose: "database_operation"
+      - pattern: "transform|convert|process"
+        purpose: "data_transformation"
+      - pattern: "init|setup|configure"
+        purpose: "initialization"
+      - pattern: "validate"
+        purpose: "validation"
+
+    violations:
+      - "Procedural code with implicit dependencies"
+      - "Scripts with side effects and global state"
+      - "Functions without clear inputs/outputs"
+    compliant:
+      - "Pure functions with explicit inputs/outputs"
+      - "One function per file with fn_ prefix"
+      - "Roxygen documentation on all functions"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: M01
+    to: MP043
+    reason: "Implements database documentation principle"
+
+  - from: M48
+    to: MP047
+    reason: "Implements functional programming principle"
+
+  - from: M48
+    to: SO_R007
+    reason: "Creates one function per file"
+
+  - from: M00
+    to: MP002
+    reason: "Maintains structural blueprint integrity"
+
+# ====================
+# SCENARIOS
+# ====================
+
+scenarios:
+  creating_new_module:
+    description: "Creating a new utility module"
+    must_read:
+      - M48
+      - "SO_R007"
+      - "MP047"
+    checklist:
+      - "Is the module implementing a clear functor?"
+      - "Does each function have its own file with fn_ prefix?"
+      - "Is roxygen documentation complete?"
+
+  debugging_etl:
+    description: "Debugging ETL pipeline issues"
+    must_read:
+      - M03
+      - "ETL_ARCH"
+    checklist:
+      - "Run S02 export after each phase"
+      - "Compare data across phases"
+
+  refactoring_code:
+    description: "Converting procedural code to functional"
+    must_read:
+      - M48
+      - "MP047"
+      - "DEV_R002"
+    checklist:
+      - "Identify all inputs and outputs"
+      - "Use functionalize() for automated conversion"
+      - "Test generated function matches original behavior"

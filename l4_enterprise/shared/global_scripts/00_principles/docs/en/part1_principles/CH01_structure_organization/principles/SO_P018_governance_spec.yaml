@@ -1,0 +1,423 @@
+# SO_P018 Directory Structure Governance - Implementation Specification
+# This is a "case law" file that provides concrete implementation details for SO_P018
+#
+# Principle (Law): SO_P018_directory_structure_governance.qmd
+# Specification (Case Law): This file
+#
+# Usage: AI agents and developers should check this file before creating
+#        new files or directories in 00_principles/ or global_scripts/
+
+principle_ref: SO_P018
+version: "1.6"
+last_updated: "2026-02-11"
+
+# ============================================================
+# 00_principles/ Directory Specification
+# ============================================================
+principles_directory:
+  path: "scripts/global_scripts/00_principles/"
+
+  allowed_directories:
+    - name: ".claude"
+      purpose: "Claude Code configuration (agents, rules, skills, settings)"
+      required: true
+
+    - name: ".quarto"
+      purpose: "Quarto build artifacts (auto-generated, gitignored)"
+      required: false
+      auto_generated: true
+
+    - name: "changelog"
+      purpose: "Change history and documentation (GitHub Issues is source of truth for issue tracking)"
+      required: true
+      subdirectories:
+        - name: "issues"
+          purpose: "Legacy issue markdown archive (read-only; no new tracking files)"
+        - name: "plans"
+          purpose: "Deprecated plan directory (new plans should be archived in reports/)"
+        - name: "reports"
+          purpose: "Reports, ADRs, summaries, migrations, feature docs, and issue implementation reports"
+        - name: "archive"
+          purpose: "Historical data, outdated content, scripts, and logs"
+
+    - name: "archive"
+      purpose: "Archived files and deprecated content"
+      required: true
+
+    - name: "docs"
+      purpose: "Natural language documentation"
+      required: true
+      subdirectories:
+        - name: "en"
+          purpose: "English version"
+          subdirectories:
+            - "part1_principles"
+            - "part2_implementations"
+            - "part3_domain_knowledge"
+        - name: "zh"
+          purpose: "Chinese version"
+          subdirectories:
+            - "part1_principles"
+            - "part2_implementations"
+            - "part3_domain_knowledge"
+
+    - name: "llm"
+      purpose: "LLM-optimized YAML files for AI consumption"
+      required: true
+
+  allowed_root_files:
+    system:
+      - ".gitignore"
+      - ".quartoignore"
+
+    quarto:
+      - "_quarto.yml"
+      - "_quarto-en.yml"
+      - "_quarto-zh.yml"
+      - "index.qmd"
+      - "styles.css"
+      - "parameters.yaml"
+
+    documentation:
+      - "INDEX.md"
+      - "README.md"
+      - "QUICK_REFERENCE.md"
+      - "NAVIGATION.md"
+
+  prohibited_patterns:
+    - pattern: "ISSUE_*.md"
+      destination: "GitHub Issues (remote)"
+      reason: "Issues are tracked in GitHub; local issue files are legacy only"
+
+    - pattern: "*_REPORT.md"
+      destination: "CHANGELOG/reports/"
+      reason: "Reports should be in CHANGELOG"
+
+    - pattern: "*_DEBUG*.md"
+      destination: "CHANGELOG/reports/"
+      reason: "Debug reports should be local evidence linked to GitHub issues"
+
+    - pattern: "MIGRATION_*.md"
+      destination: "CHANGELOG/reports/"
+      reason: "Migration guides are operational reports"
+
+    - pattern: "README_*.md"
+      destination: "archive/"
+      reason: "Only one README.md allowed in root"
+
+    - pattern: "*.yaml"
+      destination: "llm/"
+      reason: "YAML files should be in llm/ (except parameters.yaml)"
+      exceptions:
+        - "parameters.yaml"
+
+# ============================================================
+# global_scripts/ Directory Specification
+# ============================================================
+global_scripts_directory:
+  path: "scripts/global_scripts/"
+
+  numbered_directories:
+    core_functionality:
+      range: "00-29"
+      directories:
+        - "00_principles"
+        - "01_db"
+        - "02_db_utils"
+        - "03_config"
+        - "04_utils"
+        - "05_etl_utils"
+        - "06_queries"
+        - "07_models"
+        - "08_ai"
+        - "09_python_scripts"
+        - "10_rshinyapp_components"
+        - "11_rshinyapp_utils"
+        - "12_bash"
+        - "13_modules"
+        - "14_sql_utils"
+        - "15_cleanse"
+        - "17_transform"
+        - "18_AIMETA_Language"
+        - "19_CSS"
+        - "20_R_packages"
+        - "21_rshinyapp_templates"
+        - "22_initializations"
+        - "23_deployment"
+        - "24_assets"
+        - "25_scripts"
+        - "26_platform_apis"
+        - "27_company_info"
+        - "28_migration_scripts"
+        - "29_company_examples"
+
+    reserved:
+      range: "31-89"
+      note: "Reserved for future use - requires principle amendment"
+
+    meta_directories:
+      range: "90-99"
+      directories:
+        - "96_things_todo"
+        - "97_proposal"
+        - "98_test"
+        - "99_archive"
+
+  special_directories:
+    - name: "29_company_examples"
+      purpose: "Company-specific code cookbook (read-and-adapt, NOT shared library)"
+      semantics: "Each onboarded company has its own namespace mirroring numbered chapters. Files are reference material; cross-company source() is forbidden. See chapter README for full rationale."
+    - name: "30_global_data"
+      purpose: "Shared data files"
+    - name: "nsql"
+      purpose: "NSQL language (standalone git repo in shared/)"
+    - name: "templates"
+      purpose: "Global templates"
+
+  # 24_assets: Shared Static Assets (cross-project)
+  assets_directory:
+    path: "24_assets/"
+    purpose: "Shared static assets for all company projects (icons, favicons, CSS)"
+    subdirectories:
+      - name: "icons"
+        purpose: "Application icons (app_icon.png)"
+        shared: true
+      - name: "favicons"
+        purpose: "Browser tab icons (favicon.ico)"
+        shared: true
+      - name: "css"
+        purpose: "Shared CSS stylesheets (reserved for future use)"
+        shared: true
+      - name: "images"
+        purpose: "Shared images (reserved for future use)"
+        shared: true
+    usage_pattern: |
+      Company projects should use symlinks in www/ pointing to 24_assets/:
+        www/favicon.ico -> ../scripts/global_scripts/24_assets/favicons/favicon.ico
+        www/images/icon.png -> ../../scripts/global_scripts/24_assets/icons/app_icon.png
+      For deployment (Posit Connect may not support symlinks):
+        Copy files in deploy script before deployment
+
+# ============================================================
+# File Placement Decision Tree
+# ============================================================
+file_placement:
+  questions:
+    - question: "Is it a utility function?"
+      answer: "04_utils/fn_*.R"
+
+    - question: "Is it a Shiny component?"
+      answer: "10_rshinyapp_components/{component_name}/"
+
+    - question: "Is it an ETL helper?"
+      answer: "05_etl_utils/"
+
+    - question: "Is it a test?"
+      answer: "98_test/"
+
+    - question: "Is it a principle document?"
+      answer: "00_principles/docs/en/part1_principles/"
+
+    - question: "Is it a static asset (icon, favicon, shared image)?"
+      answer: "24_assets/{icons|favicons|images}/"
+
+    - question: "Is it a template?"
+      answer: "templates/TEMPLATE_*.md"
+
+    - question: "Is it an issue, bug, or debug report?"
+      answer: "Issue tracking: GitHub Issues; local evidence/report: 00_principles/changelog/reports/"
+
+    - question: "Is it an architecture plan, design doc, or spec (not yet implemented)?"
+      answer: "00_principles/changelog/reports/ (use PLAN naming pattern)"
+
+    - question: "Is it a report, ADR, migration, or feature doc (already completed)?"
+      answer: "00_principles/changelog/reports/"
+
+    - question: "Is it outdated or historical content?"
+      answer: "00_principles/changelog/archive/"
+
+    - question: "None of the above?"
+      answer: "Ask the user where to place it"
+
+# ============================================================
+# Enforcement Rules
+# ============================================================
+enforcement:
+  before_creating_file:
+    - "Check if file matches prohibited_patterns"
+    - "Verify destination directory is in allowed list"
+    - "For new directories, require explicit user approval"
+
+  before_creating_directory:
+    - "Check if directory already exists"
+    - "Verify it's in the allowed list OR get user approval"
+    - "If approved, update this specification file"
+
+  periodic_audit:
+    frequency: "quarterly"
+    actions:
+      - "Identify directories grown beyond scope"
+      - "Archive unused directories"
+      - "Consolidate overlapping directories"
+
+# ============================================================
+# Project Root Directory Specification (NEW in v1.1)
+# ============================================================
+project_root_directory:
+  path: "{project_root}/"  # e.g., MAMBA/, WISER/, VitalSigns/
+
+  allowed_root_files:
+    application:
+      - "app.R"
+      - "app_config.yaml"
+      - "_targets.R"            # {targets} pipeline configuration
+      - "_targets_config.yaml"  # Generated by Makefile, git-ignored
+
+    documentation:
+      - "README.md"
+      - "CLAUDE.md"
+      - "CLAUDE.local.md"  # Local overrides, git-ignored
+
+    system:
+      - ".gitignore"
+      - ".Rprofile"
+      - ".Renviron"  # git-ignored
+      - "manifest.json"
+
+  prohibited_patterns:
+    - pattern: "*_REPORT.md"
+      destination: "scripts/global_scripts/00_principles/changelog/reports/"
+      reason: "Reports belong in CHANGELOG"
+
+    - pattern: "*_DEBUG*.md"
+      destination: "scripts/global_scripts/00_principles/changelog/reports/"
+      reason: "Debug reports are local evidence and must reference GitHub issue number"
+
+    - pattern: "test_*.R"
+      destination: "scripts/global_scripts/98_test/"
+      reason: "Test scripts belong in 98_test/"
+
+    - pattern: "MIGRATION_*.md"
+      destination: "scripts/global_scripts/00_principles/changelog/reports/"
+      reason: "Migration guides belong in CHANGELOG reports"
+
+    - pattern: "*_GUIDE.md"
+      destination: "scripts/global_scripts/00_principles/changelog/reports/"
+      reason: "Setup guides belong in CHANGELOG reports or docs/"
+
+    - pattern: "*_SUMMARY.md"
+      destination: "scripts/global_scripts/00_principles/changelog/reports/"
+      reason: "Summary documents belong in CHANGELOG"
+
+  allowed_directories:
+    - name: "scripts"
+      purpose: "All R/Python scripts (contains global_scripts/ and update_scripts/)"
+      required: true
+
+    - name: "data"
+      purpose: "Company-specific data files and databases"
+      required: true
+
+    - name: "validation"
+      purpose: "Validation outputs (CSV files only; .md files go to CHANGELOG or archive)"
+      required: false
+      allowed_file_types: [".csv", ".xlsx", ".duckdb"]
+      prohibited_file_types: [".md"]
+
+    - name: "www"
+      purpose: "Static web assets for Shiny app"
+      required: false
+
+    - name: "tests"
+      purpose: "Integration tests (unit tests go in 98_test/)"
+      required: false
+
+    - name: ".claude"
+      purpose: "Claude Code project configuration"
+      required: false
+
+# ============================================================
+# changelog/ Subdirectory Structure (v1.6 - GitHub issues as source of truth)
+# ============================================================
+# Four-category structure for clarity and ease of use
+changelog_subdirectories:
+  - name: "issues"
+    purpose: "Legacy markdown issue archive (historical only)"
+    design_reference: "GitHub Issues is source of truth; local issues are retained for history"
+    subdirectories:
+      - name: "open"
+        purpose: "Historical open-state issue markdown files"
+      - name: "closed"
+        purpose: "Historical resolved/rejected/merged markdown files"
+    naming_convention: "issue_{NUMBER}_{short_title}.md (legacy only)"
+    naming_rules:
+      - "No new files should be created here"
+      - "Number comes first for sorting"
+      - "Short descriptive title (2-5 words)"
+      - "No date prefix"
+    multi_file_exception: "Not applicable for new work"
+    classification_keywords: ["legacy", "issue", "archive"]
+
+  - name: "plans"
+    purpose: "Deprecated plan directory (retain old files only)"
+    design_reference: "New plans should be stored under reports/ with PLAN naming"
+    naming_convention: "plan_{NUMBER}_{short_title}.md"
+    naming_rules:
+      - "All lowercase (consistent with issues)"
+      - "Number comes first for sorting"
+      - "Short descriptive title (2-5 words)"
+      - "No date prefix (Git tracks history)"
+    multi_file_exception: "plan_{NUMBER}_{topic}/ for complex plans requiring multiple documents"
+    classification_keywords: ["plan", "architecture", "design", "specification", "proposal"]
+    content_types:
+      - "Architecture design documents"
+      - "Technical specifications"
+      - "Implementation plans (before starting work)"
+      - "System design proposals"
+      - "Pre-implementation ADR drafts"
+    lifecycle: "Legacy only. New plans go to reports/."
+
+  - name: "reports"
+    purpose: "Completed work and decisions - reports, ADRs, summaries, migrations, features"
+    file_patterns: ["*_REPORT.md", "*_SUMMARY.md", "ADR_*.md", "MIGRATION_*.md", "*_GUIDE.md"]
+    classification_keywords: ["report", "summary", "adr", "decision", "migration", "feature"]
+    note: "Merges former 'decisions', 'features', 'migrations' into single reports category"
+    subdirectory_format: "{YYYY}-{MM}-{topic}/"
+
+  - name: "archive"
+    purpose: "Historical and outdated content - old scripts, logs, deprecated docs"
+    subdirectories:
+      - "monitoring"
+      - "scripts"
+      - "test_data"
+      - "logs"
+    note: "Also contains root-level archived .md files and historical data"
+
+# ============================================================
+# File Placement Decision Tree for Project Root
+# ============================================================
+project_root_file_placement:
+  decision_tree:
+    - question: "Is it a debug report, issue, or bug-related?"
+      answer: "Issue tracking: GitHub Issues; local report: scripts/global_scripts/00_principles/changelog/reports/"
+
+    - question: "Is it an architecture plan, design document, or implementation plan (not yet implemented)?"
+      answer: "scripts/global_scripts/00_principles/changelog/reports/"
+
+    - question: "Is it a report, ADR, summary, migration guide, or feature doc (already completed)?"
+      answer: "scripts/global_scripts/00_principles/changelog/reports/"
+
+    - question: "Is it outdated, historical, or no longer needed?"
+      answer: "scripts/global_scripts/00_principles/changelog/archive/"
+
+    - question: "Is it a test script (test_*.R)?"
+      answer: "scripts/global_scripts/98_test/{category}/"
+
+    - question: "Is it a validation CSV?"
+      answer: "validation/{filename}.csv (KEEP IN PLACE)"
+
+    - question: "Is it an application core file (app.R, app_config.yaml)?"
+      answer: "Project root (KEEP IN PLACE)"
+
+    - question: "Is it a completed migration or utility script?"
+      answer: "scripts/global_scripts/99_archive/{category}/"

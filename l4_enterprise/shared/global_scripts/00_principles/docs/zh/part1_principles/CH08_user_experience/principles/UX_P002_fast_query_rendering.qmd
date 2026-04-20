@@ -1,0 +1,306 @@
+---
+title: "UX_P002: 快速查詢渲染原則"
+subtitle: "所有使用者端查詢必須在 3 秒內渲染完成；使用分層快取策略達成此目標"
+chapter: "CH07"
+category: "principle"
+number: "UX_P002"
+date-created: "2026-03-02"
+date-modified: "2026-03-02"
+author: "Claude"
+type: "principle"
+law: "使用者體驗法"
+article-number: "第二條"
+derives_from:
+  - "CH00.MP064: ETL-Derivation 分離"
+influences:
+  - "CH03.DEV_P014: 效能最佳化"
+  - "CH03.DEV_P021: 效能加速"
+related_to:
+  - "CH07.UX_P001: 延遲初始化"
+  - "CH04.UI_R019: AI 處理通知"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 概述 {#overview}
+
+**使用者體驗法第二條（快速查詢渲染原則）**
+
+本條確立所有使用者端資料查詢必須在可接受的時間門檻內渲染完成。當原始查詢超出此門檻時，必須套用分層快取策略將回應時間降到限制之內。
+
+:::{.callout-important}
+## 核心概念
+「預計算優先，禁止靜默降級」— 首要策略是在 DRV pipeline 階段預計算並儲存結果，使渲染時讀取近乎即時。每個資料存取函數只實作**一個**層級 — 不做降級鏈。如果預計算表格預期存在但缺失，系統必須明確報錯，而非靜默降級到較慢的路徑。
+:::
+
+# 背景 {#background}
+
+## 問題描述 {#problem-statement}
+
+多個 Shiny 元件在渲染時使用原始 `DBI::dbGetQuery()` 查詢大型表格（如 `df_dna_by_customer` 有 10 萬行以上）。當使用者切換到資料密集的分頁（如 RSV 生命力矩陣）時，會造成 10-15 秒的延遲，嚴重降低使用者體驗。
+
+## 效能預算 {#performance-budget}
+
+| 回應時間 | 使用者感受 | 適用場景 |
+|----------|-----------|----------|
+| < 100ms | 即時 | 快取/預計算資料 |
+| < 1s | 快速 | SQL 聚合、小型查詢 |
+| < 3s | 可接受 | 帶快取的複雜查詢 |
+| 3-10s | 緩慢（需顯示載入動畫）| 僅限背景任務 |
+| > 10s | 不可接受 | 必須最佳化 |
+
+# 第一條：預計算優先策略 {#precompute-first}
+
+## 第一節：核心規則 — 預計算並儲存 {#core-rule}
+
+所有儀表板資料的預設做法是**在 DRV pipeline 階段預計算**。App 在渲染時的工作是讀取預計算結果，而非進行計算。
+
+:::{.callout-warning}
+## 禁止靜默降級
+每個資料存取函數只實作**一個**層級。如果函數設計為讀取預計算表格，而該表格不存在，必須**拋出錯誤**，而非靜默降級到較慢的計算路徑。靜默降級會掩蓋部署錯誤，使效能問題不可見。
+:::
+
+**為何禁止降級？**
+
+| 靜默降級 | 不降級 |
+|----------|--------|
+| App「能用」但要 10 秒 | App 報錯：「請先執行 `make run`」|
+| 沒人知道正在走慢路徑 | 問題立即可見 |
+| 每個函數三條程式碼路徑要維護 | 每個函數一條程式碼路徑 |
+| 違反 MP029（假設表格可能不存在）| 遵循 MP029（驗證前置條件）|
+
+## 第二節：四個層級 {#four-tiers}
+
+每個資料存取函數只實作以下**一個**層級。層級選擇是設計元件時的**架構決策**，而非函數內部的 runtime if/else。
+
+### 第一層：預計算 DRV 表格（~50ms）— 預設方法
+
+沉重的聚合運算在 DRV pipeline 階段計算完成，存為可直接讀取的表格。
+
+```r
+# DRV 腳本（透過 make run 離線執行）
+# 產出：df_rsv_classified, df_dna_plot_data 等
+source("scripts/update_scripts/DRV/all_D01_07.R")
+
+# 元件 server — 只讀取，不計算
+load_rsv_classified <- function(conn, platform_id) {
+  sql <- "SELECT * FROM df_rsv_classified WHERE platform_id = ?"
+  result <- DBI::dbGetQuery(conn, sql, params = list(platform_id))
+  if (nrow(result) == 0) {
+    stop("[rsvMatrix] df_rsv_classified is empty for platform '", platform_id,
+         "'. Run: make run PLATFORM=", platform_id)
+  }
+  result
+}
+# ~50ms — 只是讀表格
+```
+
+**這是首要且優先的方法。** 如果資料可以預計算，就**必須**預計算。不要在 pipeline 能處理時，把計算延遲到渲染時。
+
+### 第二層：SQL 層級聚合（~500ms）
+
+將計算推送到 DuckDB。僅在結果依賴無法在 pipeline 時枚舉的 runtime 使用者輸入時使用。
+
+```r
+# 專用函數 — 只做 SQL 聚合，不做降級
+load_category_counts_sql <- function(conn, platform_id, category_field) {
+  sql <- sprintf(
+    "SELECT %s AS category, COUNT(*) AS n FROM df_dna_by_customer WHERE platform_id = ? GROUP BY %s",
+    DBI::dbQuoteIdentifier(conn, category_field),
+    DBI::dbQuoteIdentifier(conn, category_field)
+  )
+  DBI::dbGetQuery(conn, sql, params = list(platform_id))
+}
+```
+
+### 第三層：記憶化查詢（快取命中時 ~50ms）
+
+用 `memoise` 包裝第二層函數做磁碟快取。這是**附加層**，不是內建不同邏輯的獨立函數。
+
+```r
+# memoise 包裝是獨立物件，不內建在基礎函數中
+load_category_counts_sql_cached <- memoise::memoise(
+  load_category_counts_sql,
+  cache = .app_cache  # 6 小時磁碟快取
+)
+```
+
+或使用 Shiny 的 `bindCache()`（見第二條）。
+
+### 第四層：直接讀取（僅限小表格）
+
+不帶任何快取的直接 `DBI::dbGetQuery()`。僅對設定表或 1000 行以下的參照表可接受。
+
+```r
+df <- DBI::dbGetQuery(con, "SELECT * FROM df_config")
+```
+
+## 第三節：層級選擇決策樹 {#tier-selection}
+
+```
+新元件需要資料？
+  |
+  ├── 資料僅在 pipeline 時變更？（多數儀表板資料）
+  |   └── 是 → 第一層：在 DRV 預計算，存為表格
+  |
+  ├── 依賴不可預測的 runtime 使用者輸入？
+  |   └── 是 → 第二層：SQL 聚合（+第三層 memoise 若重複呼叫）
+  |
+  └── 小型參照/設定表（< 1000 行）？
+      └── 是 → 第四層：直接讀取
+      └── 否 → 回頭設計第一層方案
+```
+
+## 第四節：啟動驗證 {#startup-verification}
+
+在 App 初始化時，驗證所有必要的預計算表格存在：
+
+```r
+# 在初始化或 union file 中
+required_tables <- c("df_rsv_classified", "df_dna_plot_data",
+                     "df_dna_category_counts", "df_dna_summary_stats")
+missing <- required_tables[!sapply(required_tables, function(t) DBI::dbExistsTable(con, t))]
+if (length(missing) > 0) {
+  stop("[UX_P002] Missing pre-computed tables: ", paste(missing, collapse = ", "),
+       "\nRun: make run")
+}
+```
+
+這確保問題在啟動時就被發現，而非使用者 5 分鐘後點擊某個 tab 才遇到。
+
+# 第二條：Shiny 專用模式 {#shiny-patterns}
+
+## 第一節：bindCache() 用於 Reactive 輸出 {#bindcache}
+
+Shiny 內建的 `bindCache()` 可依輸入鍵值快取 reactive 表達式和渲染輸出：
+
+```r
+# 依 input 值快取 reactive 表達式
+filtered_data <- reactive({
+  df <- load_heavy_query(con, input$platform, input$date_range)
+  process_data(df)
+}) %>% bindCache(input$platform, input$date_range)
+
+# 快取渲染輸出
+output$plot <- renderPlotly({
+  plot_ly(filtered_data(), x = ~x, y = ~y)
+}) %>% bindCache(input$platform, input$date_range)
+```
+
+**相較手動 memoise 的優勢**：
+
+- 與 Shiny 的 reactivity 系統整合
+- input 改變時自動使快取失效
+- 可使用 `cache = "session"`（每用戶）或 `cache = "app"`（跨用戶共享）
+
+## 第二節：ExtendedTask 非同步載入 {#async-loading}
+
+對於真正超過 3 秒的查詢，使用 Shiny 的 `ExtendedTask`（R >= 4.0, Shiny >= 1.8.1）：
+
+```r
+# 定義非同步任務
+heavy_query_task <- ExtendedTask$new(function(platform_id) {
+  future::future({
+    con <- dbConnectDuckdb(db_path_list$app_data)
+    on.exit(DBI::dbDisconnect(con))
+    DBI::dbGetQuery(con, "SELECT ... FROM large_table WHERE platform_id = ?",
+                    params = list(platform_id))
+  })
+})
+
+# 在 server 中：觸發並顯示載入動畫
+observeEvent(input$go, {
+  heavy_query_task$invoke(input$platform)
+})
+
+output$result <- renderDT({
+  heavy_query_task$result()  # 非阻塞；顯示動畫直到完成
+})
+```
+
+## 第三節：載入指示器 {#loading-indicators}
+
+當查詢超過 1 秒時，使用者**必須**看到載入指示器：
+
+```r
+# 使用 shinycssloaders
+shinycssloaders::withSpinner(
+  plotlyOutput("heavy_plot"),
+  type = 6, color = "#3c8dbc"
+)
+
+# 使用 shinybusy
+shinybusy::add_busy_spinner(spin = "fading-circle", position = "top-right")
+```
+
+# 第三條：現有基礎設施 {#existing-infrastructure}
+
+## 第一節：fn_cached_data_access.R {#cached-access}
+
+`global_scripts/04_utils/fn_cached_data_access.R` 已提供快取資料存取函數：
+
+| 函數 | 層級 | 說明 |
+|------|------|------|
+| `load_precomputed_ecdf()` | 1 | 從 df_dna_plot_data 讀取預計算 ECDF |
+| `load_precomputed_category_counts()` | 1 | 從 df_dna_category_counts 讀取預計算計數 |
+| `load_precomputed_summary_stats()` | 1 | 從 df_dna_summary_stats 讀取預計算統計 |
+| `load_ecdf_from_sql()` | 2 | SQL 層級 CUME_DIST 計算 |
+| `load_dna_summary_stats()` | 2 | SQL 層級聚合 |
+| `load_dna_distribution_summary_cached()` | 3 | 第二層的記憶化版本 |
+| `load_ecdf_from_sql_cached()` | 3 | 第二層的記憶化版本 |
+
+:::{.callout-warning}
+## 遺留降級模式
+`fn_cached_data_access.R` 中部分函數目前包含降級鏈（例如第一層 → 第二層 → R 層級計算）。這違反了第一條中確立的「禁止靜默降級」規則。這些函數應重構為每個只實作一個層級，缺失的預計算表格必須引發明確錯誤。
+:::
+
+**所有存取 DNA/客戶資料的元件，必須使用這些快取函數，而非原始 `dbGetQuery()`。**
+
+## 第二節：D01_07 預計算表格 {#precomputed-tables}
+
+DRV 腳本 `all_D01_07.R` 產出：
+
+| 表格 | 內容 | 列數（典型值）|
+|------|------|---------------|
+| `df_dna_plot_data` | 每個指標/平台的預計算 ECDF 曲線 | ~2000 |
+| `df_dna_category_counts` | 類別分佈計數 | ~50 |
+| `df_dna_summary_stats` | 每個指標的摘要統計 | ~20 |
+
+這些表格存在於 `app_data.duckdb`，每次 pipeline 執行時更新。
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 快速查詢渲染檢查清單
+
+建立或審查帶有資料查詢的 Shiny 元件時：
+
+- [ ] 識別元件中所有 `dbGetQuery()` 呼叫
+- [ ] 為每個查詢判斷適合的快取層級（每個函數只實作一個層級）
+- [ ] 預設使用第一層（預計算 DRV 表格）— 僅在預計算不可能時才使用較低層級
+- [ ] 確保沒有降級鏈 — 每個函數只讀取或只計算，不能兩者都做
+- [ ] 使用 SQL 層級聚合取代拉原始資料到 R
+- [ ] 對重複查詢用 `memoise()` 或 `bindCache()` 包裝
+- [ ] 對可能超過 1 秒的查詢加上載入動畫
+- [ ] 以實際資料量驗證渲染時間 < 3 秒
+- [ ] 將必要的預計算表格加入啟動驗證清單
+- [ ] 在寫新函數前，先檢查 `fn_cached_data_access.R` 是否已有現成快取函數
+:::
+
+# 相關原則 {#related}
+
+- **UX_P001**: 延遲初始化 — 最佳化啟動時間；UX_P002 最佳化執行時查詢時間
+- **MP064**: ETL-Derivation 分離 — 預計算在 DRV 階段進行，非渲染時
+- **DEV_P014**: 效能最佳化 — 通用效能指引
+- **DEV_P021**: 效能加速 — 執行時最佳化技術
+
+---
+
+*權威：使用者體驗法第二條*
+*衍生自：[MP064 ETL-Derivation 分離](../../CH00_fundamental_principles/MP064_etl_derivation_separation.qmd)*
+*互補：[UX_P001 延遲初始化](UX_P001_lazy_initialization.qmd)*

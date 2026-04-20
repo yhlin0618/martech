@@ -1,0 +1,132 @@
+---
+title: "DEV_R052: 標準英文 Key"
+subtitle: "業務邏輯使用英文 key，僅 UI 層透過 translate() 顯示本地化文字"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R052"
+date-created: "2026-03-05"
+date-modified: "2026-03-05"
+author: "Claude"
+type: "rule"
+law: "Development Methodology"
+article-number: "Rule 52"
+parent_principle: "MP029"
+related_to:
+  - "MP029": "禁止假資訊"
+  - "DEV_R050": "顯示資料外部化"
+  - "UI_R022": "UI 文字翻譯模式"
+  - "DEV_R013": "Switch 優先於 If-Else"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DEV_R052: 標準英文 Key {#overview}
+
+所有非 UI 的程式碼 — 包括資料庫標籤、switch/case 邏輯、篩選條件、分組鍵值、設定值 —
+**必須**使用標準英文字串。翻譯為使用者顯示語言的工作**僅限**於 UI 渲染層，透過 `translate()` 執行。
+
+## 規則說明
+
+### 除了 UI 顯示，全部使用英文
+
+1. **DRV / ETL 腳本**：所有標籤欄位（如 `r_label`、`f_label`、`m_label`、`cai_label`、
+   `nes_status`）在資料庫中存儲**英文**值。
+2. **業務邏輯**（`switch`、`if/else`、`case_when`、篩選、分組）：永遠比對**英文** key。
+3. **設定檔**（YAML、CSV）：識別符和查找值使用**英文** key。
+4. **UI 渲染**（`renderUI`、`renderPlotly`、`DT::renderDataTable` 等）：在**顯示時**對英文
+   key 呼叫 `translate()`，產出本地化文字。
+
+### `translate()` 邊界
+
+```
+┌──────────────────────────────────────────┐
+│         非 UI（僅限英文）                 │
+│                                          │
+│  DRV:    r_label = "Recent Buyer"        │
+│  switch: "Recent Buyer" = strategy(...)  │
+│  filter: df[df$r_label == "Recent...",]  │
+│  config: segment_key: "High Value"       │
+│                                          │
+├────────── translate() 邊界 ──────────────┤
+│                                          │
+│         UI（翻譯後顯示）                  │
+│                                          │
+│  label:  translate("Recent Buyer")       │
+│  pie:    sapply(levels, translate)        │
+│  table:  colnames = translate(...)       │
+│  card:   tags$h6(translate(segment))     │
+│                                          │
+└──────────────────────────────────────────┘
+```
+
+## 理由 {#rationale}
+
+1. **單一真實來源**：英文 key 是明確的識別符。中文字元可能有編碼問題（`\uXXXX` escape
+   降低可讀性），且有簡繁體差異。
+2. **邏輯與顯示分離**：業務邏輯不應依賴顯示語言。若需新增語言（如英文 UI、日文 UI），
+   業務邏輯零修改。
+3. **除錯便利**：log、錯誤訊息、資料庫查詢中的英文 key，所有開發者都能閱讀。
+4. **防止靜默失敗**：當 `switch()` 比對以 `\u` escape 儲存的中文字串時，單一字元不匹配
+   就會靜默 fall through 到 default case — 產生錯誤但不會當機的行為，極難偵測（參見 Issue #241）。
+
+## 正確做法 {#correct-pattern}
+
+```r
+# DRV：存英文
+r_label = case_when(r_ecdf >= 0.67 ~ "Recent Buyer", ...)
+
+# 業務邏輯：用英文比對
+switch(segment, "Recent Buyer" = list(strategy = "Deepen Engagement", ...))
+
+# UI：translate 顯示
+tags$h6(translate(segment))
+sapply(df$r_label, translate)  # 批次翻譯用於 pie chart
+```
+
+## 錯誤做法 {#incorrect-pattern}
+
+```r
+# 不好：業務邏輯用中文 unicode escape
+switch(segment, "\u9ad8\u6d3b\u8e8d" = ...)
+
+# 不好：中間加 band-aid mapping（英文→中文再餵給中文 switch）
+label_map <- c("Increasingly Active" = "\u6f38\u8da8\u6d3b\u8e8d")
+rec_df$segment <- label_map[df$cai_label]
+
+# 不好：DRV 存中文
+r_label = case_when(r_ecdf >= 0.67 ~ "\u9ad8\u6d3b\u8e8d", ...)
+
+# 不好：UI 不翻譯，直接顯示英文
+tags$h6(segment)  # 應該用 translate(segment)
+```
+
+## 適用範圍 {#scope}
+
+| 層級 | 語言 | 使用 translate()? |
+|------|------|-------------------|
+| ETL 腳本 (0IM/1ST/2TR) | 英文 | 否 |
+| DRV 腳本 (3PR/4CL/5NM) | 英文 | 否 |
+| 函數檔案 (`fn_*.R`) | 英文 | 否 |
+| 設定檔 (YAML/CSV) | 英文 key | 否 |
+| Shiny server 邏輯 | 英文 | 否 |
+| **Shiny UI 渲染** | **英文 → 翻譯** | **是（必須）** |
+
+## 發現背景 {#discovery}
+
+Issue #241：`customerValue` 的 RFM 行銷策略建議對所有分群都顯示相同的 default 內容。
+根因：`fn_dna_marketing_utils.R` 的 switch 只匹配中文標籤，但 `fn_D01_02_core.R`
+在資料庫中存儲英文標籤。所有分群都 fall through 到 default case，產生通用建議。
+
+## 檢查清單 {#checklist}
+
+建立或審查程式碼時：
+
+- [ ] 資料庫標籤欄位包含英文值（非中文）
+- [ ] `switch()` / `case_when()` / `if/else` 比對英文 key
+- [ ] 業務邏輯中無 `\uXXXX` 中文 escape
+- [ ] `translate()` 僅在 `renderUI` / `renderPlotly` / `renderDataTable` 輸出中呼叫
+- [ ] 所有英文 key 在 `ui_terminology.csv` 中有對應條目
+- [ ] 元件中無 band-aid mapping（英文→中文→switch）

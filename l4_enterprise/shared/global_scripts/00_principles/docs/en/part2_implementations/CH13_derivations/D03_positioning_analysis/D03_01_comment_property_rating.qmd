@@ -1,0 +1,165 @@
+---
+
+title: "D03_01: Comment Property Rating Analysis"
+subtitle: "Wide-to-long transformation for property-based review analysis"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_01"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_00_consume_etl_output"
+outputs_to:
+  - "D03_02_rate_reviews"
+implements:
+  - script: "amz_D03_08.R"
+    path: "update_scripts/DRV/amz/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_01: Comment Property Rating Analysis {#overview}
+
+This task performs wide-to-long transformation on review data, preparing it for property-based AI analysis. It samples the latest N reviews per product and transforms property columns to a long format suitable for rating.
+
+## Implementation Scripts
+
+| Platform | Script | Location |
+|----------|--------|----------|
+| Amazon | `amz_D03_08.R` | `update_scripts/DRV/amz/` |
+
+## Task Definition (NSQL)
+
+```nsql
+TRANSFORM df_review_data
+WITH wide_to_long BY property_columns
+SAMPLE latest N reviews per product_id
+TO comment_property_rating.df_sampled_long
+```
+
+## Detailed Transformation (NSQL)
+
+```nsql
+# D03_01: Comment Property Rating Analysis
+TRANSFORM D03_01_comment_property_rating:
+  FOR EACH product_line_id IN vec_product_line_id:
+    # Step 1: Mount transformed_data database
+    ATTACH transformed_data AS source_db
+
+    # Step 2: Load review data
+    FROM source_db.df_review_data_{product_line_id}
+    WHERE product_line_id = :product_line_id
+
+    # Step 3: Sample latest reviews per product
+    SAMPLE:
+      GROUP BY: product_id
+      ORDER BY: review_date DESC
+      LIMIT: comment_sample_size  # From app_config
+
+    # Step 4: Wide-to-long transformation
+    PIVOT_LONGER:
+      id_columns: [review_id, product_id, review_text, rating, review_date]
+      property_columns: [property_1, property_2, ..., property_n]
+      names_to: "property_name"
+      values_to: "property_value"
+
+    # Step 5: Output tables
+    OUTPUT:
+      raw: comment_property_rating.df_raw_{product_line_id}
+      sampled: comment_property_rating.df_sampled_{product_line_id}
+      sampled_long: comment_property_rating.df_sampled_long_{product_line_id}
+
+    DETACH source_db
+```
+
+## Sampling Strategy (NSQL)
+
+```nsql
+# D03_01: Review Sampling Strategy
+SAMPLE D03_01_sampling:
+  PURPOSE: "Limit reviews to most recent for efficiency"
+
+  PARAMETERS:
+    comment_sample_size: app_config.comment_sample_size  # Default: 50
+
+  RULES:
+    # Rule 1: Sample latest reviews per product
+    FOR EACH product_id:
+      ORDER BY review_date DESC
+      TAKE TOP comment_sample_size
+
+    # Rule 2: Ensure minimum reviews
+    IF COUNT(reviews_for_product) < 5:
+      WARNING "Product {product_id} has fewer than 5 reviews"
+
+    # Rule 3: Handle products with no reviews
+    IF COUNT(reviews_for_product) = 0:
+      SKIP product_id
+      LOG "Skipping product {product_id} - no reviews"
+```
+
+## Wide-to-Long Transformation (NSQL)
+
+```nsql
+# D03_01: Wide-to-Long Transformation Details
+PIVOT_LONGER D03_01_pivot:
+  # Input: Wide format with property columns
+  INPUT:
+    review_id, product_id, review_text, rating, review_date,
+    property_durability, property_value, property_quality, ...
+
+  # Output: Long format with property name and value
+  OUTPUT:
+    review_id, product_id, review_text, rating, review_date,
+    property_name, property_value
+
+  # Transformation using tidyr::pivot_longer()
+  TRANSFORM:
+    cols: starts_with("property_")
+    names_to: "property_name"
+    names_prefix: "property_"
+    values_to: "property_value"
+    values_drop_na: TRUE
+```
+
+## Implementation Reference {#implementation}
+
+See platform implementation scripts listed in "Implementation Scripts" section above.
+
+Key implementation features:
+- Uses `dbAttachDuckdb()` to mount transformed_data database
+- Samples latest `comment_sample_size` reviews per product_id
+- Performs wide-to-long transformation using `tidyr::pivot_longer()`
+- Stores results in comment_property_rating database
+- Generates 3 output tables: raw, sampled, and sampled_long
+
+Scripts follow [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) Five-Part Structure.
+
+## Output Schema
+
+| Table | Field | Type | Description |
+|-------|-------|------|-------------|
+| `df_raw_{pl}` | (all review fields) | - | Raw review data |
+| `df_sampled_{pl}` | (all review fields) | - | Sampled reviews (latest N per product) |
+| `df_sampled_long_{pl}` | review_id | VARCHAR | Review identifier |
+| | product_id | VARCHAR | Product ASIN |
+| | property_name | VARCHAR | Property being rated |
+| | review_text | VARCHAR | Review content |
+| | rating | INTEGER | Overall star rating |
+
+## Key Principle
+
+Wide-to-long transformation is essential for property-based analysis. By converting each property column to a row, we can:
+1. Apply AI rating to each (review, property) pair independently
+2. Aggregate ratings by property across products
+3. Enable flexible property filtering in downstream analysis
+
+## Next Task
+
+After wide-to-long transformation, proceed to [D03_02: Rate Reviews](D03_02_rate_reviews.qmd).

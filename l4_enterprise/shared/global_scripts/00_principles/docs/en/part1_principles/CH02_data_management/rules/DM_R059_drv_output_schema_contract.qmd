@@ -1,0 +1,128 @@
+---
+id: DM_R059
+type: rule
+category: data_management
+status: active
+created: 2026-02-28
+version: "1.0"
+title: "DRV Output Schema Contract"
+subtitle: "Canonical column names as cross-backend schema contract"
+parent_principle: DM_P001
+related:
+  - DM_R044  # Derivation Implementation Standard
+  - DM_R057  # Unit Suffix Convention
+  - DM_R058  # Product Line ID Semantics
+  - DM_R018  # Filter Variable Naming
+  - MP064    # ETL-Derivation Separation
+---
+
+# DM_R059: DRV Output Schema Contract {.unnumbered}
+
+## Rationale
+
+DRV (Derivation) scripts produce analytical tables consumed by UI components and APIs. When the same logical table exists in multiple backends (DuckDB for local dev, Supabase for production), the schema **must** be identical. Column name aliases (e.g., both `cai` and `cai_value` for the same data) create:
+
+1. **Backend divergence**: DuckDB has both aliases via `ensure_dna_fields()`; Supabase only has the original name
+2. **Component fragility**: SQL queries fail silently when a column name exists in one backend but not another
+3. **Naming confusion**: Developers cannot determine which name is "correct"
+
+## Rule
+
+### R1: One Canonical Name Per Column
+
+Each column in a DRV output table has exactly ONE canonical name. No aliases.
+
+### R2: Cross-Backend Identity
+
+The column set of a DRV output table MUST be identical across all backends (DuckDB, Supabase, future backends).
+
+### R3: Canonical Naming Conventions
+
+| Category | Pattern | Examples |
+|----------|---------|----------|
+| Raw metrics | Short lowercase | `cai`, `clv`, `cri`, `be2`, `pcv`, `ni` |
+| ECDF-derived scores | `dna_{dim}_score` | `dna_r_score`, `dna_f_score`, `dna_m_score` |
+| Raw dimension values | `{dim}_value` | `r_value`, `f_value`, `m_value` |
+| Status/category | `{concept}_status` | `nes_status` |
+| Segments | `{concept}_segment` | `dna_segment` |
+| Filter dimensions | `{dim}_filter` | `product_line_id_filter` |
+| Temporal averages | `{metric}_mean` | `ipt_mean` |
+| Probabilities | Short or descriptive | `nrec_prob`, `be2` |
+
+### R4: Optional Column Handling
+
+Some columns may not exist in all company deployments (e.g., `product_line_id_filter` requires multi-product-line ETL). Consumers MUST:
+
+```r
+# Pattern: Check before use
+cols <- DBI::dbListFields(con, "df_dna_by_customer")
+has_product_line <- "product_line_id_filter" %in% cols
+
+# Use conditionally
+where_clause <- if (has_product_line && product_line_id != "all") {
+
+  paste0(" AND product_line_id_filter = '", product_line_id, "'")
+} else ""
+```
+
+### R5: Alias Deprecation
+
+The `ensure_dna_fields()` pattern (creating both `cai` and `cai_value`) is **deprecated**. Migration path:
+
+1. DRV scripts write canonical names only
+2. Components use canonical names in SQL and R code
+3. Remove alias-creating functions after migration complete
+
+## Canonical Name Reference: `df_dna_by_customer`
+
+| Canonical Name | Description | Category |
+|----------------|-------------|----------|
+| `customer_id` | Customer identifier | ID |
+| `platform_id` | Platform identifier | ID |
+| `product_line_id_filter` | Product line filter (optional) | Filter |
+| `r_value` | Recency in days | Raw value |
+| `f_value` | Frequency count | Raw value |
+| `m_value` | Monetary amount | Raw value |
+| `cai` | Customer Activity Index | Raw metric |
+| `clv` | Customer Lifetime Value | Raw metric |
+| `cri` | Customer Regularity Index | Raw metric |
+| `be2` | Churn probability (BG/NBD) | Raw metric |
+| `pcv` | Past Customer Value | Raw metric |
+| `ni` | Transaction count | Count |
+| `nrec_prob` | Non-recurrence probability | Probability |
+| `ipt_mean` | Inter-purchase time mean | Temporal |
+| `total_spent` | Total historical spending | Raw value |
+| `nes_status` | N/E0/S1/S2/S3 status | Status |
+| `dna_r_score` | Recency ECDF score (0-1) | ECDF score |
+| `dna_f_score` | Frequency ECDF score (0-1) | ECDF score |
+| `dna_m_score` | Monetary ECDF score (0-1) | ECDF score |
+| `dna_segment` | DNA segment label | Segment |
+| `cri_ecdf` | CRI ECDF score (0-1) | ECDF score |
+| `times` | Purchase count | Count |
+
+## Violations
+
+- Creating alias columns (e.g., writing both `cai` and `cai_value` to the same table)
+- Component SQL using non-canonical names (e.g., `SELECT cai_value` when canonical is `cai`)
+- Assuming optional column exists without checking (e.g., no guard for `product_line_id_filter`)
+- Different column names in DuckDB vs Supabase for the same logical data
+
+## Compliant Examples
+
+```r
+# DRV output: write canonical names only
+df_output <- df %>%
+  select(customer_id, platform_id, cai, clv, cri, be2,
+         dna_r_score, dna_f_score, dna_m_score, nes_status)
+
+# Component SQL: use canonical names
+query <- "SELECT customer_id, cai, clv, cri, nes_status
+          FROM df_dna_by_customer
+          WHERE platform_id = ?"
+
+# Optional column: check before use
+cols <- DBI::dbListFields(con, "df_dna_by_customer")
+if ("dna_r_score" %in% cols) {
+  # Include DNA scores in query
+}
+```

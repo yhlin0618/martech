@@ -1,0 +1,192 @@
+---
+title: "SO_R014: 來源目錄而非個別檔案"
+subtitle: "當檔案集合可能隨時間變化時，來源整個目錄的函數而非特定檔案，確保可維護性和擴展性"
+chapter: "CH01"
+category: "rule"
+number: "SO_R014"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 14
+  title: "目錄來源規則"
+related_to:
+  - "SO_R007: 一個函數一個檔案"
+  - "SO_R013: 初始化檔案應只導入和配置"
+  - "SO_R002: 檔案命名約定"
+  - "MP028: 避免自我引用"
+  - "MP016: 模組化"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十四條：目錄來源規則 {#overview}
+
+**結構組織法第十四條（目錄來源規則）**
+
+此規則建立當檔案集合可能隨時間變化時，來源整個目錄的函數而非特定檔案的原則。
+
+:::{.callout-important}
+## 核心規則
+當檔案集合可能隨時間變化時，來源整個目錄的函數而非特定檔案。
+:::
+
+# 第一項：規則理由 {#rationale}
+
+## 第一款：此規則的理由 {#reasons}
+
+當處理包含多個函數檔案的模組或工具時，實施目錄來源方法比列出個別檔案更易維護：
+
+1. **可維護性**：添加新函數檔案不需要修改初始化程式碼
+2. **可發現性**：目錄中的所有函數自動可用
+3. **一致性**：確保模組的所有函數一起載入
+4. **減少耦合**：初始化檔案不與特定函數實施緊密耦合
+5. **可擴展性**：模組可成長而不需要變更依賴程式碼
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：目錄來源實施 {#directory-sourcing}
+
+根據元原則 MP028（避免自我引用），目錄來源程式碼應該在初始化檔案中直接實施，而非在被來源目錄內的工具檔案中。這可防止自我引用問題。
+
+```r
+# 在初始化檔案中 (000g_initialization_update_mode.R)
+
+# 取得 db_utils 目錄的絕對路徑
+db_utils_dir <- file.path(APP_DIR, "update_scripts", "global_scripts", "02_db_utils")
+if(dir.exists(db_utils_dir)) {
+  # 取得目錄中的所有函數檔案（具有 fn_ 前綴）
+  fn_files <- list.files(
+    path = db_utils_dir, 
+    pattern = "^fn_.*\\.R$",  # 只取得具有 fn_ 前綴的函數檔案
+    full.names = TRUE,
+    ignore.case = TRUE
+  )
+  
+  # 排序檔案以確保一致的載入順序
+  fn_files <- sort(fn_files)
+  
+  message("找到 ", length(fn_files), " 個資料庫工具函數需要來源")
+  
+  # 直接來源每個函數檔案
+  for(fn_path in fn_files) {
+    tryCatch({
+      source(fn_path)
+      message("已來源函數檔案：", basename(fn_path))
+    }, error = function(e) {
+      warning("來源 ", basename(fn_path), " 時發生錯誤：", e$message)
+    })
+  }
+}
+```
+
+## 第二款：何時使用模式匹配 {#pattern-matching}
+
+使用檔名模式控制來源哪些檔案：
+
+```r
+# 只來源具有 fn_ 前綴的檔案（函數檔案）
+pattern = "^fn_.*\\.R$"
+
+# 排除工具或輔助檔案
+pattern = "\\.R$"
+exclude_files <- grep("^(util_|helper_)", r_files, value = TRUE)
+r_files <- r_files[!r_files %in% exclude_files]
+```
+
+# 第三項：優點 {#benefits}
+
+## 第一款：實施優點 {#implementation-benefits}
+
+1. **面向未來**：程式碼自動適應添加到模組的新函數
+2. **減少維護**：模組內容變更時不需要更新初始化檔案
+3. **清晰度**：明確表示正在載入模組的所有函數
+4. **一致性**：促進導入功能的統一方法
+5. **組織性**：鼓勵將相關函數組織到專用目錄中
+
+# 第四項：最佳實踐 {#best-practices}
+
+## 第一款：實施建議 {#implementation-recommendations}
+
+1. **按函數類型組織**：將相關函數分組到命名良好的目錄中
+2. **使用命名約定**：保持目錄內檔案命名一致
+3. **提供載入反饋**：包含詳細選項以顯示載入哪些檔案
+4. **處理載入錯誤**：使用 tryCatch 優雅地處理來源錯誤
+5. **考慮載入順序**：需要時使用檔案命名控制來源順序
+
+# 第五項：實施範例 {#examples}
+
+## 第一款：完整實施範例 {#complete-example}
+
+```r
+# 在初始化檔案中
+# 000g_initialization_update_mode.R
+
+# 定義要來源的目錄
+directories_to_source <- list(
+  db_utils = file.path(APP_DIR, "update_scripts", "global_scripts", "02_db_utils"),
+  file_utils = file.path(APP_DIR, "update_scripts", "global_scripts", "03_file_utils"),
+  data_utils = file.path(APP_DIR, "update_scripts", "global_scripts", "04_data_utils")
+)
+
+# 來源每個目錄
+for(dir_name in names(directories_to_source)) {
+  dir_path <- directories_to_source[[dir_name]]
+  
+  if(dir.exists(dir_path)) {
+    # 取得所有 R 檔案
+    r_files <- list.files(
+      path = dir_path,
+      pattern = "^fn_.*\\.R$",
+      full.names = TRUE,
+      ignore.case = TRUE
+    )
+    
+    # 排序以確保一致性
+    r_files <- sort(r_files)
+    
+    message("從 ", dir_name, " 來源 ", length(r_files), " 個檔案")
+    
+    # 來源每個檔案
+    for(file_path in r_files) {
+      tryCatch({
+        source(file_path)
+      }, error = function(e) {
+        warning("無法來源 ", basename(file_path), "：", e$message)
+      })
+    }
+  } else {
+    warning("目錄不存在：", dir_path)
+  }
+}
+```
+
+# 第六項：與其他原則整合 {#integration}
+
+此原則補充：
+
+- **SO_R007（一個函數一個檔案）**：使遵循每檔案一個函數規則更容易
+- **SO_R013（初始化只導入）**：簡化初始化檔案中的導入過程
+- **SO_R002（檔案命名約定）**：與一致的檔案命名模式配合良好
+- **MP016（模組化）**：增強模組組織到函數目錄中
+
+# 第七項：注意事項 {#considerations}
+
+## 第一款：重要注意事項 {#important-notes}
+
+1. **避免自我引用**：永遠不要在被來源的目錄內放置目錄來源程式碼
+2. **錯誤處理**：始終包含錯誤處理以防止單一檔案失敗停止整個過程
+3. **載入順序**：如果函數之間有依賴關係，使用檔案命名確保正確的載入順序
+4. **效能**：對於大型目錄，考慮延遲載入或選擇性載入策略
+
+---
+
+*基於：結構組織法第十四條*  
+*相關連結：[SO_R007 一個函數一個檔案](SO_R007_one_function_one_file.qmd), [SO_R013 初始化只導入](SO_R013_initialization_imports_only.qmd)*

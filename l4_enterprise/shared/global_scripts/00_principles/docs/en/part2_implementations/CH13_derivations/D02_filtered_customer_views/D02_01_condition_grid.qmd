@@ -1,0 +1,194 @@
+---
+
+title: "D02_01: Condition Grid Generation"
+subtitle: "Generate Cartesian product of all filter combinations"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_01"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D02_00_grid_initialization"
+outputs_to:
+  - "condition_grids (in-memory dataframe)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_01: Condition Grid Generation {#overview}
+
+This task generates the complete condition grid by creating a Cartesian product of all filter dimension values. The grid defines all possible filter combinations that will have corresponding views.
+
+## Grid Generation (NSQL) {#grid-generation}
+
+```nsql
+# D02_01: Condition Grid Generation
+GENERATE D02_01_condition_grid:
+  # Load grid components from configuration
+  SOURCE: "app_data/parameters/list_grid_components.R"
+
+  DEFINE COMPONENTS:
+    time_condition: ['now', 'm1year', 'm1quarter', 'm1month']
+    product_line_id_filter: [0] + vec_product_line_id  # 0 for all, then specific IDs
+    state_filter: ['ALL'] + vec_state_codes  # ALL for all, then specific states
+    source_filter: ['amazon', 'ebay', 'retail', 'cbz']
+
+  CALCULATE:
+    # Generate Cartesian product of all combinations
+    condition_grids: CARTESIAN_PRODUCT(
+      time_condition,
+      product_line_id_filter,
+      state_filter,
+      source_filter
+    )
+
+    # Calculate total combinations
+    total_combinations: COUNT(condition_grids)
+    # Example: 4 times * 5 products * 10 states * 4 sources = 800 combinations
+
+  OUTPUT:
+    DATAFRAME: condition_grids
+    COLUMNS: [time_condition, product_line_id_filter, state_filter, source_filter]
+```
+
+## Grid Components {#components}
+
+| Component | Example Values | Description |
+|-----------|----------------|-------------|
+| `time_condition` | `now`, `m1year`, `m1quarter`, `m1month` | Time range filter |
+| `product_line_id_filter` | `0`, `1`, `2`, `3` | Product line (0 = all) |
+| `state_filter` | `ALL`, `CA`, `NY`, `TX` | Geographic region |
+| `source_filter` | `amazon`, `ebay`, `retail`, `cbz` | Platform source |
+
+## Grid Key Generation (NSQL) {#grid-keys}
+
+```nsql
+# Generate unique keys for each grid combination
+CALCULATE D02_grid_keys:
+  FROM condition_grids
+
+  # Create unique key for view naming
+  CALCULATE condition_key:
+    CONCAT(
+      source_filter, '_',
+      time_condition, '_',
+      product_line_id_filter, '_',
+      LOWER(state_filter)
+    )
+    # Example: "amazon_now_0_all", "ebay_m1quarter_2_ca"
+
+  # Create readable description
+  CALCULATE condition_description:
+    CONCAT(
+      source_filter, ' | ',
+      CASE time_condition
+        WHEN 'now' THEN 'All Time'
+        WHEN 'm1year' THEN 'Past Year'
+        WHEN 'm1quarter' THEN 'Past Quarter'
+        WHEN 'm1month' THEN 'Past Month'
+      END, ' | ',
+      CASE product_line_id_filter
+        WHEN 0 THEN 'All Products'
+        ELSE 'Product Line ' || product_line_id_filter
+      END, ' | ',
+      state_filter
+    )
+
+  UPDATE condition_grids
+```
+
+## Testing Subset Grid (NSQL) {#test-grid}
+
+```nsql
+# Create subset of grid for testing purposes
+FILTER D02_01_test_grid:
+  FROM condition_grids
+
+  # Reduce to manageable subset
+  FILTER:
+    time_condition IN ['now', 'm1quarter']
+    product_line_id_filter IN [0, 1, 2]
+    state_filter IN ['ALL', 'CA', 'NY']
+    source_filter IN ['amazon', 'ebay']
+
+  # Result: 2 * 3 * 3 * 2 = 36 combinations
+  OUTPUT TO subset_condition_grid
+```
+
+## Configuration Files {#configuration}
+
+| File | Purpose |
+|------|---------|
+| `app_data/parameters/list_grid_components.R` | Grid component definitions |
+| `22_initializations/sc_grid_components.R` | Grid generation functions |
+
+## Configuration Functions (NSQL) {#config-functions}
+
+```nsql
+# Grid helper functions
+FUNCTION get_condition_grid(components):
+  RETURN CARTESIAN_PRODUCT(components)
+
+FUNCTION get_filtered_condition_grid(
+  time_values,
+  product_values,
+  state_values,
+  source_values
+):
+  subset_components: {
+    time_condition: time_values,
+    product_line_id_filter: product_values,
+    state_filter: state_values,
+    source_filter: source_values
+  }
+  RETURN CARTESIAN_PRODUCT(subset_components)
+```
+
+## Output Schema {#output-schema}
+
+```nsql
+# condition_grids dataframe structure
+SCHEMA condition_grids:
+  COLUMNS:
+    time_condition: VARCHAR NOT NULL
+    product_line_id_filter: INTEGER NOT NULL
+    state_filter: VARCHAR NOT NULL
+    source_filter: VARCHAR NOT NULL
+    condition_key: VARCHAR NOT NULL  # Generated
+    condition_description: VARCHAR   # Generated
+
+  CONSTRAINTS:
+    PRIMARY KEY: condition_key
+    UNIQUE: (time_condition, product_line_id_filter, state_filter, source_filter)
+```
+
+## Validation (NSQL) {#validation}
+
+```nsql
+# D02_01: Validate Grid Generation
+VALIDATE D02_01:
+  CHECK grid_not_empty:
+    ASSERT: COUNT(condition_grids) > 0
+    MESSAGE: "Condition grid must have at least one combination"
+
+  CHECK unique_keys:
+    ASSERT: COUNT(DISTINCT condition_key) = COUNT(*)
+    MESSAGE: "All condition keys must be unique"
+
+  CHECK required_columns:
+    ASSERT: columns_exist(condition_grids,
+      ['time_condition', 'product_line_id_filter', 'state_filter', 'source_filter', 'condition_key'])
+
+  ON_SUCCESS: LOG "D02_01 completed: {COUNT(condition_grids)} combinations generated"
+```
+
+## Related Documentation
+
+- [D02_00_grid_initialization.qmd](D02_00_grid_initialization.qmd) - Schema initialization
+- [D02_02_filtered_sales_views.qmd](D02_02_filtered_sales_views.qmd) - View creation

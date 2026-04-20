@@ -1,0 +1,92 @@
+---
+title: "MP151: No-Fallback Principle"
+subtitle: "Never mask failures with fallback logic"
+author: "MAMBA Architecture Team"
+date: "2026-02-28"
+version: "1.0.0"
+category: "Meta-Principle"
+tags: ["development", "reliability", "error-handling", "ai", "maintainability"]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+---
+
+## Statement
+
+**Do not use fallback paths for core logic when an operation fails or an expected resource is missing.**
+
+When a required dependency, input, file, configuration, or environment assumption is not satisfied, the system must fail fast with an explicit error and clear remediation instructions. Falling back to alternate behavior hides defects and creates non-deterministic outcomes.
+
+## Core Rules
+
+### 1) Fail Fast, Fail Loudly
+
+```r
+# BAD: silently continue with fallback values
+load_settings <- function(path) {
+  if (!file.exists(path)) {
+    return(list(env = "prod", timeout = 30))
+  }
+  yaml::read_yaml(path)
+}
+
+# GOOD: stop with explicit failure
+load_settings <- function(path) {
+  if (!file.exists(path)) {
+    stop(
+      "Settings file missing: ", path,
+      "\nCreate the file before retrying, or stop execution."
+    )
+  }
+  yaml::read_yaml(path)
+}
+```
+
+### 2) No Silent `tryCatch` Defaults
+
+Do not catch recoverable errors by returning dummy values or synthetic content.  
+If behavior must vary by feature context, require explicit, validated inputs instead.
+
+```r
+# BAD: hidden fallback to fallback data
+result <- tryCatch(load_data(source), error = function(e) tibble())
+
+# GOOD: explicit failure path
+result <- load_data(source)  # load_data should validate and stop on error
+```
+
+### 3) No Incremental Partial Mutation
+
+Do not apply partial batch edits while continuing on failure. If a transformation step fails, treat the operation as failed and require a clean retry from a known state.
+
+## Scope
+
+- Core initialization, configuration loading, and migration/deployment pipelines
+- Data access and transformation steps in production paths
+- AI-assisted repository-wide modifications requested to replace existing logic
+
+## Strictness
+
+This principle is binary: for core workflows, fallback behavior is disallowed.
+
+- If a required condition fails, execution must stop.
+- If a resource is missing, execution must stop.
+- If configuration is invalid, execution must stop.
+- If assumptions are not met, execution must stop with a remediation message.
+
+## Compliance Checks
+
+1. Search for `if` branches that return default data for failure cases.
+2. Reject catch blocks that return synthetic success values.
+3. Require unit tests that assert errors for invalid preconditions.
+4. Require explicit error messages in changelog or migration notes.
+
+## Related Principles
+
+- **MP095**: Claude Code-Driven System Changes
+- **MP084**: Deterministic Codebase Transformations
+- **MP037**: Principle-Guided Modifications
+- **MP004**: Sensible Defaults

@@ -1,0 +1,331 @@
+---
+title: "SO_P016: Configuration Scope Hierarchy"
+subtitle: "Configuration files must be placed at appropriate scope level - universal, company, or application"
+chapter: "CH01"
+category: "principle"
+number: "SO_P016"
+date-created: "2025-12-15"
+date-modified: "2025-12-23"
+author: "Claude"
+type: "principle"
+law: "Structure & Organization Law"
+article-number:
+  number: 16
+  title: "Configuration Scope Hierarchy Principle"
+derives_from:
+  - "SO_P010: Config-Driven Customization"
+  - "MP137: No Hardcoded Project-Specific Content"
+related_to:
+  - "SO_P015: No Hardcoded Lookup Tables"
+  - "DM_R004: Data Storage Organization"
+  - "MP122: Triple-Track Subrepo Architecture"
+  - "MP028: Instance vs Principle"
+  - "MP037: Principle-Guided Modifications"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 16: Configuration Scope Hierarchy {#overview}
+
+**Structure & Organization Law Article 16 (Configuration Scope Hierarchy Principle)**
+
+Configuration files MUST be placed at the appropriate scope level. Content that varies between companies MUST NOT be placed in `global_scripts/`. This ensures proper isolation when `global_scripts/` is distributed via git subrepo to multiple companies.
+
+:::{.callout-important}
+## Core Concept (Updated 2025-12-23)
+Per **MP122 (Triple-Track Subrepo Architecture)**, the system has three distinct layers:
+
+- **Track 1 - global_scripts/**: Framework layer (git subrepo #1) - shared across ALL companies
+- **Track 2 - update_scripts/**: Scripts layer (git subrepo #2) - shared, includes all company variants
+- **Track 3 - {project_root}/**: Configuration layer - project-specific, NOT shared
+
+Configuration must be scoped correctly:
+- Universal (Track 1) → `global_scripts/03_config/` (schema only)
+- Company Variants (Track 2) → Script variants with `___COMPANY` suffix
+- Project Config (Track 3) → `app_config.yaml` in project root
+:::
+
+# Section 1: Three-Tier Configuration Hierarchy {#hierarchy}
+
+## Subsection 1: Universal Scope
+
+**Location**: `global_scripts/03_config/`
+
+Content that is identical across ALL companies:
+
+- **Schema definitions** (column types, structures)
+- **Default values** (can be overridden by company)
+- **Static reference data** (constants, enums)
+
+```yaml
+# Example: global_scripts/03_config/metadata_sources.yaml
+# SCHEMA ONLY - no company-specific settings
+
+metadata_schema:
+  turbo:
+    target_scope: "company"
+    target_database: "app_data"
+    target_db_file: "app_data.duckdb"
+    target_table: "df_metadata_turbo"
+    columns:
+      - predictor_pattern
+      - display_name_zh
+      - display_name_en
+```
+
+## Subsection 2: Company Scope
+
+**Location**: `{company}/app_config.yaml` or `{company}/config/`
+
+Content that varies between companies:
+
+- **enabled flags** (which features/sources are active)
+- **API credentials** (sheet_id, API keys)
+- **Company-specific thresholds**
+- **Business logic parameters**
+
+```yaml
+# Example: MAMBA/app_config.yaml
+# Company-specific settings
+
+metadata_sources:
+  turbo:
+    enabled: true
+    sheet_id: "1DADOOtwUuWqB3azFPmTcFSDunyACx_RsNpKlGoL2ta4"
+    sheet_name: "metadata_Turbo"
+  cbz:
+    enabled: false
+    sheet_id: ""
+    sheet_name: ""
+```
+
+## Subsection 3: Application Scope
+
+**Location**: `{company}/{app}/app_config.yaml`
+
+Content that varies between applications within the same company:
+
+- **UI preferences** (theme, layout)
+- **Display settings** (language, locale)
+- **App-specific parameters**
+
+# Section 2: Prohibited Patterns {#prohibited}
+
+## Subsection 1: Company Settings in Global Scripts
+
+**PROHIBITED**: Placing company-specific settings in `global_scripts/`
+
+```yaml
+# WRONG: global_scripts/03_config/metadata_sources.yaml
+metadata:
+  turbo:
+    enabled: true                    # ❌ Company-specific!
+    sheet_id: "1DAD..."              # ❌ Company-specific!
+    target_table: "df_metadata_turbo"  # ✓ Schema (OK)
+```
+
+**Reason**: When `global_scripts/` is synchronized to other companies via git subrepo, these settings will override their configurations.
+
+## Subsection 2: Hardcoded Company Detection
+
+**PROHIBITED**: Using company detection to branch configuration
+
+```r
+# WRONG: Hardcoded company detection
+if (company == "MAMBA") {
+  config$enabled <- TRUE
+  config$sheet_id <- "1DAD..."
+} else if (company == "WISER") {
+  config$enabled <- FALSE
+}
+```
+
+**Reason**: Violates MP137 (No Hardcoded Project-Specific Content)
+
+# Section 3: Correct Implementation Pattern {#correct-pattern}
+
+## Subsection 1: Configuration Merging
+
+ETL scripts should merge universal schema with company settings:
+
+```r
+# CORRECT: Configuration merging pattern
+
+# 1. Load company-specific settings from app_config.yaml
+app_config <- yaml::read_yaml("app_config.yaml")
+company_settings <- app_config$metadata_sources
+
+# 2. Load universal schema from global_scripts
+schema_config <- yaml::read_yaml("global_scripts/03_config/metadata_sources.yaml")
+global_schema <- schema_config$metadata_schema
+
+# 3. Merge: company settings override global schema
+for (source_name in names(company_settings)) {
+  merged_config <- modifyList(
+    global_schema[[source_name]],
+    company_settings[[source_name]]
+  )
+
+  # Process only enabled sources
+  if (isTRUE(merged_config$enabled)) {
+    process_metadata_source(source_name, merged_config)
+  }
+}
+```
+
+## Subsection 2: Priority Order
+
+When the same setting exists at multiple levels:
+
+1. **Application config** (highest priority)
+2. **Company config** (app_config.yaml)
+3. **Universal config** (global_scripts/)
+4. **Hardcoded default** (lowest priority, last resort)
+
+# Section 4: Migration Guide {#migration}
+
+## Subsection 1: Identifying Misplaced Configuration
+
+Check `global_scripts/` for company-specific content:
+
+| Setting Type | Should Be In | Check For |
+|-------------|--------------|-----------|
+| `enabled: true/false` | app_config.yaml | Feature toggles |
+| `sheet_id`, `api_key` | app_config.yaml | Credentials |
+| `company_name` | app_config.yaml | Company branding |
+| `threshold_*` | app_config.yaml | Business rules |
+| `target_table` | global_scripts/ | Schema definition |
+| `columns: [...]` | global_scripts/ | Data structure |
+
+## Subsection 2: Migration Steps
+
+1. **Identify** company-specific settings in `global_scripts/`
+2. **Move** to `app_config.yaml` under appropriate section
+3. **Update** ETL/application code to read from both locations
+4. **Remove** company-specific content from `global_scripts/`
+5. **Test** across multiple company environments
+
+# Section 5: Enforcement {#enforcement}
+
+## Subsection 1: Code Review Checklist
+
+- [ ] No `enabled` flags in `global_scripts/03_config/`
+- [ ] No `sheet_id` or `api_key` in `global_scripts/`
+- [ ] No company names or branding in `global_scripts/`
+- [ ] All company-specific settings in `app_config.yaml`
+- [ ] ETL scripts read from both config sources
+
+# Section 7: Project Activation Mapping (QEF Design as AMZ-only run mode)
+
+## Scope declaration
+
+In this repository, runtime activation is a project-level parameter concern, not a script-level concern.
+
+- Project settings are controlled in `app_config.yaml` (`pipeline.platforms`) and materialized into `_targets_config.yaml` during `make config-merge`.
+- For execution, `_targets_config.yaml` is the authoritative source used by `scripts/update_scripts/_targets.R`.
+- In the current QEF state, only AMZ is enabled:
+  - `platforms.amz.status = "active"` and `platforms.amz.drv_groups = ["D00", "D01", "D03"]`
+  - `platforms.all.enabled = no`, `platforms.precision.enabled = no`
+
+## D03 alignment anchor
+
+When reviewing D03 alignment, prioritize this chain from `_targets_config.yaml`:
+
+`amz_D03_00 -> amz_D03_06 -> amz_D03_07 -> amz_D03_08 -> amz_D03_09 -> amz_D03_10 -> amz_D03_11`
+
+## Conflict rule (MP028 + MP037 binding)
+
+If a script or script comment conflicts with the active runtime map:
+
+1. Pause direct code hotfix.
+2. Update the governing principle (SO_P016/SO_P011/DM_R042/MP028/MP037) first.
+3. Reconcile dependency statements and names.
+4. Only then change scripts to implement the updated governance.
+## Subsection 2: Automated Validation
+
+```r
+# Validation function to check configuration scope
+validate_config_scope <- function(global_scripts_path) {
+  prohibited_keys <- c("enabled", "sheet_id", "api_key", "company_name")
+
+  config_files <- list.files(
+    file.path(global_scripts_path, "03_config"),
+    pattern = "\\.yaml$",
+    full.names = TRUE
+  )
+
+  violations <- list()
+
+  for (file in config_files) {
+    content <- yaml::read_yaml(file)
+    found <- find_prohibited_keys(content, prohibited_keys)
+    if (length(found) > 0) {
+      violations[[file]] <- found
+    }
+  }
+
+  return(violations)
+}
+```
+
+# Section 8: Examples {#examples}
+
+## Subsection 1: Before (Incorrect)
+
+```yaml
+# global_scripts/03_config/metadata_sources.yaml
+# ❌ WRONG: Company-specific settings mixed with schema
+
+metadata:
+  turbo:
+    enabled: true                              # ❌
+    sheet_id: "1DADOOtwUuWqB3azFPmTcFSDunyACx" # ❌
+    sheet_name: "metadata_Turbo"               # ❌
+    target_scope: "company"                    # ✓
+    target_table: "df_metadata_turbo"          # ✓
+    columns: [...]                             # ✓
+```
+
+## Subsection 2: After (Correct)
+
+```yaml
+# global_scripts/03_config/metadata_sources.yaml
+# ✓ CORRECT: Schema only
+
+metadata_schema:
+  turbo:
+    target_scope: "company"
+    target_database: "app_data"
+    target_db_file: "app_data.duckdb"
+    target_table: "df_metadata_turbo"
+    columns:
+      - predictor_pattern
+      - display_name_zh
+      - display_name_en
+```
+
+```yaml
+# MAMBA/app_config.yaml
+# ✓ CORRECT: Company-specific settings
+
+metadata_sources:
+  turbo:
+    enabled: true
+    sheet_id: "1DADOOtwUuWqB3azFPmTcFSDunyACx"
+    sheet_name: "metadata_Turbo"
+```
+
+# Section 9: Related Principles {#related}
+
+| Principle | Relationship |
+|-----------|-------------|
+| **SO_P010** | Parent principle for config-driven customization |
+| **MP137** | Prohibits hardcoded project-specific content |
+| **SO_P015** | Prohibits hardcoded lookup tables |
+| **DM_R004** | Defines data storage organization |
+| **MP122** | Triple-track subrepo architecture (Framework + Scripts + Config) |

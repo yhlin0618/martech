@@ -1,0 +1,229 @@
+---
+title: "UI_R007: UI 文字標準化規則"
+subtitle: "所有使用者介面文字必須使用英文作為基礎，並透過 UI 術語字典進行翻譯，字典採用僅追加不修改的 SCD Type 2 原則"
+chapter: "CH04"
+category: "rule"
+number: "UI_R007"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article-number: 
+  number: 7
+  title: "UI 文字標準化規則"
+related_to:
+  - "DEV_P006: 大小寫敏感原則"
+  - "MP023: 語言偏好元原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七條：UI 文字標準化規則 {#overview}
+
+**UI組件法第七條（UI 文字標準化規則）**
+
+應用程式內的所有使用者介面文字必須遵守以下標準化規則：
+
+1. **英文優先方法**：UI 組件中的所有硬編碼文字必須使用英文
+2. **透過字典翻譯**：其他語言的翻譯必須專門透過 UI 術語字典處理
+3. **使用翻譯函數**：所有 UI 文字必須包裝在 `translate()` 函數中
+4. **字典僅追加**：UI 術語字典遵循 SCD Type 2 原則 - 條目只能追加，永不修改或刪除
+
+:::{.callout-important}
+## 核心要求
+透過標準化的文字處理和集中的翻譯管理，此規則確保多語言應用程式的一致性、可維護性和國際化能力。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：UI 組件開發 {#ui-component-development}
+
+創建或修改 UI 組件時：
+
+```r
+# 錯誤 - 硬編碼非英文文字
+radioButtons(
+  inputId = ns("product_category"),
+  label = "商品種類",
+  choices = NULL
+)
+
+# 正確 - 使用翻譯函數的英文文字
+radioButtons(
+  inputId = ns("product_category"),
+  label = translate("Product Category"),
+  choices = NULL
+)
+```
+
+## 第二款：翻譯函數使用 {#translation-function-usage}
+
+必須對所有面向使用者的文字使用 `translate()` 函數：
+
+```r
+# 基本用法
+title = translate("Application Settings")
+
+# 向量輸入
+labels = translate(c("Year", "Quarter", "Month"))
+
+# 在嵌套 UI 元素中
+card(
+  card_header(translate("Customer Analysis")),
+  card_body(translate("Detailed customer analysis will be displayed here."))
+)
+```
+
+## 第三款：UI 術語字典管理 {#ui-terminology-dictionary-management}
+
+UI 術語字典必須遵循以下原則：
+
+1. **結構**：必須至少包含「English」和特定語言欄位
+2. **不可變性**：現有條目永不修改或刪除
+3. **擴展**：透過追加到字典來添加新術語
+4. **全面覆蓋**：所有 UI 文字必須有對應的字典條目
+
+範例字典格式：
+```
+English,Chinese
+Application Settings,應用程式設定
+Product Category,商品種類
+Customer Analysis,顧客分析
+```
+
+## 第四款：語言配置處理 {#language-configuration-handling}
+
+必須正確處理語言配置：
+
+```r
+# 在 app_config.yaml 中
+brand:
+  language: "English"  # 或其他支援的語言，使用正確的大小寫
+
+# 在翻譯函數中 - 語言欄位的大小寫不敏感匹配
+for (col in available_columns) {
+  if (tolower(col) == tolower(target_language)) {
+    language_column <- col
+    break
+  }
+}
+```
+
+# 第二項：實施範例 {#implementation-example}
+
+## 第一款：字典管理 {#dictionary-management}
+
+添加新術語時：
+
+```r
+# 錯誤 - 修改現有條目
+ui_terminology_dictionary$English[5] <- "Updated Term"
+
+# 正確 - 追加新條目
+new_entries <- data.frame(
+  English = c("New Term 1", "New Term 2"),
+  Chinese = c("新術語 1", "新術語 2")
+)
+ui_terminology_dictionary <- rbind(ui_terminology_dictionary, new_entries)
+```
+
+## 第二款：強健的翻譯函數 {#robust-translation-function}
+
+```r
+translate <- function(text, default_lang = "English") {
+  if (is.null(text)) return(text)
+  
+  # 處理向量
+  if (length(text) > 1) {
+    return(sapply(text, translate, default_lang = default_lang))
+  }
+  
+  # 首先嘗試精確匹配（區分大小寫）
+  result <- ui_dictionary[[text]]
+  
+  # 必要時退回到不區分大小寫
+  if (is.null(result)) {
+    text_lower <- tolower(text)
+    for (key in names(ui_dictionary)) {
+      if (tolower(key) == text_lower) {
+        result <- ui_dictionary[[key]]
+        break
+      }
+    }
+  }
+  
+  # 如果找不到翻譯則返回原始文字
+  if (is.null(result)) {
+    # 記錄缺失的翻譯以便更新字典
+    if (!exists("missing_translations")) {
+      assign("missing_translations", character(0), envir = .GlobalEnv)
+    }
+    if (!(text %in% missing_translations)) {
+      missing_translations <<- c(missing_translations, text)
+      message("Missing translation for: ", text)
+    }
+    return(text)
+  }
+  
+  return(result)
+}
+```
+
+# 第三項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **一致性**：確保整個應用程式的術語一致
+2. **可維護性**：將所有文字集中在單一字典中便於更新
+3. **國際化**：簡化添加新語言支援
+4. **品質保證**：使審查和批准翻譯更容易
+5. **審計軌跡**：透過僅追加方法保留歷史術語
+
+## 第二款：開發優點 {#development-benefits}
+
+1. **錯誤預防**：防止硬編碼的語言特定文字
+2. **標準化流程**：提供清晰的多語言處理模式
+3. **團隊協作**：促進開發人員和翻譯人員之間的協作
+4. **可測試性**：簡化翻譯覆蓋的測試
+
+# 第四項：常見陷阱 {#common-pitfalls}
+
+## 第一款：應避免的模式 {#patterns-to-avoid}
+
+1. **直接硬編碼**：永不在 UI 組件中直接硬編碼非英文文字
+2. **不一致的函數使用**：即使是純英文應用程式也始終使用 translate()
+3. **繞過字典**：永不在字典外實施臨時翻譯邏輯
+4. **修改條目**：永不修改現有字典條目；始終追加新條目
+
+## 第二款：特殊考慮 {#special-considerations}
+
+1. **動態文字**：動態生成的文字必須使用翻譯的組件
+2. **串接**：避免串接翻譯片段；翻譯整個句子
+3. **格式化**：使用佔位符而不是字串串接來處理格式化文字
+4. **預設語言**：當翻譯不可用時，英文作為預設
+
+# 第五項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：源自的原則 {#derives-from-principles}
+
+此規則源自：
+1. **DEV_P006（大小寫敏感原則）**：在處理語言配置時使用大小寫不敏感匹配
+2. **MP023（語言偏好元原則）**：實施標準化的多語言支援方法
+
+## 第二款：支援的模式 {#supports-patterns}
+
+此規則支援：
+1. **國際化模式**：提供結構化的 i18n 方法
+2. **SCD Type 2 模式**：透過僅追加字典維護歷史
+3. **關注點分離**：將翻譯邏輯與 UI 邏輯分離
+
+---
+
+*基於：UI組件法第七條*  
+*相關連結：[DEV_P006 大小寫敏感原則](../../CH03_development_methodology/principles/DEV_P006_case_sensitivity.qmd)*

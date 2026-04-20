@@ -1,0 +1,214 @@
+---
+
+title: "D02_02: Filtered Sales Views"
+subtitle: "Create virtual views for each filter condition combination"
+parent: "D02_filtered_customer_views"
+chapter: "CH12"
+category: "derivation-task"
+number: "D02_02"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D02_01_condition_grid"
+outputs_to:
+  - "cleansed_data.filtered.df_sales_{condition_key}___cleansed"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D02_02: Filtered Sales Views {#overview}
+
+This task creates virtual views for each filter condition combination in the condition grid. Each view applies the appropriate time, product, geographic, and source filters to the base sales data.
+
+## View Creation (NSQL) {#view-creation}
+
+```nsql
+# D02_02: Create Filtered Sales Views [Layer: 4CL]
+CREATE_FILTERED_VIEWS D02_02:
+  FOR EACH condition IN condition_grids:
+    # Define view name based on condition key
+    view_name: "df_sales_" + condition.condition_key + "___cleansed"
+
+    # Create virtual view with all filters applied
+    # Read from 3PR processed_data, output to 4CL cleansed_data
+    CREATE VIEW cleansed_data.filtered.{view_name} AS:
+      FROM processed_data.df_{condition.source_filter}_sales___processed
+
+      # Apply time filter
+      FILTER:
+        CASE condition.time_condition
+          WHEN 'now' THEN TRUE  # No time restriction
+          WHEN 'm1year' THEN transaction_date >= (time_now - INTERVAL '1 year')
+          WHEN 'm1quarter' THEN transaction_date >= (time_now - INTERVAL '3 months')
+          WHEN 'm1month' THEN transaction_date >= (time_now - INTERVAL '1 month')
+        END
+
+      # Apply product line filter
+      AND:
+        CASE condition.product_line_id_filter
+          WHEN 0 THEN TRUE  # All products
+          ELSE product_line_id = condition.product_line_id_filter
+        END
+
+      # Apply geographic filter
+      AND:
+        CASE condition.state_filter
+          WHEN 'ALL' THEN TRUE  # All states
+          ELSE state = condition.state_filter
+        END
+
+      # Add filter columns for reference
+      SELECT *, condition.time_condition, condition.product_line_id_filter,
+             condition.state_filter, condition.source_filter
+
+    # Layer 4CL: Output to cleansed_data with ___cleansed suffix
+    LOG "Created view: {view_name}"
+```
+
+**Layer**: 4CL (Cleanse) - Per MP144, output uses `___cleansed` suffix.
+
+## Filter Implementation by Type {#filter-types}
+
+### Time Condition Filtering
+
+```nsql
+FILTER sales_data BY
+  CASE
+    WHEN time_condition == "now" THEN TRUE  # All data
+    WHEN time_condition == "m1year" THEN
+      transaction_date >= (time_now - INTERVAL '1 year')
+    WHEN time_condition == "m1quarter" THEN
+      transaction_date >= (time_now - INTERVAL '3 months')
+    WHEN time_condition == "m1month" THEN
+      transaction_date >= (time_now - INTERVAL '1 month')
+    WHEN time_condition == "m2year" THEN
+      transaction_date >= (time_now - INTERVAL '2 years')
+    WHEN time_condition == "ytd" THEN
+      transaction_date >= DATE_TRUNC('year', time_now)
+  END
+```
+
+### Product Line Filtering
+
+```nsql
+FILTER sales_data BY
+  CASE
+    WHEN product_line_id_filter == 0 THEN TRUE  # All products
+    ELSE product_line_id == product_line_id_filter
+  END
+```
+
+### Geographic Filtering
+
+```nsql
+FILTER sales_data BY
+  CASE
+    WHEN state_filter == "ALL" THEN TRUE  # All states
+    ELSE state == state_filter
+  END
+```
+
+## Combined Filter Logic (NSQL) {#combined-filter}
+
+```nsql
+# D02_02: Combined Filter Logic Function
+FUNCTION apply_all_filters(sales_data, condition):
+  # Define reference time
+  time_now: MAX(transaction_date) FROM sales_data
+
+  # Apply all filters in sequence
+  filtered_data: sales_data
+
+  # Time filter
+  filtered_data: FILTER filtered_data WHERE
+    CASE condition.time_condition
+      WHEN 'now' THEN TRUE
+      WHEN 'm1year' THEN transaction_date >= DATE_SUB(time_now, INTERVAL 1 YEAR)
+      WHEN 'm1quarter' THEN transaction_date >= DATE_SUB(time_now, INTERVAL 3 MONTH)
+      WHEN 'm1month' THEN transaction_date >= DATE_SUB(time_now, INTERVAL 1 MONTH)
+    END
+
+  # Product filter
+  filtered_data: FILTER filtered_data WHERE
+    (condition.product_line_id_filter = 0 OR product_line_id = condition.product_line_id_filter)
+
+  # Geographic filter
+  filtered_data: FILTER filtered_data WHERE
+    (condition.state_filter = 'ALL' OR state = condition.state_filter)
+
+  RETURN filtered_data
+```
+
+## View Naming Convention {#naming}
+
+```nsql
+# D02 View Naming Convention Specification
+DEFINE NAMING_CONVENTION:
+  PATTERN: "df_sales_{source}_{time}_{product}_{state}"
+
+  COMPONENTS:
+    source: LOWER(source_filter)  # amazon, ebay, retail, cbz
+    time: time_condition  # now, m1year, m1quarter, m1month
+    product: product_line_id_filter  # 0, 1, 2, 3...
+    state: LOWER(state_filter)  # all, ca, ny, tx...
+
+  EXAMPLES:
+    - "df_sales_amazon_now_0_all"     # Amazon, all time, all products, all states
+    - "df_sales_ebay_m1quarter_2_ca"  # eBay, past quarter, product 2, California
+    - "df_sales_cbz_m1month_1_ny"     # Cyberbiz, past month, product 1, New York
+```
+
+## Output View Schema {#output-schema}
+
+```nsql
+# Filtered sales view structure
+SCHEMA df_sales_{condition_key}:
+  COLUMNS:
+    # All columns from source sales table
+    customer_id: VARCHAR NOT NULL
+    transaction_date: DATE NOT NULL
+    product_id: VARCHAR NOT NULL
+    product_line_id: INTEGER
+    amount: NUMERIC
+    quantity: INTEGER
+    state: VARCHAR
+    # ... other source columns
+
+    # Filter condition columns (added)
+    source_filter: VARCHAR NOT NULL
+    time_condition: VARCHAR NOT NULL
+    product_line_id_filter: INTEGER NOT NULL
+    state_filter: VARCHAR NOT NULL
+
+  TYPE: VIRTUAL VIEW
+```
+
+## Validation (NSQL) {#validation}
+
+```nsql
+# D02_02: Validate View Creation [Layer: 4CL]
+VALIDATE D02_02:
+  FOR EACH condition IN condition_grids:
+    view_name: "df_sales_" + condition.condition_key + "___cleansed"
+
+    CHECK view_exists:
+      QUERY: "SELECT * FROM information_schema.views WHERE table_name = '{view_name}'"
+      ASSERT: COUNT(*) = 1
+      MESSAGE: "View {view_name} must exist"
+
+    CHECK view_has_data:
+      QUERY: "SELECT COUNT(*) FROM cleansed_data.filtered.{view_name}"
+      LOG: "View {view_name} has {COUNT(*)} rows"
+
+  ON_SUCCESS: LOG "D02_02 completed: all sales views created in cleansed_data"
+```
+
+## Related Documentation
+
+- [D02_01_condition_grid.qmd](D02_01_condition_grid.qmd) - Grid generation
+- [D02_03_customer_views.qmd](D02_03_customer_views.qmd) - Customer aggregation

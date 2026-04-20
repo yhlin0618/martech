@@ -1,0 +1,121 @@
+---
+title: "DM_R018: Filter Variable Naming Convention"
+subtitle: "All variables used to filter data must be suffixed with _filter to clearly indicate their purpose as filtering parameters rather than entity identifiers"
+chapter: "CH02"
+category: "rule"
+number: "DM_R018"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 18
+  title: "Filter Variable Naming Convention"
+related_to:
+  - "MP68: Language as Index"
+  - "R51: Lowercase Variable Naming"
+  - "R53: Multiple Selection Delimiter"
+  - "R117: Dynamic Combined ID Pattern"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 18: Filter Variable Naming Convention {#overview}
+
+**Data Management Law Article 18 (Filter Variable Naming Convention)**
+
+All variables used to filter data must be suffixed with `_filter` to clearly indicate their purpose as filtering parameters rather than entity identifiers.
+
+:::{.callout-important}
+## Rule Definition
+All variables used to filter data must be suffixed with `_filter` to clearly indicate their purpose as filtering parameters rather than entity identifiers.
+:::
+
+# Section 1: Problem Statement {#problem-statement}
+
+Multi-dimensional data analysis requires consistent variable naming conventions across platforms, particularly for identifiers used to filter data. Without standardized naming, the distinction between entity identifiers and filtering parameters becomes ambiguous, leading to confusion and bugs.
+
+# Section 2: Key Points {#key-points}
+
+## Subsection 1: Consistent Suffix {#consistent-suffix}
+
+All variables used to filter datasets must end with the suffix `_filter`.
+
+## Subsection 2: Filter Variable Examples {#filter-variable-examples}
+
+- `product_line_id_filter`: Filter for product line category
+- `platform_id_filter`: Filter for platform
+- `date_range_filter`: Filter for date range
+- `customer_segment_filter`: Filter for customer segment
+
+## Subsection 3: Entity ID vs. Filter ID {#entity-vs-filter}
+
+- `product_line_id`: Identifies a specific product line
+- `product_line_id_filter`: Parameter used to filter data by product line
+
+## Subsection 4: Column Names in Results {#column-names-in-results}
+
+- When filter variables are stored in resulting datasets, they must maintain the `_filter` suffix
+- Example: `platform_id_filter` column in DNA analysis results represents the filter parameter, not the entity ID
+
+# Section 3: Justification {#justification}
+
+1. **Clarity of Purpose**: The `_filter` suffix makes it immediately clear that a variable is used for filtering rather than identification.
+
+2. **Bug Prevention**: Distinguishes between ID columns (inherent properties) and filter parameters (analysis constraints).
+
+3. **Multi-dimensional Consistent Analysis**: Enables clear definitions for DNA profiles that depend on filtered subsets of data.
+
+4. **Schema Consistency**: Enforces consistent column naming in database tables and data frames.
+
+# Section 4: Implementation Examples {#implementation-examples}
+
+## Subsection 1: SQL Queries {#sql-queries}
+
+```sql
+SELECT *
+FROM customer_dna
+WHERE platform_id_filter = 'amz'
+  AND product_line_id_filter = 'jewelry';
+```
+
+## Subsection 2: R Code {#r-code}
+
+```r
+df_filtered <- df_sales %>%
+  filter(
+    platform_id_filter == "amz",
+    product_line_id_filter == "jewelry"
+  )
+```
+
+## Subsection 3: Function Parameters {#function-parameters}
+
+```r
+analyze_dna <- function(data, platform_id_filter = "all", product_line_id_filter = "all") {
+  filtered_data <- data %>%
+    filter(
+      if (platform_id_filter != "all") platform_id == platform_id_filter else TRUE,
+      if (product_line_id_filter != "all") product_line_id == product_line_id_filter else TRUE
+    )
+  # Analysis code...
+}
+```
+
+# Section 5: Related Principles and Rules {#related-principles}
+
+- **MP68: Language as Index** - Variable names serve as an index to their purpose
+- **R51: Lowercase Variable Naming** - Filter variables follow lowercase naming conventions
+- **R53: Multiple Selection Delimiter** - When a filter variable accepts multiple values, use proper delimiters
+- **R117: Dynamic Combined ID Pattern** - Filter variables can be combined with entity IDs for unique identification
+
+---
+
+*Based on: Data Management Law Article 18*  
+*Related to: [MP68 Language as Index](../../CH00_fundamental_principles/meta_principles/MP068_language_as_index.qmd), [R117 Dynamic Combined ID Pattern](DM_R015_dynamic_combined_id_pattern.qmd)*

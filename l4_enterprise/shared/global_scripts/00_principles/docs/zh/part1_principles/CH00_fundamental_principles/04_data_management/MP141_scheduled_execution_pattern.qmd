@@ -1,0 +1,583 @@
+---
+id: "MP141"
+title: "Scheduled Execution Pattern"
+type: "meta-principle"
+category: "data_management"
+date_created: "2025-12-23"
+date_modified: "2025-12-24"
+author: "Claude"
+status: "active"
+version: "1.1"
+weight: 141
+priority: "HIGH"
+related_to:
+  - "MP140": "Pipeline Orchestration Principle - Dependency resolution and execution"
+  - "MP142": "Configuration-Driven Pipeline - YAML configuration standard"
+  - "MP107": "ETL Pipeline Independence - Parallel execution capability"
+  - "MP064": "ETL-Derivation Separation - Physical directory structure"
+implements:
+  - "DUAL_EXECUTION_MODES": "Manual and scheduled execution support"
+  - "OBSERVABILITY": "Status, progress, and visualization capabilities"
+  - "FAILURE_RECOVERY": "Retry, resume, and rebuild mechanisms"
+  - "LOGGING_AUDIT": "Comprehensive execution logging"
+---
+
+# MP141: Scheduled Execution Pattern
+
+## Core Statement
+
+**Pipeline scheduling MUST support dual execution modes (manual and scheduled), provide comprehensive observability, and enable graceful failure recovery with clear logging and audit trails.**
+
+### The Golden Rule of Scheduling
+
+> **"You can always know what ran, when it ran, whether it succeeded, and if it failed, exactly why and how to fix it."**
+
+## Execution Modes
+
+### Mode 1: Manual Execution (On-Demand)
+
+Direct invocation by user or CI/CD system:
+
+```yaml
+manual_execution:
+  interface: "Makefile CLI"
+
+  commands:
+    run_target: "make run TARGET=cbz_D04_02"
+    run_platform: "make run PLATFORM=cbz"
+    run_all: "make run"
+    dry_run: "make dry-run TARGET=cbz_D04_02"
+
+  characteristics:
+    - "Immediate execution"
+    - "Interactive output to terminal"
+    - "Blocking until complete"
+    - "Returns exit code for scripting"
+```
+
+### Mode 2: Scheduled Execution (Automated)
+
+Periodic execution via system scheduler:
+
+```yaml
+scheduled_execution:
+  scheduler:
+    macos: "launchd (recommended)"
+    linux: "systemd timer or cron"
+
+  patterns:
+    weekly_full: "Sunday 2:00 AM - Full pipeline refresh"
+    daily_incremental: "Daily 6:00 AM - Updated data only"
+    on_demand: "Triggered by external event/webhook"
+
+  characteristics:
+    - "Background execution"
+    - "Output to log files"
+    - "Non-blocking"
+    - "Notification on completion/failure"
+```
+
+## Observability Requirements
+
+### Status Visibility
+
+Every execution MUST provide clear status information:
+
+```yaml
+observability:
+  status_query:
+    command: "make status"
+    output:
+      - "Current execution state (running/complete/failed)"
+      - "Last execution timestamp"
+      - "Number of targets up-to-date vs outdated"
+      - "Currently executing target (if running)"
+
+  progress_tracking:
+    command: "make progress"
+    output:
+      - "Execution percentage"
+      - "Current step N of M"
+      - "Estimated time remaining"
+      - "Resource utilization"
+```
+
+### Dependency Visualization
+
+```yaml
+visualization:
+  dag_view:
+    command: "make vis"
+    output: "Interactive DAG visualization in browser"
+    shows:
+      - "All targets and dependencies"
+      - "Execution status (done/pending/running)"
+      - "Timestamps for completed targets"
+
+  target_specific:
+    command: "make vis TARGET=cbz_D04_02"
+    output: "Subgraph for specific target"
+    shows:
+      - "Only relevant upstream dependencies"
+      - "Execution path highlighting"
+```
+
+### Logging Standard
+
+```yaml
+logging_requirements:
+  log_location: "logs/pipeline/"
+
+  file_naming:
+    format: "{date}_{time}_{target_or_platform}.log"
+    example: "2025-12-23_020000_cbz_full.log"
+
+  log_content:
+    required_fields:
+      - timestamp: "ISO 8601 format"
+      - target: "Script being executed"
+      - status: "started|completed|failed|skipped"
+      - duration: "Execution time in seconds"
+      - exit_code: "0 for success, non-zero for failure"
+
+    on_failure:
+      - error_message: "Full error text"
+      - stack_trace: "R traceback if available"
+      - last_successful_line: "Where execution stopped"
+```
+
+## Failure Recovery
+
+### Recovery Mechanisms
+
+```yaml
+failure_recovery:
+  retry_failed:
+    command: "make retry"
+    behavior: "Re-run only failed targets"
+    use_case: "Transient failures (network, API limits)"
+
+  resume_from:
+    command: "make resume"
+    behavior: "Continue from last successful point"
+    use_case: "Interrupted execution"
+
+  rebuild_target:
+    command: "make rebuild TARGET=cbz_D04_02"
+    behavior: "Force re-run target and all dependencies"
+    use_case: "Corrupted cache or data"
+
+  clean_rebuild:
+    command: "make clean && make run"
+    behavior: "Destroy all cache, rebuild everything"
+    use_case: "Complete refresh needed"
+```
+
+### Incremental Execution
+
+```yaml
+incremental_execution:
+  enabled_by: "targets package caching"
+
+  behavior:
+    - "Check if target output exists"
+    - "Compare input timestamps to output"
+    - "Skip execution if output is newer"
+    - "Run only outdated targets"
+
+  benefits:
+    - "90%+ time savings on repeat runs"
+    - "Only process changed data"
+    - "Automatic dependency invalidation"
+```
+
+### Failure Isolation
+
+```yaml
+failure_isolation:
+  principle: "One target failure does not stop independent targets"
+
+  behavior:
+    parallel_targets: "Continue other branches on failure"
+    sequential_targets: "Stop downstream of failed target"
+
+  notification:
+    - "Log failure immediately"
+    - "Send alert if configured"
+    - "Continue with remaining work"
+    - "Report partial success"
+```
+
+## Scheduling Configuration
+
+### launchd Configuration (macOS)
+
+```xml
+<!-- com.mamba.pipeline.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mamba.pipeline</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd /path/to/MAMBA/scripts/update_scripts && make run</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>  <!-- Sunday -->
+        <key>Hour</key>
+        <integer>2</integer>  <!-- 2 AM -->
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/path/to/logs/pipeline/scheduled.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/path/to/logs/pipeline/scheduled_error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
+```
+
+### Scheduling Management Commands
+
+```bash
+# Set up weekly scheduling
+make schedule
+
+# Check if scheduled
+make schedule-status
+
+# Disable scheduling
+make unschedule
+
+# View scheduled job logs
+make schedule-logs
+```
+
+## Configuration Management (Pre-Execution)
+
+### Configuration Update Before Scheduled Runs
+
+Per **MP142 Configuration-Driven Pipeline** and **SO_P016 Configuration Scope Hierarchy**, configuration should be regenerated before scheduled execution to capture any changes:
+
+```yaml
+configuration_in_scheduling:
+  pre_execution_check:
+    - "Verify _targets_config.yaml exists"
+    - "Check if app_config.yaml changed since last merge"
+    - "Optionally regenerate config"
+
+  recommended_workflow:
+    manual: "User runs make config-merge before make run"
+    scheduled: "Scheduled job can include config-merge"
+```
+
+### Scheduled Execution with Config Merge
+
+```bash
+# Option 1: Config merge as part of scheduled job
+# In launchd plist or cron:
+cd /path/to/update_scripts && make config-merge && make run
+
+# Option 2: Separate config update schedule
+# Update config daily, run pipeline weekly
+```
+
+### Configuration Update Commands
+
+```makefile
+# Configuration management in Makefile
+config-merge:
+    @echo "Merging pipeline configuration..."
+    @$(R) -e "source('$(GLOBAL_SCRIPTS)/04_utils/fn_merge_pipeline_config.R'); \
+      merge_pipeline_config()"
+
+config-scan:
+    @echo "Scanning ETL/DRV directories..."
+    @$(R) -e "source('$(GLOBAL_SCRIPTS)/04_utils/fn_merge_pipeline_config.R'); \
+      config <- yaml::read_yaml('$(CONFIG_PATH)'); \
+      config <- scan_and_update_scripts(config); \
+      yaml::write_yaml(config, '$(CONFIG_PATH)')"
+
+config-full:
+    @echo "Full configuration: merge + scan + validate"
+    $(MAKE) config-merge
+    $(MAKE) config-scan
+    $(MAKE) config-validate
+```
+
+### Configuration in Scheduled Context
+
+```yaml
+scheduled_config_management:
+  scenario_1_stable:
+    description: "Config rarely changes"
+    approach: "Skip config-merge in scheduled job"
+    when: "Production environment, no active development"
+
+  scenario_2_active:
+    description: "Frequent script changes"
+    approach: "Include config-merge before every scheduled run"
+    when: "Development or active iteration"
+
+  scenario_3_controlled:
+    description: "Config changes via CI/CD"
+    approach: "CI/CD triggers config-merge on merge to main"
+    when: "Enterprise workflow with pull requests"
+```
+
+### Three-Layer Config in Scheduling
+
+```yaml
+config_layer_scheduling:
+  layer_1_universal:
+    location: "global_scripts/templates/_targets_config.base.yaml"
+    update_frequency: "Only when subrepo updated"
+    scheduled_action: "None (read-only)"
+
+  layer_2_company:
+    location: "app_config.yaml > pipeline:"
+    update_frequency: "When platforms/settings change"
+    scheduled_action: "None (manual updates only)"
+
+  layer_3_generated:
+    location: "{project_root}/_targets_config.yaml"
+    update_frequency: "Before each run (if active development)"
+    scheduled_action: "make config-merge (optional)"
+```
+
+## Notification Integration
+
+### Notification Channels
+
+```yaml
+notifications:
+  on_success:
+    enabled: false  # Usually not needed
+    channels: []
+
+  on_failure:
+    enabled: true
+    channels:
+      - "email"      # Via system mail
+      - "slack"      # If webhook configured
+      - "log"        # Always to log file
+
+  on_long_running:
+    threshold: "30 minutes"
+    action: "Log warning"
+```
+
+### Notification Content
+
+```yaml
+failure_notification:
+  subject: "[MAMBA Pipeline] Execution Failed: {target}"
+
+  body_includes:
+    - "Failed target name"
+    - "Error message"
+    - "Last successful target"
+    - "Suggested recovery command"
+    - "Link to full log"
+```
+
+## Resource Management
+
+### Execution Constraints
+
+```yaml
+resource_management:
+  parallel_limit:
+    setting: "MAMBA_WORKERS=4"
+    purpose: "Limit concurrent target execution"
+
+  timeout:
+    per_target: "30 minutes default"
+    total_pipeline: "4 hours default"
+
+  memory_limit:
+    monitoring: "Log peak memory usage"
+    action: "Warn if approaching limit"
+```
+
+### Database Connection Management
+
+```yaml
+connection_management:
+  pattern: "Per-target connection lifecycle"
+
+  rules:
+    - "Each target opens own connections"
+    - "Connections closed on target completion"
+    - "No shared connections between targets"
+    - "Connection pooling handled at R level"
+```
+
+## Implementation Guidelines
+
+### Makefile Standard Commands
+
+```makefile
+# Required commands for MP141 compliance
+.PHONY: run status vis clean retry resume schedule unschedule
+
+# Manual execution
+run:
+    MAMBA_TARGET=$(TARGET) MAMBA_PLATFORM=$(PLATFORM) \
+    Rscript -e "targets::tar_make()"
+
+# Status check
+status:
+    Rscript -e "targets::tar_progress()"
+
+# Visualization
+vis:
+    Rscript -e "targets::tar_visnetwork()"
+
+# Clean rebuild
+clean:
+    Rscript -e "targets::tar_destroy()"
+
+# Retry failed only
+retry:
+    Rscript -e "targets::tar_make(names = targets::tar_meta(fields = 'error') %>% dplyr::filter(!is.na(error)) %>% dplyr::pull(name))"
+
+# Resume from checkpoint
+resume:
+    Rscript -e "targets::tar_make()"  # targets handles incremental by default
+
+# Scheduling (macOS)
+schedule:
+    cp scheduling/launchd_template.plist ~/Library/LaunchAgents/com.mamba.pipeline.plist
+    launchctl load ~/Library/LaunchAgents/com.mamba.pipeline.plist
+
+unschedule:
+    launchctl unload ~/Library/LaunchAgents/com.mamba.pipeline.plist
+    rm -f ~/Library/LaunchAgents/com.mamba.pipeline.plist
+
+schedule-status:
+    launchctl list | grep mamba.pipeline
+```
+
+### Logging Implementation
+
+```r
+# Logging wrapper for each target
+log_target_execution <- function(target_name, execution_func) {
+  start_time <- Sys.time()
+
+  log_entry(list(
+    timestamp = format(start_time, "%Y-%m-%dT%H:%M:%S"),
+    target = target_name,
+    status = "started"
+  ))
+
+  result <- tryCatch({
+    execution_func()
+    list(success = TRUE, error = NULL)
+  }, error = function(e) {
+    list(success = FALSE, error = e$message)
+  })
+
+  end_time <- Sys.time()
+  duration <- as.numeric(difftime(end_time, start_time, units = "secs"))
+
+  log_entry(list(
+    timestamp = format(end_time, "%Y-%m-%dT%H:%M:%S"),
+    target = target_name,
+    status = if (result$success) "completed" else "failed",
+    duration = duration,
+    error = result$error
+  ))
+
+  return(result)
+}
+```
+
+## Compliance Checklist
+
+### For Pipeline Implementation
+
+```yaml
+scheduling_compliance:
+  ✓ Makefile provides run, status, vis, clean commands
+  ✓ Incremental execution supported (targets caching)
+  ✓ Failure does not halt independent targets
+  ✓ Logs capture timestamp, target, status, duration
+  ✓ retry and resume commands available
+  ✓ DAG visualization accessible
+
+  scheduling_specific:
+  ✓ launchd plist template provided
+  ✓ schedule/unschedule commands work
+  ✓ Logs written to standard location
+  ✓ Environment variables properly set in scheduled context
+```
+
+### For Target Scripts
+
+```yaml
+target_compliance:
+  ✓ Script handles own initialization
+  ✓ Script handles own cleanup
+  ✓ Errors produce meaningful messages
+  ✓ Script returns success/failure status
+  ✓ No interactive prompts (headless compatible)
+```
+
+## Benefits Summary
+
+```yaml
+scheduling_benefits:
+  operational:
+    - "Automated data refresh"
+    - "Reduced manual intervention"
+    - "Consistent execution timing"
+
+  reliability:
+    - "Failure isolation"
+    - "Automatic retry capability"
+    - "Complete audit trail"
+
+  visibility:
+    - "Real-time status"
+    - "Dependency visualization"
+    - "Historical logs"
+
+  efficiency:
+    - "Incremental execution"
+    - "Resource-aware parallelism"
+    - "Skip up-to-date targets"
+```
+
+## Conclusion
+
+The Scheduled Execution Pattern ensures MAMBA pipelines are production-ready with:
+
+1. **Dual Modes**: Both manual and scheduled execution supported
+2. **Full Observability**: Status, progress, visualization always available
+3. **Graceful Recovery**: Retry, resume, rebuild mechanisms
+4. **Comprehensive Logging**: Complete audit trail of all executions
+5. **Resource Management**: Controlled parallelism and timeouts
+
+**Key Mandates:**
+- Every pipeline MUST be executable both manually and via scheduler
+- Every execution MUST produce logs with standard fields
+- Every failure MUST be recoverable without full rebuild
+- Every target MUST be visible in status and visualization

@@ -1,0 +1,343 @@
+---
+title: "MP122: 雙軌制子儲存庫架構原則 (Dual-Track Subrepo Architecture Principle)"
+subtitle: "通過獨立子儲存庫管理實現框架層與應用層的分離"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP122"
+date-created: "2025-09-30"
+date-modified: "2025-12-30"
+author: "Claude (原則修訂者)"
+type: "meta-principle"
+law: "系統架構法"
+article-number:
+  number: 122
+  title: "雙軌制子儲存庫架構"
+related_to:
+  - "MP093: 腳本分離原則"
+  - "MP044: 函子模組對應原則"
+  - "MP097: 原則實施分離原則"
+  - "MP104: 腳本組織演化原則"
+  - "SO_R001: 目錄結構規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第122條：雙軌制子儲存庫架構 {#overview}
+
+**系統架構法第122條（雙軌制子儲存庫架構）**
+
+系統應採用雙軌制子儲存庫架構，將**框架層**（`global_scripts`）與**應用層**（`update_scripts`）作為獨立的 git subrepo 進行分離，在穩定性與靈活性之間達到最佳平衡，同時最大化跨專案的可重用性。
+
+:::{.callout-important}
+## 核心架構原則
+- **global_scripts/**：框架層 - 穩定、可重用、跨專案組件
+- **update_scripts/**：應用層 - 業務特定、頻繁更新的邏輯
+- 兩者作為**獨立的 git subrepo** 管理，具有獨立的版本控制
+- **單向依賴**：update_scripts → global_scripts（絕不反向）
+:::
+
+# 第1節：架構理念 {#philosophy}
+
+## 第1.1小節：設計理由 {#rationale}
+
+雙軌制架構認識到軟體系統有兩種根本不同類型的代碼：
+
+1. **框架代碼**：通用目的、穩定、可跨專案重用
+2. **應用代碼**：業務特定、頻繁變更、專案特定
+
+通過將這些分離到獨立的 subrepo，我們實現了：
+- 框架層和應用層的**獨立演進**
+- 框架組件的**跨專案共享**
+- 不同變更速度的**隔離變更管理**
+- git 強制執行的**清晰架構邊界**
+
+## 第1.2小節：範疇論基礎 {#category-theory}
+
+從範疇論視角：
+
+- **對象**：兩個 subrepo 代表不同的範疇
+- **態射**：依賴單向流動（應用 → 框架）
+- **函子**：層之間的介面保留範疇結構
+- **自然變換**：版本升級保持相容性
+
+# 第2節：框架層（global_scripts）{#framework-layer}
+
+## 第2.1小節：特徵 {#framework-characteristics}
+
+`global_scripts` subrepo 包含：
+
+**內容類型**：
+- 可重用實用函數（`04_utils/`）
+- 資料庫抽象層（`01_db/`、`02_db_utils/`）
+- 配置框架（`03_config/`）
+- UI 組件庫（`10_rshinyapp_components/`）
+- 系統原則和文檔（`00_principles/`）
+- 語言框架（NSQL、AIMETA）
+- 測試實用程式（`98_test/`）
+
+**屬性**：
+- **穩定性**：不常變更，保持向後相容
+- **通用性**：解決通用問題，而非特定業務案例
+- **可重用性**：設計用於多個專案
+- **版本控制**：語義化版本控制，明確的棄用政策
+
+## 第2.2小節：管理規則 {#framework-management}
+
+```yaml
+# global_scripts 的 subrepo 配置
+remote: git@github.com:org/global_scripts.git
+branch: main
+version_policy: semantic
+breaking_changes: major_version_only
+deprecation_period: 3_months
+cross_project: true
+```
+
+# 第3節：應用層（update_scripts）{#application-layer}
+
+## 第3.1小節：特徵 {#application-characteristics}
+
+`update_scripts` subrepo 包含：
+
+**內容類型**：
+- ETL 管道（`*_ETL*.R` 腳本）
+- 資料衍生邏輯（`*_D*.R` 腳本）
+- 業務特定轉換
+- 平台特定整合
+- 遷移和更新腳本
+- 一次性修復和補丁
+
+**屬性**：
+- **易變性**：隨業務需求頻繁變更
+- **特定性**：解決特定業務問題
+- **狀態性**：修改系統狀態和資料
+- **跨專案共享**：所有專案共用同一份 update_scripts，平台腳本完整保留
+- **版本控制**：基於功能的版本控制，與業務發布對齊
+
+## 第3.2小節：平台執行範圍控制 {#platform-execution-control}
+
+`update_scripts` 為跨專案共享的腳本庫，平台資料夾是全域腳本清單，不能為單一專案刪除。
+
+**規則**：
+- **不可刪除平台腳本**，即使該專案不使用該平台。
+- **平台範圍必須由 pipeline/config 控制**，而不是修改 `update_scripts/`。
+- **預設執行應讀取 active platforms**（例如 `app_config.yaml`），全平台執行必須顯式指定。
+
+**範例**：
+- MAMBA 僅使用 `cbz`、`eby`，pipeline 預設只跑這兩個平台，但 `amz` 腳本仍保留在 `update_scripts/`。
+
+## 第3.3小節：管理規則 {#application-management}
+
+```yaml
+# update_scripts 的 subrepo 配置
+remote: git@github.com:org/project_update_scripts.git
+branch: main
+version_policy: feature_based
+change_frequency: high
+cross_project: true
+depends_on: global_scripts
+```
+
+# 第4節：依賴架構 {#dependencies}
+
+## 第4.1小節：允許的依賴 {#permitted}
+
+**update_scripts → global_scripts** ✅
+```r
+# 在 update_scripts/platform_ETL01.R
+source("../global_scripts/01_db/dbConnect.R")
+source("../global_scripts/04_utils/fn_process.R")
+```
+
+**跨專案 global_scripts 共享** ✅
+```bash
+# 專案 A 和專案 B 可以共享相同的 global_scripts
+ProjectA/scripts/global_scripts -> shared/global_scripts.git
+ProjectB/scripts/global_scripts -> shared/global_scripts.git
+```
+
+## 第4.2小節：禁止的依賴 {#forbidden}
+
+**global_scripts → update_scripts** ❌
+```r
+# 絕不在 global_scripts 中
+source("../../update_scripts/specific_logic.R")  # 禁止
+```
+
+**循環 subrepo 依賴** ❌
+```yaml
+# 禁止的配置
+global_scripts:
+  depends_on: update_scripts  # 創建循環依賴
+```
+
+# 第5節：實施模式 {#patterns}
+
+## 第5.1小節：Subrepo 初始化 {#initialization}
+
+```bash
+# 初始化雙軌制架構
+cd scripts/
+
+# 添加框架層作為 subrepo
+git subrepo clone git@github.com:org/global_scripts.git global_scripts
+
+# 添加應用層作為 subrepo
+git subrepo clone git@github.com:org/update_scripts.git update_scripts
+
+# 驗證結構
+git subrepo status
+```
+
+## 第5.2小節：更新模式 {#update-patterns}
+
+**框架更新**（低頻率，高影響）：
+```bash
+# 拉取最新框架變更
+git subrepo pull scripts/global_scripts
+
+# 執行相容性測試
+Rscript scripts/global_scripts/98_test/test_compatibility.R
+
+# 僅在驗證後更新
+git commit -m "Update global_scripts to v2.1.0"
+```
+
+**應用更新**（高頻率，低影響）：
+```bash
+# 定期業務邏輯更新
+cd scripts/update_scripts
+# 進行變更...
+
+# 頻繁推送變更
+git subrepo push scripts/update_scripts
+```
+
+# 第6節：決策矩陣 {#decision-matrix}
+
+## 何時將代碼放置在各層：
+
+| 標準 | global_scripts | update_scripts |
+|------|----------------|----------------|
+| **可重用性** | 跨專案 | 專案特定 |
+| **穩定性** | 穩定 API | 頻繁變更 |
+| **狀態** | 無狀態函數 | 有狀態操作 |
+| **業務邏輯** | 通用模式 | 特定規則 |
+| **依賴** | 最小、穩定 | 可依賴 global |
+| **測試** | 全面單元測試 | 整合測試 |
+| **文檔** | 完整 API 文檔 | 使用範例 |
+| **版本控制** | 語義化 | 基於功能 |
+
+# 第7節：效益 {#benefits}
+
+雙軌制 subrepo 架構提供：
+
+1. **關注點分離**：框架與應用之間的清晰邊界
+2. **獨立演進**：每層以其自然速度演進
+3. **跨專案可重用性**：框架改進惠及所有專案
+4. **風險隔離**：應用變更不影響框架穩定性
+5. **團隊可擴展性**：不同團隊可以擁有不同層
+6. **版本控制**：不同關注點的獨立 git 歷史
+7. **部署靈活性**：可以獨立更新層
+8. **測試策略**：每層的不同測試方法
+
+# 第8節：遷移策略 {#migration}
+
+## 對於現有的單體代碼庫：
+
+### 第1階段：識別 {#identify}
+```r
+# 分析代碼庫以識別分離候選
+source("scripts/global_scripts/00_principles/analyze_separation.R")
+report <- analyze_code_separation(".")
+```
+
+### 第2階段：提取 {#extract}
+```r
+# 提取可重用組件到 global_scripts
+move_to_global <- report$reusable_functions
+migrate_functions(move_to_global, "scripts/global_scripts/04_utils/")
+```
+
+### 第3階段：建立 {#establish}
+```bash
+# 將目錄轉換為 subrepo
+git subrepo init scripts/global_scripts
+git subrepo init scripts/update_scripts
+
+# 推送到遠端儲存庫
+git subrepo push scripts/global_scripts
+git subrepo push scripts/update_scripts
+```
+
+# 第9節：與其他原則的關係 {#relationships}
+
+## 支撐原則：
+
+**MP093（腳本分離）**：提供此架構實體實施的概念分離
+
+**MP044（函子模組對應）**：組織每個軌道內的內容
+
+**MP097（原則實施分離）**：原則在 global_scripts，實施在 update_scripts
+
+**SO_R001（目錄結構）**：定義每個軌道的內部組織
+
+## 增強原則：
+
+此架構通過以下方式增強現有原則：
+- 提供 git 強制執行的邊界
+- 實現跨專案共享
+- 支援獨立版本控制
+- 促進團隊協作
+
+# 第10節：執行和合規 {#enforcement}
+
+## 代碼審查檢查清單：
+
+- [ ] 新的可重用函數放在 global_scripts
+- [ ] 業務特定邏輯保留在 update_scripts
+- [ ] 無反向依賴（global → update）
+- [ ] 正確的 subrepo 提交訊息
+- [ ] 更新前驗證版本相容性
+- [ ] 在兩層都更新文檔
+- [ ] 適合每層的測試
+
+## CI/CD 整合：
+
+```yaml
+# .github/workflows/dual-track-ci.yml
+name: 雙軌制 CI
+on: [push, pull_request]
+
+jobs:
+  framework-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: 測試 global_scripts
+        run: |
+          cd scripts/global_scripts
+          Rscript 98_test/run_all_tests.R
+
+  application-tests:
+    runs-on: ubuntu-latest
+    needs: framework-tests
+    steps:
+      - uses: actions/checkout@v2
+      - name: 測試 update_scripts
+        run: |
+          cd scripts/update_scripts
+          Rscript test_integration.R
+```
+
+---
+
+*生效日期：2025-09-30*
+*系統架構法第122條*
+*架構模式：雙軌制 Subrepo*
+*狀態：生效*

@@ -1,0 +1,211 @@
+---
+title: "MP144: Unique Identity Principle"
+subtitle: "Every entity must have a unique identifier"
+chapter: "CH00"
+category: "MP"
+number: "144"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "meta-principle"
+derives_from:
+  - "MP001: Primitive Terms and Definitions"
+influences:
+  - "MP062: Key Selection Principle"
+  - "CH09: ETL Pipeline Naming Conventions"
+  - "All naming conventions using ___ suffix system"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+    number-sections: true
+---
+
+# Core Concept {#core-concept}
+
+This principle establishes the unique identification requirement for all entities in the system. Every entity must have a unique identifier, and the same name must refer to the same thing. Violating this principle makes entities unidentifiable.
+
+## Purpose {#purpose}
+
+In any system, the ability to uniquely identify entities is the most fundamental requirement. This principle establishes:
+
+1. The axiomatic foundation for identity uniqueness
+2. The theoretical basis for naming conventions
+3. Design guidelines to prevent ambiguity
+4. The identification mechanism for data lineage
+
+# Core Axioms {#core-axioms}
+
+## Axiom 1: Same Name, Same Entity {#axiom-1}
+
+:::{.callout-important}
+## Identity Axiom
+$$\forall x \forall y: \text{name}(x) = \text{name}(y) \rightarrow x = y$$
+
+If two entities have the same name, they must be the same entity.
+:::
+
+This axiom implies:
+- Names serve as unique identifiers for entities
+- The same name cannot refer to different things
+- There is a one-to-one mapping between names and entities
+
+## Axiom 2: Different Entities, Different Names {#axiom-2}
+
+:::{.callout-important}
+## Distinction Axiom (Contrapositive)
+$$x \neq y \rightarrow \text{name}(x) \neq \text{name}(y)$$
+
+If two entities are different, they must have different names.
+:::
+
+This axiom implies:
+- Different entities require different identifiers
+- You cannot use the same name to refer to different things
+- Each unique entity must be assigned a unique name
+
+# Violation Detection {#violation-detection}
+
+## Violation Scenarios {#violation-scenarios}
+
+:::{.callout-warning}
+## Violation Examples
+The following scenarios indicate a violation of the Unique Identity Principle:
+:::
+
+### Scenario 1: Name Ambiguity
+
+```r
+# Violation: Same name in different databases refers to different data
+raw_data.duckdb    -> df_orders  # Raw order data
+app_data.duckdb    -> df_orders  # Processed order data
+
+# Problem: Which df_orders are we referring to?
+```
+
+### Scenario 2: Processing Stage Confusion
+
+```r
+# Violation: Cannot distinguish which processing stage the data is at
+df_customer_data  # Is this raw or transformed?
+df_customer_data  # Is this from 0IM phase or 2TR phase?
+```
+
+### Scenario 3: Cross-Layer Name Collision
+
+```r
+# Violation: Different layers using the same name
+processed_data.duckdb  -> df_sales
+app_data.duckdb        -> df_sales
+
+# Problem: Which one does tbl(con, "df_sales") point to?
+```
+
+## Violation Consequences {#violation-consequences}
+
+1. **Untraceable**: Cannot determine data origin and processing history
+2. **Debugging Difficulty**: Cannot locate which stage an error occurred
+3. **Data Overwrites**: May accidentally overwrite data from different stages
+4. **Logic Confusion**: Data references in code become ambiguous
+
+# Data Pipeline Application {#data-pipeline-application}
+
+## The `___` Suffix Naming System {#suffix-naming-system}
+
+To implement the Unique Identity Principle in data pipelines, the system adopts the `___` (triple underscore) suffix naming convention:
+
+:::{.callout-note}
+## 6-Layer Symmetric Architecture Naming Convention
+:::
+
+| Layer | Phase | Code | Suffix | Database | Example |
+|-------|-------|------|--------|----------|---------|
+| 0 | Import | 0IM | `___raw` | raw_data.duckdb | `df_cbz_orders___raw` |
+| 1 | Staging | 1ST | `___staged` | staged_data.duckdb | `df_cbz_orders___staged` |
+| 2 | Transform | 2TR | `___transformed` | transformed_data.duckdb | `df_cbz_orders___transformed` |
+| 3 | Process | 3PR | `___processed` | processed_data.duckdb | `df_cbz_orders___processed` |
+| 4 | Cleanse | 4CL | `___cleansed` | cleansed_data.duckdb | `df_cbz_orders___cleansed` |
+| 5 | Normalize | 5NM | *(no suffix)* | app_data.duckdb | `df_cbz_orders` |
+
+## Design Rationale {#design-rationale}
+
+### Why Suffix Instead of Prefix?
+
+1. **Base Name Priority**: In `df_cbz_orders___raw`, `df_cbz_orders` is the core identifier
+2. **Auto-complete Friendly**: IDE typing `df_cbz_orders` shows all processing stages
+3. **Sorting Consistency**: All stages of the same entity are adjacent when sorted
+
+### Why No Suffix for app_data?
+
+1. **Final Product Marker**: No suffix indicates this is the "finished product"
+2. **Simplicity**: Applications don't need to remember suffixes
+3. **Clear Endpoint**: Clearly marks the endpoint of the data pipeline
+
+## Application Example {#application-example}
+
+```r
+# Correct: Each stage has unique identification
+con_raw <- dbConnect(duckdb::duckdb(), "raw_data.duckdb")
+con_app <- dbConnect(duckdb::duckdb(), "app_data.duckdb")
+
+# Read raw data
+orders_raw <- tbl(con_raw, "df_cbz_orders___raw")
+
+# Read application data
+orders_final <- tbl(con_app, "df_cbz_orders")
+
+# Different names, different entities, complies with Unique Identity Principle
+```
+
+```r
+# Wrong: Same name used for different stages
+# This violates the Unique Identity Principle!
+df_orders <- tbl(con_raw, "df_orders")
+df_orders <- tbl(con_staged, "df_orders")  # Overwrites the previous one!
+```
+
+# Constitutional Significance {#constitutional-significance}
+
+## Fundamental Nature {#fundamental-nature}
+
+The Unique Identity Principle is the foundation of all naming conventions in the system, just as a constitution is the foundation of a legal system:
+
+:::{.callout-tip}
+## Relationship with Other Principles
+```
+MP144 (Unique Identity Principle)
+    │
+    ├─> MP062 (Key Selection Principle)
+    │       └─ Primary key design must ensure unique identification
+    │
+    ├─> CH09 (ETL Pipeline Naming)
+    │       └─ ___ suffix system derives from this principle
+    │
+    └─> All Naming Conventions
+            └─ All naming conventions must follow this principle
+```
+:::
+
+## Philosophical Basis {#philosophical-basis}
+
+This principle derives from Leibniz's Identity of Indiscernibles:
+
+> If two things are identical in all properties, they are the same thing.
+
+In data systems, we concretize this principle as:
+- **Name** is one of the most important properties of an entity
+- **Same name** implies **same properties** implies **same entity**
+
+# Implementation Checklist {#implementation-checklist}
+
+- [ ] Every table name is unique within the system
+- [ ] Data at different processing stages uses appropriate suffixes
+- [ ] Data in app_data does not use suffixes (final products)
+- [ ] Code does not use the same variable name for different data
+- [ ] Documentation references match actual names
+
+# Conclusion {#conclusion}
+
+The Unique Identity Principle ensures that every entity in the system can be unambiguously identified. Through the `___` suffix naming system, we achieve unique identification of data throughout the pipeline, making data lineage, debugging, and maintenance clearer and more reliable. This principle is the foundation of all other naming conventions and must be strictly followed.

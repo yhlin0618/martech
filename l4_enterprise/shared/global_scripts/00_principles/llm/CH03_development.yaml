@@ -1,0 +1,1951 @@
+# ========================================
+# CH03: Development Methodology Principles
+# Version: 1.1
+# Last Updated: 2025-12-27
+#
+# Contains: DEV_P001-DEV_P022 (22 principles) + DEV_R001-DEV_R039,DEV_R050-DEV_R053,DEV_R055 (44 rules)
+# Total: 65 principles
+# ========================================
+
+chapter: "CH03_development"
+description: "Development Methodology Principles and Rules"
+principle_count: 60
+
+principles:
+
+  # ====================
+  # DEV_P PRINCIPLES (21)
+  # ====================
+
+  - id: DEV_P001
+    type: principle
+    name: debug_principles
+    display_name: "Debug Principles"
+    one_liner: "Systematic approach to debugging and issue resolution"
+    file_path: "CH03_development_methodology/principles/DEV_P001_debug_principles.qmd"
+
+    rule_natural: |
+      Debugging must follow systematic approach:
+      - Reproduce the issue first
+      - Isolate the component causing issue
+      - Add strategic logging
+      - Test fix in isolation
+      - Document root cause and solution
+
+    rule_formal: |
+      RULE DEV_P001_DEBUG:
+      debug_process = [
+        reproduce_issue,
+        isolate_component,
+        add_logging,
+        test_fix,
+        document_solution
+      ]
+
+    violations:
+      - "Random code changes without understanding"
+      - "Fixing symptoms instead of root cause"
+    compliant:
+      - "Systematic isolation and targeted fix"
+      - "Issue documented in CHANGELOG"
+
+  - id: DEV_P002
+    type: principle
+    name: authentic_context_testing
+    display_name: "Authentic Context Testing"
+    one_liner: "Test in realistic environments, not simplified mocks"
+    file_path: "CH03_development_methodology/principles/DEV_P002_authentic_context_testing.qmd"
+
+    rule_natural: |
+      Tests should use authentic context:
+      - Real database connections when possible
+      - Actual data subsets, not synthetic
+      - Production-like configurations
+      - Full component integration
+
+    rule_formal: |
+      RULE DEV_P002_AUTHENTIC:
+      FOR ALL test T:
+      uses_real_connections(T) OR uses_realistic_mock(T)
+      AND NOT uses_trivial_synthetic_data(T)
+
+    violations:
+      - "Testing with empty mock database"
+      - "Hard-coded test values"
+    compliant:
+      - "Test with sample of production data"
+      - "Integration test with actual dependencies"
+
+  - id: DEV_P003
+    type: principle
+    name: similar_functionality_management
+    display_name: "Similar Functionality Management"
+    one_liner: "Identify and consolidate similar code patterns"
+    file_path: "CH03_development_methodology/principles/DEV_P003_similar_functionality_management.qmd"
+
+    rule_natural: |
+      When similar code exists:
+      - Identify common patterns
+      - Extract to shared function
+      - Parameterize differences
+      - Document variants and use cases
+
+    rule_formal: |
+      RULE DEV_P003_SIMILAR:
+      IF similar_code(A, B) > threshold
+      THEN extract_common_function(A, B)
+      AND parameterize_differences()
+
+    violations:
+      - "Copy-paste code across files"
+      - "Multiple functions doing same thing"
+    compliant:
+      - "Single parameterized function"
+      - "Documented variants"
+
+  - id: DEV_P004
+    type: principle
+    name: dot_notation_property_access
+    display_name: "Dot Notation Property Access"
+    one_liner: "Use $ for property access, [[ ]] for dynamic access"
+    file_path: "CH03_development_methodology/principles/DEV_P004_dot_notation_property_access.qmd"
+
+    rule_natural: |
+      Property access conventions in R:
+      - Use $ for known column names
+      - Use [[ ]] for dynamic/variable names
+      - Use [ ] for multiple columns
+      - Be consistent within file
+
+    rule_formal: |
+      RULE DEV_P004_DOT:
+      IF column_name is literal THEN use_dollar(df$col)
+      IF column_name is variable THEN use_bracket(df[[var]])
+
+    violations:
+      - "df[[\"known_column\"]] when $ would work"
+      - "Inconsistent access patterns"
+    compliant:
+      - "df$customer_id for known column"
+      - "df[[col_name]] for variable"
+
+  - id: DEV_P005
+    type: principle
+    name: debug_efficiency_exception
+    display_name: "Debug Efficiency Exception"
+    one_liner: "During debugging, efficiency rules may be relaxed"
+    file_path: "CH03_development_methodology/principles/DEV_P005_debug_efficiency_exception.qmd"
+
+    rule_natural: |
+      During active debugging:
+      - Efficiency optimizations may be skipped
+      - Clarity over performance
+      - Extra logging acceptable
+      - Clean up after issue resolved
+
+    rule_formal: |
+      RULE DEV_P005_DEBUG_EXCEPTION:
+      DURING debugging_phase:
+      relax(efficiency_rules)
+      prioritize(clarity, logging)
+      AFTER resolution: cleanup()
+
+    violations:
+      - "Leaving debug code in production"
+    compliant:
+      - "Verbose logging during debug, removed after"
+
+  - id: DEV_P006
+    type: principle
+    name: case_sensitivity
+    display_name: "Case Sensitivity"
+    one_liner: "Handle case sensitivity consistently across systems"
+    file_path: "CH03_development_methodology/principles/DEV_P006_case_sensitivity.qmd"
+
+    rule_natural: |
+      Case handling must be consistent:
+      - File names: lowercase with underscores
+      - Variable names: snake_case
+      - R is case-sensitive: be careful
+      - Database columns: lowercase
+
+    rule_formal: |
+      RULE DEV_P006_CASE:
+      filenames = lowercase_with_underscore
+      variables = snake_case
+      db_columns = lowercase
+
+    violations:
+      - "MyFile.R instead of my_file.R"
+      - "customerID instead of customer_id"
+    compliant:
+      - "fn_calculate_rfm.R"
+      - "customer_id, order_date"
+
+  - id: DEV_P007
+    type: principle
+    name: initialization_assumption
+    display_name: "Initialization Assumption"
+    one_liner: "Code can assume initialization has completed"
+    file_path: "CH03_development_methodology/principles/DEV_P007_initialization_assumption.qmd"
+
+    rule_natural: |
+      After initialization phase:
+      - Global configuration available
+      - Database connections ready
+      - Utility functions sourced
+      - No need to re-check
+
+    rule_formal: |
+      RULE DEV_P007_INIT:
+      AFTER initialization:
+      assume_available(global_config)
+      assume_available(db_connections)
+      assume_available(utility_functions)
+
+    violations:
+      - "Re-sourcing already loaded files"
+      - "Re-checking already validated config"
+    compliant:
+      - "Direct use of initialized resources"
+
+  - id: DEV_P008
+    type: principle
+    name: no_uninitialized_exceptions
+    display_name: "No Uninitialized Exceptions"
+    one_liner: "Never catch exceptions for uninitialized variables"
+    file_path: "CH03_development_methodology/principles/DEV_P008_no_uninitialized_exceptions.qmd"
+
+    rule_natural: |
+      Uninitialized variables are errors:
+      - Don't use tryCatch for missing vars
+      - Initialize all variables before use
+      - Use stopifnot for preconditions
+      - Fix the initialization, not the error
+
+    rule_formal: |
+      RULE DEV_P008_NO_UNINIT:
+      FOR ALL variable V:
+      initialize_before_use(V)
+      AND NOT tryCatch(V_when_missing)
+
+    violations:
+      - "tryCatch around possibly undefined var"
+      - "Silently defaulting missing var"
+    compliant:
+      - "Explicit initialization at start"
+
+  - id: DEV_P009
+    type: principle
+    name: exception_as_rule
+    display_name: "Exception as Rule"
+    one_liner: "Handle common exceptions as part of normal flow"
+    file_path: "CH03_development_methodology/principles/DEV_P009_exception_as_rule.qmd"
+
+    rule_natural: |
+      Common error conditions handled explicitly:
+      - Empty data sets
+      - Missing columns
+      - NULL values
+      - Connection failures
+      - Check first, don't catch
+
+    rule_formal: |
+      RULE DEV_P009_EXCEPTION:
+      FOR common_error_condition C:
+      IF likely(C) THEN check_before_action(C)
+      AND NOT rely_on_exception_handling(C)
+
+    violations:
+      - "try() around every database call"
+      - "Catching expected empty results"
+    compliant:
+      - "if(nrow(df) == 0) return(empty_result)"
+
+  - id: DEV_P010
+    type: principle
+    name: reactive_access_safety
+    display_name: "Reactive Access Safety"
+    one_liner: "Access reactive values safely in Shiny"
+    file_path: "CH03_development_methodology/principles/DEV_P010_reactive_access_safety.qmd"
+
+    rule_natural: |
+      Reactive values in Shiny:
+      - Only access inside reactive context
+      - Use req() for required inputs
+      - isolate() for non-reactive reads
+      - Validate before use
+
+    rule_formal: |
+      RULE DEV_P010_REACTIVE:
+      FOR ALL reactive_access R:
+      in_reactive_context(R)
+      AND use_req_for_required(R)
+
+    violations:
+      - "Accessing input$ outside reactive"
+      - "Missing req() for user inputs"
+    compliant:
+      - "observe({ req(input$x); ... })"
+
+  - id: DEV_P011
+    type: principle
+    name: reactive_requirement_validation
+    display_name: "Reactive Requirement Validation"
+    one_liner: "Validate reactive requirements before processing"
+    file_path: "CH03_development_methodology/principles/DEV_P011_reactive_requirement_validation.qmd"
+
+    rule_natural: |
+      Before processing in reactive:
+      - req() for required inputs
+      - Validate data types
+      - Check data not empty
+      - Return NULL for invalid state
+
+    rule_formal: |
+      RULE DEV_P011_VALIDATE:
+      reactive_block = {
+        req(required_inputs),
+        validate_types(),
+        check_not_empty(),
+        process()
+      }
+
+    violations:
+      - "Processing NULL inputs"
+      - "Missing validation steps"
+    compliant:
+      - "req(input$data); validate(nrow(data()) > 0)"
+
+  - id: DEV_P012
+    type: principle
+    name: reactive_data_filtering
+    display_name: "Reactive Data Filtering"
+    one_liner: "Filter data reactively based on user inputs"
+    file_path: "CH03_development_methodology/principles/DEV_P012_reactive_data_filtering.qmd"
+
+    rule_natural: |
+      Data filtering in Shiny:
+      - Create base reactive for full data
+      - Create filtered reactive dependent on inputs
+      - Use debounce for frequent inputs
+      - Cache when appropriate
+
+    rule_formal: |
+      RULE DEV_P012_FILTER:
+      filtered_data = reactive({
+        base_data() %>% filter_by(inputs())
+      })
+
+    violations:
+      - "Filtering in render function"
+      - "Re-querying database on each filter"
+    compliant:
+      - "Separate reactive for filtered data"
+
+  - id: DEV_P013
+    type: principle
+    name: error_handling_patterns
+    display_name: "Error Handling Patterns"
+    one_liner: "Use consistent error handling patterns"
+    file_path: "CH03_development_methodology/principles/DEV_P013_error_handling_patterns.qmd"
+
+    rule_natural: |
+      Error handling conventions:
+      - Use tryCatch for external calls
+      - Provide informative error messages
+      - Log errors with context
+      - Fail fast for programming errors
+
+    rule_formal: |
+      RULE DEV_P013_ERROR:
+      FOR external_call:
+        tryCatch(call, error = log_and_handle)
+      FOR programming_error:
+        stopifnot(preconditions)
+
+    violations:
+      - "Silent error swallowing"
+      - "Generic error messages"
+    compliant:
+      - "Specific error message with context"
+
+  - id: DEV_P014
+    type: principle
+    name: performance_optimization
+    display_name: "Performance Optimization"
+    one_liner: "Optimize after measuring, not prematurely"
+    file_path: "CH03_development_methodology/principles/DEV_P014_performance_optimization.qmd"
+
+    rule_natural: |
+      Performance optimization approach:
+      - First make it correct
+      - Then measure performance
+      - Optimize bottlenecks only
+      - Document optimizations
+
+    rule_formal: |
+      RULE DEV_P014_PERF:
+      optimization_process = [
+        implement_correctly,
+        measure_performance,
+        identify_bottlenecks,
+        optimize_measured_issues
+      ]
+
+    violations:
+      - "Premature optimization"
+      - "Optimizing without measuring"
+    compliant:
+      - "Profiling before optimization"
+
+  - id: DEV_P015
+    type: principle
+    name: state_management
+    display_name: "State Management"
+    one_liner: "Manage application state explicitly"
+    file_path: "CH03_development_methodology/principles/DEV_P015_state_management.qmd"
+
+    rule_natural: |
+      State management in applications:
+      - Use reactiveValues for mutable state
+      - Avoid global variables
+      - Document state dependencies
+      - Clear state transitions
+
+    rule_formal: |
+      RULE DEV_P015_STATE:
+      app_state = reactiveValues()
+      NOT global_variables
+      document_state_flow()
+
+    violations:
+      - "Global variables for state"
+      - "Undocumented state changes"
+    compliant:
+      - "reactiveValues() for all mutable state"
+
+  - id: DEV_P016
+    type: principle
+    name: tidyverse_shiny_terminology_alignment
+    display_name: "Tidyverse/Shiny Terminology Alignment"
+    one_liner: "Use consistent terminology from tidyverse and Shiny"
+    file_path: "CH03_development_methodology/principles/DEV_P016_tidyverse_shiny_terminology_alignment.qmd"
+
+    rule_natural: |
+      Use standard terminology:
+      - tibble not data.frame
+      - filter not subset
+      - mutate not transform
+      - reactive not callback
+
+    rule_formal: |
+      RULE DEV_P016_TERMS:
+      preferred_terms = {
+        tibble > data.frame,
+        filter > subset,
+        mutate > transform,
+        reactive > callback
+      }
+
+    violations:
+      - "Using 'subset' in dplyr chains"
+      - "Calling reactives 'callbacks'"
+    compliant:
+      - "Consistent tidyverse terminology"
+
+  - id: DEV_P017
+    type: principle
+    name: dataframe_column_access
+    display_name: "DataFrame Column Access"
+    one_liner: "Access data frame columns consistently"
+    file_path: "CH03_development_methodology/principles/DEV_P017_dataframe_column_access.qmd"
+
+    rule_natural: |
+      Column access patterns:
+      - Use pull() for extracting single column as vector
+      - Use select() for subsetting columns
+      - Use $col for direct access in base R
+      - Avoid mixing patterns
+
+    rule_formal: |
+      RULE DEV_P017_ACCESS:
+      single_column_vector = pull(df, col)
+      column_subset = select(df, cols)
+      direct_access = df$col
+
+    violations:
+      - "df[,'col'] when pull() clearer"
+      - "Inconsistent access patterns"
+    compliant:
+      - "df %>% pull(col) for vector"
+
+  - id: DEV_P018
+    type: principle
+    name: defensive_error_handling
+    display_name: "Defensive Error Handling"
+    one_liner: "Anticipate and handle potential errors"
+    file_path: "CH03_development_methodology/principles/DEV_P018_defensive_error_handling.qmd"
+
+    rule_natural: |
+      Defensive programming:
+      - Validate inputs at boundaries
+      - Check for NULL and NA
+      - Provide sensible defaults
+      - Fail gracefully with helpful messages
+
+    rule_formal: |
+      RULE DEV_P018_DEFENSIVE:
+      at_boundary:
+        validate_inputs()
+        check_nulls()
+        provide_defaults()
+        handle_gracefully()
+
+    violations:
+      - "Assuming inputs are always valid"
+      - "Cryptic error messages"
+    compliant:
+      - "Input validation with clear errors"
+
+  - id: DEV_P019
+    type: principle
+    name: consistent_component_state
+    display_name: "Consistent Component State"
+    one_liner: "Maintain consistent state across component lifecycle"
+    file_path: "CH03_development_methodology/principles/DEV_P019_consistent_component_state.qmd"
+
+    rule_natural: |
+      Component state management:
+      - Initialize in consistent state
+      - Update state atomically
+      - Validate state after updates
+      - Handle invalid states gracefully
+
+    rule_formal: |
+      RULE DEV_P019_CONSISTENT:
+      component_lifecycle = [
+        initialize_valid_state,
+        update_atomically,
+        validate_post_update,
+        handle_invalid_gracefully
+      ]
+
+    violations:
+      - "Partial state updates"
+      - "Unchecked invalid states"
+    compliant:
+      - "Atomic state transitions with validation"
+
+  - id: DEV_P020
+    type: principle
+    name: minimal_example_construction
+    display_name: "Minimal Example Construction"
+    one_liner: "Create minimal examples to isolate issues"
+    file_path: "CH03_development_methodology/principles/DEV_P020_minimal_example_construction.qmd"
+
+    rule_natural: |
+      For debugging and testing:
+      - Create minimal reproducing example
+      - Remove unnecessary dependencies
+      - Use smallest data that shows issue
+      - Document example for future reference
+
+    rule_formal: |
+      RULE DEV_P020_MINIMAL:
+      minimal_example = {
+        smallest_code_showing_issue,
+        minimal_data,
+        documented_reproduction_steps
+      }
+
+    violations:
+      - "Debugging in full application"
+      - "Large test cases"
+    compliant:
+      - "Isolated minimal test case"
+
+  - id: DEV_P021
+    type: principle
+    name: performance_acceleration
+    display_name: "Performance Acceleration"
+    one_liner: "Apply proven acceleration techniques"
+    file_path: "CH03_development_methodology/principles/DEV_P021_performance_acceleration.qmd"
+
+    rule_natural: |
+      Performance acceleration techniques:
+      - Vectorization over loops
+      - Database-side aggregation
+      - Caching of expensive computations
+      - Lazy evaluation where appropriate
+
+    rule_formal: |
+      RULE DEV_P021_ACCEL:
+      acceleration_techniques = [
+        vectorization,
+        db_aggregation,
+        caching,
+        lazy_evaluation
+      ]
+
+    violations:
+      - "For loops for vectorizable operations"
+      - "R-side aggregation of large data"
+    compliant:
+      - "Vectorized operations"
+      - "SQL aggregation"
+
+  - id: DEV_P022
+    type: principle
+    parent: MP150  # Transparency Principle
+    name: console_output_transparency
+    display_name: "Console Output Transparency"
+    one_liner: "Make console output informative"
+    file_path: "CH03_development_methodology/principles/DEV_P022_console_output_transparency.qmd"
+    migrated_from: MP106  # Reclassified from meta-principle to principle (2026-02-28)
+
+    rule_natural: |
+      Console output:
+      - Progress indicators
+      - Status messages
+      - Error details
+      - Completion confirmation
+      - Realtime validation/audit warnings for non-OK conditions
+      - Persist structured audit output under output/ for traceability
+      - Apply retention cleanup for timestamped reports
+
+    rule_formal: |
+      RULE DEV_P022_CONSOLE:
+      console_output includes:
+        progress
+        status
+        errors
+        completion
+        realtime_validation_warnings
+      AND persist_audit_output(output/)
+      AND enforce_output_retention_cleanup
+
+    violations:
+      - "Silent execution"
+      - "No progress indication"
+      - "Only console logs without persisted audit output"
+    compliant:
+      - "Informative console output"
+      - "Realtime log + output/etl_validation/*.csv with retention"
+
+  # ====================
+  # DEV_R RULES (36)
+  # ====================
+
+  - id: DEV_R001
+    type: rule
+    name: apply_over_loops
+    display_name: "Apply Over Loops"
+    one_liner: "Use apply family functions instead of for loops"
+    file_path: "CH03_development_methodology/rules/DEV_R001_apply_over_loops.qmd"
+
+    rule_natural: |
+      Replace for loops with apply functions:
+      - lapply() for list operations
+      - sapply() when simplified output needed
+      - map() from purrr for consistency
+      - vapply() for type safety
+
+    rule_formal: |
+      RULE DEV_R001_APPLY:
+      REPLACE for_loop WITH apply_family
+      lapply(list, fn) > for(x in list) fn(x)
+
+    violations:
+      - "for (i in 1:n) { result[i] <- fn(x[i]) }"
+    compliant:
+      - "lapply(x, fn)"
+      - "map(x, fn)"
+
+  - id: DEV_R002
+    type: rule
+    name: functional_encapsulation
+    display_name: "Functional Encapsulation"
+    one_liner: "Encapsulate logic in well-defined functions"
+    file_path: "CH03_development_methodology/rules/DEV_R002_functional_encapsulation.qmd"
+
+    rule_natural: |
+      Code organization through functions:
+      - Each function does one thing
+      - Clear inputs and outputs
+      - No side effects when possible
+      - Document with roxygen2
+
+    rule_formal: |
+      RULE DEV_R002_FUNC:
+      FOR ALL function F:
+      single_purpose(F)
+      AND clear_interface(F)
+      AND minimal_side_effects(F)
+
+    violations:
+      - "Long scripts without functions"
+      - "Functions with multiple responsibilities"
+    compliant:
+      - "Single-purpose documented functions"
+
+  - id: DEV_R003
+    type: rule
+    name: platform_neutral_code
+    display_name: "Platform Neutral Code"
+    one_liner: "Write code that works across platforms"
+    file_path: "CH03_development_methodology/rules/DEV_R003_platform_neutral_code.qmd"
+
+    rule_natural: |
+      Platform-neutral code practices:
+      - Use file.path() for paths
+      - Avoid hard-coded paths
+      - Use normalizePath() when needed
+      - Test on multiple platforms
+
+    rule_formal: |
+      RULE DEV_R003_NEUTRAL:
+      path_construction = file.path()
+      NOT hard_coded_separator
+      NOT platform_specific_paths
+
+    violations:
+      - "paste('dir', 'file', sep='/')"
+      - "Hard-coded Windows paths"
+    compliant:
+      - "file.path('dir', 'file')"
+
+  - id: DEV_R004
+    type: rule
+    name: recursive_sourcing
+    display_name: "Recursive Sourcing"
+    one_liner: "Source directories recursively, not individual files"
+    file_path: "CH03_development_methodology/rules/DEV_R004_recursive_sourcing.qmd"
+
+    rule_natural: |
+      Source entire directories:
+      - Use recursive sourcing for directories
+      - Avoid listing individual files
+      - Use naming conventions for order
+      - Document sourcing patterns
+
+    rule_formal: |
+      RULE DEV_R004_RECURSIVE:
+      source_pattern = source_directory(dir, recursive = TRUE)
+      NOT source_individual_files_list
+
+    violations:
+      - "source('fn1.R'); source('fn2.R'); ..."
+    compliant:
+      - "lapply(list.files(dir, '\\.R$'), source)"
+
+  - id: DEV_R005
+    type: rule
+    name: ai_locked_files
+    display_name: "AI Locked Files"
+    one_liner: "Mark files that AI should not modify"
+    file_path: "CH03_development_methodology/rules/DEV_R005_ai_locked_files.qmd"
+
+    rule_natural: |
+      Some files should not be AI-modified:
+      - Mark with @AI_LOCKED comment
+      - Document reason for lock
+      - Human review required for changes
+      - Used for critical configurations
+
+    rule_formal: |
+      RULE DEV_R005_LOCKED:
+      IF file_has_comment("@AI_LOCKED")
+      THEN ai_cannot_modify(file)
+
+    violations:
+      - "AI modifying locked files"
+    compliant:
+      - "# @AI_LOCKED: Critical configuration"
+
+  - id: DEV_R006
+    type: rule
+    name: package_documentation_reference
+    display_name: "Package Documentation Reference"
+    one_liner: "Reference package documentation for function usage"
+    file_path: "CH03_development_methodology/rules/DEV_R006_package_documentation_reference.qmd"
+
+    rule_natural: |
+      When using package functions:
+      - Check official documentation
+      - Use ?function for help
+      - Follow package conventions
+      - Note version dependencies
+
+    rule_formal: |
+      RULE DEV_R006_DOC:
+      BEFORE using package_function:
+      consult_documentation()
+      follow_conventions()
+
+    violations:
+      - "Guessing function parameters"
+      - "Ignoring deprecation warnings"
+    compliant:
+      - "Documentation-confirmed usage"
+
+  - id: DEV_R007
+    type: rule
+    name: package_function_reference
+    display_name: "Package Function Reference"
+    one_liner: "Use package::function for clarity"
+    file_path: "CH03_development_methodology/rules/DEV_R007_package_function_reference.qmd"
+
+    rule_natural: |
+      Explicit package references:
+      - Use pkg::fn() for non-obvious functions
+      - Avoid name conflicts
+      - Clearer dependency tracking
+      - Exception: common tidyverse functions
+
+    rule_formal: |
+      RULE DEV_R007_PKG_REF:
+      IF function_name is ambiguous
+      THEN use package::function()
+
+    violations:
+      - "Ambiguous function without package"
+    compliant:
+      - "dplyr::filter() when needed"
+      - "jsonlite::toJSON()"
+
+  - id: DEV_R008
+    type: rule
+    name: minimal_modification
+    display_name: "Minimal Modification"
+    one_liner: "Make smallest possible changes to fix issues"
+    file_path: "CH03_development_methodology/rules/DEV_R008_minimal_modification.qmd"
+
+    rule_natural: |
+      When fixing issues:
+      - Change only what's necessary
+      - Avoid scope creep
+      - One issue per change
+      - Document the change
+
+    rule_formal: |
+      RULE DEV_R008_MINIMAL:
+      fix_scope = minimal_necessary_changes
+      NOT refactoring_while_fixing
+      ONE issue_per_commit
+
+    violations:
+      - "Reformatting unrelated code"
+      - "Multiple issues in one fix"
+    compliant:
+      - "Targeted minimal fix"
+
+  - id: DEV_R009
+    type: rule
+    name: initialization_sourcing
+    display_name: "Initialization Sourcing"
+    one_liner: "Source initialization files at correct time"
+    file_path: "CH03_development_methodology/rules/DEV_R009_initialization_sourcing.qmd"
+
+    rule_natural: |
+      Initialization order matters:
+      - Source init files first
+      - Dependencies before dependents
+      - Configuration before functions
+      - Document init requirements
+
+    rule_formal: |
+      RULE DEV_R009_INIT_SOURCE:
+      source_order = [
+        configuration,
+        database_setup,
+        utility_functions,
+        business_logic
+      ]
+
+    violations:
+      - "Using functions before sourcing"
+      - "Random sourcing order"
+    compliant:
+      - "Documented init sequence"
+
+  - id: DEV_R010
+    type: rule
+    name: ai_parameter_modification
+    display_name: "AI Parameter Modification"
+    one_liner: "AI should document parameter changes clearly"
+    file_path: "CH03_development_methodology/rules/DEV_R010_ai_parameter_modification.qmd"
+
+    rule_natural: |
+      When AI modifies parameters:
+      - Document the change
+      - Explain rationale
+      - Preserve original as comment
+      - Flag for human review
+
+    rule_formal: |
+      RULE DEV_R010_AI_PARAM:
+      IF ai_modifies_parameter
+      THEN add_comment(change, rationale)
+      AND preserve_original()
+
+    violations:
+      - "Silent parameter changes"
+    compliant:
+      - "# Changed from X to Y because..."
+
+  - id: DEV_R011
+    type: rule
+    name: derivation_platform_independence
+    display_name: "Derivation Platform Independence"
+    one_liner: "Derivation scripts must be platform-agnostic"
+    file_path: "CH03_development_methodology/rules/DEV_R011_derivation_platform_independence.qmd"
+
+    rule_natural: |
+      Derivation scripts should:
+      - Not contain platform-specific logic
+      - Work with any platform's data
+      - Use unified column names
+      - Platform logic only in ETL
+
+    rule_formal: |
+      RULE DEV_R011_PLATFORM_IND:
+      FOR ALL derivation_script D:
+      NOT contains_platform_logic(D)
+      AND uses_unified_schema(D)
+
+    violations:
+      - "if(platform == 'cbz') in derivation"
+    compliant:
+      - "Platform-agnostic derivation logic"
+
+  - id: DEV_R012
+    type: rule
+    name: verify_existing_functions
+    display_name: "Verify Existing Functions"
+    one_liner: "Check for existing functions before creating new"
+    file_path: "CH03_development_methodology/rules/DEV_R012_verify_existing_functions.qmd"
+    derived_from: MP029  # No Fake Information - functions aspect
+
+    rule_natural: |
+      Before creating new function:
+      - Search global_scripts/ for similar
+      - Check utility modules
+      - Look for parameterizable versions
+      - Extend existing if appropriate
+
+      This is an instance of MP029 (No Fake Information):
+      Don't assume a function doesn't exist - verify first.
+
+    rule_formal: |
+      RULE DEV_R012_VERIFY:
+      BEFORE create_function(F):
+      search_existing(F.purpose)
+      IF found_similar THEN extend_or_reuse()
+
+    violations:
+      - "Duplicate function creation"
+      - "Not checking existing code"
+      - "Assuming function doesn't exist without searching"
+    compliant:
+      - "Reusing existing function"
+      - "grep 'function_name' global_scripts/ before creating"
+
+  - id: DEV_R013
+    type: rule
+    name: switch_over_if_else
+    display_name: "Switch Over If-Else"
+    one_liner: "Use switch() for multiple conditions"
+    file_path: "CH03_development_methodology/rules/DEV_R013_switch_over_if_else.qmd"
+
+    rule_natural: |
+      For multiple value conditions:
+      - Use switch() for cleaner code
+      - Or case_when() in dplyr
+      - Avoid long if-else chains
+      - Include default case
+
+    rule_formal: |
+      RULE DEV_R013_SWITCH:
+      IF conditions > 3
+      THEN use switch() OR case_when()
+      AND include_default()
+
+    violations:
+      - "Long if-else-if-else chains"
+    compliant:
+      - "switch(x, 'a' = ..., 'b' = ...)"
+
+  - id: DEV_R014
+    type: rule
+    name: data_table_vectorization
+    display_name: "data.table Vectorization"
+    one_liner: "Use data.table vectorized operations for performance"
+    file_path: "CH03_development_methodology/rules/DEV_R014_data_table_vectorization.qmd"
+
+    rule_natural: |
+      For large data operations:
+      - Consider data.table for speed
+      - Use := for in-place modification
+      - Avoid row-wise operations
+      - Benchmark for large datasets
+
+    rule_formal: |
+      RULE DEV_R014_DT:
+      FOR large_data operations:
+      consider_data_table()
+      use_vectorized_operations()
+
+    violations:
+      - "Row-by-row operations on large data"
+    compliant:
+      - "dt[, new_col := operation]"
+
+  - id: DEV_R015
+    type: rule
+    name: commented_code_cleanup
+    display_name: "Commented Code Cleanup"
+    one_liner: "Remove or document commented code"
+    file_path: "CH03_development_methodology/rules/DEV_R015_commented_code_cleanup.qmd"
+
+    rule_natural: |
+      Commented code handling:
+      - Remove dead code
+      - If keeping, document why
+      - Use version control for history
+      - Review in code cleanup sessions
+
+    rule_formal: |
+      RULE DEV_R015_COMMENTS:
+      IF code_is_commented_out
+      THEN remove() OR document_reason()
+
+    violations:
+      - "Large blocks of commented code"
+      - "Undocumented commented sections"
+    compliant:
+      - "# TEMP-DISABLED: reason (date)"
+
+  - id: DEV_R016
+    type: rule
+    name: evolution_over_replacement
+    display_name: "Evolution Over Replacement"
+    one_liner: "Evolve existing code rather than replace wholesale"
+    file_path: "CH03_development_methodology/rules/DEV_R016_evolution_over_replacement.qmd"
+
+    rule_natural: |
+      Code evolution approach:
+      - Incremental improvements
+      - Maintain backward compatibility
+      - Deprecate before removing
+      - Document migration paths
+
+    rule_formal: |
+      RULE DEV_R016_EVOLVE:
+      prefer evolution > replacement
+      IF replacing THEN provide_migration_path()
+
+    violations:
+      - "Complete rewrite without justification"
+    compliant:
+      - "Incremental refactoring"
+
+  - id: DEV_R017
+    type: rule
+    name: explicit_over_implicit_evaluation
+    display_name: "Explicit Over Implicit Evaluation"
+    one_liner: "Make evaluation explicit, avoid implicit behavior"
+    file_path: "CH03_development_methodology/rules/DEV_R017_explicit_over_implicit_evaluation.qmd"
+
+    rule_natural: |
+      Explicit evaluation:
+      - Use collect() explicitly
+      - Avoid auto-printing side effects
+      - Make return values explicit
+      - Document implicit behaviors
+
+    rule_formal: |
+      RULE DEV_R017_EXPLICIT:
+      prefer explicit_calls > implicit_behavior
+      use collect() explicitly
+      use return() explicitly
+
+    violations:
+      - "Relying on auto-print"
+      - "Implicit return values"
+    compliant:
+      - "Explicit collect() and return()"
+
+  - id: DEV_R018
+    type: rule
+    name: ai_guided_structure_modification
+    display_name: "AI Guided Structure Modification"
+    one_liner: "AI follows guidelines for structural changes"
+    file_path: "CH03_development_methodology/rules/DEV_R018_ai_guided_structure_modification.qmd"
+
+    rule_natural: |
+      AI structural changes:
+      - Follow existing patterns
+      - Maintain consistency
+      - Document changes
+      - Request approval for major changes
+
+    rule_formal: |
+      RULE DEV_R018_AI_STRUCT:
+      ai_changes must follow_patterns
+      AND maintain_consistency
+      AND document_changes
+
+    violations:
+      - "AI introducing inconsistent patterns"
+    compliant:
+      - "Pattern-consistent AI changes"
+
+  - id: DEV_R019
+    type: rule
+    name: app_r_function_prohibition
+    display_name: "app.R Function Prohibition"
+    one_liner: "No function definitions in app.R"
+    file_path: "CH03_development_methodology/rules/DEV_R019_app_r_function_prohibition.qmd"
+
+    rule_natural: |
+      app.R file rules:
+      - No function definitions
+      - Only source() and shinyApp() calls
+      - Functions in separate files
+      - Minimal orchestration only
+
+    rule_formal: |
+      RULE DEV_R019_APP_R:
+      app.R contains:
+        source_calls
+        shinyApp_call
+      NOT function_definitions
+
+    violations:
+      - "Helper functions in app.R"
+    compliant:
+      - "app.R with only source and shinyApp"
+
+  - id: DEV_R020
+    type: rule
+    name: object_initialization
+    display_name: "Object Initialization"
+    one_liner: "Initialize objects before use"
+    file_path: "CH03_development_methodology/rules/DEV_R020_object_initialization.qmd"
+
+    rule_natural: |
+      Object initialization rules:
+      - Declare before use
+      - Use meaningful defaults
+      - Initialize in one place
+      - Document initial values
+
+    rule_formal: |
+      RULE DEV_R020_INIT:
+      FOR ALL object O:
+      initialize(O) BEFORE use(O)
+      AND has_meaningful_default(O)
+
+    violations:
+      - "Using undefined variables"
+      - "Scattered initialization"
+    compliant:
+      - "Clear initialization block"
+
+  - id: DEV_R021
+    type: rule
+    name: app_r_change_permissions
+    display_name: "app.R Change Permissions"
+    one_liner: "Restrict changes to app.R file"
+    file_path: "CH03_development_methodology/rules/DEV_R021_app_r_change_permissions.qmd"
+
+    rule_natural: |
+      app.R modification rules:
+      - Minimal changes only
+      - Document all changes
+      - Review before deploy
+      - Test after any change
+
+    rule_formal: |
+      RULE DEV_R021_APP_CHANGE:
+      changes_to_app.R require:
+        documentation
+        review
+        testing
+
+    violations:
+      - "Undocumented app.R changes"
+    compliant:
+      - "Documented, reviewed changes"
+
+  - id: DEV_R022
+    type: rule
+    name: module_data_connection
+    display_name: "Module Data Connection"
+    one_liner: "Pass database connections to modules, not data"
+    file_path: "CH03_development_methodology/rules/DEV_R022_module_data_connection.qmd"
+
+    rule_natural: |
+      Module data access:
+      - Pass connection, not pre-filtered data
+      - Modules filter internally
+      - Enables reactivity
+      - Avoids data duplication
+
+    rule_formal: |
+      RULE DEV_R022_MODULE_DATA:
+      module_server(con, filters)
+      NOT module_server(pre_filtered_data)
+
+    violations:
+      - "Passing filtered dataframe to module"
+    compliant:
+      - "Module uses tbl2(con) internally"
+
+  - id: DEV_R023
+    type: rule
+    name: roxygen2_function_examples
+    display_name: "Roxygen2 Function Examples"
+    one_liner: "Include examples in roxygen2 documentation"
+    file_path: "CH03_development_methodology/rules/DEV_R023_roxygen2_function_examples.qmd"
+
+    rule_natural: |
+      Function documentation:
+      - Include @examples section
+      - Show typical usage
+      - Include edge cases if relevant
+      - Make examples runnable
+
+    rule_formal: |
+      RULE DEV_R023_EXAMPLES:
+      FOR ALL exported_function F:
+      roxygen_documentation(F) includes @examples
+
+    violations:
+      - "No examples in documentation"
+    compliant:
+      - "@examples\ncalculate_rfm(df_customer)"
+
+  - id: DEV_R024
+    type: rule
+    name: import_requirements
+    display_name: "Import Requirements"
+    one_liner: "Document package imports explicitly"
+    file_path: "CH03_development_methodology/rules/DEV_R024_import_requirements.qmd"
+
+    rule_natural: |
+      Package imports:
+      - Use @import or @importFrom in roxygen
+      - Load all needed packages at start
+      - Document package dependencies
+      - Use DESCRIPTION for packages
+
+    rule_formal: |
+      RULE DEV_R024_IMPORT:
+      document_imports()
+      use_roxygen_import_tags()
+
+    violations:
+      - "Undocumented package usage"
+    compliant:
+      - "#' @importFrom dplyr filter"
+
+  - id: DEV_R025
+    type: rule
+    name: file_lock_notation
+    display_name: "File Lock Notation"
+    one_liner: "Use standard notation for locked files"
+    file_path: "CH03_development_methodology/rules/DEV_R025_file_lock_notation.qmd"
+
+    rule_natural: |
+      File lock notation:
+      - @AI_LOCKED for AI-restricted
+      - @MANUAL_ONLY for human-only edits
+      - Document lock reason
+      - Place at file top
+
+    rule_formal: |
+      RULE DEV_R025_LOCK:
+      lock_comment at file_top
+      format = "# @LOCK_TYPE: reason"
+
+    violations:
+      - "Inconsistent lock notation"
+    compliant:
+      - "# @AI_LOCKED: Critical config"
+
+  - id: DEV_R026
+    type: rule
+    name: shiny_reactive_observation
+    display_name: "Shiny Reactive Observation"
+    one_liner: "Use observe() for side effects, reactive() for values"
+    file_path: "CH03_development_methodology/rules/DEV_R026_shiny_reactive_observation.qmd"
+
+    rule_natural: |
+      Reactive patterns:
+      - reactive() for computed values
+      - observe() for side effects
+      - observeEvent() for specific triggers
+      - Don't mix purposes
+
+    rule_formal: |
+      RULE DEV_R026_REACTIVE:
+      FOR computed_value: use reactive()
+      FOR side_effect: use observe()
+      FOR specific_trigger: use observeEvent()
+
+    violations:
+      - "observe() returning values"
+      - "reactive() with side effects"
+    compliant:
+      - "Clear separation of concerns"
+
+  - id: DEV_R027
+    type: rule
+    name: package_function_reference_dup
+    display_name: "Package Function Reference (duplicate check)"
+    one_liner: "Verify function reference uniqueness"
+    file_path: "CH03_development_methodology/rules/DEV_R027_package_function_reference.qmd"
+
+    rule_natural: |
+      When functions have same name:
+      - Use explicit package::function()
+      - Document which package used
+      - Avoid masking issues
+
+    rule_formal: |
+      RULE DEV_R027_PKG_DUP:
+      IF function_name_conflict
+      THEN use_explicit_package_reference
+
+    violations:
+      - "Ambiguous function calls"
+    compliant:
+      - "Explicit package::function()"
+
+  - id: DEV_R028
+    type: rule
+    name: s4_class_handling
+    display_name: "S4 Class Handling"
+    one_liner: "Handle S4 classes properly"
+    file_path: "CH03_development_methodology/rules/DEV_R028_s4_class_handling.qmd"
+
+    rule_natural: |
+      S4 class handling:
+      - Use @ for slot access
+      - Use methods package functions
+      - Document class structures
+      - Handle inheritance properly
+
+    rule_formal: |
+      RULE DEV_R028_S4:
+      s4_slot_access = object@slot
+      use methods::new() for creation
+
+    violations:
+      - "Using $ on S4 objects"
+    compliant:
+      - "object@slot for S4"
+
+  - id: DEV_R029
+    type: rule
+    name: function_deployment
+    display_name: "Function Deployment"
+    one_liner: "Deploy functions through proper channels"
+    file_path: "CH03_development_methodology/rules/DEV_R029_function_deployment.qmd"
+
+    rule_natural: |
+      Function deployment:
+      - Place in global_scripts/
+      - Follow naming conventions
+      - Document with roxygen2
+      - Test before deployment
+
+    rule_formal: |
+      RULE DEV_R029_DEPLOY:
+      new_function deployment:
+        place_in_global_scripts
+        follow_naming_fn_name.R
+        add_documentation
+        test
+
+    violations:
+      - "Functions in random locations"
+    compliant:
+      - "fn_name.R in global_scripts/"
+
+  - id: DEV_R030
+    type: rule
+    name: explicit_namespace_in_shiny
+    display_name: "Explicit Namespace in Shiny"
+    one_liner: "Use explicit namespacing in Shiny modules"
+    file_path: "CH03_development_methodology/rules/DEV_R030_explicit_namespace_in_shiny.qmd"
+
+    rule_natural: |
+      Shiny module namespacing:
+      - Use NS() for input IDs
+      - Use session$ns for dynamic IDs
+      - Never hard-code module IDs
+      - Test namespace isolation
+
+    rule_formal: |
+      RULE DEV_R030_NAMESPACE:
+      module_ui uses NS(id, "element")
+      module_server uses session$ns()
+
+    violations:
+      - "Hard-coded IDs in modules"
+    compliant:
+      - "NS(id, 'plot') for namespacing"
+
+  - id: DEV_R031
+    type: rule
+    name: comment_code_spacing
+    display_name: "Comment Code Spacing"
+    one_liner: "Use consistent spacing in comments"
+    file_path: "CH03_development_methodology/rules/DEV_R031_comment_code_spacing.qmd"
+
+    rule_natural: |
+      Comment formatting:
+      - Space after # for comments
+      - # ---- for section dividers
+      - Align related comments
+      - No trailing spaces
+
+    rule_formal: |
+      RULE DEV_R031_SPACING:
+      comment_format = "# text"
+      section_divider = "# ----"
+
+    violations:
+      - "#comment without space"
+    compliant:
+      - "# This is a comment"
+
+  - id: DEV_R032
+    type: rule
+    name: update_script_structure
+    display_name: "Update Script Structure"
+    one_liner: "Follow standard structure for update scripts"
+    file_path: "CH03_development_methodology/rules/DEV_R032_update_script_structure.qmd"
+
+    rule_natural: |
+      Update script structure:
+      1. Header with description
+      2. Source dependencies
+      3. Main execution logic
+      4. Error handling
+      5. Summary output
+
+    rule_formal: |
+      RULE DEV_R032_STRUCTURE:
+      update_script = [
+        header,
+        source_deps,
+        main_logic,
+        error_handling,
+        summary
+      ]
+
+    violations:
+      - "No header comments"
+      - "Missing error handling"
+    compliant:
+      - "Standard template structure"
+
+  - id: DEV_R033
+    type: rule
+    name: localized_activation
+    display_name: "Localized Activation"
+    one_liner: "Activate features locally, not globally"
+    file_path: "CH03_development_methodology/rules/DEV_R033_localized_activation.qmd"
+
+    rule_natural: |
+      Feature activation:
+      - Use local scope when possible
+      - Avoid global state changes
+      - Restore state after use
+      - Document scope of changes
+
+    rule_formal: |
+      RULE DEV_R033_LOCAL:
+      prefer local_activation > global_activation
+      IF global_change THEN restore_after()
+
+    violations:
+      - "Global options changed permanently"
+    compliant:
+      - "withr::local_options() for temp changes"
+
+  - id: DEV_R034
+    type: rule
+    name: shiny_reactive_gateways
+    display_name: "Shiny Reactive Gateways"
+    one_liner: "Use gateway functions for reactive inputs"
+    file_path: "CH03_development_methodology/rules/DEV_R034_shiny_reactive_gateways.qmd"
+
+    rule_natural: |
+      Reactive gateway pattern:
+      - Create reactive that wraps input access
+      - Add validation in gateway
+      - Single point of input processing
+      - Enables testing
+
+    rule_formal: |
+      RULE DEV_R034_GATEWAY:
+      input_gateway = reactive({
+        req(input$x)
+        validate_and_process(input$x)
+      })
+
+    violations:
+      - "Direct input$ access everywhere"
+    compliant:
+      - "Gateway reactive for inputs"
+
+  - id: DEV_R035
+    type: rule
+    name: code_compliance_tracking
+    display_name: "Code Compliance Tracking"
+    one_liner: "Track principle compliance in code"
+    file_path: "CH03_development_methodology/rules/DEV_R035_code_compliance_tracking.qmd"
+
+    rule_natural: |
+      Compliance tracking:
+      - Note principles followed in comments
+      - Document deviations with reasons
+      - Include in code review
+      - Update when principles change
+
+    rule_formal: |
+      RULE DEV_R035_COMPLIANCE:
+      code_comments include principle_references
+      deviations are documented
+
+    violations:
+      - "No principle documentation"
+    compliant:
+      - "# Follows: DM_R023, DEV_R001"
+
+  - id: DEV_R036
+    type: rule
+    name: shinyjs_module_namespace
+    display_name: "shinyjs Module Namespace"
+    one_liner: "Use shinyjs with proper module namespacing"
+    file_path: "CH03_development_methodology/rules/DEV_R036_shinyjs_module_namespace.qmd"
+
+    rule_natural: |
+      shinyjs in modules:
+      - Use ns() for element IDs
+      - useShinyjs() in module UI
+      - shinyjs::show/hide with ns()
+      - Test namespace isolation
+
+    rule_formal: |
+      RULE DEV_R036_SHINYJS:
+      shinyjs_call uses ns(id)
+      module_ui includes useShinyjs()
+
+    violations:
+      - "shinyjs::hide('id') without ns()"
+    compliant:
+      - "shinyjs::hide(ns('element'))"
+
+  - id: DEV_R037
+    type: rule
+    name: derivation_step_isolation
+    display_name: "Derivation Step Isolation"
+    one_liner: "Each D_XX script MUST implement ONLY its documented step; orchestration scripts MUST NOT contain computation logic"
+    file_path: "CH03_development_methodology/rules/DEV_R037_derivation_step_isolation.qmd"
+
+    rule_natural: |
+      Derivation step isolation requirements:
+      - Each D_XX script implements ONLY its documented step
+      - Derivation logic MUST NOT be duplicated across steps
+      - Orchestration steps (D_XX_06) MUST NOT contain computation logic
+      - Computation belongs in designated steps or shared utility functions
+
+    rule_formal: |
+      RULE DEV_R037_STEP_ISOLATION:
+      FOR ALL derivation_step D:
+      implements(D) = documented_responsibility(D)
+      AND NOT duplicates_logic(D, other_steps)
+
+      FOR ALL orchestration_step O:
+      contains_only(O, [source_calls, coordination, logging])
+      AND NOT contains_computation(O)
+
+    violations:
+      - "DNA calculation logic in D01_06 instead of D01_03"
+      - "Same calculation duplicated in multiple D_XX scripts"
+      - "Orchestration script performing data transformations"
+    compliant:
+      - "D01_03 calls analysis_dna() as documented"
+      - "D01_06 only sources and coordinates other scripts"
+
+  - id: DEV_R038
+    type: rule
+    name: derivation_core_function_pattern
+    display_name: "Derivation Core Function Pattern"
+    one_liner: "Extract shared derivation logic into core functions with thin platform wrappers"
+    file_path: "CH03_development_methodology/rules/DEV_R038_derivation_core_function_pattern.qmd"
+
+    rule_natural: |
+      Core Function + Platform Wrapper architecture:
+      - When same logic needed in 2+ platforms, extract to core function
+      - Core functions go in DRV/all/fn_D{group}_{seq}_core.R
+      - Platform wrappers are thin (~60 lines): init, source core, call, deinit
+      - NO business logic in wrappers - all logic in core function
+      - Wrapper headers must include CORE_FUNCTION marker
+
+    rule_formal: |
+      RULE DEV_R038_CORE_FUNCTION:
+      IF derivation_logic in platforms.count >= 2
+      THEN extract_to core_function(DRV/all/fn_D{group}_{seq}_core.R)
+
+      FOR ALL platform_wrapper W:
+      contains_only(W, [autoinit, source_core, call_core(platform_id), autodeinit])
+      AND NOT contains_business_logic(W)
+      AND header_includes(W, "CORE_FUNCTION")
+
+    violations:
+      - "Duplicating DNA calculation in cbz_D01_03.R and amz_D01_03.R"
+      - "Business logic in wrapper instead of core function"
+      - "Missing CORE_FUNCTION header in wrapper"
+      - "Wrapper exceeds 80 lines"
+    compliant:
+      - "fn_D01_03_core.R contains all DNA logic"
+      - "cbz_D01_03.R calls run_D01_03(platform_id = 'cbz')"
+      - "Wrapper is ~60 lines with proper header"
+
+  - id: DEV_R039
+    type: rule
+    name: trace_before_modify
+    display_name: "Trace Before Modify"
+    one_liner: "Trace actual code path before modifying files"
+    file_path: "CH03_development_methodology/rules/DEV_R039_trace_before_modify.qmd"
+    derived_from: MP029  # No Fake Information - files/paths aspect
+
+    rule_natural: |
+      Before modifying any module or file:
+      1. Search for actual source() or import statements
+      2. Verify which file is ACTUALLY being used
+      3. Do not assume based on file name or directory alone
+      4. Trace the full dependency chain if needed
+
+      This is an instance of MP029 (No Fake Information):
+      Don't assume a file is being used - trace and verify first.
+
+      Real case: Modifying module_login.R when app_*.R actually
+      sources module_login_supabase.R - wasted multiple iterations.
+
+    rule_formal: |
+      RULE DEV_R039_TRACE:
+      BEFORE modify_file(F):
+      trace_usage(F) -> actual_files
+      grep("source.*{F.name}", app_files)
+      verify(F IN actual_files)
+      IF NOT found THEN search_alternatives()
+
+    verification_commands:
+      - "grep -r 'source.*module_name' *.R"
+      - "grep -r 'import module_name' *.py"
+      - "Check app initialization for actual source() paths"
+
+    violations:
+      - "Modifying module_login.R when app uses module_login_supabase.R"
+      - "Changing config file without verifying it's being loaded"
+      - "Assuming file is used based on file name or location"
+    compliant:
+      - "grep 'source.*module_login' app_*.R → found supabase version"
+      - "Trace app_*.R source() chain before modifying"
+      - "Verify config loading path in app initialization"
+
+  - id: DEV_R052
+    type: rule
+    name: canonical_english_keys
+    display_name: "Canonical English Keys"
+    one_liner: "Business logic uses English keys; only the UI layer translates for display"
+    file_path: "CH03_development_methodology/rules/DEV_R052_canonical_english_keys.qmd"
+    derived_from: MP029  # No Fake Information - prevents encoding mismatches
+
+    rule_natural: |
+      All non-UI code must use canonical English strings:
+      1. Database labels (r_label, f_label, etc.) → English values
+      2. switch/case_when/if-else logic → match English keys
+      3. Configuration files → English identifiers
+      4. translate() is called ONLY at UI rendering (renderUI, renderPlotly, etc.)
+
+      UI rendering MUST use translate() — never display raw English keys to users.
+
+      This prevents silent switch fall-through bugs when business logic
+      matches Chinese unicode escapes that differ from stored English labels.
+
+    rule_formal: |
+      RULE DEV_R052_CANONICAL:
+      FOR ALL label_columns IN database:
+        value(label_column) MUST BE English
+      FOR ALL switch_cases IN business_logic:
+        match_key MUST BE English
+      FOR ALL ui_output IN renderUI/renderPlotly/renderDataTable:
+        display_text = translate(english_key)
+      INVARIANT: translate() NOT called outside UI rendering layer
+
+    violations:
+      - "switch on Chinese unicode escapes in business logic"
+      - "Storing Chinese labels in DRV output columns"
+      - "Band-aid mapping English→Chinese before feeding into Chinese-only switch"
+      - "Displaying raw English keys in UI without translate()"
+    compliant:
+      - "DRV stores 'Recent Buyer', switch matches 'Recent Buyer'"
+      - "renderUI calls translate('Recent Buyer') for display"
+      - "ui_terminology.csv has entry for every English key"
+
+  - id: DEV_R053
+    type: rule
+    name: ai_prompt_localization
+    display_name: "AI Prompt Localization"
+    one_liner: "AI prompts use locale-aware ai_prompts.yaml, not translate()/ui_terminology.csv"
+    file_path: "CH03_development_methodology/rules/DEV_R053_ai_prompt_localization.qmd"
+    derived_from: DEV_R052  # Extends canonical English keys with AI-specific locale handling
+
+    rule_natural: |
+      AI prompts (system_prompt, user_prompt_template) require LOCALIZATION, not TRANSLATION.
+      Translation = one English key maps to one short translated string (word/phrase level).
+      Localization = same function has structurally different versions per locale (paragraph level).
+
+      Two mechanisms, two content types:
+
+      1. UI labels (short, word/phrase level):
+         - Mechanism: translate() + ui_terminology.csv
+         - Example: "Customer Count" -> "顧客數"
+         - Rule: DEV_R052 governs this boundary
+
+      2. AI prompts (long, paragraph level with template vars):
+         - Mechanism: load_openai_prompt(key, locale) + ai_prompts.yaml
+         - Example: system_prompt has en and zh_tw versions with different structures
+         - Rule: DEV_R053 (this rule) governs this boundary
+
+      ai_prompts.yaml locale format:
+        system_prompt:
+          en: "You are a professional marketing analyst..."
+          zh_tw: "你是專業的行銷分析師..."
+        user_prompt_template:
+          en: "Based on the following data..."
+          zh_tw: "根據以下資料..."
+
+      If system_prompt is a plain string (no locale map), it is treated as the
+      default locale. This ensures backward compatibility with existing prompts.
+
+      load_openai_prompt() accepts optional locale parameter:
+        prompt <- load_openai_prompt("report.integrated", locale = "zh_tw")
+        # prompt$system_prompt -> zh_tw string directly
+
+      Key constraint: The zh_tw prompt content MUST comply with UI_R025
+      (Taiwan standard Chinese). Use Taiwan-standard terms — e.g., "資料"
+      (not "數據" when meaning general data), "使用者" (not "用戶" when
+      meaning general user). See UI_R025 for full mapping.
+
+      NEVER use report_text(en, zh) or similar ad-hoc bilingual wrappers
+      in R code. All locale-specific AI content goes in ai_prompts.yaml.
+
+    rule_formal: |
+      RULE DEV_R053_AI_PROMPT_LOCALE:
+
+      # Two-mechanism boundary
+      FOR content C:
+        IF length(C) <= phrase AND is_ui_display:
+          USE translate(C)
+          STORE IN ui_terminology.csv
+        ELIF is_ai_prompt:
+          USE load_openai_prompt(key, locale)
+          STORE IN ai_prompts.yaml
+
+      # ai_prompts.yaml locale format
+      FOR prompt_field IN [system_prompt, user_prompt_template]:
+        IF type(prompt_field) == map{locale -> string}:
+          load_openai_prompt(key, locale) -> prompt_field[locale]
+        ELIF type(prompt_field) == string:
+          load_openai_prompt(key, locale) -> prompt_field  # backward compatible
+
+      # Compliance
+      FOR ALL prompt_field.zh_tw:
+        MUST comply_with UI_R025  # Taiwan standard Chinese
+
+      # Prohibition
+      NEVER define bilingual_wrapper(en, zh) IN R code
+      NEVER hardcode prompt text IN R code
+
+    violations:
+      - "Using report_text(en, zh) to embed bilingual prompts in R code"
+      - "Hardcoding Chinese prompt text in R functions"
+      - "Storing AI prompt content in ui_terminology.csv"
+      - "Using translate() for multi-paragraph AI prompt content"
+      - "Using mainland Chinese terms in zh_tw prompts (UI_R025)"
+    compliant:
+      - "ai_prompts.yaml has system_prompt.en and system_prompt.zh_tw"
+      - "load_openai_prompt('report.integrated', locale='zh_tw') returns zh_tw prompt"
+      - "UI labels in report module still use translate() for short strings"
+      - "Plain string system_prompt (no locale) works unchanged (backward compatible)"
+
+    examples:
+      bad: |
+        # Bad: bilingual wrapper in R code
+        report_text <- function(en, zh) {
+          if (is_zh_ui) zh else en
+        }
+        title <- report_text("Customer Analysis", "客戶分析")
+
+        # Bad: hardcoded Chinese prompt
+        system_msg <- if (is_zh_ui) {
+          "你是專業的電商行銷顧問..."
+        } else {
+          "You are a professional marketing analyst..."
+        }
+
+      good: |
+        # Good: locale in ai_prompts.yaml
+        # ai_prompts.yaml:
+        #   report_generation:
+        #     integrated_report:
+        #       model: "gpt-5.2"
+        #       system_prompt:
+        #         en: "You are a professional marketing analyst..."
+        #         zh_tw: "你是專業的行銷分析師..."
+
+        # R code:
+        locale <- if (is_zh_ui) "zh_tw" else "en"
+        prompt <- load_openai_prompt("report_generation.integrated_report",
+                                     locale = locale)
+        # prompt$system_prompt is already the correct locale string
+
+        # Short UI labels still use translate()
+        showNotification(translate("Report generation complete!"))
+
+    dependencies:
+      - "DEV_R052"  # Canonical English keys — DEV_R053 extends, not replaces
+      - "DEV_R050"  # Display data externalization — prompts also externalized
+      - "UI_R025"   # Taiwan Chinese — applies to zh_tw prompts
+
+    related:
+      - "09-openai-integration"  # ai_prompts.yaml as single source of truth
+
+    metadata:
+      created: "2026-03-06"
+      triggered_by: "PR #249 review — report_text() anti-pattern in reportIntegration.R"
+      existing_anti_pattern: "reportIntegration.R uses report_text(en, zh) wrapper"
+
+  - id: DEV_R055
+    type: rule
+    name: semantic_consistency_fallback
+    display_name: "Semantic Consistency Fallback"
+    one_liner: "Use explicit sentinel values when mapping/transformation fails, never NA"
+    file_path: "CH03_development_methodology/rules/DEV_R055_semantic_consistency_fallback.qmd"
+    derived_from: MP154
+
+    rule_natural: |
+      When a mapping, lookup, or transformation operation fails to resolve a value,
+      the fallback must use an explicit sentinel value (e.g., "UNKNOWN") that preserves
+      the column's semantic consistency. Never allow NA to silently replace a valid value.
+
+      For ID columns: use "UNKNOWN". For category columns: use "Uncategorized".
+      Always emit warning() with the original unmapped values and guidance on how to fix.
+
+    rule_formal: |
+      RULE DEV_R055_SEMANTIC_FALLBACK:
+      FOR ALL mapping operations M on column C:
+        IF M(value) cannot resolve:
+          C[value] := sentinel_value
+          warning(original_values, resolution_guidance)
+        NEVER:
+          C[value] := NA
+          C[value] := original_value  # if C is an ID column
+
+    violations:
+      - "ifelse(!is.na(mapped), mapped, NA) — silent data loss"
+      - "Preserving raw Amazon name in product_line_id column — mixed semantics"
+    compliant:
+      - "ifelse(!is.na(mapped), mapped, 'UNKNOWN') + warning()"
+      - "Sentinel value visible in downstream aggregations as explicit group"
+
+    dependencies:
+      - "MP154"   # Side effect defense — this rule implements it
+      - "MP029"   # No fake data — sentinels are markers, not fabrication
+
+    metadata:
+      created: "2026-03-14"
+      triggered_by: "Issue #340 — unmapped product_line_id replaced with NA causing silent data loss"
+
+# ====================
+# DEPENDENCIES
+# ====================
+
+internal_dependencies:
+  - from: DEV_R001
+    to: DEV_P014
+    reason: "Apply functions are part of performance optimization"
+
+  - from: DEV_R022
+    to: DEV_P010
+    reason: "Module data connection enables reactive safety"
+
+  - from: DEV_R026
+    to: DEV_P015
+    reason: "Reactive patterns implement state management"
+
+  - from: DEV_R037
+    to: MP145
+    reason: "Step isolation implements documentation-implementation alignment for derivations"
+
+  - from: DEV_R037
+    to: MP064
+    reason: "Step isolation enforces ETL-Derivation separation"
+
+  - from: DEV_R038
+    to: DEV_R037
+    reason: "Core function pattern builds on step isolation - extracts shared step logic"
+
+  - from: DEV_R038
+    to: DEV_R011
+    reason: "Core function pattern achieves platform independence via parameterization"
+
+  - from: DEV_R038
+    to: SO_R007
+    reason: "Core functions follow one-function-one-file rule"
+
+  - from: DEV_R038
+    to: DM_R044
+    reason: "Wrappers follow derivation implementation standard template"
+
+  - from: DEV_R052
+    to: MP029
+    reason: "Canonical keys prevent encoding mismatches (no fake assumptions about label language)"
+
+  - from: DEV_R052
+    to: DEV_R050
+    reason: "Both externalize display content from business logic"
+
+  - from: DEV_R052
+    to: UI_R022
+    reason: "translate() pattern is the mechanism for DEV_R052 UI boundary"
+
+  - from: DEV_R053
+    to: DEV_R052
+    reason: "AI prompt localization extends canonical English keys with locale-aware AI content"
+
+  - from: DEV_R053
+    to: DEV_R050
+    reason: "AI prompts externalized to ai_prompts.yaml, not hardcoded in R"
+
+  - from: DEV_R053
+    to: UI_R025
+    reason: "zh_tw prompts must comply with Taiwan standard Chinese"
+
+  - from: DEV_R055
+    to: MP154
+    reason: "Semantic consistency fallback implements side effect defense for mapping operations"
+
+  - from: DEV_R055
+    to: MP029
+    reason: "Sentinel values are explicit markers, not fabricated data"

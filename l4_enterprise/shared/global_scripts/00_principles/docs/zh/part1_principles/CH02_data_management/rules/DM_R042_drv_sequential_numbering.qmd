@@ -1,0 +1,378 @@
+---
+id: "DM_R042"
+title: "DRV 順序編號規則"
+type: "rule"
+category: "data_management"
+date_created: "2025-01-28"
+date_modified: "2025-01-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 42
+implements:
+  - "MP064": "ETL-衍生分離原則"
+related_to:
+  - "DM_R028": "ETL 資料類型分離規則"
+  - "DM_R041": "ETL 目錄結構規則"
+  - "DM_R037": "公司特定 ETL 命名規則"
+---
+
+# DM_R042: DRV 順序編號規則
+
+## 規則聲明
+
+**所有 DRV（衍生）檔案必須使用與內部 P-number 代碼相符的順序編號**：外部檔名必須直接對應內部處理代碼，以確保清晰的執行順序並防止順序錯誤。
+
+## 命名格式
+
+### 必要模式
+
+```
+{platform}_D{group}_{seq}.R
+```
+
+**組成部分**：
+- `{platform}`：三字母平台代碼（cbz, amz, eby）
+- `D`：固定字面值，表示衍生（Derivation）
+- `{group}`：兩位數組別編號（01, 02 等）
+- `{seq}`：兩位數順序編號，表示執行順序（03, 04, 05 等）
+
+### 範例
+
+```yaml
+有效模式:
+  - "cbz_D01_03.R"  # 平台 CBZ，組別 01，順序 03
+  - "amz_D02_15.R"  # 平台 AMZ，組別 02，順序 15
+  - "eby_D01_07.R"  # 平台 EBY，組別 01，順序 07
+  - "cbz_D01_04.R"  # 平台 CBZ，組別 01，順序 04
+  - "all_D01_99.R"  # 跨平台，組別 01，順序 99
+
+無效模式:
+  - "cbz_DRV01_customer.R"     # ❌ 舊模式，含描述性後綴
+  - "cbz_D1_3.R"               # ❌ 缺少零填充
+  - "cbz_D01_customer.R"        # ❌ 非數字順序
+  - "cbz_DRV_03.R"             # ❌ 使用 DRV 而非 D
+  - "cbz_D01.R"                # ❌ 缺少順序編號
+```
+
+## 內部 P-Number 映射
+
+### 必要註解結構
+
+每個 DRV 檔案必須在第 2 行包含其 P-number 識別碼：
+
+```r
+#####
+#P07_D01_03
+# DRV: 客戶 DNA 分析（組別 01，順序 03）
+```
+
+### 檔名對 P-Number 對應
+
+外部檔名必須符合內部 P-number：
+
+```yaml
+映射需求:
+  內部代碼: "#P07_D01_03"
+  外部檔案: "cbz_D01_03.R"
+
+  驗證:
+    - P07 -> 平台識別碼（映射至 cbz/amz/eby）
+    - D01 -> 組別 01
+    - 03  -> 順序 03
+
+  結果: "cbz_D01_03.R"
+```
+
+## 執行順序規則
+
+### 順序處理
+
+DRV 檔案在每個組別內按嚴格的數字順序執行：
+
+```yaml
+執行順序:
+  組別_01:
+    - "cbz_D01_03.R"  # 第一個執行
+    - "cbz_D01_04.R"  # 第二個執行
+    - "cbz_D01_05.R"  # 第三個執行
+    - "cbz_D01_07.R"  # 第四個執行（允許間隔）
+
+  組別_02:
+    - "cbz_D02_01.R"  # 新組別可從任何數字開始
+    - "cbz_D02_05.R"  # 繼續順序執行
+```
+
+### 相依性管理
+
+```r
+# 在編排腳本中
+execute_drv_group <- function(platform, group) {
+  # 尋找此平台和組別的所有 DRV 檔案
+  pattern <- sprintf("%s_D%02d_[0-9]{2}\\.R", platform, group)
+  drv_files <- list.files("DRV", pattern = pattern, full.names = TRUE)
+
+  # 按順序編號排序（已在檔名中）
+  drv_files <- sort(drv_files)
+
+  # 依序執行
+  for (drv_file in drv_files) {
+    message(sprintf("執行中: %s", basename(df_file)))
+    source(df_file)
+  }
+}
+```
+
+## 優點
+
+### 清晰的執行順序
+- 從檔名即可看出順序
+- 無需開啟檔案以確定順序
+- 防止亂序執行錯誤
+
+### 簡化編排
+- 自然排序正確運作
+- 易於識別缺失的順序
+- 可能實現基於組別的平行處理
+
+### 直接代碼映射
+- 外部名稱符合內部識別碼
+- 減少混淆和映射錯誤
+- 簡化除錯和維護
+
+### 版本控制優點
+- 順序變更的差異可見性清晰
+- 易於追蹤執行順序變更
+- 簡化合併衝突解決
+
+## 從舊模式遷移
+
+### 步驟 1：識別舊模式檔案
+
+```r
+# 尋找使用舊 DRV 命名模式的檔案
+old_pattern_files <- list.files(
+  "DRV",
+  pattern = ".*_DRV[0-9]+_.*\\.R$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+# 要遷移的舊模式範例：
+# cbz_DRV01_customer.R -> cbz_D01_03.R
+# cbz_DRV02_sales.R    -> cbz_D01_04.R
+# cbz_DRV03_product.R  -> cbz_D01_05.R
+```
+
+### 步驟 2：提取 P-Numbers
+
+```r
+# 從每個檔案讀取 P-number
+extract_p_number <- function(file_path) {
+  lines <- readLines(file_path, n = 10)
+  p_number_line <- grep("^#P[0-9]+_D[0-9]+_[0-9]+", lines, value = TRUE)
+
+  if (length(p_number_line) > 0) {
+    # 提取 P-number 組件
+    p_number <- sub("^#", "", p_number_line[1])
+    return(p_number)
+  }
+  return(NULL)
+}
+```
+
+### 步驟 3：生成新名稱
+
+```r
+# 將 P-number 轉換為新檔名
+p_number_to_filename <- function(p_number, platform) {
+  # 解析 P-number：P07_D01_03
+  parts <- strsplit(p_number, "_")[[1]]
+
+  if (length(parts) == 3) {
+    group <- sub("D", "", parts[2])
+    seq <- parts[3]
+
+    new_name <- sprintf("%s_D%s_%s.R", platform, group, seq)
+    return(new_name)
+  }
+  return(NULL)
+}
+```
+
+### 步驟 4：重命名檔案
+
+```r
+# 將檔案重命名為新模式
+migrate_drv_file <- function(old_path) {
+  # 提取 P-number
+  p_number <- extract_p_number(old_path)
+
+  if (!is.null(p_number)) {
+    # 從舊檔名確定平台
+    filename <- basename(old_path)
+    platform <- substr(filename, 1, 3)
+
+    # 生成新名稱
+    new_name <- p_number_to_filename(p_number, platform)
+
+    if (!is.null(new_name)) {
+      new_path <- file.path(dirname(old_path), new_name)
+
+      # 重命名檔案
+      file.rename(old_path, new_path)
+      message(sprintf("已遷移: %s -> %s",
+                     basename(old_path), new_name))
+      return(TRUE)
+    }
+  }
+
+  warning(sprintf("無法遷移: %s（缺少 P-number）",
+                 basename(old_path)))
+  return(FALSE)
+}
+```
+
+## 驗證函數
+
+### 驗證檔名格式
+
+```r
+validate_drv_filename <- function(filename) {
+  # 檢查模式：{platform}_D{group}_{seq}.R
+  pattern <- "^([a-z]{3})_D([0-9]{2})_([0-9]{2})\\.R$"
+
+  if (!grepl(pattern, filename)) {
+    stop(sprintf("違反 DM_R042：無效的 DRV 檔名格式：%s",
+                filename))
+  }
+
+  # 提取組件
+  matches <- regmatches(filename, regexec(pattern, filename))[[1]]
+
+  return(list(
+    platform = matches[2],
+    group = matches[3],
+    sequence = matches[4]
+  ))
+}
+```
+
+### 驗證 P-Number 對應
+
+```r
+validate_p_number_match <- function(file_path) {
+  filename <- basename(file_path)
+
+  # 從檔名取得預期組件
+  components <- validate_drv_filename(filename)
+
+  # 從檔案讀取 P-number
+  p_number <- extract_p_number(file_path)
+
+  if (is.null(p_number)) {
+    stop(sprintf("違反 DM_R042：檔案中未找到 P-number：%s",
+                filename))
+  }
+
+  # 檢查 P-number 是否符合檔名
+  expected_suffix <- sprintf("D%s_%s",
+                            components$group,
+                            components$sequence)
+
+  if (!grepl(expected_suffix, p_number)) {
+    stop(sprintf(
+      "違反 DM_R042：%s 中的 P-number 不符\n  預期：*_D%s_%s\n  找到：%s",
+      filename, components$group, components$sequence, p_number
+    ))
+  }
+
+  message(sprintf("✅ DM_R042：有效的 DRV 檔案：%s 符合 %s",
+                 filename, p_number))
+  return(TRUE)
+}
+```
+
+### 驗證執行順序
+
+```r
+validate_drv_sequence <- function(df_directory) {
+  # 取得所有 DRV 檔案
+  drv_files <- list.files(drv_directory,
+                         pattern = ".*_D[0-9]{2}_[0-9]{2}\\.R$",
+                         recursive = TRUE)
+
+  # 按平台和組別分組
+  file_df <- data.frame(
+    file = drv_files,
+    stringsAsFactors = FALSE
+  )
+
+  # 解析檔名
+  file_df <- file_df %>%
+    mutate(
+      platform = substr(file, 1, 3),
+      group = substr(file, 5, 6),
+      sequence = as.integer(substr(file, 8, 9))
+    ) %>%
+    arrange(platform, group, sequence)
+
+  # 檢查重複順序
+  duplicates <- file_df %>%
+    group_by(platform, group, sequence) %>%
+    filter(n() > 1)
+
+  if (nrow(duplicates) > 0) {
+    stop(sprintf("違反 DM_R042：發現重複順序：\n%s",
+                paste(duplicates$file, collapse = "\n")))
+  }
+
+  # 報告順序間隔（資訊性）
+  gaps <- file_df %>%
+    group_by(platform, group) %>%
+    summarize(
+      sequences = list(sequence),
+      gaps = list(setdiff(
+        seq(min(sequence), max(sequence)),
+        sequence
+      ))
+    ) %>%
+    filter(lengths(gaps) > 0)
+
+  if (nrow(gaps) > 0) {
+    message("資訊：發現順序間隔（這是允許的）：")
+    print(gaps)
+  }
+
+  message(sprintf("✅ DM_R042：所有 %d 個 DRV 檔案都有有效的順序",
+                 nrow(file_df)))
+  return(TRUE)
+}
+```
+
+## 實施檢查清單
+
+- [ ] 所有 DRV 檔案遵循 `{platform}_D{group}_{seq}.R` 模式
+- [ ] 檔名中沒有描述性後綴
+- [ ] 所有檔案在第 2 行包含對應的 P-number
+- [ ] 順序編號有零填充（01, 02，而非 1, 2）
+- [ ] 組別編號有零填充
+- [ ] 平台代碼正好是 3 個小寫字母
+- [ ] 檔案在 DRV/{platform}/ 目錄結構中
+- [ ] 編排腳本使用順序執行
+- [ ] 舊模式檔案已遷移
+- [ ] 所有檔案通過驗證函數
+
+## 與其他規則的關係
+
+### 取代
+- DM_R028 中的舊 DRV 命名模式（`{platform}_DRV{nn}_{purpose}.R`）
+
+### 補充
+- **MP064**：維持 ETL-衍生分離
+- **DM_R041**：遵循目錄結構需求
+- **DM_R028**：與整體 ETL/DRV 組織一致
+
+## 結論
+
+DRV 順序編號規則（DM_R042）為衍生檔案建立了清晰、明確的命名系統，直接將外部檔名映射到內部處理代碼。這消除了執行順序的混淆，簡化了編排，並確保了可維護的資料處理管線。

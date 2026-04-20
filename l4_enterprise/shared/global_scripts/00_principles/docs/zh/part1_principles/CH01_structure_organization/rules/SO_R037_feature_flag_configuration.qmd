@@ -1,0 +1,407 @@
+---
+title: "SO_R037: Feature Flag Configuration"
+subtitle: "Standard configuration pattern for defining platform-specific feature flags in app_config.yaml"
+chapter: "CH01"
+category: "rule"
+number: "SO_R037"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law"
+article-number:
+  number: 37
+  title: "Feature Flag Configuration"
+related_to:
+  - "SO_P017: Platform-Specific Feature Gating"
+  - "SO_P010: Config-Driven Customization"
+  - "SO_R005: App YAML Configuration"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 37: Feature Flag Configuration {#overview}
+
+**Structure & Organization Law Article 37 (Feature Flag Configuration)**
+
+This rule defines the standard configuration format for feature flags in `app_config.yaml` and the implementation of the `is_feature_enabled_for_platform()` function.
+
+:::{.callout-important}
+## Core Rule
+Feature flags are defined in the `features:` section of app_config.yaml. Each feature specifies `enabled_for:` with a list of platform_ids or "all".
+:::
+
+# Section 1: Configuration Format {#configuration-format}
+
+## Subsection 1: YAML Structure {#yaml-structure}
+
+**File Location:** `app_config.yaml`
+
+**Structure:**
+
+```yaml
+# Features section in app_config.yaml
+features:
+  feature_name:
+    enabled_for: ["platform1", "platform2"]
+```
+
+**Complete Example:**
+
+```yaml
+app_info:
+  name: "MAMBA"
+  version: "1.0.0"
+  language: "zh_TW"
+
+# Feature flags section
+features:
+  # Only eBay has review data for Poisson analysis
+  poisson_comment:
+    enabled_for: ["eby"]
+
+  # RFM analysis available for all platforms
+  rfm_analysis:
+    enabled_for: ["all"]
+
+  # Customer DNA available for multiple platforms
+  customer_dna:
+    enabled_for: ["cbz", "eby", "amz"]
+
+  # Experimental feature - disabled for now
+  beta_dashboard:
+    enabled_for: []
+```
+
+## Subsection 2: Platform IDs {#platform-codes}
+
+**Standard Platform IDs:**
+
+| Code | Platform | Description |
+|------|----------|-------------|
+| cbz  | Cyberbiz | Taiwan e-commerce platform |
+| eby  | eBay     | International marketplace |
+| amz  | Amazon   | Amazon marketplace |
+| all  | All      | Special keyword for all platforms |
+
+**Special Values:**
+
+- `["all"]` - Feature enabled for all platforms
+- `[]` - Feature disabled for all platforms (empty list)
+- Omitted feature - Defaults to enabled (see SO_P017)
+
+# Section 2: Function Implementation {#function-implementation}
+
+## Subsection 1: Core Function {#core-function}
+
+**File Location:** `scripts/global_scripts/04_utils/fn_is_feature_enabled_for_platform.R`
+
+**Implementation:**
+
+```r
+#' Check if a Feature is Enabled for a Platform
+#'
+#' Checks the app_config.yaml features section to determine
+#' if a specific feature is enabled for the given platform.
+#'
+#' @param feature_name Character. The name of the feature to check.
+#' @param platform Character. The platform_id (e.g., "eby", "cbz").
+#'
+#' @return Logical. TRUE if feature is enabled, FALSE otherwise.
+#'
+#' @details
+#' Default behavior:
+#' - Feature not in config = TRUE (enabled)
+#' - enabled_for contains "all" = TRUE
+#' - enabled_for is empty = FALSE
+#' - enabled_for contains platform = TRUE
+#' - Otherwise = FALSE
+#'
+#' @examples
+#' is_feature_enabled_for_platform("poisson_comment", "eby")
+#' # Returns TRUE if eby is in enabled_for list
+#'
+#' is_feature_enabled_for_platform("new_feature", "cbz")
+#' # Returns TRUE if feature not configured (safe default)
+#'
+#' @export
+is_feature_enabled_for_platform <- function(feature_name, platform) {
+
+  # Validate inputs
+  if (is.null(feature_name) || !nzchar(feature_name)) {
+    return(TRUE)  # Safe default for invalid input
+  }
+
+  if (is.null(platform) || !nzchar(platform)) {
+    return(TRUE)  # Safe default for no platform
+  }
+
+  # Check if app_configs exists
+  if (!exists("app_configs", envir = .GlobalEnv)) {
+    return(TRUE)  # Safe default if config not loaded
+  }
+
+  # Get features config
+  features <- app_configs$features
+  if (is.null(features)) {
+    return(TRUE)  # No features section = all enabled
+  }
+
+  # Get specific feature config
+  feature_config <- features[[feature_name]]
+  if (is.null(feature_config)) {
+    return(TRUE)  # Feature not configured = enabled
+  }
+
+  # Get enabled platforms list
+  enabled_for <- feature_config$enabled_for
+  if (is.null(enabled_for)) {
+    return(TRUE)  # No enabled_for = enabled for all
+  }
+
+  # Empty list = disabled for all
+  if (length(enabled_for) == 0) {
+    return(FALSE)
+  }
+
+  # Check for "all" keyword
+  if ("all" %in% enabled_for) {
+    return(TRUE)
+  }
+
+  # Normalize platform_id
+  platform <- tolower(as.character(platform))
+
+  # Check if platform is in enabled list
+  return(platform %in% tolower(enabled_for))
+}
+```
+
+## Subsection 2: Usage Patterns {#usage-patterns}
+
+**In Server Logic:**
+
+```r
+observeEvent(input$platform, {
+  platform_id <- input$platform
+
+  # Check feature availability
+  if (!is_feature_enabled_for_platform("poisson_comment", platform_id)) {
+    # Disable UI element
+    disable_menu_item("poisson_comment")
+
+    # Show message
+    showNotification(
+      translate("This feature is not available for the selected platform"),
+      type = "warning"
+    )
+  }
+})
+```
+
+**In Reactive Expressions:**
+
+```r
+feature_available <- reactive({
+  req(input$platform)
+  is_feature_enabled_for_platform("advanced_analytics", input$platform)
+})
+
+output$feature_panel <- renderUI({
+  if (feature_available()) {
+    advanced_analytics_ui()
+  } else {
+    disabled_feature_placeholder(
+      translate("Advanced analytics not available for this platform")
+    )
+  }
+})
+```
+
+# Section 3: UI Patterns for Disabled Features {#ui-patterns}
+
+## Subsection 1: Menu Item Disabling {#menu-disabling}
+
+**CSS for Disabled Menu Items:**
+
+```css
+/* In www/styles.css */
+.disabled-menu-item {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.disabled-menu-item::after {
+  content: " (unavailable)";
+  font-size: 0.8em;
+  color: #999;
+}
+```
+
+**JavaScript for Dynamic Disabling:**
+
+```r
+# In server
+observe({
+  platform <- input$platform
+
+  features_to_check <- c("poisson_comment", "advanced_segmentation")
+
+  for (feature in features_to_check) {
+    enabled <- is_feature_enabled_for_platform(feature, platform)
+
+    if (!enabled) {
+      shinyjs::runjs(sprintf(
+        '$("#sidebarMenu li a[data-value=\'%s\']")
+          .addClass("disabled-menu-item")
+          .attr("title", "%s");',
+        feature,
+        translate("Not available for this platform")
+      ))
+    } else {
+      shinyjs::runjs(sprintf(
+        '$("#sidebarMenu li a[data-value=\'%s\']")
+          .removeClass("disabled-menu-item")
+          .removeAttr("title");',
+        feature
+      ))
+    }
+  }
+})
+```
+
+## Subsection 2: Placeholder Content {#placeholder-content}
+
+**Disabled Feature Placeholder:**
+
+```r
+disabled_feature_placeholder <- function(message) {
+  div(
+    class = "disabled-feature-placeholder",
+    style = "text-align: center; padding: 50px; color: #999;",
+    icon("ban", class = "fa-3x"),
+    h4(message),
+    p(translate("Please select a different platform or contact support."))
+  )
+}
+```
+
+# Section 4: Violations and Compliance {#violations-compliance}
+
+## Subsection 1: Violations {#violations}
+
+**Configuration Violations:**
+
+```yaml
+# VIOLATION: Wrong key name
+feature_flags:  # Should be 'features'
+  my_feature: true
+
+# VIOLATION: Boolean instead of list
+features:
+  my_feature: true  # Should be enabled_for: ["all"]
+
+# VIOLATION: Inconsistent platform_ids
+features:
+  my_feature:
+    enabled_for: ["eBay", "CyberBiz"]  # Should be lowercase: eby, cbz
+```
+
+**Code Violations:**
+
+```r
+# VIOLATION: Direct config access without function
+if ("eby" %in% app_configs$features$poisson_comment$enabled_for) {
+  # Should use is_feature_enabled_for_platform()
+}
+
+# VIOLATION: Hardcoded platform check
+if (platform == "eby") {
+  show_feature()
+}
+```
+
+## Subsection 2: Compliant Examples {#compliant}
+
+**Correct Configuration:**
+
+```yaml
+features:
+  poisson_comment:
+    enabled_for: ["eby"]
+
+  customer_dna:
+    enabled_for: ["all"]
+
+  beta_feature:
+    enabled_for: []  # Explicitly disabled
+```
+
+**Correct Code:**
+
+```r
+# COMPLIANT: Using the function
+if (is_feature_enabled_for_platform("poisson_comment", platform)) {
+  poisson_ui()
+}
+
+# COMPLIANT: Reactive pattern
+feature_state <- reactive({
+  is_feature_enabled_for_platform("feature_name", input$platform)
+})
+```
+
+# Section 5: Testing {#testing}
+
+## Subsection 1: Unit Tests {#unit-tests}
+
+**Test Cases:**
+
+```r
+test_feature_gating <- function() {
+  # Mock app_configs
+  app_configs <<- list(
+    features = list(
+      feature_a = list(enabled_for = c("eby")),
+      feature_b = list(enabled_for = c("all")),
+      feature_c = list(enabled_for = c())
+    )
+  )
+
+  # Test specific platform
+
+  stopifnot(is_feature_enabled_for_platform("feature_a", "eby") == TRUE)
+  stopifnot(is_feature_enabled_for_platform("feature_a", "cbz") == FALSE)
+
+  # Test "all" keyword
+  stopifnot(is_feature_enabled_for_platform("feature_b", "eby") == TRUE)
+  stopifnot(is_feature_enabled_for_platform("feature_b", "cbz") == TRUE)
+
+  # Test empty list (disabled)
+  stopifnot(is_feature_enabled_for_platform("feature_c", "eby") == FALSE)
+
+  # Test non-existent feature (default enabled)
+  stopifnot(is_feature_enabled_for_platform("feature_x", "eby") == TRUE)
+
+  message("All feature gating tests passed")
+}
+```
+
+# Section 6: Principle Relationships {#principle-relationships}
+
+This rule:
+
+1. **Implements SO_P017 (Platform-Specific Feature Gating)** with specific patterns
+2. **Extends SO_R005 (App YAML Configuration)** with features section
+3. **Follows SO_P010 (Config-Driven Customization)** philosophy
+
+---
+
+*Based on: Structure & Organization Law Article 37*
+*Implements: [SO_P017 Platform-Specific Feature Gating](../principles/SO_P017_platform_specific_feature_gating.qmd)*

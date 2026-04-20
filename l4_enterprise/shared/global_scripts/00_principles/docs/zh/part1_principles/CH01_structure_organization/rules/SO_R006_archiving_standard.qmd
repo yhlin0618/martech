@@ -1,0 +1,256 @@
+---
+title: "SO_R006: 歸檔標準規則"
+subtitle: "管理已棄用和已取代資源的一致性方法"
+chapter: "CH01"
+category: "rule"
+number: "SO_R006"
+date-created: "2025-04-04"
+date-modified: "2026-02-11"
+author: "Claude"
+type: "rule"
+law: "結構與組織法實施規則"
+article-number: "Article 6"
+implements:
+  - "CH00.MP005: 實例與原則"
+related_to:
+  - "CH00.MP007: 文件組織"
+  - "SO_R003: 模組命名慣例"
+  - "SO_R022: 臨時檔案處理規則"
+  - "MP034: 歸檔不可變性原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**結構與組織法實施規則第六條（歸檔標準規則）**
+
+本條文建立歸檔已棄用或已取代資源的標準，確保以適當的元資料和說明註記進行一致性管理。
+
+:::{.callout-important}
+## 核心規則
+所有已歸檔的內容必須遵循適當的歸檔模式進行儲存，並包含元資料和說明註記，使用：
+1. **完整歸檔目錄**：用於完全棄用的資源
+2. **就地歸檔**：用於演化性變更
+3. **臨時工作歸檔**：用於已完成的測試檔案、遷移計畫、除錯腳本，以及具有歷史價值的已取代版本
+:::
+
+# 第一節：歸檔方法 {#approaches}
+
+## 第一小節：歸檔目錄方法 {#archive-dir}
+
+第一項：完全棄用資源 (Fully deprecated resources)
+
+對於應從積極使用中移除的完全棄用資源：
+
+```
+/scripts/global_scripts/99_archive/
+```
+
+這是專案層級的歸檔根目錄，用於已棄用的資源。
+
+這是完全歸檔內容的標準位置，不應再被使用。
+
+## 第二小節：就地歸檔方法 {#in-place}
+
+第一項：演化性變更 (Evolutionary changes)
+
+對於應保持可存取的演化性變更：
+
+```
+filename.ext.archive_description
+```
+
+其中：
+- `filename.ext` 是原始檔名及其副檔名
+- `archive_description` 是簡要描述（例如："pre_optimization"、"R0076"）
+- 新實作使用原始檔名
+
+第二項：實例範例 (Practical examples)
+
+```
+microCustomer.R.archive_pre_optimization
+microCustomer_test.R.archive
+```
+
+# 第八節：版控策略 {#version-control}
+
+## 第一小節：單一真實來源 {#single-source}
+
+第一項：唯一版控歸檔目錄 (Single source of truth)
+
+**`99_archive/` 是唯一被 Git 版本控制追蹤的歸檔目錄。**
+
+理由：
+- 包含經過整理、組織的歷史文件
+- 形成專案的永久記錄
+- 作為權威的歷史歸檔
+- 納入版本控制以提供稽核軌跡和合規性
+
+所有關於進入 `99_archive/` 的決定都應該是經過深思熟慮且審查過的，因為這些檔案會成為專案永久歷史的一部分。
+
+## 第二小節：排除的歸檔目錄 {#excluded-archives}
+
+第一項：本地歸檔目錄 (Excluded archive directories)
+
+所有其他歸檔目錄（`archive*/`、`_archive*/`、`*_archived*/`）都透過 `.gitignore` **排除在版本控制之外**。
+
+這些本地歸檔目錄用作：
+
+1. **本地暫存緩衝區**：兩階段工作流程的第一階段（第五節第五小節）
+   - 最終決定前的臨時保留區域
+   - 已歸檔內容的審查期間
+   - 必要時易於回滾
+
+2. **就地歸檔目錄**：在子目錄內（例如：`docs/.../_archive/`）
+   - 特定情境的臨時歸檔
+   - 開發產物
+   - 本地組織輔助工具
+
+3. **臨時工作歸檔**：在整合至 `99_archive/` 之前
+   - 驗證後的測試檔案
+   - 完成後的遷移計畫
+   - 解決後的除錯腳本
+   - 進行中的組織結構
+
+## 第三小節：.gitignore 設定 {#gitignore-config}
+
+第一項：版控設定規則 (.gitignore configuration rules)
+
+`.gitignore` 檔案使用精確的模式強制執行此策略：
+
+```gitignore
+# 忽略目錄樹中任何位置的所有類似歸檔的目錄
+**/archive*/
+**/_archive*/
+**/*_archived*/
+
+# 例外：保留 99_archive（經過整理的歷史歸檔）
+!99_archive/
+!99_archive/**
+```
+
+第二項：規則說明 (Pattern explanation)
+
+| 模式 | 用途 | 符合範例 |
+|------|------|----------|
+| `**/archive*/` | 符合任何深度的名為 `archive` 及其後綴的目錄 | `docs/archive/`、`utils/archive_old/`、`M01/archive/` |
+| `**/_archive*/` | 符合任何深度的底線前綴歸檔目錄 | `docs/_archive/`、`components/_archive_temp/` |
+| `**/*_archived*/` | 符合任何深度的後綴式歸檔目錄 | `docs/old_archived/`、`utils/files_archived/` |
+| `!99_archive/` | 否定：包含目錄本身 | 追蹤 `99_archive/` 目錄 |
+| `!99_archive/**` | 否定：遞迴包含所有內容 | 追蹤 `99_archive/` 內的所有檔案和子目錄 |
+
+## 第四小節：工作流程影響 {#workflow-implications}
+
+第一項：兩階段歸檔工作流程 (Two-Stage archiving workflow)
+
+使用兩階段歸檔（第五節第五小節）時，版本控制在不同階段運作：
+
+**第一階段（本地緩衝區）**：不在 Git 中
+```
+source_directory/
+└── archive/          # <- 被 .gitignore 排除
+    ├── file1_ARCHIVE.qmd
+    └── README.md
+```
+- 本地實驗和審查
+- 不污染 Git 歷史
+- 易於修改或撤銷
+- 團隊成員看不到未審查的歸檔
+
+**第二階段（中央歸檔）**：在 Git 中
+```
+99_archive/
+└── source_directory/  # <- 被 Git 追蹤
+    ├── file1_ARCHIVE.qmd
+    └── README.md
+```
+- 僅限已審查和確認的歸檔
+- 成為專案的永久記錄
+- 完整的 Git 歷史和稽核軌跡
+- 對整個團隊可見
+
+第二項：版控決策時機 (Version control decision points)
+
+這強化了 `99_archive/` 是**經過審查的永久記錄**：
+
+1. **第一階段之前**：內容處於活躍狀態，在版本控制中
+2. **第一階段期間**：內容在本地 `archive/`，不在版本控制中
+3. **第二階段之後**：內容在 `99_archive/`，作為歷史記錄重新進入版本控制
+
+此工作流程確保：
+- **乾淨的歷史**：僅最終確定的歸檔決定進入 Git
+- **無雜訊**：進行中的歸檔保持在本地
+- **稽核軌跡**：永久歸檔具有完整的 Git 來源
+- **靈活性**：在審查期間易於調整
+
+# 實施檢查清單 {#checklist}
+
+:::{.callout-note}
+## 歸檔檢查清單
+
+**歸檔方法選擇：**
+- [ ] 確定是完整歸檔、就地歸檔或臨時工作歸檔
+- [ ] 識別替代資源或完成狀態
+- [ ] 檢查是否有活躍的引用
+
+**版控策略確認：**
+- [ ] 理解 99_archive/ 是唯一進入版控的歸檔目錄
+- [ ] 確認本地 archive*/ 目錄將被 .gitignore 排除
+- [ ] 驗證兩階段工作流程中的版控時機
+
+**元資料要求：**
+- [ ] 在標題中新增 [ARCHIVED]（針對原則/規則）
+- [ ] 將類型更改為 archived_[type]
+- [ ] 新增 date_archived 欄位
+- [ ] 新增 archived_reason 欄位
+- [ ] 列出替代資源或完成狀態
+
+**內容結構：**
+- [ ] 在頂部新增歸檔通知
+- [ ] 包含分隔線
+- [ ] 保留原始內容
+- [ ] 更新所有引用
+- [ ] 在歸檔目錄中建立 README
+
+**品質檢查：**
+- [ ] 歸檔位置正確
+- [ ] 遵循命名慣例
+- [ ] 文件完整
+- [ ] 歷史情境已保留
+- [ ] 工作目錄已清理
+- [ ] Git 版控策略正確應用
+:::
+
+# 結論 {#conclusion}
+
+歸檔標準規則確保所有已歸檔的內容都得到一致處理、適當記錄和正確儲存。遵循這些指南，我們在保留歷史資訊以供參考的同時，維護了一個乾淨、有組織的系統。
+
+五管齊下的方法為不同的歸檔需求提供全面覆蓋：
+
+1. **完整歸檔**（99_archive/）用於已棄用的資源
+2. **就地歸檔**（.archive 後綴）用於演化性變更
+3. **臨時工作歸檔**用於已完成的任務
+4. **兩階段歸檔**（本地→中央）用於需要審查期間的大型重構
+5. **版控策略**（僅 99_archive/）確保乾淨的 Git 歷史和永久記錄完整性
+
+這確保了：
+
+1. **工作目錄保持乾淨**：已完成的臨時工作及時移至歸檔
+2. **保留歷史情境**：測試結果、遷移計畫和除錯見解得以保留
+3. **可追溯演化**：開發歷史可供未來參考
+4. **維持合規性**：稽核軌跡和文件要求得以滿足
+5. **Git 歷史保持乾淨**：僅經過審查的永久歸檔透過 99_archive/ 進入版本控制
+
+透過區分應刪除的真正臨時檔案（由 SO_R022 涵蓋）和具有歷史價值應歸檔的臨時工作，我們同時維護了乾淨的工作空間和完整的專案歷史。版控策略進一步確保永久歷史記錄（99_archive/）是 Git 中的單一真實來源。
+
+---
+
+*基於：結構與組織法實施規則第六條*  
+*實施：[MP005 實例與原則](../../CH00_fundamental_principles/MP005_instance_vs_principle.qmd)*  
+*相關：[MP007 文件組織](../../CH00_fundamental_principles/MP007_documentation_organization.qmd)、[SO_R003 模組命名慣例](SO_R003_module_naming_convention.qmd)*

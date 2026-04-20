@@ -1,0 +1,371 @@
+---
+title: "R119: Universal df_ Prefix for All Datasets"
+subtitle: "ALL datasets stored in databases MUST use the df_ prefix, regardless of layer (ETL or DRV)"
+author: "principle-product-manager"
+date: "2025-11-13"
+categories: [rule, naming-conventions, database, data-management, consistency]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Rule Statement
+
+**ALL datasets stored in databases MUST use the `df_` prefix, regardless of whether they originate from ETL or DRV layers.**
+
+## Rationale
+
+### Consistency Over Source
+
+**Type-Based Naming**: Database objects should be named by their TYPE (dataset), not their SOURCE (which layer created them).
+
+**Universal Recognition**: Users should instantly identify datasets vs other database objects (views, functions, indexes) through consistent naming.
+
+**Analogy**: Just like functions use `fn_` prefix regardless of which layer they belong to, datasets use `df_` prefix regardless of source.
+
+### Clarity and Predictability
+
+- `df_` clearly indicates "this is a data frame / dataset"
+- Applies universally across ALL tiers (0IM, 1ST, 2TR, DRV, APP)
+- Eliminates confusion about table types
+
+### Implements MP071
+
+This rule implements **MP071: Type-Prefix Naming Meta-Principle** which establishes that "names of code entities should include standardized prefixes that identify their type and purpose."
+
+## Naming Pattern
+
+```
+df_{domain}_{entity}___{stage}
+```
+
+### Components
+
+- **`df_`**: Universal prefix (REQUIRED for all datasets)
+- **`{domain}`**: Data source (cbz, eby, amz, precision, etc.)
+- **`{entity}`**: What the data represents (sales, customers, products, product_features, poisson_analysis)
+- **`___{stage}`**: Three underscores + stage indicator (ONLY for ETL tiers)
+
+### Stage Suffix Rules
+
+**Use stage suffix** (___raw, ___staged, ___transformed) for:
+- **Tier 0 (0IM)**: Raw import data
+- **Tier 1 (1ST)**: Staging/cleaning data
+- **Tier 2 (2TR)**: Transformation data
+
+**NO stage suffix** for:
+- **Tier 3 (DRV)**: Derived analytical datasets (final outputs)
+- **Tier 4 (APP)**: Application-ready datasets (copied from DRV)
+
+**Rationale**: Stage suffixes indicate intermediate ETL processing. DRV/APP tables are final analytical outputs, not intermediate stages.
+
+## Examples by Tier
+
+### Tier 0 (0IM - Raw Import)
+
+```r
+# Raw data imported from source systems
+df_cbz_sales___raw
+df_cbz_customers___raw
+df_cbz_products___raw
+df_eby_orders___raw
+df_amz_inventory___raw
+```
+
+### Tier 1 (1ST - Staging)
+
+```r
+# Staged data after initial cleaning
+df_cbz_sales___staged
+df_cbz_customers___staged
+df_precision_products___staged
+df_eby_orders___staged
+```
+
+### Tier 2 (2TR - Transformation)
+
+```r
+# Transformed data ready for derivation
+df_cbz_sales___transformed
+df_cbz_customers___transformed
+df_precision_products___transformed
+df_eby_orders___transformed
+```
+
+### Tier 3 (DRV - Derivation) ⭐ NO STAGE SUFFIX
+
+```r
+# Final analytical datasets - NO STAGE SUFFIX
+df_cbz_product_features        # NOT df_cbz_product_features
+df_cbz_time_series             # NOT df_cbz_time_series
+df_cbz_poisson_analysis        # NOT df_cbz_poisson_analysis
+df_precision_market_analysis   # NOT df_precision_market_analysis
+df_precision_features          # NOT df_precision_features
+df_precision_poisson_analysis  # NOT df_precision_poisson_analysis
+```
+
+### Tier 4 (APP - Application)
+
+```r
+# Application data (copied from DRV) - NO STAGE SUFFIX
+df_cbz_product_features
+df_cbz_time_series
+df_cbz_poisson_analysis
+df_profile_by_customer
+df_position
+```
+
+## Common Mistakes
+
+### ✗ WRONG: Using df_ prefix
+
+```r
+# INCORRECT - Using source-based naming
+dbWriteTable(con_processed, "df_cbz_product_features", features)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", analysis)
+dbWriteTable(con_processed, "df_precision_features", precision_features)
+
+# Reading with wrong name
+features <- tbl2(con_app, "df_cbz_product_features")
+```
+
+### ✓ CORRECT: Using df_ prefix
+
+```r
+# CORRECT - Using type-based naming
+dbWriteTable(con_processed, "df_cbz_product_features", features)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", analysis)
+dbWriteTable(con_processed, "df_precision_features", precision_features)
+
+# Reading with correct name
+features <- tbl2(con_app, "df_cbz_product_features")
+```
+
+### ✗ WRONG: Adding stage suffix to DRV/APP tables
+
+```r
+# INCORRECT - DRV tables should not have stage suffix
+dbWriteTable(con_processed, "df_cbz_product_features___derived", features)
+dbWriteTable(con_app, "df_cbz_poisson_analysis___final", analysis)
+```
+
+### ✓ CORRECT: No stage suffix for DRV/APP
+
+```r
+# CORRECT - DRV/APP tables are final outputs, no stage needed
+dbWriteTable(con_processed, "df_cbz_product_features", features)
+dbWriteTable(con_app, "df_cbz_poisson_analysis", analysis)
+```
+
+## Implementation Examples
+
+### In DRV Scripts
+
+**BEFORE** (incorrect):
+```r
+# cbz_DRV_sales_analysis.R
+dbWriteTable(con_processed, "df_cbz_product_features", product_features)
+dbWriteTable(con_processed, "df_cbz_time_series", time_series)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", poisson_results)
+```
+
+**AFTER** (correct):
+```r
+# cbz_DRV_sales_analysis.R
+dbWriteTable(con_processed, "df_cbz_product_features", product_features)
+dbWriteTable(con_processed, "df_cbz_time_series", time_series)
+dbWriteTable(con_processed, "df_cbz_poisson_analysis", poisson_results)
+```
+
+### Legacy Consolidation (Archived)
+
+`consolidate_to_app_data.R` is a legacy bulk-copy script and is archived.
+Do not create new consolidation scripts; app-facing tables are written directly
+by DRV/ETL scripts (see MP110, DM_R055).
+
+### In Application Code
+
+**BEFORE** (incorrect):
+```r
+# app.R or component modules
+features <- tbl2(con_app, "df_cbz_product_features") %>% collect()
+analysis <- tbl2(con_app, "df_cbz_poisson_analysis") %>% collect()
+```
+
+**AFTER** (correct):
+```r
+# app.R or component modules
+features <- tbl2(con_app, "df_cbz_product_features") %>% collect()
+analysis <- tbl2(con_app, "df_cbz_poisson_analysis") %>% collect()
+```
+
+## Migration Path
+
+For existing databases with `df_` prefix tables:
+
+```r
+# rename_drv_to_df.R
+library(DBI)
+library(duckdb)
+
+# Connect to database
+con <- dbConnect(duckdb::duckdb(), "data/app_data/app_data.duckdb")
+
+# Get all tables with df_ prefix
+tables <- dbListTables(con)
+df_tables <- grep("^df_", tables, value = TRUE)
+
+cat("Found", length(df_tables), "tables with df_ prefix\n")
+cat("Tables to rename:\n")
+print(df_tables)
+
+# Rename each table
+for (old_name in df_tables) {
+  # New name: replace df_ with df_
+  new_name <- sub("^df_", "df_", old_name)
+
+  # Get row count before rename
+  count_before <- dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM %s", old_name))$n
+
+  # Rename table
+  dbExecute(con, sprintf("ALTER TABLE %s RENAME TO %s", old_name, new_name))
+
+  # Verify row count after rename
+  count_after <- dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM %s", new_name))$n
+
+  # Report
+  cat(sprintf("✓ Renamed: %s -> %s (%d rows)\n", old_name, new_name, count_after))
+
+  # Verify no data loss
+  if (count_before != count_after) {
+    warning(sprintf("Row count mismatch for %s: before=%d, after=%d",
+                    old_name, count_before, count_after))
+  }
+}
+
+dbDisconnect(con, shutdown = TRUE)
+cat("\n✓ Migration complete\n")
+```
+
+## Verification Script
+
+Check compliance across all databases:
+
+```r
+# verify_df_prefix_compliance.R
+library(DBI)
+library(duckdb)
+
+verify_database <- function(db_path, db_name) {
+  con <- dbConnect(duckdb::duckdb(), db_path, read_only = TRUE)
+  tables <- dbListTables(con)
+
+  # Check: All tables should start with df_
+  non_compliant <- tables[!grepl("^df_", tables)]
+
+  cat("\n", rep("=", 60), "\n", sep = "")
+  cat("Database:", db_name, "\n")
+  cat("Path:", db_path, "\n")
+  cat("Total tables:", length(tables), "\n")
+
+  if (length(non_compliant) > 0) {
+    cat("❌ NON-COMPLIANT TABLES (missing df_ prefix):\n")
+    print(non_compliant)
+  } else {
+    cat("✓ All", length(tables), "tables comply with R119 (df_ prefix)\n")
+  }
+
+  dbDisconnect(con, shutdown = TRUE)
+}
+
+# Verify all databases
+verify_database("data/raw_data/raw_data.duckdb", "raw_data")
+verify_database("data/staged_data/staged_data.duckdb", "staged_data")
+verify_database("data/processed_data/processed_data.duckdb", "processed_data")
+verify_database("data/app_data/app_data.duckdb", "app_data")
+```
+
+## Why NOT use df_ prefix?
+
+### Reasoning
+
+1. **`df_` describes SOURCE** (derivation layer) - WHERE it came from
+2. **`df_` describes TYPE** (dataset/data frame) - WHAT it is
+3. **Database objects should be named by TYPE, not SOURCE**
+4. **Consistency with function naming**: Functions use `fn_` regardless of layer
+5. **Universal standard**: ALL data frames use `df_`, ALL functions use `fn_`
+
+### Analogy to Function Naming
+
+**Functions** (regardless of layer):
+- ETL functions: `fn_clean_sales.R` (not `etl_clean_sales.R`)
+- DRV functions: `fn_calculate_ranges.R` (not `df_calculate_ranges.R`)
+- Utility functions: `fn_format_date.R` (not `util_format_date.R`)
+
+**Datasets** (regardless of layer):
+- ETL datasets: `df_cbz_sales___raw` (not `etl_cbz_sales___raw`)
+- DRV datasets: `df_cbz_product_features` (not `df_cbz_product_features`)
+- APP datasets: `df_cbz_poisson_analysis` (not `app_cbz_poisson_analysis`)
+
+**Both use universal type prefixes** (`fn_`, `df_`) **regardless of layer**.
+
+## Related Principles
+
+- **MP071**: Type-Prefix Naming Meta-Principle - Parent principle establishing type-based naming
+- **R021**: One Function One File - Function organization rule
+- **R069**: Function File Naming - Functions use fn_ prefix universally
+- **R119** (THIS): Universal df_ Prefix - Datasets use df_ prefix universally
+- **MP102**: Completeness & Standardization - Overall system consistency
+- **MP110**: ETL Multi-Tier Architecture - Defines tier structure (0IM, 1ST, 2TR, DRV, APP)
+
+## Enforcement
+
+### Code Review Checklist
+
+- [ ] All `dbWriteTable()` calls use `df_` prefix
+- [ ] All `tbl2()` calls reference tables with `df_` prefix
+- [ ] No tables with `df_`, `etl_`, or other source-based prefixes
+- [ ] Stage suffixes (___raw, ___staged, ___transformed) only used in ETL tiers
+- [ ] DRV and APP tables have NO stage suffix
+
+### Linting Rule (Future)
+
+```r
+# Proposed linter to detect violations
+check_df_prefix <- function(code) {
+  # Check dbWriteTable calls
+  pattern_write <- 'dbWriteTable\\([^,]+,\\s*"(?!df_)[^"]+'
+  violations_write <- grep(pattern_write, code, value = TRUE)
+
+  # Check tbl2 calls
+  pattern_read <- 'tbl2\\([^,]+,\\s*"(?!df_)[^"]+'
+  violations_read <- grep(pattern_read, code, value = TRUE)
+
+  if (length(violations_write) > 0 || length(violations_read) > 0) {
+    stop("R119 violation: All dataset names must use df_ prefix")
+  }
+}
+```
+
+## Summary
+
+**Simple Rule**: If it's a dataset in a database, it gets `df_` prefix. Period.
+
+**No exceptions** based on:
+- Which layer created it (ETL vs DRV)
+- Which database it lives in (raw_data vs app_data)
+- What tier it belongs to (0IM, 1ST, 2TR, DRV, APP)
+
+**Consistency is king**: Type-based naming (df_) beats source-based naming (df_).
+
+---
+
+**Created**: 2025-11-13
+**Author**: principle-product-manager
+**Status**: Active
+**Implements**: MP071 (Type-Prefix Naming Meta-Principle)

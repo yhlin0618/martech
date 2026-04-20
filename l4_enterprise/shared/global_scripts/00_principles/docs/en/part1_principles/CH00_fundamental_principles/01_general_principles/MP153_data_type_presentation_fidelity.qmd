@@ -1,0 +1,71 @@
+---
+title: "MP153: Data Type Presentation Fidelity"
+subtitle: "Present data in formats that match the semantic type of the underlying values"
+category: "Meta-Principle"
+type: "Meta-Principle"
+id: "MP153"
+created: "2026-03-07"
+triggered_by: "Issue #276 — Purchase count displayed with decimal points"
+---
+
+## Summary
+
+Every data value has a **semantic type** (integer count, percentage, currency, date, ratio, etc.) that dictates how it should be displayed. The presentation format **must** match the semantic type, not the storage type or the default rendering of the UI framework.
+
+## Motivation
+
+When data flows through ETL, derivation, and UI layers, its storage type may change (e.g., an integer count stored as `DOUBLE` in DuckDB, or a percentage computed as a float). The UI layer is the last line of defense: if it does not explicitly format values according to their semantic type, users see misleading displays.
+
+**Real-world example:** Purchase count (`f_value`) is semantically an integer — you cannot buy something 3.7 times. However, when aggregated or joined, DuckDB may return it as a `DOUBLE`. If the UI renders the raw value, users see "3.0" or "12.00" for purchase counts, which looks unprofessional and confusing.
+
+## Principle Statement
+
+> Different data types require presentation rules that match the nature of the data.
+
+This means:
+
+1. **Identify the semantic type** of each displayed value (not just the R/DuckDB storage type)
+2. **Apply the correct formatting function** for that semantic type
+3. **Never rely on default rendering** — always explicitly format values in the UI layer
+
+## Semantic Type Classification
+
+| Semantic Type | Examples | Required Format | R Pattern |
+|---------------|----------|-----------------|-----------|
+| Integer count | Purchase count, customer count, order count | No decimals | `as.integer()` or `format(x, digits=0)` |
+| Currency | Revenue, AOV, CLV | 2 decimals + currency symbol | `scales::dollar()` or `formatC(x, format="f", digits=2)` |
+| Percentage | Conversion rate, retention rate | 1-2 decimals + % | `scales::percent(x, accuracy=0.1)` |
+| Ratio / Score | RFM score, NES score, ECDF | 2-4 decimals | `round(x, 2)` |
+| Date | Last purchase, registration | Date format | `format(x, "%Y-%m-%d")` |
+| Duration | Days since last purchase (R) | No decimals (days) | `as.integer()` |
+| Free text | Customer name, product name | As-is | No formatting needed |
+
+## Architecture Boundary
+
+```
+ETL/DRV layer:  Values stored in native types (may be DOUBLE)
+                         |
+                         v
+Server logic:    Values computed/filtered (still native types)
+                         |
+                         v
+UI render:       FORMAT ACCORDING TO SEMANTIC TYPE  <-- MP153 applies here
+                 as.integer(f_value)
+                 scales::dollar(revenue)
+                 scales::percent(rate)
+```
+
+## Derived Rules
+
+- **DP_R002**: Integer Display Fidelity — integer-typed values must never show decimal points
+
+## Dependencies
+
+- **MP029**: No Fake Data — formatting must not distort the actual value
+- **DEV_R052**: Business Logic Uses English Keys, UI Translates — formatting is a UI-layer concern
+
+## Related Principles
+
+- **DP_R001**: Distribution Winsorization — also a data presentation concern, but about chart readability
+- **DM_R025**: Type Conversion Between R and DuckDB — upstream cause of type mismatches
+- **UI_R001**: UI-Server-Defaults Triple Pattern — formatting belongs in the UI function

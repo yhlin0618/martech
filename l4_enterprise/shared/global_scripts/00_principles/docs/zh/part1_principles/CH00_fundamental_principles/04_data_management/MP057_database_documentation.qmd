@@ -1,0 +1,347 @@
+---
+title: "MP043: 資料庫文檔元原則 (Database Documentation Principle)"
+subtitle: "資料庫結構、關係和內容必須通過自動化過程系統性地記錄"
+author: "Claude"
+date: "2025-04-07"
+date-modified: "2025-08-16"
+categories: [meta-principle, documentation, database, automation]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 原則
+
+**資料庫結構、關係和內容必須通過自動化過程系統性地記錄，這些過程捕獲所有資料庫的當前狀態，使文檔與實際數據結構保持同步。**
+
+## 實施要求
+
+### 1. 自動化文檔生成 {#automated-generation}
+
+1. **系統捕獲**：使用自動化工具記錄資料庫結構，而不是手動文檔。
+2. **定期更新**：每當架構變更時應更新資料庫文檔。
+3. **一致格式**：文檔應遵循促進可讀性和比較的一致格式。
+4. **完整覆蓋**：文檔應包括所有資料庫對象（表、視圖、欄位、關係）。
+
+### 2. 文檔內容要求 {#content-requirements}
+
+1. **結構資訊**：對於每個表，記錄：
+   - 欄位名稱和數據類型
+   - 主鍵和外鍵
+   - 約束和索引
+   - 行數和大小估計
+
+2. **數據樣本**：包括每個表的代表性數據樣本以說明：
+   - 典型值和格式
+   - 值分布
+   - 特殊案例或邊緣條件
+
+3. **關係和依賴**：記錄：
+   - 外鍵關係
+   - 隱式關係
+   - 依賴圖
+   - 數據流程圖
+
+4. **變更追蹤**：記錄：
+   - 架構版本歷史
+   - 主要結構變更
+   - 遷移路徑
+   - 兼容性考慮
+
+### 3. 文檔格式和存儲 {#format-storage}
+
+1. **Markdown 格式**：以 Markdown 格式存儲文檔用於：
+   - 版本控制兼容性
+   - 原始和渲染形式的可讀性
+   - 與其他文檔系統的簡易集成
+
+2. **嵌入式文物**：包括：
+   - 實體關係圖
+   - 常見用例的樣本查詢
+   - 效能考慮
+   - 已知限制
+
+3. **存儲位置**：文檔應該：
+   - 與代碼庫一起存儲
+   - 使用相同系統進行版本控制
+   - 連結到相關代碼模組
+
+### 4. 與開發工作流程的集成 {#workflow-integration}
+
+1. **CI/CD 集成**：資料庫文檔生成應該：
+   - 成為持續集成管道的一部分
+   - 在架構變更時自動運行
+   - 驗證完整性
+
+2. **審查過程**：文檔變更應該：
+   - 與代碼變更一起審查
+   - 根據實際資料庫結構驗證
+   - 由資料庫利益相關者批准
+
+## 實施範例
+
+### 範例 1：資料庫摘要生成器腳本 {#summary-generator}
+
+```r
+#' 生成 Markdown 格式的綜合資料庫摘要
+#'
+#' @param db_connection DBI 連接對象
+#' @param output_file 輸出 Markdown 檔案的路徑
+#' @param include_samples 是否包括數據樣本（預設：TRUE）
+#' @param sample_rows 要包括的樣本行數（預設：5）
+#' @return 隱式返回生成的 markdown 文本
+summarize_database <- function(db_connection, output_file, include_samples = TRUE, sample_rows = 5) {
+  # 確保輸出目錄存在
+  output_dir <- dirname(output_file)
+  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+  
+  # 初始化 markdown 內容
+  md_content <- c(
+    "# 資料庫結構摘要",
+    paste("生成時間：", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+    "",
+    "## 概覽",
+    ""
+  )
+  
+  # 列出所有表
+  tables <- DBI::dbListTables(db_connection)
+  
+  md_content <- c(
+    md_content,
+    paste("此資料庫包含", length(tables), "個表："),
+    "",
+    paste("- ", tables),
+    "",
+    "## 表詳情",
+    ""
+  )
+  
+  # 處理每個表
+  for (table_name in tables) {
+    md_content <- c(
+      md_content,
+      paste("### 表：", table_name),
+      ""
+    )
+    
+    # 獲取行數
+    row_count <- DBI::dbGetQuery(
+      db_connection, 
+      paste0("SELECT COUNT(*) AS count FROM ", table_name)
+    )$count[1]
+    
+    md_content <- c(
+      md_content,
+      paste("- **行數：** ", format(row_count, big.mark = ",")),
+      ""
+    )
+    
+    # 獲取表架構
+    schema_query <- paste0("SELECT * FROM ", table_name, " LIMIT 0")
+    schema_result <- DBI::dbGetQuery(db_connection, schema_query)
+    column_names <- names(schema_result)
+    column_types <- sapply(schema_result, class)
+    
+    md_content <- c(
+      md_content,
+      "#### 欄位",
+      "",
+      "| 欄位名稱 | 數據類型 |",
+      "|----------|----------|"
+    )
+    
+    for (i in seq_along(column_names)) {
+      md_content <- c(
+        md_content,
+        paste0("| ", column_names[i], " | ", column_types[i], " |")
+      )
+    }
+    
+    md_content <- c(md_content, "")
+    
+    # 如果請求則包括數據樣本
+    if (include_samples && row_count > 0) {
+      sample_query <- paste0("SELECT * FROM ", table_name, " LIMIT ", sample_rows)
+      sample_data <- DBI::dbGetQuery(db_connection, sample_query)
+      
+      md_content <- c(
+        md_content,
+        "#### 樣本數據",
+        ""
+      )
+      
+      # 創建標題行
+      header_row <- paste("|", paste(column_names, collapse = " | "), "|")
+      separator_row <- paste("|", paste(rep("---", length(column_names)), collapse = " | "), "|")
+      
+      md_content <- c(md_content, header_row, separator_row)
+      
+      # 添加數據行
+      for (i in 1:nrow(sample_data)) {
+        row_values <- sapply(1:ncol(sample_data), function(j) {
+          value <- sample_data[i, j]
+          if (is.null(value) || is.na(value)) {
+            "NULL"
+          } else if (inherits(value, "Date") || inherits(value, "POSIXct")) {
+            as.character(value)
+          } else if (is.numeric(value)) {
+            format(value, scientific = FALSE, big.mark = ",")
+          } else {
+            # 截斷長文本值
+            text <- as.character(value)
+            if (nchar(text) > 50) {
+              paste0(substr(text, 1, 47), "...")
+            } else {
+              text
+            }
+          }
+        })
+        
+        data_row <- paste("|", paste(row_values, collapse = " | "), "|")
+        md_content <- c(md_content, data_row)
+      }
+      
+      md_content <- c(md_content, "")
+    }
+    
+    # 在表之間添加分隔符
+    md_content <- c(md_content, "---", "")
+  }
+  
+  # 寫入檔案
+  writeLines(md_content, output_file)
+  message("資料庫摘要寫入：", output_file)
+  
+  # 隱式返回內容
+  invisible(md_content)
+}
+```
+
+### 範例 2：專案工作流程中的使用 {#workflow-usage}
+
+```r
+# 資料庫文檔工作流程
+document_project_databases <- function() {
+  # 記錄主應用程式資料庫
+  app_db <- DBI::dbConnect(duckdb::duckdb(), dbdir = "app_data.duckdb")
+  summarize_database(
+    app_db, 
+    "docs/database/app_data_structure.md",
+    include_samples = TRUE,
+    sample_rows = 5
+  )
+  DBI::dbDisconnect(app_db)
+  
+  # 記錄任何其他資料庫
+  if (file.exists("data/raw_data.duckdb")) {
+    raw_db <- DBI::dbConnect(duckdb::duckdb(), dbdir = "data/raw_data.duckdb")
+    summarize_database(
+      raw_db, 
+      "docs/database/raw_data_structure.md"
+    )
+    DBI::dbDisconnect(raw_db)
+  }
+  
+  message("所有資料庫文檔完成。")
+}
+```
+
+### 範例 3：集成到開發工作流程 {#ci-cd-integration}
+
+```bash
+# 在 CI/CD 管道或預提交鉤子中
+#!/bin/bash
+
+# 檢查架構是否已更改
+if git diff --name-only | grep -q "db_schema.sql"; then
+  echo "檢測到資料庫架構變更。重新生成文檔..."
+  Rscript -e "source('utils/document_databases.R'); document_project_databases()"
+  git add docs/database/*.md
+  echo "文檔已更新。"
+fi
+```
+
+## 常見錯誤和解決方案
+
+### 錯誤 1：過時的文檔 {#stale-documentation}
+
+**問題**：隨著資料庫架構演化，文檔變得過時。
+
+**解決方案**：
+- 在 CI/CD 管道中自動化文檔生成
+- 每當架構變更時運行文檔更新
+- 添加驗證以確保文檔與實際架構匹配
+
+### 錯誤 2：不完整的文檔 {#incomplete-documentation}
+
+**問題**：文檔僅涵蓋資料庫對象的子集。
+
+**解決方案**：
+- 使用內省來發現所有資料庫對象
+- 實施文檔完整性驗證
+- 為未記錄的對象生成警告
+
+### 錯誤 3：不一致的文檔風格 {#inconsistent-style}
+
+**問題**：不同資料庫組件的文檔格式各不相同。
+
+**解決方案**：
+- 使用模板化文檔生成
+- 建立並執行文檔標準
+- 集中化文檔生成邏輯
+
+### 錯誤 4：缺少上下文 {#missing-context}
+
+**問題**：文檔顯示結構但缺少使用上下文和範例。
+
+**解決方案**：
+- 在文檔中包括使用範例
+- 記錄表之間的關係
+- 引用代碼中使用特定表的位置
+
+## 與其他原則的關係
+
+### 與文檔組織的關係（MP0007）
+
+此原則通過以下方式支持文檔組織：
+1. **標準化格式**：為資料庫文檔提供一致的結構
+2. **分層組織**：從概覽到詳細信息組織文檔
+3. **集中位置**：將所有資料庫文檔保存在一個可訪問的地方
+4. **版本對齊**：確保文檔版本與代碼版本對齊
+
+### 與資訊流透明度的關係（MP0010）
+
+此原則通過以下方式增強資訊流透明度：
+1. **數據結構可見性**：使資料庫結構明確可見
+2. **流程映射**：記錄數據如何流經資料庫表
+3. **關係文檔**：視覺化數據實體之間的依賴關係
+4. **訪問模式**：記錄如何查詢和訪問數據
+
+### 與數據完整性的關係（P02）
+
+此原則通過以下方式加強數據完整性：
+1. **約束文檔**：記錄完整性約束
+2. **驗證規則**：解釋應用於數據的驗證規則
+3. **依賴意識**：突出維護完整性的依賴關係
+4. **質量標準**：建立數據質量的可見標準
+
+## 好處
+
+1. **知識轉移**：改善新團隊成員的入職培訓
+2. **可維護性**：使資料庫維護和演化更容易
+3. **錯誤預防**：有助於防止與資料庫交互時的錯誤
+4. **設計改進**：突出潛在的設計改進或不一致
+5. **合規支持**：協助滿足監管合規的文檔要求
+6. **代碼質量**：通過提供清晰的參考改善與資料庫交互的代碼
+7. **協作**：促進有關數據結構的更好溝通
+8. **依賴追蹤**：使數據元素之間的依賴關係明確
+
+## 結論
+
+資料庫文檔原則確保通過自動化過程一致且準確地記錄資料庫結構。通過維護資料庫對象、關係和樣本數據的最新、全面文檔，團隊可以更好地理解、維護和擴展資料庫驅動的應用程式。此文檔既可作為開發參考，也可作為利益相關者的溝通工具。

@@ -1,0 +1,321 @@
+---
+title: "DM_R053: Multi-Source ETL Priority Pattern"
+subtitle: "Source prioritization and dynamic column mapping for company-agnostic ETL"
+chapter: "CH02"
+category: "rule"
+number: "DM_R053"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 53"
+parent_principle: "MP064"
+related_to:
+  - "DM_R052": "Cross-Platform Product Identification"
+  - "DM_R037": "Company-Specific ETL Naming"
+  - "DM_R028": "ETL Data Type Separation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R053: Multi-Source ETL Priority Pattern {#overview}
+
+When integrating data from multiple sources, ETL scripts must define explicit source priority for deduplication and use dynamic column mapping to accommodate company-specific schema variations.
+
+## Rule Statement
+
+**Multi-source ETL MUST implement explicit source priority ordering and dynamic column mapping to ensure consistent deduplication across different company configurations.**
+
+## Rationale {#rationale}
+
+### Why Source Priority?
+
+| Challenge | Solution |
+|-----------|----------|
+| **Same data from multiple sources** | Explicit priority determines which source wins |
+| **Different data quality levels** | Higher-quality sources take precedence |
+| **Source-specific completeness** | Prioritize more complete sources |
+| **Consistent behavior** | Deterministic deduplication across runs |
+
+### Why Dynamic Column Mapping?
+
+| Challenge | Solution |
+|-----------|----------|
+| **Different column names per company** | Pattern-based column discovery |
+| **Schema evolution** | Tolerant to new column names |
+| **Company-agnostic code** | Same logic works for different companies |
+| **Reduced maintenance** | No hardcoded column references |
+
+## Source Priority Pattern {#priority-pattern}
+
+### Defining Priority Order
+
+Sources should be ordered from **most authoritative to least authoritative**.
+App parameter tables (e.g., `app_data.df_product_line`) are canonical and should
+be the first priority when present:
+
+```r
+# Priority: Higher = More Authoritative
+# 1. app_data_df_product_line (canonical product line table)
+# 2. google_sheet_sku_eby     (dedicated mapping sheet)
+# 3. google_sheet             (item_profile sheets)
+# 4. excel                    (spreadsheet files)
+
+df_combined %>%
+  arrange(desc(source)) %>%  # Alphabetical desc puts dedicated sources first
+  group_by(sku, eby_item_id) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+```
+
+### Source Naming Convention
+
+Use descriptive source identifiers that sort correctly:
+
+| Source | Identifier | Sort Order |
+|--------|------------|------------|
+| App parameter table | `app_data_df_product_line` | 1st (highest) |
+| Dedicated mapping sheet | `google_sheet_sku_eby` | 2nd |
+| Item profile sheets | `google_sheet` | 3rd |
+| Excel files | `excel` | 4th |
+| CSV imports | `csv` | 5th |
+| API feeds | `api` | 6th (lowest) |
+
+### Priority Override Pattern
+
+For explicit control over priority (when alphabetical sorting is insufficient):
+
+```r
+# Define explicit priority
+source_priority <- c(
+  "app_data_df_product_line" = 1,
+  "google_sheet_sku_eby" = 2,
+  "google_sheet" = 3,
+  "excel" = 4,
+  "csv" = 5
+)
+
+df_combined %>%
+  mutate(priority = source_priority[source]) %>%
+  arrange(priority) %>%
+  group_by(sku, eby_item_id) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  select(-priority)
+```
+
+## Dynamic Column Mapping Pattern {#column-mapping}
+
+### The Problem
+
+Different companies use different column names:
+
+| Company A | Company B | Semantic Meaning |
+|-----------|-----------|------------------|
+| `SKU` | `sku` | Product identifier |
+| `eBay item number` | `ebay_id` | eBay listing ID |
+| `Product Category` | `category` | Product classification |
+
+### Pattern-Based Discovery
+
+Use regex patterns to find columns dynamically:
+
+```r
+# Clean column names first (janitor handles variations)
+df_cleaned <- janitor::clean_names(df_raw, ascii = FALSE)
+col_names <- names(df_cleaned)
+
+# Pattern-based column discovery
+sku_col <- col_names[grepl("^sku$", col_names, ignore.case = TRUE)][1]
+eby_col <- col_names[grepl("e_?bay", col_names, ignore.case = TRUE)][1]
+name_col <- col_names[grepl("^name$|^product_name$", col_names, ignore.case = TRUE)][1]
+cat_col <- col_names[grepl("product.*category|^category$", col_names, ignore.case = TRUE)][1]
+
+# Safe column access
+df_standardized <- df_cleaned %>%
+  transmute(
+    sku = if (!is.na(sku_col)) as.character(.data[[sku_col]]) else NA_character_,
+    eby_item_id = if (!is.na(eby_col)) as.character(.data[[eby_col]]) else NA_character_,
+    product_name = if (!is.na(name_col)) as.character(.data[[name_col]]) else NA_character_,
+    product_line_id = if (!is.na(cat_col)) as.character(.data[[cat_col]]) else NA_character_
+  )
+```
+
+### Logging Column Mappings
+
+Always log discovered column mappings for debugging:
+
+```r
+message("Column mapping:")
+message("  SKU=", sku_col, ", eBay=", eby_col)
+message("  Name=", name_col, ", Category=", cat_col)
+```
+
+### Fallback Handling
+
+When required columns are not found:
+
+```r
+if (is.na(sku_col) && is.na(eby_col)) {
+  warning("No SKU or eBay column found - skipping source")
+  return(NULL)
+}
+
+# Continue with available columns
+df_result <- df_cleaned %>%
+  transmute(
+    sku = if (!is.na(sku_col)) as.character(.data[[sku_col]]) else NA_character_,
+    eby_item_id = if (!is.na(eby_col)) as.character(.data[[eby_col]]) else NA_character_
+  ) %>%
+  filter(!is.na(sku) | !is.na(eby_item_id))  # At least one ID required
+```
+
+## Company-Specific Configuration {#company-config}
+
+### Configuration-Driven Source Definition
+
+Store source configurations in `app_config.yaml`:
+
+```yaml
+# Company MAMBA
+etl_sources:
+  product_mapping:
+    sources:
+      - name: "item_profile_sheets"
+        type: "google_sheet"
+        priority: 2
+        sheet_pattern: "item_profile_*"
+      - name: "sku_eby_mapping"
+        type: "google_sheet"
+        priority: 1
+        sheet_name: "SKU to eBay Item Number"
+      - name: "excel_backup"
+        type: "excel"
+        priority: 3
+        path: "data/local_data/rawdata_MAMBA/SKUtoeBay numbers/SKUtoeBay number.xlsx"
+```
+
+### Company-Specific Column Patterns
+
+Extend column patterns for company variations:
+
+```yaml
+# In app_config.yaml
+column_patterns:
+  sku:
+    - "^sku$"
+    - "^product_sku$"
+    - "^item_sku$"
+  ebay_id:
+    - "e_?bay.*id"
+    - "e_?bay.*number"
+    - "^ebay$"
+  product_name:
+    - "^name$"
+    - "^product_name$"
+    - "^item_name$"
+```
+
+## Implementation Template {#template}
+
+### Multi-Source ETL Script Structure
+
+```r
+#' @file all_ETL_product_mapping_0IM___{company}.R
+#' @principle DM_R053 Multi-Source ETL Priority Pattern
+#' @principle DM_R052 Cross-Platform Product Identification
+
+autoinit()
+
+# Load config
+config <- yaml::read_yaml("app_config.yaml")
+
+tryCatch({
+  # Initialize result containers for each source
+  source_results <- list()
+
+  # ==========================================================================
+  # SOURCE 1: Primary source (highest priority)
+  # ==========================================================================
+  message("--- SOURCE 1: [Description] (Priority: 1) ---")
+
+  df_source1 <- read_source_1(...)
+  df_source1_mapped <- df_source1 %>%
+    dynamic_column_map(...) %>%
+    mutate(source = "source1_identifier")
+
+  source_results[["source1"]] <- df_source1_mapped
+
+  # ==========================================================================
+  # SOURCE 2: Secondary source (lower priority)
+  # ==========================================================================
+  message("--- SOURCE 2: [Description] (Priority: 2) ---")
+
+  df_source2 <- read_source_2(...)
+  df_source2_mapped <- df_source2 %>%
+    dynamic_column_map(...) %>%
+    mutate(source = "source2_identifier")
+
+  source_results[["source2"]] <- df_source2_mapped
+
+  # ==========================================================================
+  # MERGE: Combine with priority-based deduplication
+  # ==========================================================================
+  message("--- Merging Sources ---")
+
+  df_combined <- bind_rows(source_results)
+
+  df_final <- df_combined %>%
+    arrange(desc(source)) %>%  # Priority order
+    group_by(key_col1, key_col2) %>%
+    slice_head(n = 1) %>%
+    ungroup()
+
+  message("Source breakdown:")
+  print(count(df_final, source))
+
+  # Write to database
+  dbWriteTable(con, "target_table", df_final, overwrite = TRUE)
+
+}, error = function(e) {
+  stop("Multi-source ETL failed: ", e$message)
+})
+
+autodeinit()
+```
+
+## Validation Checklist {#checklist}
+
+For multi-source ETL scripts:
+
+- [ ] Each source has explicit priority (via naming or explicit priority map)
+- [ ] Source identifier included in every row (`source` column)
+- [ ] Column mapping uses pattern-based discovery (not hardcoded)
+- [ ] Column mappings are logged for debugging
+- [ ] Missing columns are handled gracefully (NULL or skip)
+- [ ] Deduplication uses `group_by()` + `slice_head()` pattern
+- [ ] Source breakdown is logged after merge
+- [ ] Company-specific patterns are in config (not in code)
+
+For company configuration:
+
+- [ ] Source priorities defined in `app_config.yaml`
+- [ ] Column patterns documented for each company
+- [ ] Default patterns provided for common cases
+
+## Relationship to Other Principles {#relationships}
+
+| Principle | Relationship |
+|-----------|--------------|
+| **DM_R052** | Defines product mapping schema; DM_R053 defines how to populate it from multiple sources |
+| **DM_R037** | Company-specific naming (`___MAMBA`); DM_R053 ensures code works across companies |
+| **DM_R028** | ETL phase separation; DM_R053 applies within Import (0IM) phase |
+| **MP064** | ETL-DRV separation; multi-source merging is ETL, not business logic |
+
+## Conclusion
+
+The Multi-Source ETL Priority Pattern (DM_R053) establishes a standardized approach for integrating data from multiple sources with explicit priority ordering and dynamic column mapping. This enables company-agnostic ETL scripts that work across different organizational schemas while maintaining consistent, deterministic deduplication behavior.

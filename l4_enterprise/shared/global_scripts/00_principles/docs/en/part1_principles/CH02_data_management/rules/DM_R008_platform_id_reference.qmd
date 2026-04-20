@@ -1,0 +1,259 @@
+---
+title: "DM_R008: Platform ID Reference Rule"
+subtitle: "Marketing platform identifiers must be referenced using their three-letter codes in all operations, following the platform_id standard defined in MP092"
+chapter: "CH02"
+category: "rule"
+number: "DM_R008"
+date-created: "2025-04-07"
+date-modified: "2025-08-27"
+author: "Claude"
+type: "rule"
+law: "Data Management Law"
+article-number: 
+  number: 8
+  title: "Platform ID Reference Rules"
+related_to:
+  - "MP092: Platform ID Standard"
+  - "DM_R022: Platform ID Convention"
+  - "MP046: Neighborhood Principle"
+  - "SLN03: SQL Parameter Type Safety"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 8: Platform ID Reference Rules {#overview}
+
+**Data Management Law Article 8 (Platform ID Reference Rules)**
+
+This rule establishes consistent handling of platform references using three-letter codes throughout the system.
+
+:::{.callout-critical}
+## Core Rule
+All platform references must use three-letter codes as defined in MP092. Numeric platform IDs are strictly prohibited in all contexts including database operations, configuration files, and application code.
+:::
+
+# Section 1: Background {#background}
+
+Following MP092's platform_id standard, the system uses three-letter codes exclusively for platform identification. This rule ensures consistent handling of platform references across all layers of the application, from database to UI.
+
+# Section 2: Implementation Requirements {#implementation}
+
+## Subsection 1: Platform Dictionary Structure {#dictionary-structure}
+
+The platform dictionary follows MP092's three-letter code system:
+
+| platform_id | platform_name_english | description |
+|--------------|----------------------|-------------|
+| amz          | Amazon               | Amazon marketplace |
+| web          | Official Website     | Company website |
+| eby          | eBay                 | eBay marketplace |
+| cbz          | Cyberbiz             | Cyberbiz platform |
+| all          | All Platforms        | Multi-platform |
+
+Platform configuration should be in `app_config.yaml`:
+```yaml
+platforms:
+  eby:
+    name: "eBay"
+    description: "eBay marketplace"
+  cbz:
+    name: "Cyberbiz" 
+    description: "Cyberbiz platform"
+```
+
+## Subsection 2: Platform ID Validation {#code-validation}
+
+All platform_ids must be validated against MP092 standards:
+
+```r
+# Validate platform_id
+validate_platform_id <- function(code) {
+  # Must be exactly 3 lowercase letters
+  if (!grepl("^[a-z]{3}$", code)) {
+    stop(paste("Invalid platform_id:", code,
+               "- must be 3 lowercase letters"))
+  }
+  
+  # Check against valid codes
+  valid_codes <- c("eby", "cbz", "amz", "web", 
+                   "ret", "dst", "soc", "all")
+  
+  if (!(code %in% valid_codes)) {
+    warning(paste("Unrecognized platform_id:", code))
+  }
+  
+  return(TRUE)
+}
+
+# Get platform info from code
+get_platform_info <- function(code) {
+  validate_platform_id(code)
+  
+  # Load from config
+  config <- yaml::read_yaml("app_config.yaml")
+  
+  if (code %in% names(config$platforms)) {
+    return(config$platforms[[code]])
+  }
+  
+  return(NULL)
+}
+```
+
+## Subsection 3: Database Query Pattern {#query-pattern}
+
+Database operations must use three-letter platform_ids:
+
+```r
+# Correct: Using three-letter codes
+query <- "SELECT * FROM customer_data WHERE platform_id = 'eby'"
+
+# Correct: With validation
+platform_id <- "eby"
+validate_platform_id(platform_id)
+query <- paste0("SELECT * FROM customer_data WHERE platform_id = '", 
+                platform_id, "'")
+
+# Wrong: Using numeric IDs
+# query <- "SELECT * FROM customer_data WHERE platform_id = 1"  # VIOLATES MP092
+# query <- "SELECT * FROM customer_data WHERE platform_id = 7"  # PROHIBITED
+```
+
+## Subsection 4: Configuration Loading {#config-loading}
+
+Load platform configuration from app_config.yaml:
+
+```r
+# Load platform configuration
+load_platform_config <- function() {
+  config <- yaml::read_yaml("app_config.yaml")
+  
+  if (!"platforms" %in% names(config)) {
+    stop("No platforms defined in app_config.yaml")
+  }
+  
+  # Validate all platform_ids
+  for (code in names(config$platforms)) {
+    validate_platform_id(code)
+  }
+  
+  return(config$platforms)
+}
+
+# Get platform name from code
+get_platform_name <- function(code) {
+  platforms <- load_platform_config()
+  
+  if (code %in% names(platforms)) {
+    return(platforms[[code]]$name)
+  }
+  
+  return(paste("Unknown (", code, ")"))
+}
+```
+
+# Section 3: Validation Rules {#validation-rules}
+
+1. **Database Schema Validation**: All platform columns must be VARCHAR(3) type
+2. **Code Format Validation**: All platform_ids must be exactly 3 lowercase letters
+3. **Query Validation**: All SQL queries must use three-letter platform_ids
+4. **Configuration Validation**: No numeric platform IDs allowed in any config files
+5. **UI Validation**: UI components must use three-letter codes as values
+
+# Section 4: Implementation Examples {#examples}
+
+## Subsection 1: UI Selection to Database Query {#ui-to-database}
+
+```r
+# UI returns three-letter code directly
+selected_code <- input$platform  # Returns: "eby", "cbz", etc.
+
+# Validate before using in query
+if (validate_platform_id(selected_code)) {
+  query <- paste0("SELECT * FROM sales WHERE platform_id = '",
+                 selected_code, "'")
+} else {
+  # Handle invalid code
+  warning("Invalid platform_id: ", selected_code)
+  query <- "SELECT * FROM sales WHERE 1 = 0"  # Returns empty
+}
+
+# Display platform name to user
+platform_name <- get_platform_name(selected_code)
+showNotification(paste("Loading", platform_name, "data..."))
+```
+
+## Subsection 2: Multiple Platform Handling {#multiple-platforms}
+
+```r
+# Multiple platform selection returns codes
+selected_codes <- input$platforms  # e.g., c("eby", "cbz", "amz")
+
+# Validate all codes
+valid_codes <- character(0)
+for (code in selected_codes) {
+  if (validate_platform_id(code)) {
+    valid_codes <- c(valid_codes, code)
+  }
+}
+
+if (length(valid_codes) > 0) {
+  # Build query with proper quoting
+  codes_str <- paste0("'", valid_codes, "'", collapse = ",")
+  query <- paste0("SELECT * FROM sales WHERE platform_id IN (",
+                 codes_str, ")")
+} else {
+  query <- "SELECT * FROM sales WHERE 1 = 0"  # Empty result
+}
+```
+
+# Section 5: Migration from Numeric IDs {#migration}
+
+## Subsection 1: Detection {#detection}
+
+```bash
+# Find numeric platform IDs in code
+grep -r "platform_id.*[0-9]" .
+grep -r "platform.*==.*[0-9]" .
+```
+
+## Subsection 2: Migration Helper {#migration-helper}
+
+```r
+# Temporary migration function (remove after migration)
+migrate_numeric_to_code <- function(numeric_id) {
+  map <- list(
+    "1" = "amz", "2" = "web", "3" = "ret",
+    "4" = "dst", "5" = "soc", "6" = "eby",
+    "7" = "cbz", "9" = "all"
+  )
+  
+  id_str <- as.character(numeric_id)
+  if (id_str %in% names(map)) {
+    return(map[[id_str]])
+  }
+  return("xxx")  # Unknown
+}
+```
+
+# Section 6: Benefits {#benefits}
+
+Using three-letter codes exclusively provides:
+
+1. **Type Safety**: String type prevents numeric operation errors
+2. **Human Readability**: Codes are self-documenting
+3. **Consistency**: Same codes everywhere in the system
+4. **Maintainability**: No mapping tables or conversions needed
+5. **Future-Proof**: Easy to add new platforms without ID conflicts
+6. **Debugging**: Platform IDs visible in logs and errors
+
+---
+
+*Based on: Data Management Law Article 8*  
+*Implements: [MP092 Platform ID Standard](../../CH00_fundamental_principles/04_data_management/MP092_platform_id_standard.qmd)*  
+*Related to: [DM_R022 Platform ID Convention](DM_R022_platform_numbering_convention.qmd)*

@@ -1,0 +1,182 @@
+---
+
+title: "D03_05: Position Table Creation"
+subtitle: "Create unified position table for competitive analysis"
+parent: "D03_positioning_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D03_05"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D03_04_query_by_asin"
+outputs_to:
+  - "app_data.df_position"
+implements:
+  - script: "amz_D03_10.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "amz_D03_11.R"
+    path: "update_scripts/DRV/amz/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D03_05: Position Table Creation {#overview}
+
+This task creates the unified position table by merging property ratings with product profiles and competitor sales data. This table serves as the primary data source for competitive positioning visualizations.
+
+## Implementation Scripts
+
+| Platform | Script | Location |
+|----------|--------|----------|
+| Amazon | `amz_D03_10.R` | `update_scripts/DRV/amz/` |
+| Amazon | `amz_D03_11.R` | `update_scripts/DRV/amz/` |
+
+## Task Definition (NSQL)
+
+```nsql
+# Layer 5NM: Final normalization to app_data (no suffix)
+JOIN cleansed_data.df_comment_property_ratingonly_by_asin___cleansed WITH df_product_profile, df_competitor_sales
+MERGE all product_line_id
+TO app_data.df_position    # Final: no suffix
+```
+
+**Layer**: 5NM (Normalize) - Per MP144, final app_data output has no suffix.
+
+## Detailed Position Table Creation (NSQL)
+
+```nsql
+# D03_05: Create Position Table [Layer: 5NM]
+CREATE D03_05_position_table:
+  # Step 1: Process each product line (read from cleansed_data)
+  FOR EACH product_line_id IN vec_product_line_id_noall:
+    FROM cleansed_data.df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed AS ratings
+
+    # Step 2: Join with product profiles
+    LEFT JOIN transformed_data.df_product_profile_{product_line_id}___transformed AS profiles
+      ON ratings.product_id = profiles.asin
+
+    # Step 3: Join with competitor sales data
+    LEFT JOIN transformed_data.df_competitor_sales AS sales
+      ON ratings.product_id = sales.asin
+
+    # Step 4: Select and transform columns
+    SELECT:
+      # Product identification
+      ratings.product_id AS asin
+      profiles.brand
+      profiles.name AS product_name
+      profiles.url AS product_url
+      product_line_id
+
+      # Property ratings (all prop_* columns)
+      ratings.prop_*_avg
+
+      # Sales metrics
+      sales.sales_rank
+      sales.price
+      sales.review_count AS total_reviews
+
+      # Calculated metrics
+      ratings.overall_rating_avg AS avg_rating
+      ratings.property_coverage
+
+    OUTPUT TO position_tables.df_position_{product_line_id}
+
+  # Step 3: Merge all product line tables
+  MERGE D03_05_merge_position_tables:
+    UNION ALL position_tables.df_position_*
+
+    # Add metadata
+    ADD platform_id: 'amz'
+    ADD created_at: CURRENT_TIMESTAMP
+
+    # Layer 5NM: Final output to app_data (no suffix)
+    OUTPUT TO app_data.df_position
+```
+
+## Position Table Finalization (NSQL)
+
+```nsql
+# D03_05: Finalize Position Table
+FINALIZE D03_05_position_finalization:
+  FROM app_data.df_position
+
+  # Step 1: Calculate percentile ranks
+  CALCULATE:
+    FOR EACH property IN prop_*_avg:
+      {property}_percentile: PERCENT_RANK() OVER (
+        PARTITION BY product_line_id
+        ORDER BY {property}
+      )
+
+  # Step 2: Calculate overall position score
+  CALCULATE:
+    position_score: MEAN(prop_*_avg) * 20  # Scale to 0-100
+
+  # Step 3: Identify market leaders
+  IDENTIFY market_leaders:
+    FOR EACH product_line_id:
+      is_leader: position_score >= PERCENTILE(position_score, 0.9)
+
+  # Step 4: Add competitive context
+  CALCULATE:
+    brand_avg_score: MEAN(position_score) BY brand
+    category_avg_score: MEAN(position_score) BY product_line_id
+    vs_brand_avg: position_score - brand_avg_score
+    vs_category_avg: position_score - category_avg_score
+
+  UPDATE app_data.df_position
+```
+
+## Implementation Reference {#implementation}
+
+See platform implementation scripts listed in "Implementation Scripts" section above.
+
+Key implementation features:
+- `fn_process_position_table()` - Processes individual product line
+- `fn_merge_position_tables()` - Merges all product lines
+- `fn_finalize_position_table()` - Adds calculated metrics
+
+## Failure Behavior（失敗行為）
+
+- 任一已設定的 `product_line_id` 缺少輸入或輸出表，或 `process_position_table()` 任一步驟回傳 `FALSE`，即視為失敗並直接 `stop()`。
+- `amz_D03_11.R` 會在 merge 或 `finalize_position_table()` 失敗時中止執行。
+- `app_data.df_position` 未建立或未成功 finalization，該步驟不算完成，應視為錯誤。
+
+Scripts follow [DM_R044](../../../part1_principles/CH02_data_management/rules/DM_R044_derivation_implementation_standard.qmd) Five-Part Structure.
+
+## Output Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `asin` | VARCHAR | Product identifier |
+| `brand` | VARCHAR | Brand name |
+| `product_name` | VARCHAR | Product name |
+| `product_line_id` | INTEGER | Product line identifier |
+| `platform_id` | VARCHAR | Platform ID (amz) |
+| `prop_*_avg` | FLOAT | Average rating per property |
+| `prop_*_percentile` | FLOAT | Percentile rank per property |
+| `sales_rank` | INTEGER | Amazon sales rank |
+| `avg_rating` | FLOAT | Average star rating |
+| `total_reviews` | INTEGER | Total review count |
+| `position_score` | FLOAT | Overall position score (0-100) |
+| `is_leader` | BOOLEAN | Top 10% in category |
+| `vs_category_avg` | FLOAT | Score vs category average |
+
+## Key Principle
+
+The position table provides **unified competitive intelligence** by:
+1. Merging property ratings with product metadata
+2. Calculating relative positioning metrics
+3. Enabling cross-product and cross-brand comparisons
+4. Supporting interactive filtering by product line
+
+## Next Task
+
+After position table creation, proceed to [D03_06: Execution](D03_06_execution.qmd).

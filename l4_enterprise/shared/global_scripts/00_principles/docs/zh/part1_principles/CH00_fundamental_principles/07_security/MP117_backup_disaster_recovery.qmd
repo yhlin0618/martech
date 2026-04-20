@@ -1,0 +1,837 @@
+---
+title: "MP117: Backup and Disaster Recovery"
+subtitle: "Comprehensive backup strategy and disaster recovery framework"
+chapter: "CH00"
+category: "meta-principle"
+number: "MP117"
+date-created: "2025-08-30"
+date-modified: "2025-08-30"
+author: "Principle Revisor"
+type: "security-meta-principle"
+law: "Business Continuity and Disaster Recovery Law"
+article-number: 
+  number: 117
+  title: "Backup and Disaster Recovery Framework"
+influences:
+  - "MP034: Archive Immutability"
+  - "MP053: Information Flow Transparency"
+  - "MP061: Database Synchronization"
+  - "MP111: Data Privacy Protection"
+extends:
+  - "MP034: Archive Immutability"
+  - "MP061: Database Synchronization"
+criticality: "CRITICAL"
+enforcement: "MANDATORY"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+---
+
+## Core Statement
+
+All critical data and systems MUST have comprehensive backup strategies with automated execution, tested recovery procedures, defined Recovery Time Objectives (RTO) and Recovery Point Objectives (RPO), and regularly validated disaster recovery plans ensuring business continuity under any failure scenario.
+
+## Backup Strategy Framework
+
+### 3-2-1 Backup Rule Implementation
+
+```r
+# Implement 3-2-1 backup strategy
+implement_321_backup <- function() {
+  backup_strategy <- list(
+    # 3 copies of data
+    copies = list(
+      primary = "production_data",
+      backup_1 = "local_backup",
+      backup_2 = "remote_backup"
+    ),
+    
+    # 2 different media types
+    media_types = list(
+      type_1 = "disk_storage",
+      type_2 = "cloud_storage"
+    ),
+    
+    # 1 offsite copy
+    offsite = list(
+      location = "cloud_region_2",
+      provider = "aws_s3_glacier",
+      encryption = "AES-256"
+    )
+  )
+  
+  return(backup_strategy)
+}
+
+# Backup configuration
+configure_backup_system <- function() {
+  config <- list(
+    # Backup schedules
+    schedules = list(
+      full_backup = "0 2 * * 0",      # Weekly full backup at 2 AM Sunday
+      incremental = "0 2 * * 1-6",    # Daily incremental at 2 AM
+      differential = "0 14 * * *",     # Daily differential at 2 PM
+      continuous = "*/15 * * * *"     # Every 15 minutes for critical data
+    ),
+    
+    # Retention policies
+    retention = list(
+      daily = 7,        # Keep 7 daily backups
+      weekly = 4,       # Keep 4 weekly backups
+      monthly = 12,     # Keep 12 monthly backups
+      yearly = 7        # Keep 7 yearly backups
+    ),
+    
+    # Backup types by data classification
+    data_classification = list(
+      critical = list(
+        type = "continuous",
+        rpo = "15 minutes",
+        retention = "7 years"
+      ),
+      important = list(
+        type = "incremental",
+        rpo = "1 hour",
+        retention = "3 years"
+      ),
+      standard = list(
+        type = "differential",
+        rpo = "24 hours",
+        retention = "1 year"
+      )
+    )
+  )
+  
+  return(config)
+}
+```
+
+### Automated Backup Execution
+
+```r
+# Automated backup orchestration
+execute_backup <- function(backup_type = "incremental") {
+  backup_job <- list(
+    job_id = generate_uuid(),
+    type = backup_type,
+    started_at = Sys.time(),
+    status = "running"
+  )
+  
+  tryCatch({
+    # Pre-backup checks
+    pre_backup_checks()
+    
+    # Select backup method
+    if (backup_type == "full") {
+      result <- perform_full_backup()
+    } else if (backup_type == "incremental") {
+      result <- perform_incremental_backup()
+    } else if (backup_type == "differential") {
+      result <- perform_differential_backup()
+    } else if (backup_type == "continuous") {
+      result <- perform_continuous_backup()
+    }
+    
+    # Verify backup integrity
+    verification <- verify_backup_integrity(result$backup_id)
+    
+    # Encrypt backup
+    encrypted <- encrypt_backup(result$backup_id)
+    
+    # Transfer to remote storage
+    transfer <- transfer_to_remote(encrypted)
+    
+    # Update catalog
+    update_backup_catalog(backup_job, result, verification, transfer)
+    
+    backup_job$status <- "completed"
+    backup_job$completed_at <- Sys.time()
+    
+  }, error = function(e) {
+    backup_job$status <- "failed"
+    backup_job$error <- e$message
+    alert_backup_failure(backup_job, e)
+    
+    # Attempt recovery
+    attempt_backup_recovery(backup_job)
+  })
+  
+  # Log backup operation
+  log_backup_operation(backup_job)
+  
+  return(backup_job)
+}
+
+# Full backup implementation
+perform_full_backup <- function() {
+  backup_id <- generate_backup_id("full")
+  
+  # Database backup
+  db_backup <- backup_all_databases()
+  
+  # File system backup
+  fs_backup <- backup_file_system()
+  
+  # Configuration backup
+  config_backup <- backup_configurations()
+  
+  # Application state backup
+  app_backup <- backup_application_state()
+  
+  # Create backup manifest
+  manifest <- create_backup_manifest(
+    backup_id,
+    db_backup,
+    fs_backup,
+    config_backup,
+    app_backup
+  )
+  
+  return(list(
+    backup_id = backup_id,
+    manifest = manifest,
+    size = calculate_backup_size(backup_id),
+    duration = difftime(Sys.time(), start_time, units = "secs")
+  ))
+}
+
+# Incremental backup implementation
+perform_incremental_backup <- function() {
+  last_backup <- get_last_backup_point()
+  backup_id <- generate_backup_id("incremental")
+  
+  # Get changed data since last backup
+  changes <- detect_changes_since(last_backup$timestamp)
+  
+  # Backup only changed data
+  backup_result <- backup_changed_data(changes)
+  
+  # Create incremental chain reference
+  backup_result$parent_backup <- last_backup$backup_id
+  backup_result$backup_chain <- get_backup_chain(last_backup$backup_id)
+  
+  return(backup_result)
+}
+```
+
+### Database Backup Strategies
+
+```r
+# Database-specific backup strategies
+backup_database <- function(db_type, db_name) {
+  if (db_type == "postgresql") {
+    backup_postgresql(db_name)
+  } else if (db_type == "duckdb") {
+    backup_duckdb(db_name)
+  } else if (db_type == "sqlite") {
+    backup_sqlite(db_name)
+  }
+}
+
+# PostgreSQL backup
+backup_postgresql <- function(db_name) {
+  backup_file <- sprintf(
+    "backup_%s_%s.sql",
+    db_name,
+    format(Sys.time(), "%Y%m%d_%H%M%S")
+  )
+  
+  # Use pg_dump for logical backup
+  pg_dump_command <- sprintf(
+    "pg_dump -h %s -p %s -U %s -d %s -f %s --verbose --format=custom --compress=9",
+    Sys.getenv("PGHOST"),
+    Sys.getenv("PGPORT"),
+    Sys.getenv("PGUSER"),
+    db_name,
+    backup_file
+  )
+  
+  system(pg_dump_command)
+  
+  # Also create WAL archive for point-in-time recovery
+  enable_wal_archiving(db_name)
+  
+  return(backup_file)
+}
+
+# DuckDB backup
+backup_duckdb <- function(db_path) {
+  con <- DBI::dbConnect(duckdb::duckdb(), db_path)
+  
+  backup_path <- sprintf(
+    "%s_backup_%s.duckdb",
+    tools::file_path_sans_ext(db_path),
+    format(Sys.time(), "%Y%m%d_%H%M%S")
+  )
+  
+  # Export to backup
+  DBI::dbExecute(con, sprintf("EXPORT DATABASE '%s'", backup_path))
+  
+  DBI::dbDisconnect(con)
+  
+  return(backup_path)
+}
+
+# Point-in-time recovery setup
+setup_pitr <- function(db_name) {
+  # Configure continuous archiving
+  config <- list(
+    wal_level = "replica",
+    archive_mode = "on",
+    archive_command = sprintf(
+      "test ! -f /backup/wal/%%f && cp %%p /backup/wal/%%f",
+      db_name
+    ),
+    max_wal_senders = 3,
+    wal_keep_segments = 64
+  )
+  
+  apply_postgresql_config(config)
+  
+  # Create base backup for PITR
+  create_base_backup(db_name)
+}
+```
+
+### Disaster Recovery Planning
+
+```r
+# Disaster Recovery Plan
+create_disaster_recovery_plan <- function() {
+  dr_plan <- list(
+    # Recovery objectives
+    objectives = list(
+      rto = list(  # Recovery Time Objective
+        critical_systems = "15 minutes",
+        core_applications = "1 hour",
+        standard_services = "4 hours",
+        non_critical = "24 hours"
+      ),
+      rpo = list(  # Recovery Point Objective
+        transactional_data = "0 minutes",  # Real-time replication
+        user_data = "15 minutes",
+        application_data = "1 hour",
+        archived_data = "24 hours"
+      )
+    ),
+    
+    # Failure scenarios
+    scenarios = list(
+      server_failure = create_scenario_plan("server_failure"),
+      data_corruption = create_scenario_plan("data_corruption"),
+      ransomware = create_scenario_plan("ransomware"),
+      natural_disaster = create_scenario_plan("natural_disaster"),
+      cloud_outage = create_scenario_plan("cloud_outage")
+    ),
+    
+    # Recovery procedures
+    procedures = list(
+      assessment = disaster_assessment_procedure(),
+      communication = crisis_communication_plan(),
+      technical = technical_recovery_steps(),
+      validation = recovery_validation_checklist()
+    ),
+    
+    # Team responsibilities
+    team = list(
+      incident_commander = "CTO",
+      technical_lead = "Infrastructure Manager",
+      communication_lead = "PR Manager",
+      recovery_team = c("DevOps", "Database Admin", "Security")
+    )
+  )
+  
+  return(dr_plan)
+}
+
+# Scenario-specific recovery plan
+create_scenario_plan <- function(scenario_type) {
+  plan <- list(
+    scenario = scenario_type,
+    detection = get_detection_methods(scenario_type),
+    immediate_actions = get_immediate_actions(scenario_type),
+    recovery_steps = get_recovery_steps(scenario_type),
+    validation = get_validation_steps(scenario_type),
+    lessons_learned = list()
+  )
+  
+  return(plan)
+}
+
+# Ransomware-specific recovery
+ransomware_recovery <- function() {
+  recovery_steps <- list(
+    # Immediate isolation
+    step1 = isolate_affected_systems(),
+    
+    # Assess damage
+    step2 = assess_ransomware_impact(),
+    
+    # Activate clean room
+    step3 = activate_clean_recovery_environment(),
+    
+    # Restore from clean backups
+    step4 = restore_from_immutable_backups(),
+    
+    # Validate data integrity
+    step5 = validate_recovered_data(),
+    
+    # Security hardening
+    step6 = apply_security_hardening(),
+    
+    # Gradual restoration
+    step7 = phased_service_restoration()
+  )
+  
+  return(recovery_steps)
+}
+```
+
+### Recovery Procedures
+
+```r
+# Automated recovery orchestration
+execute_recovery <- function(recovery_type, target_point = NULL) {
+  recovery_job <- list(
+    job_id = generate_uuid(),
+    type = recovery_type,
+    target = target_point,
+    started_at = Sys.time()
+  )
+  
+  tryCatch({
+    # Select recovery method
+    if (recovery_type == "full") {
+      result <- perform_full_recovery(target_point)
+    } else if (recovery_type == "point_in_time") {
+      result <- perform_pitr(target_point)
+    } else if (recovery_type == "selective") {
+      result <- perform_selective_recovery(target_point)
+    } else if (recovery_type == "failover") {
+      result <- perform_failover()
+    }
+    
+    # Validate recovery
+    validation <- validate_recovery(result)
+    
+    # Update status
+    recovery_job$status <- "completed"
+    recovery_job$validation <- validation
+    
+  }, error = function(e) {
+    recovery_job$status <- "failed"
+    recovery_job$error <- e$message
+    alert_recovery_failure(recovery_job, e)
+  })
+  
+  log_recovery_operation(recovery_job)
+  return(recovery_job)
+}
+
+# Point-in-time recovery
+perform_pitr <- function(target_time) {
+  # Stop services
+  stop_application_services()
+  
+  # Restore base backup
+  base_backup <- find_base_backup_before(target_time)
+  restore_base_backup(base_backup)
+  
+  # Replay WAL logs to target time
+  replay_wal_to_point(target_time)
+  
+  # Verify data consistency
+  verify_data_consistency()
+  
+  # Restart services
+  start_application_services()
+  
+  return(list(
+    recovered_to = target_time,
+    base_backup_used = base_backup,
+    data_loss = calculate_data_loss(target_time)
+  ))
+}
+
+# Failover to DR site
+perform_failover <- function() {
+  failover_result <- list(
+    started_at = Sys.time(),
+    steps = list()
+  )
+  
+  # Health check on DR site
+  failover_result$steps$health_check <- verify_dr_site_ready()
+  
+  # Promote DR database
+  failover_result$steps$db_promotion <- promote_standby_database()
+  
+  # Update DNS
+  failover_result$steps$dns_update <- update_dns_to_dr()
+  
+  # Start DR services
+  failover_result$steps$service_start <- start_dr_services()
+  
+  # Verify functionality
+  failover_result$steps$verification <- verify_dr_functionality()
+  
+  # Notify stakeholders
+  notify_failover_complete(failover_result)
+  
+  return(failover_result)
+}
+```
+
+### Backup Testing and Validation
+
+```r
+# Automated backup testing
+test_backup_recovery <- function() {
+  test_results <- list(
+    test_id = generate_uuid(),
+    timestamp = Sys.time(),
+    tests = list()
+  )
+  
+  # Select random backup for testing
+  backup_to_test <- select_random_backup()
+  
+  # Create isolated test environment
+  test_env <- create_test_environment()
+  
+  # Restore backup in test environment
+  restore_result <- restore_backup_to_test(backup_to_test, test_env)
+  test_results$tests$restore <- restore_result
+  
+  # Validate data integrity
+  integrity_check <- validate_restored_data(test_env)
+  test_results$tests$integrity <- integrity_check
+  
+  # Test application functionality
+  app_test <- test_application_functionality(test_env)
+  test_results$tests$application <- app_test
+  
+  # Measure recovery time
+  test_results$recovery_time <- measure_recovery_time(restore_result)
+  
+  # Clean up test environment
+  cleanup_test_environment(test_env)
+  
+  # Generate report
+  test_report <- generate_test_report(test_results)
+  
+  return(test_report)
+}
+
+# Backup integrity verification
+verify_backup_integrity <- function(backup_id) {
+  backup_meta <- get_backup_metadata(backup_id)
+  
+  verifications <- list(
+    # Checksum verification
+    checksum_valid = verify_checksum(backup_id, backup_meta$checksum),
+    
+    # Size verification
+    size_match = verify_backup_size(backup_id, backup_meta$expected_size),
+    
+    # Encryption verification
+    encryption_valid = verify_encryption(backup_id),
+    
+    # Catalog consistency
+    catalog_consistent = verify_catalog_entry(backup_id),
+    
+    # Test restore
+    test_restore_success = test_partial_restore(backup_id)
+  )
+  
+  if (!all(unlist(verifications))) {
+    alert_backup_integrity_issue(backup_id, verifications)
+  }
+  
+  return(verifications)
+}
+```
+
+### Business Continuity Management
+
+```r
+# Business continuity framework
+manage_business_continuity <- function() {
+  bc_framework <- list(
+    # Critical business functions
+    critical_functions = identify_critical_functions(),
+    
+    # Dependency mapping
+    dependencies = map_system_dependencies(),
+    
+    # Recovery priorities
+    priorities = set_recovery_priorities(),
+    
+    # Communication plan
+    communication = create_communication_plan(),
+    
+    # Testing schedule
+    testing = schedule_bc_tests()
+  )
+  
+  return(bc_framework)
+}
+
+# Impact analysis
+perform_business_impact_analysis <- function() {
+  bia <- list(
+    # Financial impact
+    financial = calculate_downtime_cost(),
+    
+    # Operational impact
+    operational = assess_operational_impact(),
+    
+    # Reputational impact
+    reputational = assess_reputation_risk(),
+    
+    # Compliance impact
+    compliance = assess_compliance_impact(),
+    
+    # Maximum tolerable downtime
+    mtd = calculate_maximum_tolerable_downtime()
+  )
+  
+  return(bia)
+}
+
+# Recovery time tracking
+track_recovery_metrics <- function() {
+  metrics <- list(
+    # Actual vs target RTO
+    rto_performance = measure_rto_performance(),
+    
+    # Actual vs target RPO
+    rpo_performance = measure_rpo_performance(),
+    
+    # Backup success rate
+    backup_success_rate = calculate_backup_success_rate(),
+    
+    # Recovery test results
+    test_success_rate = calculate_test_success_rate(),
+    
+    # Time since last successful backup
+    last_backup_age = get_last_successful_backup_age(),
+    
+    # Storage utilization
+    storage_usage = calculate_backup_storage_usage()
+  )
+  
+  return(metrics)
+}
+```
+
+### Replication and High Availability
+
+```r
+# Setup database replication
+setup_replication <- function(primary_db, standby_db) {
+  # Configure primary for replication
+  configure_primary <- function() {
+    config <- list(
+      wal_level = "replica",
+      max_wal_senders = 5,
+      wal_keep_segments = 64,
+      synchronous_commit = "on",
+      synchronous_standby_names = standby_db$name
+    )
+    apply_config(primary_db, config)
+  }
+  
+  # Configure standby
+  configure_standby <- function() {
+    # Create standby signal file
+    create_standby_signal(standby_db)
+    
+    # Set connection info
+    connection_info <- sprintf(
+      "host=%s port=%s user=%s password=%s",
+      primary_db$host,
+      primary_db$port,
+      primary_db$replication_user,
+      primary_db$replication_password
+    )
+    
+    set_primary_conninfo(standby_db, connection_info)
+  }
+  
+  # Start replication
+  configure_primary()
+  configure_standby()
+  start_replication(primary_db, standby_db)
+  
+  # Monitor replication lag
+  monitor_replication_lag(primary_db, standby_db)
+}
+
+# High availability cluster
+setup_ha_cluster <- function() {
+  cluster_config <- list(
+    # Load balancer
+    load_balancer = configure_load_balancer(),
+    
+    # Primary node
+    primary = configure_primary_node(),
+    
+    # Standby nodes
+    standby_nodes = configure_standby_nodes(),
+    
+    # Automatic failover
+    failover = configure_automatic_failover(),
+    
+    # Health monitoring
+    monitoring = configure_health_monitoring()
+  )
+  
+  return(cluster_config)
+}
+```
+
+### Cloud Backup Integration
+
+```r
+# Cloud backup configuration
+configure_cloud_backup <- function() {
+  cloud_config <- list(
+    # AWS S3 Glacier for long-term
+    aws = list(
+      bucket = Sys.getenv("AWS_BACKUP_BUCKET"),
+      storage_class = "GLACIER_DEEP_ARCHIVE",
+      lifecycle = list(
+        transition_days = 30,
+        expiration_days = 2555  # 7 years
+      )
+    ),
+    
+    # Azure Blob Storage
+    azure = list(
+      container = Sys.getenv("AZURE_BACKUP_CONTAINER"),
+      tier = "Archive",
+      redundancy = "GRS"  # Geo-redundant storage
+    ),
+    
+    # Multi-cloud strategy
+    multi_cloud = TRUE,
+    cross_region_replication = TRUE
+  )
+  
+  return(cloud_config)
+}
+
+# Upload to cloud storage
+upload_to_cloud <- function(backup_file, provider = "aws") {
+  if (provider == "aws") {
+    upload_to_s3(backup_file)
+  } else if (provider == "azure") {
+    upload_to_azure(backup_file)
+  } else if (provider == "gcp") {
+    upload_to_gcs(backup_file)
+  }
+}
+
+# Cloud disaster recovery
+cloud_dr_failover <- function() {
+  # Activate DR region
+  activate_dr_region()
+  
+  # Scale up resources
+  scale_dr_resources()
+  
+  # Restore from cloud backups
+  restore_from_cloud()
+  
+  # Update routing
+  update_cloud_routing()
+}
+```
+
+## Monitoring and Alerting
+
+```r
+# Backup monitoring dashboard
+create_backup_dashboard <- function() {
+  dashboard <- list(
+    # Backup status
+    recent_backups = get_recent_backup_status(),
+    
+    # Storage metrics
+    storage_usage = calculate_storage_metrics(),
+    
+    # Recovery metrics
+    recovery_tests = get_recovery_test_results(),
+    
+    # Alerts
+    active_alerts = get_active_backup_alerts(),
+    
+    # Compliance
+    compliance_status = check_backup_compliance()
+  )
+  
+  return(dashboard)
+}
+
+# Alert on backup issues
+monitor_backup_health <- function() {
+  # Check for failed backups
+  check_failed_backups()
+  
+  # Check for missing backups
+  check_missing_backups()
+  
+  # Check storage capacity
+  check_storage_capacity()
+  
+  # Check replication lag
+  check_replication_status()
+  
+  # Check backup age
+  check_backup_freshness()
+}
+```
+
+## Related Rules and Principles
+
+### Implementation Rules
+- **R270**: Backup scheduling requirements
+- **R271**: Recovery testing procedures
+- **R272**: Data retention policies
+- **R273**: DR site requirements
+- **R274**: RTO/RPO definitions
+
+### Integration with Other MPs
+- **MP034**: Archive Immutability
+- **MP061**: Database Synchronization
+- **MP111**: Data Privacy Protection
+- **MP115**: Audit Logging and Monitoring
+
+## Compliance Requirements
+
+- **ISO 22301**: Business continuity management
+- **NIST SP 800-34**: Contingency planning
+- **SOC 2**: Availability principle
+- **GDPR**: Data availability and resilience
+
+## Validation Checklist
+
+- [ ] 3-2-1 backup rule implemented
+- [ ] Automated backups configured
+- [ ] Recovery procedures documented
+- [ ] RTO/RPO defined and tested
+- [ ] DR plan validated
+- [ ] Backup integrity verified
+- [ ] Replication configured
+- [ ] Cloud backups enabled
+- [ ] Monitoring active
+- [ ] Regular DR drills conducted
+
+---
+
+**Hope for the best, prepare for the worst**: Comprehensive backup and recovery capabilities ensure business continuity regardless of disaster scenario.

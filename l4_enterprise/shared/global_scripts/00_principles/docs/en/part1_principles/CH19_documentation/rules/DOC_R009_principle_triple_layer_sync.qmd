@@ -1,0 +1,148 @@
+---
+id: DOC_R009
+type: rule
+name: principle_triple_layer_sync
+display_name: "Principle Triple-Layer Synchronization"
+implements: DOC_P001, DOC_R007
+scope: "All principle creation, modification, and deletion operations"
+---
+
+# DOC_R009: Principle Triple-Layer Synchronization
+
+## One-Liner
+
+When any principle is added, modified, or deleted, ALL THREE documentation layers MUST be updated in a single operation: `.qmd` (source of truth) → `llm/*.yaml` (AI-optimized) → `.claude/rules/*.md` (quick reference).
+
+## Rationale
+
+The principles system serves three distinct consumers through three layers:
+
+| Layer | Format | Consumer | Purpose |
+|-------|--------|----------|---------|
+| `.qmd` files | Full Quarto documents | Developers reading docs | Complete specification with rationale, examples, edge cases |
+| `llm/*.yaml` | Structured YAML | AI agents (LLM context) | Machine-parseable rules with `rule_natural`, `rule_formal`, hierarchy |
+| `.claude/rules/*.md` | Brief markdown | AI agents (auto-loaded) | Operational quick reference, loaded into every conversation |
+
+If any layer falls out of sync, the consequences are:
+
+- **Missing from `.qmd`**: The principle doesn't officially exist — no rationale, no authority
+- **Missing from `llm/*.yaml`**: AI agents following the `llm/index.yaml` → chapter file workflow won't discover the rule; `principle_count` becomes wrong
+- **Missing from `.claude/rules/*.md`**: AI agents in conversation won't be reminded of the rule in their auto-loaded context
+
+The system has experienced this drift before: principles existed in `.qmd` but were absent from `llm/` YAML, causing AI agents to unknowingly violate rules they couldn't see. This rule prevents that class of error.
+
+## Rule
+
+### Trigger
+
+This rule applies whenever:
+
+1. A **new principle** is created (any MP, P, or R)
+2. An **existing principle** is modified (id, name, scope, rule content)
+3. A principle is **deleted or deprecated**
+4. A principle's **relationships** change (implements, related)
+
+### Three Layers and Their Roles
+
+```
+Layer 1: .qmd (Source of Truth)
+  Location: docs/en/part1_principles/{CHAPTER}/rules/{ID}_{name}.qmd
+  Content: Full specification — YAML frontmatter, rationale, rule details,
+           examples (compliant + violation), relationships
+  Authority: HIGHEST — all other layers derive from this
+
+        │
+        ▼ (extract structured summary)
+
+Layer 2: llm/*.yaml (AI-Optimized Index)
+  Location: llm/{chapter}.yaml
+  Content: id, type, name, display_name, one_liner, implements, scope,
+           file_path, rule_natural, rule_formal, violations[], compliant[]
+  Updates: principle_count, hierarchy section
+  Authority: DERIVED — must match .qmd
+
+        │
+        ▼ (extract operational brief)
+
+Layer 3: .claude/rules/*.md (Quick Reference)
+  Location: .claude/rules/{NN}-{topic}.md
+  Content: 2-4 line summary + "Details: {path to .qmd}"
+  Authority: DERIVED — must match .qmd
+  Constraint: DOC_R007 (max 15 lines per section)
+```
+
+### Required Updates Per Layer
+
+#### Layer 1: `.qmd` File
+
+- Create or edit the `.qmd` file with full content
+- YAML frontmatter MUST include: `id`, `type`, `name`, `display_name`, `implements`, `scope`
+- Body MUST include: `# {ID}: {Display Name}`, `## One-Liner`, `## Rationale`, `## Rule`, `## Relationship`, `## Examples`
+
+#### Layer 2: `llm/*.yaml` File
+
+- Add or update the principle entry in the correct chapter YAML
+- Update `principle_count` at the top of the file
+- Add or update the entry in the `hierarchy:` section at the bottom
+- Ensure `file_path` points to the correct `.qmd` relative path
+
+#### Layer 3: `.claude/rules/*.md` File
+
+- Add a brief section (2-4 lines) in the appropriate rules file
+- Include `**Details**: {path to .qmd}` reference link
+- If the principle is important enough for the "相關原則" list at the bottom, add it there too
+- Follow DOC_R007 brevity constraints
+
+### Execution Order
+
+The layers MUST be updated in this order:
+
+1. **`.qmd` first** — establish the authoritative content
+2. **`llm/*.yaml` second** — extract structured summary from `.qmd`
+3. **`.claude/rules/*.md` third** — extract operational brief
+
+This order ensures each derived layer has its source available when being written.
+
+### Verification Checklist
+
+After completing all three updates, verify:
+
+- [ ] `.qmd` file exists at the correct path with complete content
+- [ ] `llm/*.yaml` has the new entry with matching `id`, `one_liner`, `implements`
+- [ ] `llm/*.yaml` `principle_count` is correct (count all entries)
+- [ ] `llm/*.yaml` `hierarchy:` section includes the new principle
+- [ ] `.claude/rules/*.md` has a brief reference with `Details:` link
+- [ ] All three layers agree on `id`, `name`, `scope`, and `implements`
+
+### PostToolUse Hook Support
+
+The `check-principle-sync.sh` PostToolUse hook detects modifications to ANY of the three layers and reminds about updating the others:
+
+- **`.qmd` edited** → reminds to update `llm/*.yaml` + `.claude/rules/*.md` (with specific file suggestions)
+- **`llm/*.yaml` edited** → reminds to verify `.qmd` source exists and update `.claude/rules/*.md`
+- **`.claude/rules/*.md` edited** → reminds to verify `.qmd` and `llm/*.yaml` are already updated
+
+The hook is advisory (non-blocking) and registered in `.claude/settings.json` as a PostToolUse hook on `Edit|Write`.
+
+## Relationship
+
+- **Implements**: DOC_P001 (Documentation System Architecture — ensures documentation layers stay consistent)
+- **Implements**: DOC_R007 (Claude Rules Writing Convention — Layer 3 follows DOC_R007 brevity rules)
+- **Related**: All MP/P/R principles (this rule governs how they are documented)
+- **Enforced by**: PostToolUse hook `check-principle-sync.sh` (advisory reminder)
+
+## Examples
+
+### Compliant
+
+- Created `DOC_R008.qmd` → added DOC_R008 to `CH19_documentation.yaml` (entry + principle_count + hierarchy) → added 4-line summary to `05-documentation.md`
+- Modified `DM_R028` scope in `.qmd` → updated `rule_natural` in `CH02_data.yaml` → updated brief in `02-coding.md`
+- Deleted deprecated `DEV_R010` → removed from `CH03_development.yaml` (updated count and hierarchy) → removed from `02-coding.md`
+
+### Violation
+
+- Created `.qmd` but forgot to update `llm/*.yaml` — AI agents can't discover the rule through the standard workflow
+- Updated `llm/*.yaml` but not `.qmd` — the YAML content has no authoritative source, may drift
+- Updated `.qmd` and `llm/*.yaml` but not `.claude/rules/*.md` — conversational AI agents miss the rule in auto-loaded context
+- Updated `principle_count` but forgot to add to `hierarchy:` section — hierarchy becomes incomplete
+- Added principle to wrong chapter YAML (e.g., UI rule in CH02_data.yaml) — agents looking in the correct chapter won't find it

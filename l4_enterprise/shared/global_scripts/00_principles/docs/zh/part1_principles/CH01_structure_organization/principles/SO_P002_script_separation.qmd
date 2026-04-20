@@ -1,0 +1,244 @@
+---
+title: "SO_P002: Script Separation"
+subtitle: "Principles governing separation between update scripts and global scripts"
+chapter: "CH01"
+category: "principle"
+number: "SO_P002"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "結構組織法 (Structure & Organization Law)"
+article-number: "第2條"
+derives_from:
+  - "CH00.MP002: Structural Blueprint"
+  - "CH01.SO_P001: Project Principles"
+  - "CH00.MP001: Primitive Terms and Definitions"
+influences:
+  - "CH01.SO_P003: App Construction Principles"
+  - "CH01.SO_P004: App Bottom-Up Construction"
+  - "CH01.SO_R002: File Naming Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**結構組織法第2條（腳本分離原則）**
+
+本條規定主要更新腳本與全域腳本庫之間的職責分離原則，確保專案組件的可維護性、可重用性和清晰性。
+
+:::{.callout-important}
+## 核心原則
+- **更新腳本**：編排和工作流程管理
+- **全域腳本**：核心功能和可重用組件
+:::
+
+# 第一項：關注點分離 {#separation-of-concerns}
+
+## 第一款：更新腳本的簡潔性 {#update-scripts-simplicity}
+
+update_scripts 目錄中的更新腳本應：
+
+1. 盡可能簡單和簡潔
+2. 專注於「做什麼」而非「如何做」
+3. 包含最少的邏輯和複雜性
+4. 呼叫 global_scripts 中的函數進行實際實作
+5. 遵循清晰、線性的流程，易於理解
+
+## 第二款：全域腳本的複雜性封裝 {#global-scripts-complexity}
+
+update_scripts/global_scripts 目錄中的全域腳本應：
+
+1. 封裝所有複雜的邏輯和功能
+2. 設計為可跨多個專案重用
+3. 處理自己的錯誤檢查和驗證
+4. 全面記錄其行為
+5. 穩定且經過充分測試
+
+# 第二項：實作指導原則 {#implementation}
+
+## 第一款：理想的更新腳本 {#ideal-update-script}
+
+理想的更新腳本應：
+
+1. 載入初始化檔案
+2. 設定任何必要的參數或配置
+3. 呼叫全域函數執行實際工作
+4. 載入去初始化檔案
+
+:::{.callout-tip}
+## 範例：理想的更新腳本
+```r
+# 初始化環境
+source(file.path("update_scripts", "global_scripts", "00_principles", 
+                 "sc_initialization_update_mode.R"))
+
+# 連接資料庫
+# 使用 fn_database_connect.R 中的函數
+raw_data <- dbConnect_from_list("raw_data", read_only = FALSE)
+cleansed_data <- dbConnect_from_list("cleansed_data", read_only = FALSE)
+
+# 定義參數
+main_folder <- file.path(raw_data_folder, "amazon_sales")
+
+# 呼叫 global_scripts 中的函數執行實際工作
+# 這些函數定義在 fn_amazon_sales.R 中
+create_or_replace_amazon_sales_dta(raw_data, 
+                                   example_location = file.path(main_folder, "example.xlsx"))
+import_amazon_sales(main_folder, raw_data)
+
+# 清理資源並關閉連接
+source(file.path("update_scripts", "global_scripts", "00_principles", 
+                 "sc_deinitialization_update_mode.R"))
+```
+:::
+
+## 第二款：全域腳本函數設計 {#global-function-design}
+
+全域腳本函數應：
+
+1. 接受明確定義的參數
+2. 驗證所有輸入
+3. 優雅地處理錯誤
+4. 使用 roxygen 註解全面記錄行為
+5. 返回適當的結果或修改的物件
+
+:::{.callout-tip}
+## 範例：設計良好的全域函數
+```r
+#' Import Amazon Sales Data from Excel Files
+#'
+#' @param folder_path Character string. Path to the folder containing files.
+#' @param connection DBI connection object. Database connection.
+#' @param clean_columns Logical. Whether to clean column names. Default TRUE.
+#'
+#' @return The database connection for chaining.
+#' 
+#' @examples
+#' import_amazon_sales_dta("path/to/files", connection)
+import_amazon_sales_dta <- function(folder_path, connection, clean_columns = TRUE) {
+  # 輸入驗證
+  if (!dir.exists(folder_path)) {
+    stop("Folder path does not exist: ", folder_path)
+  }
+  
+  # 函數實作...
+  
+  # 返回結果
+  return(connection)
+}
+```
+:::
+
+# 第三項：命名慣例 {#naming-conventions}
+
+## 第一款：更新腳本命名 {#update-script-naming}
+
+更新腳本應遵循結構化命名慣例，結合執行順序與模組映射：
+
+```
+AABB_C_D_E_description.R
+```
+
+其中：
+- **AA**：捆綁群組識別符（00-99）- 將相關腳本分組
+- **BB**：捆綁內的序號（00-99）- 定義捆綁內的執行順序
+- **C**：子腳本識別符（0-9）- 允許將腳本分解為多個組件
+- **D_E**：模組引用（如 2_1）- 將腳本連接到文件中的對應模組
+- **description**：簡短描述文字，說明腳本的用途
+
+## 第二款：全域腳本命名 {#global-script-naming}
+
+全域腳本應使用簡單、描述性的名稱，並使用前綴區分函數庫、執行腳本和 Shiny 應用組件：
+
+```
+[prefix]_[name].R
+```
+
+前綴定義：
+- `fn_` - 包含可重用函數的函數庫
+- `sc_` - 執行流程或工作流程的腳本
+- `ui_` - Shiny UI 組件
+- `server_` - Shiny 伺服器組件
+- `defaults_` - Shiny 預設值組件
+
+### 函數庫規則 {#function-library-rules}
+
+函數庫（`fn_` 檔案）應遵循「一個檔案一個函數」原則：
+
+1. 每個檔案應只匯出一個主要函數
+2. 檔案名稱應與主要匯出函數名稱相符
+3. 輔助函數可以包含但應為內部函數（不匯出）
+
+### Shiny 組件命名規則 {#shiny-component-naming}
+
+對於 Shiny 組件，使用階層命名慣例將 UI 和伺服器部分分割為獨立檔案：
+
+```
+ui_[section]_[component].R       # 包含 UI 組件函數
+server_[section]_[component].R   # 包含伺服器組件函數
+defaults_[section]_[component].R # 包含預設值函數
+```
+
+# 第四項：避免的反模式 {#anti-patterns}
+
+## 第一款：更新腳本中應避免 {#update-script-anti-patterns}
+
+:::{.callout-warning}
+## 避免事項
+- **複雜邏輯**：如需條件邏輯，考慮移至全域函數
+- **重複程式碼**：如類似程式碼出現在多個更新腳本中，移至 global_scripts
+- **直接 SQL**：使用 global_scripts 中的資料庫工具函數
+- **錯誤處理邏輯**：讓全域函數適當地處理自己的錯誤
+:::
+
+## 第二款：全域腳本中應避免 {#global-script-anti-patterns}
+
+:::{.callout-warning}
+## 避免事項
+- **環境相依性**：不要依賴全域變數；接受所有需要的資料作為參數
+- **副作用**：明確說明函數修改的內容
+- **硬編碼路徑**：使用參數代替
+- **缺少文件**：所有全域函數必須有良好的文件
+:::
+
+# 第五項：效益 {#benefits}
+
+遵循腳本分離原則的效益：
+
+:::{.callout-note}
+## 主要效益
+1. **維護性**：功能變更發生在一個位置（global_scripts）
+2. **一致性**：使用相同 global_scripts 的所有專案行為相同
+3. **可讀性**：更新腳本清楚傳達工作流程意圖，無需複雜細節
+4. **可測試性**：全域函數可以獨立測試
+5. **可擴展性**：可透過重用全域函數快速建立新的更新腳本
+:::
+
+# 術語詞彙表 {#glossary}
+
+為確保程式碼組織討論的清晰性，定義以下術語：
+
+- **函數庫**：包含單一可匯出函數和可選輔助函數的檔案
+- **執行腳本**：執行特定工作流程或流程的腳本
+- **應用區段**：Shiny 應用的主要功能區域（如宏觀概覽、微觀客戶）
+- **組件**：實作特定功能的獨立、可重用的 UI-伺服器對
+- **模組**：在模組映射的上下文中，指相關功能的概念群組
+- **Shiny 模組**：Shiny 中建立命名空間 UI-伺服器對的技術機制
+- **Shiny 組件目錄**：包含所有 Shiny UI 和伺服器組件的 `10_rshinyapp_components` 目錄
+
+# 結論 {#conclusion}
+
+透過維持簡單更新腳本和健壯全域函數之間的清晰分離，我們建立了一個更易於維護、理解和擴展的系統。這種方法讓新團隊成員能快速掌握工作流程，同時將複雜性封裝在定義良好、可重用的組件中。
+
+---
+
+*依據：結構組織法第2條*  
+*影響：[SO_P003 應用建構原則](SO_P003_app_construction.qmd)、[SO_P004 由下而上建構](SO_P004_app_bottom_up.qmd)*  
+*相關規則：[SO_R002 檔案命名慣例](../rules/SO_R002_file_naming_convention.qmd)*

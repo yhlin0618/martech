@@ -1,0 +1,218 @@
+---
+title: "DM_R051: Single Task per Derivation Step Rule"
+subtitle: "Each derivation task file must perform exactly one business logic module"
+chapter: "CH02"
+category: "rule"
+number: "DM_R051"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 51"
+parent_principle: "MP064"
+related_to:
+  - "DM_R044": "Derivation Implementation Standard"
+  - "DM_R050": "Derivation Documentation Structure"
+  - "DM_R042": "DRV Sequential Numbering"
+  - "SO_R007": "One Function One File"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R051: Single Task per Derivation Step Rule {#overview}
+
+This rule ensures that each derivation task file performs exactly one business logic module, enabling clear dependencies, easier testing, and maintainable code.
+
+## Rule Statement
+
+**Each derivation task file `D{nn}_{seq}` MUST perform exactly ONE business logic module.**
+
+A "business logic module" is a cohesive unit of data transformation with:
+- Single input focus
+- Single output focus
+- One transformation purpose
+
+## Rationale {#rationale}
+
+### Why One Task per File?
+
+| Benefit | Description |
+|---------|-------------|
+| **Testability** | Each module can be tested independently |
+| **Maintainability** | Changes affect only one module |
+| **Dependency Clarity** | Clear input/output for each step |
+| **Reusability** | Modules can be reused across derivations |
+| **Debugging** | Easier to isolate failures |
+
+### Analogy to SO_R007
+
+This rule extends **SO_R007 (One Function One File)** to derivation documentation:
+
+| SO_R007 | DM_R051 |
+|---------|---------|
+| One R function per `fn_*.R` file | One business module per `D{nn}_{seq}.qmd` |
+| Clear function responsibility | Clear task responsibility |
+| Enables unit testing | Enables step validation |
+
+## Violation Examples {#violations}
+
+### Example 1: D02_03 (Before Fix)
+
+**Problem**: D02_03_customer_views.qmd contained TWO modules:
+
+```nsql
+# Module 1: Customer Aggregation
+CREATE VIEW df_sales_by_customer_{key}:
+  FROM df_sales_{key}
+  GROUP BY customer_id
+  AGGREGATE: transaction_count, total_spent
+
+# Module 2: DNA Integration (SHOULD BE SEPARATE!)
+CREATE VIEW df_customer_complete_{key}:
+  FROM df_sales_by_customer_{key}
+  LEFT JOIN df_dna_by_customer
+  SELECT: aggregated + DNA metrics
+```
+
+**Fix**: Split into D02_03 (aggregation) and D02_04 (DNA integration).
+
+### Example 2: Hypothetical Violation
+
+```yaml
+# BAD: Multiple purposes in one task
+D01_03_rfm_and_segmentation.qmd:
+  - RFM calculation      # Purpose 1
+  - Customer segmentation # Purpose 2
+  - DNA assignment       # Purpose 3
+```
+
+```yaml
+# GOOD: Single purpose per task
+D01_02_rfm_calculation.qmd:     # RFM only
+D01_03_dna_analysis.qmd:        # DNA only
+D01_04_customer_profile.qmd:    # Profile only
+```
+
+## Compliance Examples {#compliance}
+
+### D01 DNA Analysis (Compliant)
+
+Each task performs exactly one module:
+
+| Task | Single Purpose | Output |
+|------|---------------|--------|
+| D01_00 | Consume ETL output | `df_{platform}_sales___standardized` |
+| D01_01 | Customer aggregation | `df_customer_metrics` |
+| D01_02 | RFM calculation | `df_customer_rfm` |
+| D01_03 | DNA analysis | `df_dna_by_customer` |
+| D01_04 | Customer profile | `df_profile_by_customer` |
+| D01_05 | App views | `app_data` views |
+
+### D03 Positioning Analysis (Compliant)
+
+| Task | Single Purpose |
+|------|---------------|
+| D03_00 | Consume ETL output |
+| D03_01 | Comment property rating |
+| D03_02 | Rate reviews |
+| D03_03 | Process reviews |
+| D03_04 | Query by ASIN |
+| D03_05 | Position table |
+
+## Decision Criteria {#criteria}
+
+### When to Split a Task
+
+Split a task into multiple files when:
+
+1. **Multiple `CREATE` statements** produce unrelated outputs
+2. **Different input sources** are processed separately
+3. **Independent business logic** could be tested/reused separately
+4. **Clear sequential dependency** exists between operations
+
+### When to Keep Together
+
+Keep operations in one task when:
+
+1. **Atomic operation** - steps cannot run independently
+2. **Same transformation** - multiple columns from same source
+3. **Transactional requirement** - all-or-nothing semantics
+
+## File Naming Pattern {#naming}
+
+```
+D{nn}_{seq}_{single_purpose}.qmd
+```
+
+| Component | Description |
+|-----------|-------------|
+| `D{nn}` | Derivation group (D01, D02, etc.) |
+| `{seq}` | Sequence number (00, 01, 02, etc.) |
+| `{single_purpose}` | ONE clear purpose (not `_and_`, not multiple nouns) |
+
+### Good Names
+
+- `D01_02_rfm_calculation.qmd`
+- `D02_03_customer_aggregation.qmd`
+- `D02_04_dna_integration.qmd`
+
+### Bad Names (Indicate Violations)
+
+- `D01_02_rfm_and_segmentation.qmd` - Two purposes!
+- `D02_03_customer_views_with_dna.qmd` - Two purposes!
+- `D03_02_rate_process_reviews.qmd` - Two purposes!
+
+## Validation Checklist {#checklist}
+
+For each `D{nn}_{seq}` task file:
+
+- [ ] File name describes ONE purpose (no `_and_`, `_with_`)
+- [ ] Only ONE primary output table/view is created
+- [ ] All operations serve the SAME business purpose
+- [ ] Could be tested independently with mock inputs
+- [ ] Dependencies are clearly stated in `depends_on:`
+
+## Implementation Pattern {#pattern}
+
+### Task File Structure
+
+```yaml
+---
+title: "D{nn}_{seq}: {Single Purpose}"
+depends_on:
+  - "D{nn}_{prev}"          # Clear dependency
+outputs_to:
+  - "{single_output_table}" # ONE primary output
+---
+
+# D{nn}_{seq}: {Single Purpose}
+
+## Purpose
+{One sentence describing THE single purpose}
+
+## Input
+{From previous step}
+
+## Transformation
+{ONE transformation logic}
+
+## Output
+{ONE primary output}
+```
+
+## Relationship to Other Principles {#relationships}
+
+| Principle | Relationship |
+|-----------|--------------|
+| **SO_R007** | Same concept applied to R functions; DM_R051 applies to derivation tasks |
+| **DM_R044** | Defines five-part structure; DM_R051 ensures each part is cohesive |
+| **DM_R050** | Defines directory structure; DM_R051 ensures each task file is atomic |
+| **DM_R042** | Defines sequential numbering; DM_R051 ensures each number = one module |
+
+## Conclusion
+
+The Single Task per Derivation Step Rule (DM_R051) ensures derivation workflows remain maintainable, testable, and understandable by enforcing a one-module-per-file discipline. This mirrors the function-level discipline of SO_R007 at the derivation task level.

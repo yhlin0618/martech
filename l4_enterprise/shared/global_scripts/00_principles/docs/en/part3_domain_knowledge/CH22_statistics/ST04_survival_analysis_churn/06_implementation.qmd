@@ -1,0 +1,132 @@
+---
+title: "Section 6: Implementation Plan"
+parent: "ST04"
+---
+
+# Implementation Plan {#implementation}
+
+## 6.1 Phase 1: BG/NBD with CLVTools (Deployed)
+
+The production implementation uses CLVTools (CRAN Nov 2025):
+
+```r
+library(CLVTools)
+
+# Step 1: Prepare transaction data
+transactions <- df_sales_by_customer_by_date[, .(
+  customer_id, date = as.Date(payment_time), price = total_spent
+)]
+
+# Step 2: Create CLVTools data object
+clv_data <- clvdata(
+  data.transactions = transactions,
+  date.format = "ymd",
+  time.unit = "week",
+  estimation.split = NULL,  # use all data
+  name.id = "customer_id",
+  name.date = "date",
+  name.price = "price"
+)
+
+# Step 3: Fit BG/NBD — estimates (r, alpha, a, b)
+bgf <- bgnbd(clv.data = clv_data, verbose = TRUE)
+
+# Step 4: Compute P(alive) and expected transactions
+results <- predict(bgf, prediction.end = 12)  # 12-week forecast
+# Returns: PAlive, CET (conditional expected transactions)
+
+# Step 5: Map back to data_by_customer
+data_by_customer[results, on = "customer_id", `:=`(
+  p_alive = i.PAlive,
+  nrec_prob = 1 - i.PAlive,  # backward compatible
+  btyd_expected_transactions = i.CET
+)]
+```
+
+## 6.2 Core Function: `analysis_btyd()`
+
+**File**: `global_scripts/04_utils/fn_analysis_btyd.R`
+
+```r
+analysis_btyd <- function(data_by_customer,
+                          df_sales_by_customer_by_date,
+                          time_unit = "week",
+                          prediction_periods = 12,
+                          fallback_params = NULL,
+                          verbose = TRUE) {
+  # 1. Prepare transactions for CLVTools
+  # 2. Create clvdata object
+  # 3. Fit BG/NBD (with fallback_params if provided)
+  # 4. Compute P(alive)
+  # 5. Overwrite nrec_prob = 1 - P(alive)
+  # 6. Return updated data_by_customer
+}
+```
+
+Key design decisions:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Package | CLVTools | Active maintenance (2025), modern S4 API, covariate support |
+| Time unit | Week | Balances granularity with numerical stability |
+| Fallback | Keep original nrec_prob | Graceful degradation — never crash pipeline |
+| Integration point | After `analysis_dna()` | Overwrites nrec_prob, adds p_alive column |
+
+## 6.3 Pipeline Integration: `fn_D01_02_core.R`
+
+The BTYD call is inserted after `analysis_dna()` in the D01_02 pipeline:
+
+```r
+# Existing: run analysis_dna() per product_line slice
+dna_results <- analysis_dna(...)
+
+# NEW: Replace nrec_prob with BTYD P(alive)
+tryCatch({
+  dna_results$data_by_customer <- analysis_btyd(
+    data_by_customer = dna_results$data_by_customer,
+    df_sales_by_customer_by_date = by_date_subset,
+    fallback_params = fallback_params_for_slice,
+    verbose = TRUE
+  )
+}, error = function(e) {
+  message(sprintf("[%s] BTYD failed (%s), keeping original nrec_prob",
+                  platform_id, e$message))
+})
+```
+
+## 6.4 Two-Pass Empirical Bayes Architecture
+
+The key innovation beyond standard BTYD: **Two-Pass Empirical Bayes** for handling product line slices with insufficient data.
+
+```
+Pass 1: Independent MLE per product_line slice
+  -> Collect (r, alpha, a, b) from each successful estimation
+  -> Identify failed/degenerate slices
+
+Pass 2: Re-run failed slices with median(successful params) as start values
+  -> fallback_params = median of Pass 1 successes
+  -> Provides informed priors for small/degenerate slices
+```
+
+See [Section 7](07_production_results.qmd) for actual Pass 1/Pass 2 results.
+
+## 6.5 DRV Dependency Markers
+
+```r
+#####
+# DERIVATION: D01_02 Customer DNA Analysis (with BTYD)
+# GROUP: D01 (Customer DNA Analysis)
+# CONSUMES: df_sales_by_customer, df_sales_by_customer_by_date
+# PRODUCES: df_dna_by_customer (with p_alive, nrec_prob from BTYD)
+# DEPENDS_ON_ETL: amz_ETL_sales_2TR
+# PRINCIPLE: UX_P002, MP064, DEV_R038
+#####
+```
+
+## 6.6 Future Phases
+
+| Phase | Model | File | Status |
+|-------|-------|------|--------|
+| **Phase 1** | BG/NBD (CLVTools) | `fn_analysis_btyd.R` | **Deployed** (2026-03-03) |
+| Phase 2 | Pareto/GGG (regularity) | TBD | Planned |
+| Phase 3 | Covariate-enriched | TBD | Research |

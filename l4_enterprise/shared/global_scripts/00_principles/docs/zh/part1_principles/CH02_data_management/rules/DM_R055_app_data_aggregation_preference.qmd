@@ -1,0 +1,94 @@
+---
+title: "DM_R055: App Data 彙總優先"
+subtitle: "app_data 優先使用 _all + filter，避免每個切片一張表"
+chapter: "CH02"
+category: "rule"
+number: "DM_R055"
+date-created: "2026-01-03"
+date-modified: "2026-01-03"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 55"
+parent_principle: "MP110"
+related_to:
+  - "MP110": "應用資料彙總"
+  - "DM_R045": "資料庫檔案命名標準"
+  - "DM_R047": "多平台同步"
+  - "DM_R054": "元資料表儲存模式"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R055: App Data 彙總優先 {#overview}
+
+`app_data.duckdb` 中的 App 讀取資料，應優先使用單一彙總表
+（`_all`）並透過欄位過濾，而非為每個切片建立獨立表格。
+
+## 規則陳述
+
+**在 `app_data` 中請使用彙總 `_all` 表，並在 UI 端用欄位過濾。
+每個切片表應留在 `processed_data`，除非符合例外條件。**
+
+## 範圍
+
+- **只適用**於 `app_data`（4APP）。
+- 其他層（processed_data、transformed_data）可依需求保留切片表。
+
+## 理由 {#rationale}
+
+1. **減少表格爆炸**，維持 app_data 精簡
+2. **單一來源**，避免平台或產品線漏表
+3. **UI 篩選一致**，降低維護成本
+4. **測試更穩定**，不用到處判斷表格是否存在
+
+## 必要過濾欄位
+
+彙總表必須包含可供 UI 過濾的欄位：
+
+- `product_line_id`（產品線過濾）
+- `platform` 或 `platform_id`（跨平台合併時）
+- UI 有暴露的其他維度欄位
+
+## 建議模式 {#pattern}
+
+**正確（app_data）：**
+
+```text
+app_data.df_cbz_poisson_analysis_all
+  - product_line_id 欄位
+```
+
+```r
+tbl2(app_data_connection, "df_cbz_poisson_analysis_all") %>%
+  dplyr::filter(product_line_id == "tur")
+```
+
+**避免（app_data）：**
+
+- `app_data.df_cbz_poisson_analysis_tur`
+- `app_data.df_cbz_poisson_analysis_pre`
+
+## 例外 {#exceptions}
+
+僅在下列情況允許 app_data 的切片表：
+
+1. **效能需求**：彙總表太大導致 UI 不可接受的延遲
+2. **權限隔離**：不同使用者不可看到其他切片
+3. **儲存限制**：彙總表過大且不適合即時載入
+
+## 範例：D04 Poisson
+
+- `processed_data.df_{platform}_poisson_analysis_{product_line}` 保留作為中介/除錯
+- `app_data.df_{platform}_poisson_analysis_all` 作為 UI 來源
+- UI 以 `product_line_id` 過濾
+
+## 檢查清單 {#checklist}
+
+- [ ] `app_data` 有 `_all` 表
+- [ ] 具備 `product_line_id` 等過濾欄位
+- [ ] UI 用欄位過濾，而不是換表
+- [ ] 切片表留在 `processed_data`（如需要）

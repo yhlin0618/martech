@@ -1,0 +1,125 @@
+---
+title: "DEV_R040: No Symlinks in Deployable Code"
+subtitle: "Files deployed to Posit Connect must be real files, not symbolic links"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R040"
+date-created: "2026-01-08"
+date-modified: "2026-01-08"
+author: "Claude"
+type: "rule"
+law: "Development Methodology"
+article-number: "Rule 40"
+parent_principle: "MP010"
+related_to:
+  - "MP010": "Operating Modes"
+  - "DEV_R039": "Side-Effect-Free Function Files"
+  - "DM_R056": "Mode-Specific Database Path Loading"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DEV_R040: No Symlinks in Deployable Code {#overview}
+
+Files that will be deployed to Posit Connect (or any remote environment) must be **real files**,
+not symbolic links. Symbolic links may not resolve correctly in deployment bundles.
+
+## Rule Statement
+
+**Any file referenced by the application that will be deployed must be a real file, not a symlink.**
+
+This includes:
+- Parameter files in `30_global_data/`
+- Data files in `data/app_data/`
+- Configuration files (`.yaml`, `.csv`, `.json`)
+- Any file loaded via `source()`, `read.csv()`, `yaml::read_yaml()`, etc.
+
+## Rationale {#rationale}
+
+1. **rsconnect Bundling**: When `rsconnect::deployApp()` creates a deployment bundle, symbolic
+   links may not be followed correctly or the target file may be excluded.
+
+2. **Cross-Platform Issues**: Symbolic links behave differently on Windows, macOS, and Linux.
+   Posit Connect servers typically run Linux.
+
+3. **Git Behavior**: Git can store symlinks, but cloning on different systems may not preserve
+   them correctly.
+
+4. **Deployment Isolation**: The deployment bundle should be self-contained without external
+   dependencies.
+
+## Affected Directories {#directories}
+
+| Directory | Risk Level | Reason |
+|-----------|------------|--------|
+| `30_global_data/parameters/` | **HIGH** | Loaded during app initialization |
+| `data/app_data/` | **HIGH** | Application data |
+| `scripts/global_scripts/` | MEDIUM | Sourced R files |
+| `www/` | MEDIUM | Static assets |
+
+## Discovery Context {#discovery}
+
+This rule was established after `df_platform.csv` (a symbolic link) caused deployment failure:
+
+```
+Error: object 'df_platform' not found
+```
+
+The symbolic link was not resolved during rsconnect bundling, causing the platform
+configuration to be missing in the deployed application.
+
+**Reference**: Issue #143
+
+## How to Check for Symlinks {#checking}
+
+### Using Terminal
+
+```bash
+# Find all symlinks in global_scripts
+find scripts/global_scripts -type l
+
+# Check if a specific file is a symlink
+ls -la scripts/global_scripts/30_global_data/parameters/scd_type1/df_platform.csv
+# Symlink shows: lrwxr-xr-x ... -> target
+# Real file shows: -rw-r--r-- ...
+```
+
+### Using R
+
+```r
+# Check if file is a symlink
+file.info("path/to/file")$isdir  # FALSE for files
+Sys.readlink("path/to/file")      # Returns target if symlink, "" if real file
+```
+
+## How to Fix Symlinks {#fixing}
+
+```bash
+# Option 1: Replace symlink with copy of target
+cp --remove-destination $(readlink path/to/symlink) path/to/symlink
+
+# Option 2: Remove symlink and create real file
+rm path/to/symlink
+cp /path/to/original path/to/symlink
+```
+
+## Exceptions {#exceptions}
+
+Symlinks are acceptable in:
+
+1. **Development-only directories** that are excluded from deployment
+2. **Local data directories** listed in `.gitignore`
+3. **ETL pipeline directories** (`update_scripts/`) not included in app deployment
+
+## Pre-Deployment Checklist {#checklist}
+
+Before deploying to Posit Connect:
+
+- [ ] Run `find . -type l` in the app directory to identify symlinks
+- [ ] Verify no symlinks exist in `30_global_data/`
+- [ ] Verify no symlinks exist in `data/app_data/`
+- [ ] Verify no symlinks in any sourced R files
+- [ ] Test deployment bundle locally with `rsconnect::writeManifest()`

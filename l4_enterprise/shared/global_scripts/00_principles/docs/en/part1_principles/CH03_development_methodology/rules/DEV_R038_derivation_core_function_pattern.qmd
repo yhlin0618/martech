@@ -1,0 +1,516 @@
+---
+title: "DEV_R038: Derivation Core Function Pattern"
+subtitle: "Extract shared derivation logic into core functions with thin platform wrappers"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R038"
+date-created: "2025-12-27"
+date-modified: "2025-12-27"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article-number:
+  number: 38
+  title: "Derivation Core Function Pattern"
+related_to:
+  - "DEV_R037: Derivation Step Isolation"
+  - "DM_R044: Derivation Implementation Standard"
+  - "DEV_R011: Derivation Platform Independence"
+  - "SO_R007: One Function One File"
+  - "MP064: ETL-Derivation Separation"
+  - "MP145: Documentation-Implementation Alignment"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 38: Derivation Core Function Pattern {#overview}
+
+**Development Methodology Law Article 38 (Derivation Core Function Pattern)**
+
+This rule establishes the "core function + platform wrapper" architecture for derivation scripts that share logic across multiple platforms, ensuring code reuse while maintaining platform-specific configuration.
+
+:::{.callout-important}
+## Core Rule
+
+1. When derivation logic is needed in **2+ platforms**, extract to a **core function**
+2. Core functions go in `global_scripts/16_derivations/fn_D{group}_{seq}_core.R`
+3. Platform wrappers are **thin** (~80 lines): init, source core, call with platform_id, deinit
+4. **NO business logic in wrappers** - all logic in core function
+:::
+
+# Section 1: When to Apply {#when-to-apply}
+
+## Subsection 1: Extraction Criteria {#extraction-criteria}
+
+Extract to a core function when:
+
+| Criterion | Threshold | Example |
+|-----------|-----------|---------|
+| **Platform count** | 2+ platforms need same logic | cbz, amz, eby all need DNA analysis |
+| **Logic complexity** | > 50 lines of business logic | analysis_dna() calls, transformations |
+| **Algorithm involvement** | Uses specific algorithms | DNA analysis, RFM calculation |
+| **Maintenance concern** | Changes would need multi-file updates | Schema changes, business rules |
+
+## Subsection 2: When NOT to Extract {#when-not-to-extract}
+
+Keep platform-specific scripts when:
+
+- Logic is **fundamentally different** per platform
+- Platform has **unique data schema** that cannot be normalized
+- Script is **simple** (< 30 lines, no complex logic)
+- **One-off** implementation for a single platform
+
+# Section 2: Architecture Pattern {#architecture}
+
+## Subsection 1: Directory Structure {#directory-structure}
+
+```
+global_scripts/
+├── 16_derivations/                   # Cross-company core functions (shared via subrepo)
+│   ├── fn_D01_03_core.R             # Core function for D01_03 (DNA Analysis)
+│   ├── fn_D01_04_core.R             # Core function for D01_04 (Customer Profile)
+│   ├── fn_D01_05_core.R             # Core function for D01_05 (App Views)
+│   └── README.md                    # Directory documentation
+
+update_scripts/DRV/
+├── all/                              # All-platform orchestration scripts
+│   └── all_D01_06.R                 # Master orchestration (NOT a core function)
+├── cbz/                              # Cyberbiz platform
+│   ├── cbz_D01_03.R                 # Thin wrapper -> calls 16_derivations/fn_D01_03_core.R
+│   ├── cbz_D01_04.R                 # Thin wrapper -> calls 16_derivations/fn_D01_04_core.R
+│   └── cbz_D01_05.R                 # Thin wrapper -> calls 16_derivations/fn_D01_05_core.R
+├── amz/                              # Amazon platform
+│   ├── amz_D01_03.R                 # Thin wrapper -> calls 16_derivations/fn_D01_03_core.R
+│   ├── amz_D01_04.R                 # Thin wrapper
+│   └── amz_D01_05.R                 # Thin wrapper
+└── eby/                              # eBay platform
+    ├── eby_D01_03.R                 # Thin wrapper -> calls 16_derivations/fn_D01_03_core.R
+    ├── eby_D01_04.R                 # Thin wrapper
+    └── eby_D01_05.R                 # Thin wrapper
+```
+
+## Subsection 2: Core Function Location {#core-function-location}
+
+| Logic Type | Location | Naming | Shared Via |
+|------------|----------|--------|------------|
+| **Cross-company derivation core** | `global_scripts/16_derivations/fn_D{group}_{seq}_core.R` | `fn_D01_03_core.R` | Git subrepo |
+| **General utilities** | `global_scripts/04_utils/fn_{name}.R` | `fn_analysis_dna.R` | Git subrepo |
+| **Transform functions** | `global_scripts/17_transform/fn_{name}.R` | `fn_transform_sales.R` | Git subrepo |
+
+**Why `global_scripts/16_derivations/`?**
+
+1. **Cross-company sharing**: Core functions are parameterized and work for ALL companies (MAMBA, BrandEdge, etc.)
+2. **Subrepo sync**: `global_scripts/` is shared via git subrepo, so all companies automatically get updates
+3. **Single source of truth**: One core function serves all platforms across all companies
+4. **Clean separation**: Cores (business logic) in `16_derivations/`, algorithms in `04_utils/`
+
+# Section 3: Implementation Templates {#templates}
+
+## Subsection 1: Core Function Template {#core-function-template}
+
+```r
+#' @title D{group}_{seq} Core Function - {Description} (Cross-Company)
+#' @description Core logic for {description}, used by platform-specific wrappers.
+#'              Follows DEV_R038: Core Function + Platform Wrapper Pattern.
+#'              Parameterized for cross-company use via git subrepo.
+#' @param platform_id Character. Platform identifier (e.g., "cbz", "amz", "eby")
+#' @param config Optional list. Platform config from app_config.yaml. If NULL, uses defaults.
+#' @return List with success status and summary
+#' @principle DEV_R038, DEV_R037, DM_R044
+
+run_D{group}_{seq} <- function(platform_id, config = NULL) {
+
+  # Validate platform_id is provided
+  if (missing(platform_id) || is.null(platform_id) || !nzchar(platform_id)) {
+    stop("platform_id is required")
+  }
+
+  # ===========================================================================
+  # Configuration: Use config parameter or defaults
+  # ===========================================================================
+
+  # Default table patterns (can be overridden by config)
+  input_table_pattern <- if (!is.null(config$input_table_pattern)) {
+    config$input_table_pattern
+  } else {
+    "df_%s_sales___standardized"  # %s will be replaced with platform_id
+  }
+
+  output_table <- if (!is.null(config$output_table)) {
+    config$output_table
+  } else {
+    "df_dna_by_customer___cleansed"  # Cross-platform table (no platform prefix)
+  }
+
+  # Build actual table name from pattern
+  input_table <- sprintf(input_table_pattern, platform_id)
+
+  # ===========================================================================
+  # Initialize tracking
+  # ===========================================================================
+
+  error_occurred <- FALSE
+  start_time <- Sys.time()
+  rows_processed <- 0
+
+  # ===========================================================================
+  # MAIN: Business logic here
+  # ===========================================================================
+
+  tryCatch({
+    message(sprintf("[%s] Processing from %s...", platform_id, input_table))
+
+    # All business logic goes here
+    # ... business logic ...
+
+    rows_processed <- nrow(output_data)
+
+  }, error = function(e) {
+    error_occurred <<- TRUE
+    message(sprintf("[%s] ERROR: %s", platform_id, e$message))
+  })
+
+  # ===========================================================================
+  # Return summary
+  # ===========================================================================
+
+  execution_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+
+  return(list(
+    success = !error_occurred,
+    platform_id = platform_id,
+    rows_processed = rows_processed,
+    execution_time_secs = execution_time
+  ))
+}
+```
+
+## Subsection 2: Platform Wrapper Template {#wrapper-template}
+
+```r
+#!/usr/bin/env Rscript
+#####
+# DERIVATION: D{group}_{seq} {Description} ({PLATFORM})
+# VERSION: 3.0
+# PLATFORM: {platform}
+# GROUP: D{group}
+# SEQUENCE: {seq}
+# PURPOSE: Execute {description} via core function
+# CORE_FUNCTION: global_scripts/16_derivations/fn_D{group}_{seq}_core.R
+# CONSUMES: {input_tables}
+# PRODUCES: {output_tables}
+# DEPENDS_ON_ETL: {platform}_ETL_{datatype}_{phase}
+# DEPENDS_ON_DRV: {dependencies}
+# PRINCIPLE: MP064, DEV_R037, DEV_R038, DM_R044
+#####
+#{platform}_D{group}_{seq}
+
+# ==============================================================================
+# PART 1: INITIALIZE
+# ==============================================================================
+
+if (!exists("autoinit", mode = "function")) {
+  source(file.path("scripts", "global_scripts", "22_initializations", "sc_Rprofile.R"))
+}
+
+autoinit()
+
+error_occurred <- FALSE
+test_passed <- FALSE
+start_time <- Sys.time()
+platform_id <- "{platform}"
+
+core_path <- file.path(GLOBAL_DIR, "16_derivations", "fn_D{group}_{seq}_core.R")
+if (!file.exists(core_path)) {
+  stop("Missing CORE_FUNCTION: global_scripts/16_derivations/fn_D{group}_{seq}_core.R")
+}
+source(core_path)
+
+# ==============================================================================
+# PART 2: MAIN
+# ==============================================================================
+
+result <- NULL
+tryCatch({
+  result <- run_D{group}_{seq}(platform_id = platform_id)
+  test_passed <- isTRUE(result$success)
+}, error = function(e) {
+  error_occurred <<- TRUE
+  message(sprintf("MAIN: ERROR - %s", e$message))
+})
+
+# ==============================================================================
+# PART 3: TEST
+# ==============================================================================
+
+if (!error_occurred && !test_passed) {
+  message("TEST: Core function reported failure")
+}
+
+# ==============================================================================
+# PART 4: SUMMARIZE
+# ==============================================================================
+
+execution_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+message("SUMMARY: ", ifelse(!error_occurred && test_passed, "SUCCESS", "FAILED"))
+message(sprintf("SUMMARY: Platform: %s", platform_id))
+message(sprintf("SUMMARY: Execution time (secs): %.2f", execution_time))
+
+# ==============================================================================
+# PART 5: DEINITIALIZE
+# ==============================================================================
+
+autodeinit()
+# NO STATEMENTS AFTER THIS LINE
+```
+
+## Subsection 3: Header Requirements {#header-requirements}
+
+Platform wrappers MUST include:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `DERIVATION` | Yes | Step ID and description |
+| `PLATFORM` | Yes | Platform identifier (cbz, amz, eby) |
+| `CONSUMES` | Yes | Input table(s) |
+| `PRODUCES` | Yes | Output table(s) |
+| `DEPENDS_ON_ETL` | If applicable | ETL dependencies |
+| `DEPENDS_ON_DRV` | If applicable | DRV dependencies |
+| `CORE_FUNCTION` | **Yes** | Core function filename |
+| `PRINCIPLE` | Yes | Must include DEV_R038 |
+
+# Section 4: Core Function Design {#core-function-design}
+
+## Subsection 1: Parameter Design {#parameter-design}
+
+The `platform_id` parameter enables:
+
+```r
+# Platform-specific configuration lookup
+config <- platform_config[[platform_id]]
+
+# Platform-specific input/output tables
+input_table <- sprintf("df_%s_sales___transformed", platform_id)
+output_table <- sprintf("df_%s_customer_dna___cleansed", platform_id)
+
+# Platform-specific logging
+message(sprintf("[%s] Processing %d rows...", platform_id, nrow(data)))
+```
+
+## Subsection 2: Configuration Object {#configuration-object}
+
+Structure the platform config for extensibility:
+
+```r
+platform_config <- list(
+  cbz = list(
+    # Database settings
+    input_db = "transformed_data",
+    output_db = "cleansed_data",
+
+    # Table patterns (in order of preference)
+    input_tables = c("df_cbz_sales___transformed", "df_cbz_sales_transformed"),
+
+    # Field mappings (normalize to standard names)
+    time_field = "order_created_at",
+    amount_field = "total_price_after_discounts",
+    customer_id_field = "customer_id",
+
+    # Platform-specific options
+    skip_columns = c("internal_id"),
+    custom_filters = list(status = "completed")
+  ),
+  # ... more platforms
+)
+```
+
+## Subsection 3: Field Normalization {#field-normalization}
+
+Core functions should normalize platform-specific fields:
+
+```r
+normalize_fields <- function(data, config, platform_id) {
+  # Map platform-specific fields to standard names
+  result <- data
+
+  # Time field -> payment_time
+  if (config$time_field %in% names(result)) {
+    result$payment_time <- result[[config$time_field]]
+  }
+
+  # Amount field -> total_spent
+  if (config$amount_field %in% names(result)) {
+    result$total_spent <- as.numeric(result[[config$amount_field]])
+  }
+
+  # Add platform identifier
+  result$platform_id <- platform_id
+
+  return(result)
+}
+```
+
+# Section 5: Wrapper Constraints {#wrapper-constraints}
+
+## Subsection 1: What Wrappers CAN Do {#wrapper-allowed}
+
+```r
+# Allowed in wrappers:
+autoinit()                                    # Initialize
+source(core_fn_path)                          # Source core function
+result <- run_D01_03(platform_id = "cbz")     # Call core function
+.InitEnv$result_summary <- result             # Store result
+autodeinit()                                  # Cleanup
+```
+
+## Subsection 2: What Wrappers CANNOT Do {#wrapper-prohibited}
+
+```r
+# PROHIBITED in wrappers:
+
+# NO data manipulation
+df <- tbl2(con, "table") %>% collect()        # Move to core function
+df <- df %>% filter(status == "active")       # Move to core function
+
+# NO business logic
+score <- calculate_rfm(df)                    # Move to core function
+df$segment <- assign_segment(df$score)        # Move to core function
+
+# NO conditional logic based on data
+if (nrow(df) > 1000) { ... }                  # Move to core function
+
+# NO loops or iterations
+for (i in 1:n) { ... }                        # Move to core function
+lapply(items, process)                        # Move to core function
+```
+
+# Section 6: Benefits {#benefits}
+
+## Subsection 1: Single Source of Truth {#single-source}
+
+```
+Before DEV_R038:
+cbz_D01_03.R: 150 lines of DNA logic
+amz_D01_03.R: 145 lines of DNA logic (slightly different)
+eby_D01_03.R: 148 lines of DNA logic (slightly different)
+PROBLEM: 3 files to maintain, bugs fixed in one may not be fixed in others
+
+After DEV_R038:
+fn_D01_03_core.R: 300 lines of DNA logic (authoritative)
+cbz_D01_03.R: 60 lines (wrapper only)
+amz_D01_03.R: 60 lines (wrapper only)
+eby_D01_03.R: 60 lines (wrapper only)
+BENEFIT: Single file contains all logic, wrappers are trivial
+```
+
+## Subsection 2: Easier Testing {#easier-testing}
+
+```r
+# Test core function independently
+test_that("D01_03 core function handles all platforms", {
+  for (platform in c("cbz", "amz", "eby")) {
+    result <- run_D01_03(platform_id = platform)
+    expect_true(result$success)
+    expect_true(result$rows_processed > 0)
+  }
+})
+```
+
+## Subsection 3: Clear Separation of Concerns {#separation}
+
+| Concern | Handled By |
+|---------|-----------|
+| Business logic | Core function |
+| Platform configuration | Core function's platform_config |
+| Initialization/cleanup | Wrapper |
+| Pipeline integration | Wrapper headers |
+| Execution entry point | Wrapper |
+
+# Section 7: Relationship to Other Principles {#relationships}
+
+| Principle | Relationship |
+|-----------|-------------|
+| **DEV_R037** | Step isolation - each step does one thing; DEV_R038 shows HOW to share that one thing |
+| **DM_R044** | Template structure; DEV_R038 extends with core function pattern |
+| **DEV_R011** | Platform independence; DEV_R038 achieves this via parameterization |
+| **SO_R007** | One function one file; core functions follow this rule |
+| **MP064** | ETL-DRV separation; DEV_R038 applies within DRV layer |
+| **MP145** | Doc-implementation alignment; wrapper headers document the pattern |
+
+# Section 8: Migration Guide {#migration}
+
+## Subsection 1: Identifying Candidates {#identifying-candidates}
+
+Find derivation scripts with duplicated logic:
+
+```bash
+# Find platform-specific scripts that might share logic
+ls scripts/update_scripts/DRV/cbz/cbz_D*.R
+ls scripts/update_scripts/DRV/amz/amz_D*.R
+ls scripts/update_scripts/DRV/eby/eby_D*.R
+
+# Compare file sizes (similar sizes suggest shared logic)
+wc -l scripts/update_scripts/DRV/*/[cae]by_D01_03.R
+```
+
+## Subsection 2: Extraction Steps {#extraction-steps}
+
+1. **Analyze** all platform versions for common logic
+2. **Design** platform_config structure to capture differences
+3. **Extract** common logic to `DRV/all/fn_D{group}_{seq}_core.R`
+4. **Create** thin wrappers for each platform
+5. **Test** each platform wrapper
+6. **Update** pipeline dependencies (targets, Makefile)
+
+# Section 9: Example: D01 Implementation {#example}
+
+## Subsection 1: Core Functions {#example-core}
+
+**Location:** `scripts/global_scripts/16_derivations/`
+
+| Core Function | Purpose | Key Entry Point |
+|---------------|---------|-----------------|
+| `fn_D01_03_core.R` | Customer DNA Analysis | `run_D01_03(platform_id, config)` |
+| `fn_D01_04_core.R` | Customer Profile Creation | `run_D01_04(platform_id, config)` |
+| `fn_D01_05_core.R` | App Views Generation | `run_D01_05(platform_id, config)` |
+
+Key elements:
+- `run_D01_{seq}(platform_id, config = NULL)` - main entry point with optional config
+- Default table patterns when config not provided
+- Calls algorithm functions from `global_scripts/04_utils/` (e.g., `fn_analysis_dna.R`)
+- Platform-agnostic: works for any platform that provides `platform_id`
+
+## Subsection 2: Platform Wrappers {#example-wrapper}
+
+**Location:** `scripts/update_scripts/DRV/{platform}/`
+
+| Wrapper | Core | Lines |
+|---------|------|-------|
+| `cbz_D01_03.R` | `fn_D01_03_core.R` | ~80 |
+| `amz_D01_04.R` | `fn_D01_04_core.R` | ~80 |
+| `eby_D01_05.R` | `fn_D01_05_core.R` | ~80 |
+
+Key structure:
+- Header with `CORE_FUNCTION: global_scripts/16_derivations/fn_D01_{seq}_core.R`
+- `autoinit()` at start
+- Source core from `file.path(GLOBAL_DIR, "16_derivations", "fn_D01_{seq}_core.R")`
+- Call `run_D01_{seq}(platform_id = "{platform}")`
+- Five-part structure: INITIALIZE → MAIN → TEST → SUMMARIZE → DEINITIALIZE
+- `autodeinit()` at end
+
+# Section 10: Conclusion {#conclusion}
+
+The Derivation Core Function Pattern (DEV_R038) provides a structured approach to code reuse across platforms in derivation scripts. By extracting shared logic into core functions and using thin platform wrappers, this pattern:
+
+1. **Eliminates duplication** - Single authoritative source for business logic
+2. **Simplifies maintenance** - Bug fixes and enhancements in one place
+3. **Enables testing** - Core functions can be tested independently
+4. **Maintains flexibility** - Platform-specific configuration preserved
+5. **Enforces standards** - Wrappers follow consistent template
+
+Combined with DEV_R037 (Step Isolation), this pattern ensures derivation pipelines are both modular AND maintainable.

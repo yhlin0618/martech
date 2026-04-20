@@ -1,0 +1,426 @@
+---
+title: "SO_R005: App YAML Configuration Rule"
+subtitle: "Implementation guidelines for YAML configuration files"
+chapter: "CH01"
+category: "rule"
+number: "SO_R005"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law Implementation Rules"
+article-number: "Article 5"
+implements:
+  - "SO_P003: App Construction Principles"
+derives_from:
+  - "CH00.MP001: Primitive Terms and Definitions"
+  - "CH00.MP005: Instance vs. Principle"
+  - "CH00.MP010: Information Flow Transparency"
+  - "CH00.MP011: Sensible Defaults"
+related_to:
+  - "SO_P004: App Bottom-Up Construction"
+  - "CH00.MP006: Data Source Hierarchy"
+  - "CH00.MP008: Terminology Axiomatization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure & Organization Law Implementation Rules Article 5 (App YAML Configuration Rule)**
+
+This article establishes specific implementation guidelines for using YAML configuration files in applications, enabling declarative app construction and promoting separation of configuration from implementation.
+
+:::{.callout-important}
+## Core Rule
+Application configuration should be externalized in YAML files that define the structure, components, and data sources without requiring code changes. This enables non-developers to modify application behavior and supports a clear separation between configuration (instances) and implementation (principles).
+:::
+
+# Section 1: Configuration Location {#location}
+
+## Subsection 1: Directory Structure {#directory}
+
+All YAML configuration files should be stored in the `app_configs` directory at the project root:
+
+```
+precision_marketing_app/
+└── app_configs/
+    ├── customer_dna_app.yaml   # Main app configuration
+    ├── component_config.yaml   # Component-specific configuration
+    └── data_sources.yaml       # Data source mappings
+```
+
+This follows the Instance vs. Principle Meta-Principle by placing instance-specific configurations outside the global_scripts directory.
+
+# Section 2: YAML Structure Guidelines {#structure}
+
+## Subsection 1: Basic Structure {#basic-structure}
+
+Every YAML configuration file should include:
+
+```yaml
+# [File Description]
+# [Author]
+# [Date Created]
+title: [Application Title]
+version: [Configuration Version]
+
+# Main configuration sections follow...
+```
+
+## Subsection 2: Standard Format Patterns {#format-patterns}
+
+The configuration follows six standard patterns for data source and environment specifications.
+
+:::{.callout-note}
+## Key Principle
+If there is only one data source, the role is unnecessary; if there are multiple sources, they are discriminated by their roles.
+:::
+
+### Pattern 1: Simple String Format
+```yaml
+component_name: dataset_name
+```
+
+### Pattern 2: Array Format
+```yaml
+component_name: 
+  - dataset1
+  - dataset2
+  - dataset3
+```
+
+### Pattern 3: Object Format with Roles
+```yaml
+component_name:
+  role1: dataset1
+  role2: dataset2
+  role3: dataset3
+```
+
+### Pattern 4a: Single Data Source with Parameters
+```yaml
+component_name:
+  data_source: dataset_name    # Single data source
+  parameters:                  # Component parameters
+    param1: value1
+    param2: value2
+```
+
+### Pattern 4b: Multiple Data Sources with Roles and Parameters
+```yaml
+component_name:
+  role1: dataset1              # Multiple data sources with roles
+  role2: dataset2
+  parameters:                  # Component parameters
+    param1: value1
+    param2: value2
+```
+
+### Pattern 5: Environment Configuration Pattern
+```yaml
+environment_name:
+  data_source: "path/to/data"  # Data source path
+  parameters:                  # Environment parameters
+    param1: value1
+    param2: value2
+```
+
+### Pattern 6: External Parameter Files Pattern
+```yaml
+component_name:
+  data_source: dataset_name    # Data source
+  parameters:                  # Component parameters
+    # Simple inline parameters
+    param1: value1
+    param2: value2
+    
+    # Complex parameters in external file
+    external_params:
+      file: "path/to/parameters.xlsx"  # External file path
+      sheet: "ParameterSheet"          # Sheet name for Excel files
+      refresh_on_startup: true         # Whether to reload on app startup
+```
+
+# Section 3: Configuration Components {#components}
+
+## Subsection 1: Brand Configuration {#brand}
+
+Brand-specific settings should be defined in the YAML configuration:
+
+```yaml
+# Brand-specific settings
+brand:
+  name: "COMPANY_NAME"
+  language: "chinese"  # Language settings for UI and data
+  raw_data_folder: "../rawdata_COMPANY_NAME"
+```
+
+## Subsection 2: Component Configuration {#component-config}
+
+Components are organized hierarchically by category:
+
+```yaml
+components:
+  # Section 1 components
+  macro:
+    # Simple component with single data source
+    overview: sales_summary_view
+    
+    # Component with data source and parameters
+    trends:
+      data_source: sales_trends
+      parameters:
+        show_kpi: true
+        refresh_interval: 300
+  
+  # Section 2 components
+  micro:
+    # Component with multiple data sources
+    customer_profile:
+      primary: customer_details
+      preferences: customer_preferences
+      history: customer_history
+```
+
+## Subsection 3: External Parameter Files {#external-params}
+
+For complex component parameters, reference external files:
+
+```yaml
+components:
+  advanced_analytics:
+    data_source: analytics_data
+    parameters:
+      # Simple inline parameters
+      show_filters: true
+      default_view: "summary"
+      
+      # Complex parameters in external file
+      model_config:
+        file: "app_data/parameters/model_parameters.xlsx"
+        sheet: "AdvancedAnalytics"
+        refresh_on_startup: true
+```
+
+# Section 4: Implementation Guidelines {#implementation}
+
+## Subsection 1: YAML Loading {#loading}
+
+Use the standardized `readYamlConfig` utility:
+
+```r
+# Load configuration
+config <- readYamlConfig("customer_dna_app.yaml")
+
+# Access configuration values with safe fallbacks
+app_title <- config$title %||% "Default Title"
+theme_settings <- config$theme %||% list(version = 5, bootswatch = "default")
+```
+
+## Subsection 2: Configuration Validation {#validation}
+
+Always validate configurations before using them:
+
+```r
+validateConfig <- function(config) {
+  required_fields <- c("title", "components")
+  missing_fields <- required_fields[!required_fields %in% names(config)]
+  
+  if (length(missing_fields) > 0) {
+    warning("Configuration missing required fields: ", 
+            paste(missing_fields, collapse = ", "))
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+## Subsection 3: External Parameter Loading {#param-loading}
+
+Load external parameter files with explicit source logging:
+
+```r
+loadComponentParameters <- function(component_config) {
+  params <- component_config$parameters %||% list()
+  
+  for (param_name in names(params)) {
+    param_value <- params[[param_name]]
+    
+    if (is.list(param_value) && !is.null(param_value$file)) {
+      log_info(paste("Loading external parameters from", param_value$file))
+      
+      file_path <- param_value$file
+      file_ext <- tools::file_ext(file_path)
+      
+      external_params <- switch(
+        file_ext,
+        xlsx = readxl::read_excel(file_path, sheet = param_value$sheet %||% 1),
+        csv = readr::read_csv(file_path),
+        json = jsonlite::fromJSON(file_path),
+        rds = readRDS(file_path),
+        yml = , yaml = yaml::read_yaml(file_path),
+        {
+          warning(paste("Unsupported file extension:", file_ext))
+          NULL
+        }
+      )
+      
+      if (!is.null(external_params)) {
+        params[[param_name]] <- external_params
+        attr(params[[param_name]], "source_file") <- param_value$file
+        attr(params[[param_name]], "load_time") <- Sys.time()
+      }
+    }
+  }
+  
+  return(params)
+}
+```
+
+# Section 5: Structural Rules and Patterns {#rules}
+
+## Subsection 1: Component Structure Rule {#component-rule}
+
+Components can only contain:
+- A direct dataset reference (string format)
+- An array of dataset references (array format)
+- Named dataset references with roles (object format)
+- A data_source field with an optional parameters object
+
+## Subsection 2: Role Assignment Rule {#role-rule}
+
+Roles are only used when there are multiple data sources that need to be distinguished by their function. A single data source should never have a role assigned.
+
+## Subsection 3: Parameter Encapsulation Rule {#param-rule}
+
+All configuration parameters must be contained within a dedicated `parameters` object, which is a sibling to data source definitions.
+
+## Subsection 4: Additional Rules {#additional-rules}
+
+1. **Structure Simplification Rule**: Use the simplest form possible
+2. **Hierarchy Containment Rule**: Component-specific config stays within component
+3. **Consistency Pattern**: Similar components follow similar patterns
+4. **Mutually Exclusive Rule**: Data sources and parameters are separate concepts
+5. **External Reference Transparency Rule**: Use explicit file paths
+6. **Sensible Defaults Rule**: Rely on defaults wherever possible
+
+# Section 6: Complete Configuration Example {#example}
+
+```yaml
+# Customer DNA Analysis Dashboard Configuration
+title: AI行銷科技平台
+theme:
+  version: 5
+  bootswatch: cosmo
+layout: navbar
+
+# Brand-specific settings
+brand:
+  name: "COMPANY_NAME"
+  language: "chinese"
+  raw_data_folder: "../rawdata_COMPANY_NAME"
+
+# Components with their data sources
+components:
+  macro:
+    # Simple string format
+    overview: sales_summary_view
+    
+    # Single data source with parameters
+    trends:
+      data_source: sales_trends
+      parameters:
+        show_kpi: true
+        refresh_interval: 300
+  
+  micro:
+    # Object format with named roles
+    customer_profile:
+      primary: customer_details
+      preferences: customer_preferences
+      history: customer_history
+  
+  analytics:
+    # External parameter files pattern
+    predictive_models:
+      data_source: customer_data
+      parameters:
+        prediction_horizon: 90
+        confidence_threshold: 0.75
+        model_configurations:
+          file: "app_data/parameters/model_config.xlsx"
+          sheet: "PredictiveModels"
+          refresh_on_startup: true
+
+# Environment-specific configurations
+environments:
+  development:
+    data_source: "development_data/"
+    parameters:
+      debug: true
+  production:
+    data_source: "app_data/"
+    parameters:
+      debug: false
+```
+
+# Section 7: Benefits {#benefits}
+
+1. **Separation of Concerns**: Configurations separate from implementation
+2. **Non-Developer Access**: Non-developers can modify app behavior
+3. **Environment Flexibility**: Different configurations for environments
+4. **Reduced Code Changes**: App modifications without code changes
+5. **Self-Documentation**: YAML format with comments provides documentation
+6. **Consistency**: Standardized configuration format across applications
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## YAML Configuration Checklist
+
+When implementing YAML configuration:
+
+**Structure:**
+- [ ] Configuration in app_configs directory
+- [ ] Basic structure with title and version
+- [ ] Comments documenting sections
+
+**Data Sources:**
+- [ ] Appropriate pattern selected
+- [ ] Roles only for multiple sources
+- [ ] Parameters in separate object
+
+**Components:**
+- [ ] Hierarchical organization
+- [ ] Consistent patterns within category
+- [ ] External files documented
+
+**Implementation:**
+- [ ] Configuration validation implemented
+- [ ] Safe fallbacks provided
+- [ ] External file loading logged
+- [ ] Error handling included
+
+**Best Practices:**
+- [ ] Sensible defaults used
+- [ ] Platform-neutral paths
+- [ ] Version controlled
+- [ ] DRY principle followed
+:::
+
+# Conclusion {#conclusion}
+
+The App YAML Configuration Rule establishes a comprehensive framework for externalizing application configuration, enabling declarative app construction and supporting clear separation between configuration and implementation. This approach improves maintainability, accessibility, and flexibility while maintaining consistency across applications.
+
+---
+
+*Based on: Structure & Organization Law Implementation Rules Article 5*  
+*Implements: [SO_P003 App Construction Principles](../../CH01_structure_organization/principles/SO_P003_app_construction.qmd)*  
+*Derives from: [MP001](../../CH00_fundamental_principles/MP001.qmd), [MP005](../../CH00_fundamental_principles/MP005.qmd), [MP010](../../CH00_fundamental_principles/MP010.qmd), [MP011](../../CH00_fundamental_principles/MP011.qmd)*

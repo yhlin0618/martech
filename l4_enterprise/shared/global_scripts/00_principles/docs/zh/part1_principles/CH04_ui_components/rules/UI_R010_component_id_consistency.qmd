@@ -1,0 +1,320 @@
+---
+title: "UI_R010: 元件 ID 一致性規則"
+subtitle: "n 元組元件（UI、server、defaults）的所有部分必須使用相同的基本識別符號，以確保元件之間的正確通訊、防止命名空間衝突並保持除錯簡單性"
+chapter: "CH04"
+category: "rule"
+number: "UI_R010"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "UI元件法"
+article-number: 
+  number: 10
+  title: "元件 ID 一致性規則"
+implements:
+  - "R009: UI Server Defaults 三元組"
+  - "R070: N-Tuple 分隔符"
+  - "MP017: 關注點分離"
+related_to:
+  - "R019: 物件命名約定"
+  - "P016: 元件測試"
+  - "R021: 一函數一檔案"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十條：元件 ID 一致性規則 {#overview}
+
+**UI元件法第十條（元件 ID 一致性規則）**
+
+此規則建立了 n 元組元件所有部分必須使用相同基本識別符號的標準。
+
+:::{.callout-important}
+## 核心需求
+n 元組元件（UI、server、defaults）的所有部分必須使用相同的基本識別符號，以確保元件之間的正確通訊、防止命名空間衝突並保持除錯簡單性。
+:::
+
+# 第一項：實施原則 {#implementation}
+
+## 第一款：元件基本識別符號 {#component-base-identifier}
+
+元件 n 元組的所有部分必須使用相同的基本識別符號：
+
+```r
+####ui.user_profile####
+ui.user_profile <- function(id) {
+  # id 必須匹配基本元件名稱 (user_profile)
+  ns <- NS(id)
+  # UI 實施
+}
+
+####server.user_profile####
+server.user_profile <- function(id, data) {
+  # id 必須匹配基本元件名稱 (user_profile)
+  moduleServer(id, function(input, output, session) {
+    # Server 實施
+  })
+}
+
+####defaults.user_profile####
+defaults.user_profile <- list(
+  # 元件預設值
+)
+```
+
+## 第二款：ID 衍生規則 {#id-derivation-rules}
+
+元件 ID 應使用這些規則衍生：
+
+1. 元件的基本 ID 應與其檔案名稱匹配（減去任何前綴）
+2. 對於包含多個元件的檔案，ID 應與元件的後綴匹配
+3. ID 應在 UI、server 和 defaults 元件之間不變地傳遞
+4. 所有元件函數必須使用相同的 ID 參數名稱
+
+## 第三款：命名空間使用 {#namespace-usage}
+
+命名空間必須直接從提供的 ID 衍生：
+
+```r
+####ui.customer_list####
+ui.customer_list <- function(id) {
+  # 正確：直接使用 id 參數
+  ns <- NS(id)
+  
+  div(
+    h3("客戶"),
+    tableOutput(ns("customer_table"))  # 使用從 id 衍生的命名空間
+  )
+}
+
+####server.customer_list####
+server.customer_list <- function(id, data) {
+  # 正確：直接使用相同的 id 參數
+  moduleServer(id, function(input, output, session) {
+    output$customer_table <- renderTable({
+      # 實施
+    })
+  })
+}
+```
+
+## 第四款：要避免的常見違規 {#common-violations}
+
+### UI 和 Server 之間的 ID 不匹配 {#id-mismatch}
+
+```r
+# 錯誤：不匹配的 ID
+ui.component <- function(ui_id) {  # 錯誤的參數名稱
+  ns <- NS(ui_id)
+  # UI 實施
+}
+
+server.component <- function(server_id, data) {  # 不同的參數名稱
+  moduleServer(server_id, function(input, output, session) {
+    # Server 實施
+  })
+}
+```
+
+### 修改的 ID {#modified-ids}
+
+```r
+# 錯誤：修改 ID
+ui.component <- function(id) {
+  ns <- NS(paste0("prefix_", id))  # 修改 ID - 錯誤
+  # UI 實施
+}
+```
+
+### 模組註冊中的不一致使用 {#inconsistent-registration}
+
+```r
+# 錯誤：不一致的 ID 使用
+moduleServer("customer_module", function(input, output, session) {
+  # 為子元件使用不同的 ID
+  ui.customer_profile("profile")    # 為 UI 使用 "profile"
+  server.customer_profile("customer_profile") # 為 server 使用 "customer_profile"
+})
+```
+
+## 第五款：ID 生成模式 {#id-generation-patterns}
+
+對於動態生成的元件，遵循這些模式：
+
+### 順序 ID {#sequential-ids}
+
+```r
+# 正確：具有一致前綴的順序 ID
+lapply(1:n, function(i) {
+  component_id <- paste0(id, "_product_", i)
+  ui.list_product(component_id)
+  server.list_product(component_id, data[[i]])
+})
+```
+
+### 命名 ID {#named-ids}
+
+```r
+# 正確：具有一致應用的命名 ID
+lapply(names(products), function(product_name) {
+  component_id <- paste0(id, "_", product_name)
+  ui.product(component_id)
+  server.product(component_id, products[[product_name]])
+})
+```
+
+# 第二項：有效範例 {#valid-examples}
+
+## 第一款：具有一致 ID 的基本模組 {#basic-module}
+
+```r
+####ui.customer_profile####
+ui.customer_profile <- function(id) {
+  ns <- NS(id)
+  
+  div(
+    h3("客戶檔案"),
+    textOutput(ns("name")),
+    textOutput(ns("email"))
+  )
+}
+
+####server.customer_profile####
+server.customer_profile <- function(id, customer_data) {
+  moduleServer(id, function(input, output, session) {
+    output$name <- renderText({
+      customer_data()$name
+    })
+    
+    output$email <- renderText({
+      customer_data()$email
+    })
+  })
+}
+
+####defaults.customer_profile####
+defaults.customer_profile <- list(
+  empty_customer = list(
+    name = "未選擇客戶",
+    email = "N/A"
+  )
+)
+
+# 在父模組中的使用
+ui.parent <- function(id) {
+  ns <- NS(id)
+  div(
+    ui.customer_profile(ns("profile"))
+  )
+}
+
+server.parent <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    customer_data <- reactive({
+      # 獲取客戶資料
+    })
+    
+    server.customer_profile("profile", customer_data)
+  })
+}
+```
+
+## 第二款：動態元件 {#dynamic-components}
+
+```r
+####ui.tab_panel####
+ui.tab_panel <- function(id, tab_products) {
+  ns <- NS(id)
+  
+  tabs <- lapply(names(tab_products), function(tab_name) {
+    tab_id <- paste0(id, "_", tab_name)
+    tabPanel(
+      title = tab_products[[tab_name]]$title,
+      ui.tab_content(tab_id)
+    )
+  })
+  
+  do.call(tabsetPanel, tabs)
+}
+
+####server.tab_panel####
+server.tab_panel <- function(id, tab_products, data) {
+  moduleServer(id, function(input, output, session) {
+    # 初始化每個標籤的 server 元件
+    lapply(names(tab_products), function(tab_name) {
+      tab_id <- paste0(id, "_", tab_name)
+      server.tab_content(tab_id, data[[tab_name]])
+    })
+  })
+}
+```
+
+# 第三項：無效模式 {#invalid-patterns}
+
+## 第一款：不一致的參數名稱 {#inconsistent-params}
+
+```r
+# 錯誤：使用不同的參數名稱
+ui.component <- function(ui_id) {  # 應該只是 "id"
+  ns <- NS(ui_id)
+  # UI 實施
+}
+
+server.component <- function(module_id, data) {  # 應該只是 "id"
+  moduleServer(module_id, function(input, output, session) {
+    # Server 實施
+  })
+}
+```
+
+## 第二款：ID 轉換 {#id-transformation}
+
+```r
+# 錯誤：轉換 ID
+ui.component <- function(id) {
+  # 錯誤 - 在命名空間創建前修改 id
+  ns <- NS(tolower(id))
+  # UI 實施
+}
+
+server.component <- function(id, data) {
+  # 錯誤 - 不同的轉換使 ID 不一致
+  moduleServer(gsub(" ", "_", id), function(input, output, session) {
+    # Server 實施
+  })
+}
+```
+
+# 第四項：優點 {#benefits}
+
+1. **除錯簡單性**：使跨元件部分追蹤錯誤更容易
+2. **維護性**：通過使用一致的識別符號簡化程式碼維護
+3. **反應性**：確保 UI 和 server 元件之間的反應性正確工作
+4. **防止衝突**：防止複雜應用中的命名空間衝突
+5. **清晰度**：改善程式碼清晰度和開發者理解
+
+# 第五項：驗證檢查清單 {#verification-checklist}
+
+1. **一致的參數名稱**：確保所有元件函數使用 `id` 作為參數名稱
+2. **直接 NS 使用**：檢查 `NS(id)` 在不修改 ID 的情況下被呼叫
+3. **模組註冊**：驗證 moduleServer 使用與 UI 元件相同的 ID
+4. **動態 ID 生成**：確認動態元件的一致 ID 生成
+5. **父子一致性**：檢查父模組正確地為子模組 ID 設置命名空間
+
+# 第六項：實施策略 {#implementation-strategy}
+
+1. **新元件**：對所有新元件嚴格應用此規則
+2. **現有元件**：重構現有元件以使用一致的 ID
+3. **自動檢查**：開發 linting 規則以驗證 ID 一致性
+4. **文檔**：在元件文檔中包含 ID 需求
+
+---
+
+*基於：UI元件法第十條*  
+*相關連結：[R009 UI Server Defaults 三元組](./UI_R001_ui_server_defaults_ntuple.qmd), [R070 N-Tuple 分隔符](../../CH01_structure_organization/rules/SO_R019_n_tuple_delimiter.qmd)*

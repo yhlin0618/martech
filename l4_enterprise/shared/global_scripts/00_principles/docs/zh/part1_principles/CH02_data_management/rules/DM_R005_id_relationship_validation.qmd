@@ -1,0 +1,342 @@
+---
+title: "DM_R005: ID 關係驗證規則"
+subtitle: "應用程式必須在資料操作之前驗證 ID 的存在性和關係"
+chapter: "CH02"
+category: "rule"
+number: "DM_R005"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "資料管理法"
+article-number: 
+  number: 5
+  title: "ID 關係驗證規則"
+implements:
+  - "P080: 整數 ID 一致性原則"
+  - "MP052: 單向資料流"
+related_to:
+  - "R076: 模組資料連接規則"
+  - "R088: Shiny 模組 ID 處理"
+  - "R089: 整數 ID 類型轉換"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第五條：ID 關係驗證規則 {#overview}
+
+**資料管理法第五條（ID 關係驗證規則）**
+
+此規則確保用於資料關係的 ID 在執行資料操作之前驗證其存在性和正確關係。
+
+:::{.callout-important}
+## 核心規則
+應用程式必須在資料操作之前驗證 ID 的存在性和關係。
+:::
+
+# 第一項：描述 {#description}
+
+此規則確保用於資料關係的 ID 在執行資料操作之前驗證其存在性和正確關係。它防止對不存在實體的操作引起的錯誤，並通過強制執行適當的關係驗證來維護資料完整性。
+
+# 第二項：理由 {#rationale}
+
+## 第一款：資料完整性 {#data-integrity}
+
+確保操作只發生在有效的資料關係上。
+
+## 第二款：錯誤預防 {#error-prevention}
+
+避免因無效 ID 引用導致的執行時錯誤。
+
+## 第三款：使用者體驗 {#user-experience}
+
+為無效選擇提供有意義的反饋。
+
+## 第四款：調試 {#debugging}
+
+使關係錯誤更容易診斷和修復。
+
+## 第五款：可靠性 {#reliability}
+
+減少無效資料關係導致的意外行為。
+
+# 第三項：實施指南 {#implementation-guide}
+
+## 第一款：ID 存在性驗證 {#id-existence-validation}
+
+在使用 ID 進行資料操作之前，驗證其在來源資料中存在：
+
+```r
+validate_customer_id <- function(customer_id, data_source) {
+  # 確保整數類型
+  customer_id <- as.integer(customer_id)
+  
+  # 檢查存在性
+  if (!customer_id %in% data_source$customer_ids) {
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+## 第二款：關係驗證 {#relationship-validation}
+
+當連接表格或存取相關資料時，驗證關係存在：
+
+```r
+validate_customer_transaction_relationship <- function(customer_id, transaction_id, data_source) {
+  # 確保整數類型
+  customer_id <- as.integer(customer_id)
+  transaction_id <- as.integer(transaction_id)
+  
+  # 檢查交易是否屬於客戶
+  transaction <- data_source$get_transaction(transaction_id)
+  
+  if (is.null(transaction) || transaction$customer_id != customer_id) {
+    return(FALSE)
+  }
+  
+  return(TRUE)
+}
+```
+
+## 第三款：Shiny 中的反應式驗證 {#reactive-validation}
+
+在反應式上下文中實施驗證：
+
+```r
+# 反應式驗證表達式
+valid_customer <- reactive({
+  req(input$customer_select)
+  
+  # 轉換並驗證
+  customer_id <- as.integer(input$customer_select)
+  exists <- customer_id %in% customer_data$customer_id
+  
+  if (!exists) {
+    showNotification("選擇的客戶不再存在", type = "error")
+    return(FALSE)
+  }
+  
+  return(TRUE)
+})
+
+# 在輸出中使用驗證
+output$customer_details <- renderUI({
+  req(valid_customer())
+  
+  # 現在可以安全地使用客戶 ID
+  customer_id <- as.integer(input$customer_select)
+  customer <- customer_data %>% filter(customer_id == customer_id)
+  
+  # 渲染客戶詳情...
+})
+```
+
+## 第四款：反模式 {#anti-patterns}
+
+### 未檢查的 ID 使用 {#unchecked-id-usage}
+
+```r
+# 錯誤：過濾前沒有驗證
+customer_details <- reactive({
+  selected_id <- as.integer(input$customer_select)
+  customers %>% filter(customer_id == selected_id)
+})
+
+# 正確：使用前驗證 ID
+customer_details <- reactive({
+  selected_id <- as.integer(input$customer_select)
+  
+  # 驗證 ID 存在
+  if (!selected_id %in% customers$customer_id) {
+    showNotification("無效的客戶選擇", type = "error")
+    return(NULL)
+  }
+  
+  customers %>% filter(customer_id == selected_id)
+})
+```
+
+### 缺少關係驗證 {#missing-relationship-validation}
+
+```r
+# 錯誤：沒有驗證關係
+display_transaction <- function(customer_id, transaction_id) {
+  customer <- get_customer(customer_id)
+  transaction <- get_transaction(transaction_id)
+  
+  # 顯示詳情而不驗證關係
+}
+
+# 正確：顯示前驗證關係
+display_transaction <- function(customer_id, transaction_id) {
+  # 驗證兩者都存在
+  customer <- get_customer(customer_id)
+  transaction <- get_transaction(transaction_id)
+  
+  if (is.null(customer) || is.null(transaction)) {
+    return("找不到客戶或交易")
+  }
+  
+  # 驗證關係
+  if (transaction$customer_id != customer_id) {
+    return("交易不屬於此客戶")
+  }
+  
+  # 現在可以安全顯示
+}
+```
+
+# 第四項：範例 {#examples}
+
+## 第一款：完整的 ID 驗證範例 {#complete-validation-example}
+
+```r
+# ID 關係的驗證器類別
+IDValidator <- R6Class("IDValidator",
+  public = list(
+    data_source = NULL,
+    
+    initialize = function(data_source) {
+      self$data_source <- data_source
+    },
+    
+    validate_customer = function(customer_id) {
+      if (is.null(customer_id) || is.na(customer_id)) return(FALSE)
+      
+      customer_id <- as.integer(customer_id)
+      customer_exists <- customer_id %in% self$data_source$customers$customer_id
+      
+      if (!customer_exists) {
+        log_warning(paste("無效的客戶 ID:", customer_id))
+      }
+      
+      return(customer_exists)
+    },
+    
+    validate_transaction = function(transaction_id) {
+      if (is.null(transaction_id) || is.na(transaction_id)) return(FALSE)
+      
+      transaction_id <- as.integer(transaction_id)
+      transaction_exists <- transaction_id %in% self$data_source$transactions$transaction_id
+      
+      if (!transaction_exists) {
+        log_warning(paste("無效的交易 ID:", transaction_id))
+      }
+      
+      return(transaction_exists)
+    },
+    
+    validate_customer_transaction = function(customer_id, transaction_id) {
+      # 首先驗證兩者都存在
+      if (!self$validate_customer(customer_id)) return(FALSE)
+      if (!self$validate_transaction(transaction_id)) return(FALSE)
+      
+      # 然後驗證關係
+      customer_id <- as.integer(customer_id)
+      transaction_id <- as.integer(transaction_id)
+      
+      transaction <- self$data_source$transactions %>%
+        filter(transaction_id == transaction_id) %>%
+        head(1)
+      
+      relationship_valid <- !is.null(transaction) && 
+                            nrow(transaction) > 0 && 
+                            transaction$customer_id == customer_id
+      
+      if (!relationship_valid) {
+        log_warning(paste("交易", transaction_id, "不屬於客戶", customer_id))
+      }
+      
+      return(relationship_valid)
+    }
+  )
+)
+```
+
+## 第二款：在模組中使用驗證器 {#using-validator-in-module}
+
+```r
+transaction_module <- function(id, app_data) {
+  moduleServer(id, function(input, output, session) {
+    # 創建驗證器
+    validator <- IDValidator$new(app_data)
+    
+    # 驗證反應式
+    valid_selection <- reactive({
+      req(input$customer_select, input$transaction_select)
+      
+      customer_id <- as.integer(input$customer_select)
+      transaction_id <- as.integer(input$transaction_select)
+      
+      validator$validate_customer_transaction(customer_id, transaction_id)
+    })
+    
+    # 根據客戶更新交易選擇
+    observe({
+      req(input$customer_select)
+      
+      customer_id <- as.integer(input$customer_select)
+      
+      # 驗證客戶存在
+      if (!validator$validate_customer(customer_id)) {
+        updateSelectInput(session, "transaction_select", 
+                         choices = character(0),
+                         selected = character(0))
+        return()
+      }
+      
+      # 獲取客戶的交易
+      transactions <- app_data$transactions %>%
+        filter(customer_id == customer_id)
+      
+      # 更新選擇
+      transaction_choices <- setNames(
+        as.character(transactions$transaction_id),
+        paste0("交易 #", transactions$transaction_id, " - ", 
+              format(transactions$date, "%Y-%m-%d"))
+      )
+      
+      updateSelectInput(session, "transaction_select", 
+                       choices = transaction_choices)
+    })
+    
+    # 顯示交易詳情
+    output$transaction_details <- renderUI({
+      req(valid_selection())
+      
+      customer_id <- as.integer(input$customer_select)
+      transaction_id <- as.integer(input$transaction_select)
+      
+      # 現在驗證後可以安全存取資料
+      transaction <- app_data$transactions %>%
+        filter(transaction_id == transaction_id) %>%
+        head(1)
+      
+      # 渲染詳情...
+    })
+  })
+}
+```
+
+# 第五項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **防止資料錯誤**：確保只對有效實體進行操作
+2. **改善使用者體驗**：提供清晰的錯誤訊息
+3. **增強應用程式穩定性**：避免因無效 ID 導致的崩潰
+4. **簡化調試**：關係錯誤更容易追蹤
+5. **維護資料一致性**：確保資料關係保持有效
+
+---
+
+*基於：資料管理法第五條*  
+*相關連結：[R089 整數 ID 類型轉換](./DM_R004_integer_id_type_conversion.qmd), [R076 模組資料連接規則](../../CH03_development_methodology/rules/DEV_R022_module_data_connection.qmd)*

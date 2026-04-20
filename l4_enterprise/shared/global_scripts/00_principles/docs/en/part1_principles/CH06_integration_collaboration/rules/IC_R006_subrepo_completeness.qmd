@@ -1,0 +1,341 @@
+---
+title: "IC_R006: Subrepo Completeness Rule"
+subtitle: "All functional files in subrepo must be git-tracked for synchronization"
+chapter: "CH06"
+category: "rule"
+number: "IC_R006"
+date-created: "2025-12-24"
+date-modified: "2025-12-24"
+author: "Claude"
+type: "rule"
+law: "Integration & Collaboration Law Implementation Rules"
+article-number: "Article 6"
+implements:
+  - "CH00.MP122: Triple-Track Subrepo Architecture"
+related_to:
+  - "IC_R001: Global Scripts Synchronization"
+  - "SO_P016: Configuration Scope Hierarchy"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Integration & Collaboration Law Implementation Rules Article 6 (Subrepo Completeness Rule)**
+
+This article implements the Triple-Track Subrepo Architecture by establishing requirements for file tracking in git subrepos. All functional files distributed via subrepo MUST be tracked by git to ensure proper synchronization across all consuming projects.
+
+:::{.callout-important}
+## Core Rule
+All functional files in a git subrepo MUST be tracked by git. Using `.gitignore` to exclude functional files is PROHIBITED. If a file should not be shared with all projects, it should NOT be in the subrepo.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Synchronization Problem {#sync-problem}
+
+When `global_scripts` is distributed via git subrepo:
+
+第一項：同步流程 (Synchronization flow)
+
+```
+Parent Project A          global_scripts repo          Parent Project B
+       │                         │                           │
+       │  git subrepo pull  ────►│◄──── git subrepo pull    │
+       │                         │                           │
+       ▼                         ▼                           ▼
+  Receives ALL              Source of                  Receives ALL
+  tracked files              truth                     tracked files
+```
+
+第二項：問題情境 (Problem scenario)
+
+```bash
+# In global_scripts repo
+echo "*.duckdb" >> .gitignore
+git add .gitignore
+git commit -m "Ignore database files"
+git push
+
+# In Parent Project A
+git subrepo pull global_scripts
+# Result:X_global_data/*.duckdb files are NOT synced!
+# Error: "file not found" when R scripts try to load reference data
+```
+
+第三項：根本原因 (Root cause)
+
+- Git subrepo only syncs **tracked files**
+- Gitignored files are never pushed to the subrepo repository
+- Other projects cannot receive files that were never committed
+- This breaks the "single source of truth" architecture (MP122)
+
+# Section 2: Allowed Exclusions {#allowed}
+
+## Subsection 1: System Files Only {#system-files}
+
+第一項：允許的排除項目 (Allowed exclusions)
+
+ONLY these patterns may be gitignored in a subrepo:
+
+```gitignore
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# R session files
+.Rhistory
+.RData
+.Ruserdata
+
+# Log files (regenerated)
+*.log
+logs/
+
+# IDE settings (user-specific)
+.idea/
+.vscode/
+*.Rproj.user/
+```
+
+第二項：排除原則 (Exclusion principle)
+
+Excluded files must meet ALL criteria:
+
+1. **Regeneratable**: Can be recreated locally without original source
+2. **User-specific**: Contains settings specific to one developer's environment
+3. **Not functional**: Not required for any script execution
+4. **Transient**: Expected to be temporary or session-specific
+
+# Section 3: Prohibited Exclusions {#prohibited}
+
+## Subsection 1: Must-Track Files {#must-track}
+
+第一項：禁止排除的檔案類型 (Files that MUST be tracked)
+
+```gitignore
+# NEVER gitignore these in subrepo:
+
+# Database files (reference data)
+*.duckdb
+*.sqlite
+*.db
+
+# Configuration files
+*.json
+*.yaml
+*.yml
+*.toml
+*.ini
+
+# Source code
+*.R
+*.py
+*.sh
+*.sql
+
+# Documentation
+*.md
+*.qmd
+*.Rmd
+*.rst
+
+# Reference data directories
+data/X_global_data/
+parameters/
+templates/
+```
+
+第二項：違規範例 (Violation examples)
+
+```bash
+# BAD: Ignoring reference database
+echo X_global_data/*.duckdb" >> .gitignore  # VIOLATION!
+
+# BAD: Ignoring configuration
+echo "templates/*.yaml" >> .gitignore  # VIOLATION!
+
+# BAD: Ignoring documentation
+echo "docs/*.md" >> .gitignore  # VIOLATION!
+```
+
+## Subsection 2: Verification Command {#verification}
+
+第一項：驗證腳本 (Verification script)
+
+```bash
+#!/bin/bash
+# verify_subrepo_tracking.sh
+# Check if any functional files are gitignored
+
+echo "=== Subrepo Completeness Verification ==="
+
+# Find gitignored files
+IGNORED=$(git status --ignored --porcelain | grep "^!!" | cut -c4-)
+
+# Check for prohibited patterns
+VIOLATIONS=""
+for file in $IGNORED; do
+  case "$file" in
+    *.duckdb|*.sqlite|*.db)
+      VIOLATIONS="$VIOLATIONS\n  - $file (database)"
+      ;;
+    *.json|*.yaml|*.yml)
+      VIOLATIONS="$VIOLATIONS\n  - $file (configuration)"
+      ;;
+    *.R|*.py|*.sh)
+      VIOLATIONS="$VIOLATIONS\n  - $file (source code)"
+      ;;
+    *.md|*.qmd)
+      VIOLATIONS="$VIOLATIONS\n  - $file (documentation)"
+      ;;
+  esac
+done
+
+if [ -n "$VIOLATIONS" ]; then
+  echo "ERROR: IC_R006 Violation - Functional files are gitignored:"
+  echo -e "$VIOLATIONS"
+  echo ""
+  echo "Resolution: Remove these patterns from .gitignore and commit the files"
+  exit 1
+else
+  echo "OK: All functional files are tracked"
+  exit 0
+fi
+```
+
+# Section 4: Decision Rule {#decision}
+
+## Subsection 1: File Placement Decision {#placement}
+
+第一項：決策流程 (Decision flowchart)
+
+```
+                    ┌─────────────────────────────┐
+                    │  Should this file be in     │
+                    │  global_scripts subrepo?    │
+                    └─────────────┬───────────────┘
+                                  │
+                    ┌─────────────▼───────────────┐
+                    │  Is it used by ALL          │
+                    │  consuming projects?        │
+                    └─────────────┬───────────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │ YES               │                   │ NO
+              ▼                   │                   ▼
+    ┌─────────────────┐           │         ┌─────────────────┐
+    │ Put in subrepo  │           │         │ Put in project- │
+    │ AND track with  │           │         │ level directory │
+    │ git (no ignore) │           │         │ (not in subrepo)│
+    └─────────────────┘           │         └─────────────────┘
+                                  │
+                    ┌─────────────▼───────────────┐
+                    │  Is it a system/temp file   │
+                    │  that can be regenerated?   │
+                    └─────────────┬───────────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │ YES               │                   │ NO
+              ▼                   │                   ▼
+    ┌─────────────────┐           │         ┌─────────────────┐
+    │ OK to gitignore │           │         │ MUST track with │
+    │ (.DS_Store etc) │           │         │ git - no ignore │
+    └─────────────────┘           │         └─────────────────┘
+```
+
+第二項：實際案例 (Practical examples)
+
+| File | Used by All? | Regeneratable? | Decision |
+|------|--------------|----------------|----------|
+| X_global_data/scd_type0.duckdb` | Yes | No | **Track in subrepo** |
+| `27_company_info/peakededges/` | Yes (author brand) | No | **Track in subrepo** |
+| `templates/_targets_config.base.yaml` | Yes | No | **Track in subrepo** |
+| `.DS_Store` | No | Yes | **OK to gitignore** |
+| `client_xyz_config.yaml` | No (client-specific) | No | **Move to project-level** |
+| `.Rhistory` | No | Yes | **OK to gitignore** |
+
+# Section 5: Relationship to Other Principles {#relationships}
+
+## Subsection 1: MP122 Integration {#mp122}
+
+第一項：三軌架構對應 (Triple-Track correspondence)
+
+```
+MP122: Triple-Track Subrepo Architecture
+├── Track 1: global_scripts/ (universal utilities)
+│   └── IC_R006: ALL files must be git-tracked
+├── Track 2: update_scripts/ (ETL + DRV pipelines)
+│   └── IC_R006: ALL files must be git-tracked
+└── Track 3: Project config (app_config.yaml)
+    └── Not a subrepo - project-specific, not shared
+```
+
+第二項：SO_P016 對應 (Configuration scope correspondence)
+
+```
+SO_P016: Configuration Scope Hierarchy
+├── Universal scope (global_scripts/)
+│   └── IC_R006: Everything tracked, nothing ignored
+├── Company scope (app_config.yaml)
+│   └── Lives in project, not subrepo
+└── Application scope (environment vars)
+    └── Lives in deployment, not version controlled
+```
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Subrepo Completeness Checklist
+
+**Before Adding to Subrepo:**
+- [ ] Is this file used by ALL consuming projects?
+- [ ] If no, move to project-level directory instead
+- [ ] If yes, ensure it is NOT in .gitignore
+
+**Gitignore Review:**
+- [ ] Only system files (.DS_Store, __pycache__) are ignored
+- [ ] No database files (*.duckdb, *.sqlite) are ignored
+- [ ] No configuration files (*.yaml, *.json) are ignored
+- [ ] No source code (*.R, *.py) is ignored
+- [ ] No documentation (*.md, *.qmd) is ignored
+
+**Verification:**
+- [ ] Run `git status --ignored` to check ignored files
+- [ ] Run verification script to detect violations
+- [ ] Confirm all functional files are tracked
+
+**When Uncertain:**
+- [ ] If in doubt, track the file (do not ignore)
+- [ ] Ask: "Would another project need this file?"
+- [ ] If yes → track in subrepo
+- [ ] If no → move to project-level
+:::
+
+# Conclusion {#conclusion}
+
+The Subrepo Completeness Rule ensures that git subrepos function as reliable "single sources of truth" for shared code and resources. By prohibiting gitignore exclusions for functional files, this rule prevents synchronization failures that would otherwise break consuming projects. The simple decision rule - "if it shouldn't be shared, it shouldn't be in the subrepo" - provides clear guidance for file placement decisions.
+
+---
+
+*Based on: Integration & Collaboration Law Implementation Rules Article 6*
+*Implements: [MP122 Triple-Track Subrepo Architecture](../../CH00_fundamental_meta_principles/MP122_triple_track_subrepo_architecture.qmd)*
+*Related to: [IC_R001 Global Scripts Synchronization](./IC_R001_global_scripts_synchronization.qmd), [SO_P016 Configuration Scope Hierarchy](../../CH01_structure_organization/principles/SO_P016_configuration_scope_hierarchy.qmd)*

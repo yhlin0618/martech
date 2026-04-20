@@ -1,0 +1,385 @@
+---
+
+title: "Guide 01: Rapid Dashboard Replication for New Companies"
+subtitle: "Systematic approach to quickly replicate precision marketing dashboard for new companies"
+chapter: "CH17"
+category: "guide"
+number: "GUIDE01"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "guide"
+law: "Templates & Examples"
+article-number: "Guide 1"
+related_to:
+  - "MP012_company_centered_design"
+  - "MP041_config_driven_ui_composition"
+  - "R000_directory_structure"
+  - "R097_configuration_requirement"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Guide 1: Rapid Dashboard Replication {#overview}
+
+## Section 1: Introduction {#introduction}
+
+This guide outlines the systematic approach to quickly replicate the precision marketing dashboard for new companies, following established principles and utilizing the modular architecture.
+
+The precision marketing system is designed with company-centered modularity, enabling rapid deployment for new companies through configuration and minimal code changes. This guide follows the M/S/D organizational framework and leverages configuration-driven UI composition.
+
+## Section 2: Prerequisites {#prerequisites}
+
+Before beginning the replication process, ensure you have:
+
+1. Access to the precision marketing app codebase
+2. Company-specific data sources identified
+3. Business requirements documented
+4. Technical environment prepared
+5. Database credentials configured
+6. Company branding assets (logo, colors)
+
+## Section 3: Phase 1 - Company Directory Setup {#phase1}
+
+### Subsection 1: Create Company Module Directory {#create-directory}
+
+Following **MP012 (Company-Centered Design)** and **R000 (Directory Structure)**:
+
+```bash
+# Create new company directory structure
+13_modules/NEW_COMPANY/
+├── M00_initialization/
+├── M01_data_loading/
+├── S1_1_customer_dna/
+├── D01_dna_analysis/
+├── D02_filtered_sales/
+├── D03_positioning/
+└── README.md
+```
+
+### Subsection 2: Copy Template Structure {#copy-template}
+
+Use existing company implementations as templates:
+
+```bash
+# Example: Copy from WISER template
+cp -r 13_modules/WISER/* 13_modules/NEW_COMPANY/
+
+# Then customize for the new company
+find 13_modules/NEW_COMPANY -type f -name "*.R" | \
+  xargs sed -i 's/WISER/NEW_COMPANY/g'
+```
+
+## Section 4: Phase 2 - Configuration Setup {#phase2}
+
+### Subsection 1: Create Company Configuration {#company-config}
+
+Following **MP041 (Config-Driven UI Composition)** and **R097 (Configuration Requirement)**:
+
+```yaml
+# app_configs/NEW_COMPANY_config.yaml
+company:
+  id: "NEW_COMPANY"
+  name: "New Company Name"
+  logo: "path/to/logo.png"
+  
+database:
+  connections:
+    raw_data: "path/to/raw_data.db"
+    processed_data: "path/to/processed_data.db"
+    app_data: "path/to/app_data.db"
+
+ui_components:
+  enabled:
+    - customer_dna
+    - filtered_sales
+    - positioning
+    - competitor_analysis
+  
+  customization:
+    theme: "default"
+    primary_color: "#007bff"
+    secondary_color: "#6c757d"
+
+platforms:
+  - id: "amazon"
+    name: "Amazon"
+    enabled: true
+  - id: "website"
+    name: "Official Website"
+    enabled: true
+```
+
+### Subsection 2: Data Source Configuration {#data-config}
+
+```yaml
+# Data source mappings
+data_sources:
+  customer_profiles:
+    source: "external_system"
+    table: "customer_master"
+    update_frequency: "daily"
+    
+  sales_data:
+    source: "transaction_system"
+    table: "sales_records"
+    update_frequency: "hourly"
+    
+  product_catalog:
+    source: "product_system"
+    table: "product_master"
+    update_frequency: "weekly"
+```
+
+## Section 5: Phase 3 - Data Pipeline Setup {#phase3}
+
+### Subsection 1: Initialize Data Structures {#data-structures}
+
+Following **MP058 (Database Table Creation Strategy)**:
+
+```r
+# scripts/NEW_COMPANY_data_init.R
+source("global_scripts/00_principles/sc_initialization_update_mode.R")
+
+# Create company-specific tables
+create_company_tables <- function(company_id) {
+  conn <- dbConnect_universal()
+  
+  # Customer DNA table
+  dbExecute(conn, sprintf("
+    CREATE TABLE IF NOT EXISTS %s_customer_dna (
+      customer_id TEXT PRIMARY KEY,
+      dna_vector TEXT,
+      last_updated TIMESTAMP
+    )", company_id))
+  
+  # Filtered sales table
+  dbExecute(conn, sprintf("
+    CREATE TABLE IF NOT EXISTS %s_filtered_sales (
+      sale_id TEXT PRIMARY KEY,
+      customer_id TEXT,
+      product_id TEXT,
+      amount DECIMAL,
+      date DATE
+    )", company_id))
+  
+  dbDisconnect(conn)
+}
+
+create_company_tables("NEW_COMPANY")
+```
+
+### Subsection 2: Data Loading Scripts {#data-loading}
+
+```r
+# 13_modules/NEW_COMPANY/M01_data_loading/load_data.R
+load_company_data <- function(company_id) {
+  # Read configuration
+  config <- yaml::read_yaml(sprintf("app_configs/%s_config.yaml", company_id))
+  
+  # Connect to data sources
+  raw_conn <- dbConnect(duckdb::duckdb(), config$database$connections$raw_data)
+  app_conn <- dbConnect(duckdb::duckdb(), config$database$connections$app_data)
+  
+  # Load and transform data
+  # Implementation specific to company data structure
+  
+  dbDisconnect(raw_conn)
+  dbDisconnect(app_conn)
+}
+```
+
+## Section 6: Phase 4 - UI Component Customization {#phase4}
+
+### Subsection 1: Component Selection {#component-selection}
+
+Following **R009 (UI-Server-Defaults Triple)**:
+
+```r
+# 13_modules/NEW_COMPANY/ui_components.R
+get_company_components <- function(company_id) {
+  config <- load_company_config(company_id)
+  
+  components <- list()
+  
+  if ("customer_dna" %in% config$ui_components$enabled) {
+    components$customer_dna <- list(
+      ui = microCustomerUI,
+      server = microCustomerServer,
+      defaults = microCustomerDefaults
+    )
+  }
+  
+  if ("filtered_sales" %in% config$ui_components$enabled) {
+    components$filtered_sales <- list(
+      ui = filteredSalesUI,
+      server = filteredSalesServer,
+      defaults = filteredSalesDefaults
+    )
+  }
+  
+  return(components)
+}
+```
+
+### Subsection 2: Theme Customization {#theme-custom}
+
+```r
+# 13_modules/NEW_COMPANY/theme.R
+get_company_theme <- function(company_id) {
+  config <- load_company_config(company_id)
+  
+  bs4DashTheme(
+    primary = config$ui_components$customization$primary_color,
+    secondary = config$ui_components$customization$secondary_color,
+    success = "#28a745",
+    info = "#17a2b8",
+    warning = "#ffc107",
+    danger = "#dc3545"
+  )
+}
+```
+
+## Section 7: Phase 5 - Testing and Validation {#phase5}
+
+### Subsection 1: Data Validation {#data-validation}
+
+Following **MP051 (Test Data Design)**:
+
+```r
+# tests/NEW_COMPANY_data_test.R
+test_company_data <- function(company_id) {
+  conn <- dbConnect_universal()
+  
+  tests <- list(
+    customer_count = dbGetQuery(conn, 
+      sprintf("SELECT COUNT(*) FROM %s_customer_dna", company_id)),
+    sales_count = dbGetQuery(conn, 
+      sprintf("SELECT COUNT(*) FROM %s_filtered_sales", company_id)),
+    data_freshness = dbGetQuery(conn, 
+      sprintf("SELECT MAX(last_updated) FROM %s_customer_dna", company_id))
+  )
+  
+  dbDisconnect(conn)
+  return(tests)
+}
+```
+
+### Subsection 2: UI Component Testing {#ui-testing}
+
+```r
+# tests/NEW_COMPANY_ui_test.R
+test_company_ui <- function(company_id) {
+  # Create test app
+  test_app <- shinyApp(
+    ui = fluidPage(
+      get_company_components(company_id)$customer_dna$ui("test")
+    ),
+    server = function(input, output, session) {
+      get_company_components(company_id)$customer_dna$server("test", test_data_conn)
+    }
+  )
+  
+  # Run test app
+  runApp(test_app, port = 8765)
+}
+```
+
+## Section 8: Phase 6 - Deployment {#phase6}
+
+### Subsection 1: Pre-deployment Checklist {#checklist}
+
+- [ ] All data sources connected and validated
+- [ ] Company configuration complete
+- [ ] UI components tested
+- [ ] Performance benchmarks met
+- [ ] Security review completed
+- [ ] Documentation updated
+
+### Subsection 2: Deployment Script {#deployment}
+
+```bash
+#!/bin/bash
+# deploy_new_company.sh
+
+COMPANY_ID="NEW_COMPANY"
+
+# 1. Initialize data structures
+Rscript scripts/${COMPANY_ID}_data_init.R
+
+# 2. Load initial data
+Rscript 13_modules/${COMPANY_ID}/M01_data_loading/load_data.R
+
+# 3. Run tests
+Rscript tests/${COMPANY_ID}_data_test.R
+Rscript tests/${COMPANY_ID}_ui_test.R
+
+# 4. Deploy to server
+rsconnect::deployApp(
+  appDir = ".",
+  appFiles = c(
+    "app.R",
+    "13_modules/${COMPANY_ID}/",
+    "app_configs/${COMPANY_ID}_config.yaml"
+  ),
+  appName = "${COMPANY_ID}_dashboard",
+  account = "your_account"
+)
+```
+
+## Section 9: Post-Deployment {#post-deployment}
+
+### Subsection 1: Monitoring Setup {#monitoring}
+
+```r
+# monitoring/NEW_COMPANY_monitor.R
+monitor_company_dashboard <- function(company_id) {
+  # Check data freshness
+  # Monitor user activity
+  # Track performance metrics
+  # Alert on errors
+}
+```
+
+### Subsection 2: Maintenance Schedule {#maintenance}
+
+| Task | Frequency | Script |
+|------|-----------|--------|
+| Data refresh | Daily | `refresh_data.R` |
+| Performance check | Weekly | `check_performance.R` |
+| User audit | Monthly | `audit_users.R` |
+| Full backup | Weekly | `backup_company.R` |
+
+## Section 10: Troubleshooting {#troubleshooting}
+
+### Subsection 1: Common Issues {#common-issues}
+
+1. **Data Connection Failures**
+   - Check database credentials in config
+   - Verify network connectivity
+   - Review firewall rules
+
+2. **UI Components Not Rendering**
+   - Validate component configuration
+   - Check for missing dependencies
+   - Review browser console for errors
+
+3. **Performance Issues**
+   - Optimize database queries
+   - Implement caching strategies
+   - Review reactive dependencies
+
+### Subsection 2: Support Resources {#support}
+
+- Technical documentation: `/docs/technical/`
+- Principle references: `/global_scripts/00_principles/`
+- Template examples: `/13_modules/WISER/`
+- Support contact: `support@precision-marketing.com`
+
+---
+*This guide enables rapid replication of the precision marketing dashboard for new companies while maintaining consistency and quality.*

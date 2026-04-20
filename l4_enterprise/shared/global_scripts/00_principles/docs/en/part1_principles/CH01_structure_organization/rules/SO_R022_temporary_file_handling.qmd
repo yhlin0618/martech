@@ -1,0 +1,286 @@
+---
+title: "SO_R006: Temporary File Handling Rule"
+subtitle: "Managing temporary files and directories throughout their lifecycle"
+chapter: "CH01"
+category: "rule"
+number: "SO_R006"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization Law Implementation Rules"
+article-number: "Article 6"
+implements:
+  - "SO_P005: Naming Principles"
+derives_from:
+  - "CH00.MP005: Instance vs. Principle"
+  - "CH00.MP007: Documentation Organization"
+  - "CH00.MP001: Primitive Terms and Definitions"
+related_to:
+  - "SO_R005: Renaming Methods"
+  - "SO_R003: Module Naming Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article Overview {#overview}
+
+**Structure & Organization Law Implementation Rules Article 6 (Temporary File Handling Rule)**
+
+This article establishes specific guidelines for handling temporary files and directories across the system, ensuring that temporary artifacts don't accumulate and are properly managed throughout their lifecycle.
+
+:::{.callout-important}
+## Core Rule
+Temporary files and directories should be created with clear intention, used for their specific purpose, and then either deleted or moved to a permanent location immediately after their purpose is fulfilled. By definition, a temporary file should not remain in its temporary location after completion of the procedure that required it.
+:::
+
+# Section 1: Temporary File Principles {#principles}
+
+## Subsection 1: Explicit Lifecycle Management {#lifecycle}
+
+All temporary files and directories must have a clearly defined lifecycle:
+
+- **Creation**: Created with a specific purpose and clear naming
+- **Usage**: Used only for their intended purpose
+- **Resolution**: Either deleted or moved to a permanent location
+- **Verification**: Confirmation that no temporary files remain
+
+## Subsection 2: Naming and Location {#naming}
+
+Temporary files and directories should be clearly identifiable:
+
+- **Prefix or Suffix**: Use `temp_`, `_temp`, or `_tmp` in filenames or directory names
+- **Dedicated Locations**: Store in explicitly named temporary directories (e.g., `temp/`, `tmp/`)
+- **Date Stamping**: Include creation date in temporary directory names when appropriate
+- **Context Indication**: Include context information in the name (e.g., `temp_renaming_2025-04-02/`)
+
+## Subsection 3: Documentation {#documentation}
+
+Document the purpose and lifecycle of temporary files:
+
+- **Purpose Statement**: Document why the temporary file/directory was created
+- **Expected Lifespan**: Specify how long the temporary file should exist
+- **Resolution Plan**: Document the intended final disposition (deletion or relocation)
+- **Ownership**: Clearly identify who is responsible for managing the temporary file
+
+## Subsection 4: Information Sufficiency Determination {#sufficiency}
+
+A file becomes a temporary file if one of these conditions is met:
+
+- **Explicit Designation**: The file was created as temporary with clear naming conventions
+- **Information Sufficiency**: All information in file B is now fully included in file A, making B redundant
+- **Purpose Fulfillment**: The file's purpose has been fulfilled and its content is no longer needed
+- **Superseded Documentation**: Documentation that has been superseded by more formal representations
+
+:::{.callout-note}
+## Principle of Sufficiency and Minimality
+1. We maintain sufficient documentation for the system to function properly
+2. We eliminate redundant or superseded documentation to minimize clutter
+3. We ensure clear references to the new source of truth when removing redundant files
+:::
+
+# Section 2: Implementation Guidelines {#implementation}
+
+## Subsection 1: Temporary File Creation {#creation}
+
+When creating temporary files or directories:
+
+```bash
+# Create a clearly named temporary directory with datestamp
+mkdir -p temp_renaming_$(date +%Y-%m-%d)
+
+# Document the purpose in a README within the temporary directory
+echo "# Temporary Directory for Principle Renumbering
+Created: $(date)
+Purpose: Store backup files during principle renumbering
+Resolution: Contents will be moved to records/ after renumbering is complete
+Owner: Claude
+" > temp_renaming_$(date +%Y-%m-%d)/README.md
+```
+
+## Subsection 2: Temporary File Resolution {#resolution}
+
+After completing the procedure that required temporary files:
+
+```bash
+# Option 1: Delete temporary files when no longer needed
+rm -rf temp_directory/
+
+# Option 2: Move valuable content to permanent location
+mv temp_directory/valuable_output.md records/2025-04-02_output.md
+
+# Option 3: Archive temporary directory if it may be needed later
+tar -czf archives/temp_directory_2025-04-02.tar.gz temp_directory/
+rm -rf temp_directory/
+```
+
+## Subsection 3: Temporary Location Verification {#verification}
+
+After any procedure that uses temporary files, verify that no temporary files remain:
+
+```bash
+# Check for remaining temporary directories
+find . -type d -name "temp_*" -o -name "*_temp" -o -name "tmp_*"
+
+# Check for remaining temporary files
+find . -type f -name "temp_*" -o -name "*_temp" -o -name "*.tmp"
+```
+
+# Section 3: Common Temporary Storage Patterns {#patterns}
+
+## Subsection 1: Procedure-Specific Temporary Directories {#procedure-specific}
+
+For operations that require multiple temporary files, create a dedicated temporary directory:
+
+```
+temp_procedure_name_YYYY-MM-DD/
+├── README.md  # Documents the purpose and intended resolution
+├── backup/    # Contains backups of modified files
+├── intermediate_results/  # Contains intermediate artifacts
+└── logs/      # Contains operation logs
+```
+
+## Subsection 2: Application-Level Temporary Directory {#app-level}
+
+For ongoing application operations that need temporary storage:
+
+```
+app_temp/
+├── cache/     # Cached data with automatic expiration
+├── uploads/   # Temporary storage for user uploads
+└── exports/   # Temporary storage for generated exports
+```
+
+## Subsection 3: Temporary Record Files {#record-files}
+
+For operations that generate records that will be moved to a permanent location:
+
+```
+temp_records_YYYY-MM-DD/
+├── README.md  # Documents the record generation process
+├── raw/       # Contains raw output data
+└── processed/ # Contains processed records ready for permanent storage
+```
+
+# Section 4: Violations and Resolution {#violations}
+
+## Subsection 1: Examples of Violations {#violation-examples}
+
+The following are examples of violations of this rule:
+
+- **Abandoned Temporary Files**: Leaving `temp_*` files in the repository after the procedure is complete
+- **Undocumented Temporary Directories**: Creating temporary directories without README files explaining their purpose
+- **Unclear Resolution**: Leaving temporary files without a clear plan for their deletion or relocation
+- **Mixed Content**: Storing both temporary and permanent files in a temporary directory
+- **Misleading Names**: Naming permanent files with temporary prefixes or suffixes
+- **Redundant Documentation**: Maintaining multiple files with the same information without designating which is authoritative
+- **Unresolved Sufficiency**: Failing to remove or update files that have been superseded by more formal documentation
+- **Missing References**: Removing a file due to information sufficiency without updating references to point to the new location
+
+## Subsection 2: Resolution Procedure for Existing Temporary Files {#resolution-procedure}
+
+When discovering existing temporary files or directories:
+
+1. **Investigate Purpose**: Determine why the temporary files were created
+2. **Assess Value**: Determine if the files contain valuable information
+3. **Document Findings**: Document what was discovered about the temporary files
+4. **Take Action**:
+   - Delete if no longer needed
+   - Move valuable content to appropriate permanent locations
+   - Archive if historical value exists but active access is not needed
+5. **Verify Resolution**: Confirm that all temporary files have been properly handled
+
+## Subsection 3: Information Sufficiency Resolution Process {#sufficiency-resolution}
+
+When a file is determined to be temporary due to information sufficiency:
+
+1. **Verification**: Verify that ALL information from file B is truly included in file A
+2. **Reference Updates**: Update any references to file B to point to file A
+3. **Documentation**: Document the transition and explain where the information now resides
+4. **Archiving Option**: Consider archiving file B if it has historical or contextual value
+5. **Cleanup**: Remove file B only after completing steps 1-4
+6. **Verification**: Verify that the system still functions properly without file B
+
+### Example: Formalizing a README into a Rule
+
+```bash
+# Step 1: Document the transition
+echo "# This file has been formalized into R007_module_naming_convention.md
+All information previously in this README has been transferred to the official rule.
+This file is now considered temporary and will be removed.
+Please refer to /scripts/global_scripts/00_principles/R007_module_naming_convention.md
+for current documentation." > 13_modules/README.temp.md
+
+# Step 2: Archive the original file
+cp 13_modules/README.md 13_modules/README.md.archived
+
+# Step 3: Replace with transition message
+mv 13_modules/README.temp.md 13_modules/README.md
+
+# Step 4: Schedule for removal after appropriate time
+# (after verifying no references to the original file remain)
+```
+
+# Section 5: Best Practices {#best-practices}
+
+1. **Automation**: Automate temporary file cleanup whenever possible
+2. **Verification**: Include verification steps in procedures that create temporary files
+3. **Clear Ownership**: Assign clear ownership for temporary file cleanup
+4. **Regular Audits**: Periodically audit repositories for abandoned temporary files
+5. **Immediate Resolution**: Resolve temporary files immediately after their purpose is fulfilled
+6. **Documentation First**: Document temporary file handling before creating the files
+
+# Implementation Checklist {#checklist}
+
+:::{.callout-note}
+## Temporary File Handling Checklist
+
+When working with temporary files:
+
+**Creation:**
+- [ ] Clear naming with temp prefix/suffix
+- [ ] Date stamp included
+- [ ] Purpose documented in README
+- [ ] Owner identified
+- [ ] Resolution plan stated
+
+**Usage:**
+- [ ] Used only for intended purpose
+- [ ] Lifecycle documented
+- [ ] No mixing with permanent files
+
+**Resolution:**
+- [ ] Valuable content moved to permanent location
+- [ ] Temporary files deleted or archived
+- [ ] References updated if needed
+- [ ] Verification performed
+
+**Information Sufficiency:**
+- [ ] All information verified in new location
+- [ ] References updated
+- [ ] Transition documented
+- [ ] System still functions properly
+
+**Best Practices:**
+- [ ] Automation implemented where possible
+- [ ] Regular audits scheduled
+- [ ] Clear ownership assigned
+- [ ] Immediate resolution practiced
+:::
+
+# Conclusion {#conclusion}
+
+Proper temporary file handling ensures that our system remains clean, organized, and free from abandoned artifacts. By treating temporary files with explicit lifecycle management and applying the information sufficiency principle, we maintain system integrity and prevent the accumulation of redundant or obsolete files that can lead to confusion and clutter.
+
+The information sufficiency principle allows us to formalize the natural evolution of documentation from informal notes to structured principles and rules, ensuring that we maintain a single source of truth while properly transitioning between different stages of documentation maturity.
+
+---
+
+*Based on: Structure & Organization Law Implementation Rules Article 6*  
+*Implements: [SO_P005 Naming Principles](../principles/SO_P005_naming_principles.qmd)*  
+*Derives from: [MP005 Instance vs. Principle](../../CH00_fundamental_principles/MP005_instance_vs_principle.qmd), [MP007 Documentation Organization](../../CH00_fundamental_principles/MP007_documentation_organization.qmd)*

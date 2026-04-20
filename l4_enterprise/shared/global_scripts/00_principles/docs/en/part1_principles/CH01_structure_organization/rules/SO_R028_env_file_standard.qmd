@@ -1,0 +1,274 @@
+---
+title: "R126: Environment File Standard"
+subtitle: "Unified standards for .env and .Renviron file management"
+chapter: "CH01"
+category: "rule"
+number: "R126"
+date-created: "2025-08-23"
+date-modified: "2025-08-23"
+author: "Claude"
+type: "rule"
+law: "Structure & Organization"
+article-number: "Article 28"
+related_to:
+  - "R075_test_script_initialization"
+  - "R095_import_requirements_rule"
+  - "MP081_explicit_parameter_specification"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 28: Environment File Management Standard {#overview}
+
+## Section 1: Purpose {#purpose}
+
+Provide project members with a unified standard for writing environment variables (.env/.Renviron), ensuring consistent behavior across local development, CI, and Posit Connect deployments while preventing credential leakage.
+
+## Section 2: Naming Conventions {#naming}
+
+### Subsection 1: Variable Names {#variable-names}
+
+1. Variables must use **UPPERCASE with underscores**, no spaces allowed
+   - Examples: `OPENAI_API_KEY`, `PGHOST`, `AWS_ACCESS_KEY_ID`
+2. Key/password variables should end with `_KEY` / `_SECRET` / `_PASSWORD`
+3. Dates and booleans must be stored as strings, e.g., `FEATURE_FLAG="true"`
+
+### Subsection 2: Naming Patterns {#naming-patterns}
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| API Keys | `{SERVICE}_API_KEY` | `OPENAI_API_KEY` |
+| Database | `PG{PROPERTY}` | `PGHOST`, `PGPASSWORD` |
+| AWS | `AWS_{SERVICE}_{PROPERTY}` | `AWS_ACCESS_KEY_ID` |
+| Features | `FEATURE_{NAME}` | `FEATURE_DEBUG_MODE` |
+
+## Section 3: Format Requirements {#format}
+
+### Subsection 1: Basic Syntax {#syntax}
+
+```bash
+# Comments start with #
+KEY=value                      # No spaces, no quotes needed if value has no spaces
+KEY_WITH_SPACE="some value"    # Use double quotes for values with spaces
+SPECIAL='p@$$word!'           # Use quotes for special characters
+```
+
+### Subsection 2: Common Errors {#errors}
+
+Avoid these mistakes:
+- `KEY = value` ← Spaces around equals sign may cause parsing issues
+- `KEY="value` ← Unclosed quotes
+- `key=value` ← Lowercase keys (should be uppercase)
+
+## Section 4: Project Strategy {#strategy}
+
+### Subsection 1: Code Implementation {#code-implementation}
+
+1. **Unified access in code**: Use `Sys.getenv("OPENAI_API_KEY")`
+   - Historical `OPENAI_API_KEY_LIN` suffix has been removed
+2. **Consistent retrieval pattern**:
+   ```r
+   # Always use Sys.getenv for environment variables
+   api_key <- Sys.getenv("OPENAI_API_KEY")
+   db_host <- Sys.getenv("PGHOST")
+   ```
+
+### Subsection 2: Local Development {#local-dev}
+
+1. **Recommended approach**:
+   - Set environment variables in project root `.Renviron` or `~/.Renviron`
+   - Use `.env` only as a reference template, must be in `.gitignore`
+   
+2. **File priority**:
+   ```
+   ~/.Renviron (user-level)
+   ↓
+   project/.Renviron (project-level)
+   ↓
+   .env (reference only, not loaded automatically)
+   ```
+
+### Subsection 3: CI/Docker {#ci-docker}
+
+1. **CI Runners**: Inject environment variables through runner configuration
+2. **Docker containers**: 
+   ```dockerfile
+   ENV OPENAI_API_KEY=${OPENAI_API_KEY}
+   ENV PGHOST=${PGHOST}
+   ```
+3. **GitHub Actions**:
+   ```yaml
+   env:
+     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+   ```
+
+### Subsection 4: Posit Connect Deployment {#posit-connect}
+
+1. **Variable Sets**: Assign `OPENAI_API_KEY` to each app via Variable Set
+2. **Persistence**: Variables persist across redeployments of same content
+3. **Management approach**:
+   - Create Variable Sets for different environments (dev/staging/prod)
+   - Assign appropriate set to each deployed application
+
+## Section 5: Security Requirements {#security}
+
+### Subsection 1: Version Control {#version-control}
+
+1. **Never commit**: `.Renviron`/`.env` files must be in `.gitignore`
+2. **Template files**: Provide `.env.example` with placeholder values
+3. **Documentation**: Document required variables in README
+
+### Subsection 2: Code Practices {#code-practices}
+
+1. **Avoid logging sensitive data**:
+   ```r
+   # BAD - Never log actual keys
+   print(Sys.getenv("OPENAI_API_KEY"))
+   
+   # GOOD - Log status only
+   print(paste("API Key configured:", 
+               nchar(Sys.getenv("OPENAI_API_KEY")) > 0))
+   ```
+
+2. **Use placeholders in examples**:
+   ```r
+   # Documentation example
+   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+
+## Section 6: Example Files {#examples}
+
+### Subsection 1: Complete .env Example {#env-example}
+
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+OPENAI_MODEL=gpt-4
+OPENAI_MAX_TOKENS=2000
+
+# PostgreSQL Database
+PGHOST=db.example.com
+PGPORT=5432
+PGUSER=insightforge
+PGPASSWORD="super secret password"
+PGDATABASE=prod_db
+PGSSLMODE=require
+
+# AWS Services
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_REGION=us-west-2
+
+# Feature Flags
+FEATURE_DEBUG_MODE="false"
+FEATURE_ASYNC_PROCESSING="true"
+```
+
+### Subsection 2: .Renviron Example {#renviron-example}
+
+```r
+# R-specific environment file
+# Place in project root or user home directory
+
+# API Keys
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Database
+PGHOST=localhost
+PGPORT=5432
+PGUSER=dev_user
+PGPASSWORD="dev_password"
+PGDATABASE=dev_db
+
+# R-specific settings
+R_MAX_NUM_DLLS=150
+R_LIBS_USER=~/R/library
+```
+
+## Section 7: Testing and Validation {#testing}
+
+### Subsection 1: Validation Script {#validation}
+
+```r
+# validate_env.R - Check required environment variables
+required_vars <- c(
+  "OPENAI_API_KEY",
+  "PGHOST",
+  "PGUSER",
+  "PGPASSWORD",
+  "PGDATABASE"
+)
+
+missing_vars <- required_vars[!required_vars %in% names(Sys.getenv())]
+
+if (length(missing_vars) > 0) {
+  stop(paste("Missing environment variables:", 
+             paste(missing_vars, collapse = ", ")))
+}
+
+# Check format
+if (!grepl("^sk-", Sys.getenv("OPENAI_API_KEY"))) {
+  warning("OPENAI_API_KEY may be incorrectly formatted")
+}
+```
+
+### Subsection 2: Loading Test {#loading-test}
+
+```r
+# test_env_loading.R
+test_env_loading <- function() {
+  # Load .Renviron if exists
+  if (file.exists(".Renviron")) {
+    readRenviron(".Renviron")
+  }
+  
+  # Verify critical variables
+  critical <- c("OPENAI_API_KEY", "PGHOST")
+  loaded <- sapply(critical, function(v) {
+    val <- Sys.getenv(v)
+    !is.na(val) && nchar(val) > 0
+  })
+  
+  return(all(loaded))
+}
+```
+
+## Section 8: Migration Guide {#migration}
+
+### Subsection 1: From Legacy Variables {#legacy}
+
+```r
+# Migration from old variable names
+migrate_env_vars <- function() {
+  # Map old names to new
+  migrations <- list(
+    "OPENAI_API_KEY_LIN" = "OPENAI_API_KEY",
+    "DB_HOST" = "PGHOST",
+    "DB_USER" = "PGUSER"
+  )
+  
+  for (old_name in names(migrations)) {
+    new_name <- migrations[[old_name]]
+    old_val <- Sys.getenv(old_name)
+    
+    if (nchar(old_val) > 0 && nchar(Sys.getenv(new_name)) == 0) {
+      Sys.setenv(new_name = old_val)
+      message(paste("Migrated", old_name, "to", new_name))
+    }
+  }
+}
+```
+
+## Section 9: Related Standards {#related}
+
+- **R075**: Test Script Initialization - Loading environment before tests
+- **R095**: Import Requirements Rule - Dependency management and sensitive information
+- **MP081**: Explicit Parameter Specification - Clear parameter naming
+
+---
+*This standard ensures secure and consistent environment variable management across all deployment contexts.*

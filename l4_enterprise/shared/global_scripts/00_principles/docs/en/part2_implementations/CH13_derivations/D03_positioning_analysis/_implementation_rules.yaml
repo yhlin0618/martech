@@ -1,0 +1,350 @@
+# D03 Positioning Analysis - Implementation Rules
+# ================================================
+# This file defines the binding contract between documentation and code.
+# Each derivation step MUST implement ONLY its documented responsibility.
+#
+# Pattern: "Case Law" companion file per MP005 (Statute Law Analogy)
+# Created: 2026-01-01
+
+derivation_id: D03
+title: "Positioning Analysis"
+description: "Competitive positioning analysis using AI-powered review analysis and product profiles"
+
+# Step Definitions
+# ================
+# Types:
+#   - conceptual: Describes WHAT to do, not HOW
+#   - concrete: Specifies exact function calls and outputs
+#   - orchestration: Coordinates other steps, no direct computation
+#   - documentation: No implementation script - documentation only
+
+derivation_steps:
+  d03_00:
+    title: "Consume ETL Output"
+    type: "conceptual"
+    layer: "2TR→3PR"
+    responsibility: "Validate and consume outputs from ETL03-07"
+
+    # ETL Dependencies
+    consumes_from:
+      - "ETL03": "Product Profiles Pipeline"
+      - "ETL04": "Competitor Analysis Pipeline"
+      - "ETL05": "Comment Properties Pipeline"
+      - "ETL06": "Reviews Preparation Pipeline"
+      - "ETL07": "Competitor Sales Pipeline"
+
+    # Required tables to validate
+    required_tables:
+      - "df_product_profile"
+      - "df_comment_property"
+      - "df_review_data"
+
+  d03_01:
+    title: "Comment Property Rating Analysis"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Sample reviews and transform to long format for AI rating"
+
+    # Implementation Contract
+    must_perform:
+      - "Sample latest N reviews per product_id"
+      - "Transform wide_to_long by property_columns"
+
+    # Input/Output Specification
+    input_table: "df_review_data___transformed"
+    input_database: "transformed_data.duckdb"
+    output_table: "df_sampled_long___processed"
+    output_database: "processed_data.duckdb"
+
+    # Sampling specification
+    sampling:
+      method: "latest N per product"
+      default_n: 50
+
+  d03_02:
+    title: "Rate Reviews (AI)"
+    type: "concrete"
+    layer: "3PR"
+    responsibility: "Apply OpenAI API to rate each (review, property) pair"
+
+    # Implementation Contract
+    must_call: "OpenAI API"
+    api_pattern: "rating per (review, property) pair"
+
+    # Input/Output Specification
+    input_table: "df_sampled_long___processed"
+    input_database: "processed_data.duckdb"
+    output_table: "df_rating_results___processed"
+    output_database: "processed_data.duckdb"
+
+    # Produced fields
+    produces:
+      - property_name      # Property being rated
+      - rating             # AI-generated rating (typically 1-5 or sentiment)
+      - confidence         # Optional confidence score
+      - review_id          # Link back to source review
+
+    # Critical: API key handling
+    security:
+      api_key_source: "Sys.getenv('OPENAI_API_KEY')"
+      never_log_key: true
+
+  d03_03:
+    title: "Process Reviews"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "Transform AI ratings from long to wide format"
+
+    # Implementation Contract
+    must_perform: "long_to_wide transformation by property_columns"
+
+    # Input/Output Specification
+    input_table: "df_rating_results___processed"
+    input_database: "processed_data.duckdb"
+    output_table: "df_comment_property_ratingonly_{product_line_id}___cleansed"
+    output_database: "cleansed_data.duckdb"
+
+    # Pivot specification
+    pivot:
+      id_column: "review_id"
+      names_from: "property_name"
+      values_from: "rating"
+
+  d03_04:
+    title: "Query by ASIN"
+    type: "concrete"
+    layer: "4CL"
+    responsibility: "Aggregate review ratings to product level (by ASIN)"
+
+    # Implementation Contract
+    must_perform:
+      - "Aggregate by product_id (ASIN)"
+      - "Optional: impute missing values with mice"
+
+    # Input/Output Specification
+    input_table: "df_comment_property_ratingonly_{product_line_id}___cleansed"
+    input_database: "cleansed_data.duckdb"
+    output_table: "df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed"
+    output_database: "cleansed_data.duckdb"
+
+    # Aggregation specification
+    group_by: ["product_id"]  # ASIN
+    aggregations:
+      - "mean(rating) per property"
+      - "count(*) as review_count"
+
+    # Optional imputation
+    imputation:
+      method: "mice"
+      when: "missing_rate > threshold"
+    failure_policy:
+      missing_input: "If any product_line_id source table is missing, the step MUST fail (stop target)"
+      missing_output: "If any expected product_line_id output table is missing, the step MUST fail (stop target)"
+
+  d03_05:
+    title: "Position Table Creation"
+    type: "concrete"
+    layer: "5NM"
+    responsibility: "Create final position table by joining all data sources"
+
+    # Implementation Contract
+    must_perform:
+      - "Join all product line data from cleansed_data"
+      - "Merge with competitor_sales"
+      - "Merge with product_profiles"
+
+    # Input/Output Specification
+    input_tables:
+      - "df_comment_property_ratingonly_by_asin_{product_line_id}___cleansed"
+      - "df_competitor_sales"
+      - "df_product_profile"
+    input_databases:
+      - "cleansed_data.duckdb"
+      - "transformed_data.duckdb"
+    output_table: "df_position"
+    output_database: "app_data.duckdb"
+
+    # Final table: no suffix (5NM layer)
+    note: "Output table has no ___suffix per MP144 (final app-ready data)"
+    failure_policy:
+      missing_input: "If any per-line position input/output table is missing, merge/finalization MUST fail"
+      missing_output: "If df_position is not created or finalization fails, the step MUST fail (stop target)"
+      etl07_empty_folder_policy:
+        behavior: "ETL07 (competitor sales import) must skip folders with no supported files and continue. This is a non-fatal warning path."
+        summary_fields:
+          checked_folders: "number of folders scanned"
+          imported_files: "number of files successfully written"
+          imported_rows: "number of rows successfully written"
+          skipped_folders_no_supported_files: "folders without readable csv/xlsx/xls files"
+          skipped_folders_no_rows: "folders with readable files but no inserted rows"
+          skipped_folders_invalid_reference: "folders with invalid or unmapped product-line identifiers"
+          output_mode: "summary logs and execution metadata ledger where available"
+        hard_fail_condition: "The step fails if total imported rows is zero after scanning all folders."
+        telemetry_signature:
+          output_ledger: "app_data.drv_run_events (or equivalent)"
+          run_event_fields:
+            - "platform_id"
+            - "phase"
+            - "sequence"
+            - "status"
+            - "rows_input"
+            - "rows_output"
+            - "rows_written_delta"
+            - "skipped_folders_no_supported_files"
+            - "skipped_folders_no_rows"
+            - "skipped_folders_invalid_reference"
+
+  d03_06:
+    title: "Execution Orchestration"
+    type: "documentation"
+    layer: "N/A"
+    responsibility: "Document master execution flow"
+    note: "Documentation only - no dedicated script"
+
+  d03_07:
+    title: "Module Consumers"
+    type: "documentation"
+    layer: "N/A"
+    responsibility: "Document which UI modules consume D03 outputs"
+    note: "No implementation script - documentation only"
+
+# Enforcement Rules
+# =================
+
+enforcement:
+  rule: "Each D_XX script MUST implement ONLY its documented responsibility"
+  principle_reference: "DRY (Don't Repeat Yourself)"
+
+  violations:
+    - pattern: "OpenAI API call outside D03_02"
+      severity: "critical"
+      action: "All AI rating must be in D03_02"
+
+    - pattern: "Wide-to-long transformation outside D03_01"
+      severity: "warning"
+      action: "Transformation belongs in D03_01"
+
+    - pattern: "Long-to-wide transformation outside D03_03"
+      severity: "warning"
+      action: "Pivot belongs in D03_03"
+
+    - pattern: "Data preparation logic in D03"
+      severity: "critical"
+      action: "Data preparation belongs in ETL03-07, not D03"
+
+    - pattern: "Hardcoded API key"
+      severity: "critical"
+      action: "Must use Sys.getenv('OPENAI_API_KEY')"
+
+    - pattern: "Missing source/output tables in D03 (including D03_10) treated as success"
+      severity: "critical"
+      action: "Any missing required input/output table in D03_04/D03_05/D03_10 must fail target explicitly via stop()"
+
+    - pattern: "ETL07 skip/missing-folder telemetry omitted"
+      severity: "warning"
+      action: "Record MP150 telemetry for skipped folders (source path, reason, rows) before returning summary"
+
+# Platform Scripts
+# ================
+
+platform_implementations:
+  amz:
+    d03_01: "update_scripts/DRV/amz/amz_D03_08.R"
+    d03_02: "update_scripts/DRV/amz/amz_D03_06.R"
+    d03_03: "update_scripts/DRV/amz/amz_D03_09.R"
+    d03_04: "update_scripts/DRV/amz/amz_D03_07.R"
+    d03_05_prep: "update_scripts/DRV/amz/amz_D03_10.R"
+    d03_05_final: "update_scripts/DRV/amz/amz_D03_11.R"
+
+  cbz:
+    note: "Platform-specific implementations as needed"
+
+  eby:
+    note: "Platform-specific implementations as needed"
+
+# Related Principles
+# ==================
+
+related_principles:
+  - id: "MP005"
+    title: "Statute Law Analogy"
+    relevance: "This file follows Case Law pattern"
+
+  - id: "MP064"
+    title: "ETL-Derivation Separation"
+    relevance: "Positioning analysis is derivation, not ETL"
+
+  - id: "MP144"
+    title: "Unique Identity Principle"
+    relevance: "___cleansed/___processed suffixes distinguish stages"
+
+  - id: "DM_R044"
+    title: "Derivation Implementation Standard"
+    relevance: "Five-Part Structure for scripts"
+
+  - id: "DM_R002"
+    title: "Universal Data Access Pattern"
+    relevance: "Cross-format file loading and source-traceable failures"
+
+  - id: "MP150"
+    title: "Dataflow Tracking and Execution Telemetry"
+    relevance: "Execution metadata for skipped/empty input paths and failures"
+
+  - id: "MP073"
+    title: "Interactive Visualization Preference"
+    relevance: "Position table feeds interactive visualizations"
+
+  - id: "MP047"
+    title: "Functional Programming"
+    relevance: "Use functional approaches for data transformation"
+
+  - id: "R021"
+    title: "One Function One File"
+    relevance: "Each utility function in separate file"
+
+  - id: "R069"
+    title: "Function File Naming"
+    relevance: "fn_ prefix for function files"
+
+# ETL Migration History
+# =====================
+
+migration_history:
+  note: "D03 has undergone significant refactoring with data prep migrated to ETL"
+
+  migrations:
+    - original: "D03_00 (old)"
+      migrated_to: "ETL03"
+      description: "Import Product Properties"
+
+    - original: "D03_01 (old)"
+      migrated_to: "ETL04"
+      description: "Competitor Analysis"
+
+    - original: "D03_02 (old)"
+      migrated_to: "ETL05"
+      description: "Comment Properties"
+
+    - original: "D03_03-05 (old)"
+      migrated_to: "ETL06"
+      description: "Reviews Preparation"
+
+    - original: "D03_10 (old)"
+      migrated_to: "ETL07"
+      description: "Competitor Sales"
+
+# Use Cases
+# =========
+
+use_cases:
+  - name: "Competitive Positioning"
+    description: "Compare brand attributes against competitors"
+    output_table: "df_position"
+
+  - name: "Review Analysis"
+    description: "Extract product strengths/weaknesses from reviews"
+    output_table: "df_comment_property_ratingonly_by_asin"
+
+  - name: "Market Intelligence"
+    description: "Understand competitive landscape through data"
+    output_table: "df_position"

@@ -1,0 +1,601 @@
+---
+title: "UI_R024: Metadata Display for Steady-State Analytics"
+subtitle: "Standard UI Pattern for Type B Analytics Components"
+date: "2025-11-13"
+author: "MAMBA Development Team"
+version: "1.0.0"
+status: "Active"
+category: "Rule"
+applies_to:
+  - "Type B Analytics Components"
+  - "UI Module Development"
+parent_principles:
+  - "MP135: Analytics Temporal Classification Principle"
+  - "MP109: Information Flow Transparency"
+related_principles:
+  - "UI_R022: Component Period Selector Contract"
+  - "MP029: No Fake Data Principle"
+---
+
+## Rule Statement
+
+**All Type B (Steady-State) Analytics components MUST display metadata indicating:**
+1. **Computed At**: When the analysis was last run
+2. **Data Version**: Latest data included in analysis
+3. **Sample Size**: Number of observations used
+4. **Staleness Warning**: If data is outdated (configurable threshold)
+
+**Type B components MUST NOT have period selectors** - this rule provides the ALTERNATIVE UI pattern.
+
+---
+
+## Rationale
+
+### Why Type B Needs Different Metadata
+
+**Type A (Time-Varying)** displays:
+- Selected period ("Last 90 Days")
+- Date range ("2024-08-15 to 2024-11-13")
+
+**Type B (Steady-State)** cannot show "period" because there is NO period selector. Instead, users need to understand:
+- ✅ "This is based on all historical data"
+- ✅ "Analysis was computed on 2025-11-13"
+- ✅ "Includes 10,000 transactions through 2025-11-10"
+- ✅ "Data is current" or "Data is stale (30 days old)"
+
+### Trust and Transparency
+
+Users trust Type B analytics when metadata shows:
+- **Large sample size**: "10,000 transactions" > "300 transactions"
+- **Recent computation**: "Computed today" > "Computed 45 days ago"
+- **Current data**: "Through yesterday" > "Through 3 weeks ago"
+- **Clear staleness warnings**: Prevents decisions on outdated insights
+
+---
+
+## Standard UI Patterns
+
+### Pattern 1: Metadata Banner (Recommended)
+
+**Location**: Top of component, below title/subtitle
+
+**Visual Style**: Subtle info banner, not intrusive
+
+```r
+# UI implementation
+div(class = "metadata-banner steady-state-metadata",
+    style = "padding: 10px 15px; background-color: #e8f4f8; border-left: 4px solid #17a2b8; border-radius: 4px; margin-bottom: 15px;",
+
+    # Row 1: Data foundation
+    div(style = "display: flex; align-items: center; margin-bottom: 5px;",
+        icon("database", style = "margin-right: 8px; color: #17a2b8;"),
+        span(style = "font-weight: 600;", "基於全部歷史數據"),
+        span(style = "margin-left: 10px; color: #6c757d;",
+             sprintf("(%s 筆觀察值)", format(sample_size, big.mark = ",")))
+    ),
+
+    # Row 2: Temporal metadata
+    div(style = "display: flex; align-items: center; font-size: 0.9em; color: #6c757d;",
+        icon("clock", style = "margin-right: 8px;"),
+        span(sprintf("計算時間: %s", format(computed_at, "%Y-%m-%d %H:%M"))),
+        span(style = "margin: 0 10px;", "|"),
+        span(sprintf("數據截至: %s", format(data_version, "%Y-%m-%d"))),
+
+        # Staleness warning if needed
+        conditionalPanel(
+          condition = sprintf("'%s' - '%s' > %d", Sys.time(), data_version, staleness_threshold_days * 86400),
+          span(style = "margin-left: 10px; color: #ffc107; font-weight: 600;",
+               icon("exclamation-triangle"),
+               " 數據需要更新")
+        )
+    )
+)
+```
+
+**Example Output**:
+```
+┌────────────────────────────────────────────────────────────┐
+│ 🗄️ 基於全部歷史數據 (10,234 筆觀察值)                          │
+│ 🕐 計算時間: 2025-11-13 08:30 | 數據截至: 2025-11-12          │
+└────────────────────────────────────────────────────────────┘
+```
+
+**With Staleness Warning**:
+```
+┌────────────────────────────────────────────────────────────┐
+│ 🗄️ 基於全部歷史數據 (10,234 筆觀察值)                          │
+│ 🕐 計算時間: 2025-10-01 08:30 | 數據截至: 2025-09-30         │
+│    ⚠️ 數據需要更新                                           │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Pattern 2: Compact Tooltip (Alternative)
+
+**Use Case**: When space is limited (e.g., embedded components)
+
+```r
+# Compact display with tooltip
+div(style = "display: flex; align-items: center; font-size: 0.85em; color: #6c757d; margin-bottom: 10px;",
+    icon("info-circle", style = "margin-right: 5px;"),
+    span(id = ns("metadata_compact"),
+         sprintf("基於 %s 筆數據 (截至 %s)",
+                 format(sample_size, big.mark = ","),
+                 format(data_version, "%Y-%m-%d"))),
+
+    # Tooltip with full details
+    bsTooltip(ns("metadata_compact"),
+              sprintf("計算時間: %s\n數據範圍: 所有歷史數據\n觀察值數量: %s",
+                      format(computed_at, "%Y-%m-%d %H:%M"),
+                      format(sample_size, big.mark = ",")),
+              placement = "top")
+)
+```
+
+**Example Output**:
+```
+ℹ️ 基於 10,234 筆數據 (截至 2025-11-12)
+   [Hover to see: 計算時間: 2025-11-13 08:30 ...]
+```
+
+### Pattern 3: Value Box Integration
+
+**Use Case**: When component uses value boxes (KPI cards)
+
+```r
+# Add metadata to value box subtitle
+bs4Dash::valueBox(
+  value = "0.23",
+  subtitle = HTML(
+    paste0(
+      "快速配送影響係數<br>",
+      "<span style='font-size: 0.75em; color: #6c757d;'>",
+      sprintf("基於 %s 筆交易", format(sample_size, big.mark = ",")),
+      "</span>"
+    )
+  ),
+  icon = icon("truck-fast"),
+  color = "primary",
+  footer = div(
+    style = "font-size: 0.8em; color: #6c757d;",
+    sprintf("更新於 %s", format(computed_at, "%m-%d %H:%M"))
+  )
+)
+```
+
+**Example Output**:
+```
+┌────────────────────┐
+│    0.23           │
+│ 快速配送影響係數     │
+│ 基於 10,234 筆交易  │
+│                   │
+│ 更新於 11-13 08:30 │
+└────────────────────┘
+```
+
+---
+
+## Required Metadata Fields
+
+### Core Fields (Required)
+
+| Field | Description | Data Type | Example |
+|-------|-------------|-----------|---------|
+| `computed_at` | When analysis was run | POSIXct | `2025-11-13 08:30:15` |
+| `data_version` | Latest data included | Date | `2025-11-12` |
+| `sample_size` | Number of observations | Integer | `10234` |
+
+### Optional Fields (Recommended)
+
+| Field | Description | Data Type | Example |
+|-------|-------------|-----------|---------|
+| `model_version` | Analysis script version | Character | `"v2.3.1"` |
+| `computation_time` | How long analysis took | Numeric (seconds) | `125.4` |
+| `data_quality_flag` | Any data issues | Character | `"OK"` or `"PARTIAL"` |
+| `n_predictors` | Number of variables (for models) | Integer | `24` |
+
+### Staleness Calculation
+
+```r
+# Calculate staleness in server
+staleness_days <- as.numeric(difftime(Sys.time(), data_version, units = "days"))
+
+# Threshold (configurable per component)
+staleness_threshold <- 30  # days
+
+# Display warning if stale
+if (staleness_days > staleness_threshold) {
+  show_staleness_warning <- TRUE
+  staleness_message <- sprintf("數據已 %d 天未更新", floor(staleness_days))
+}
+```
+
+**Recommended Thresholds**:
+- Daily updated components: 7 days
+- Weekly updated components: 30 days
+- Monthly updated components: 45 days
+
+---
+
+## Implementation Checklist
+
+### DRV Script Requirements
+
+```r
+# In DRV script that computes Type B analytics
+compute_steady_state_analysis <- function(data) {
+  # Perform analysis
+  results <- run_poisson_regression(data)  # or other analysis
+
+  # REQUIRED: Add metadata columns
+  results$computed_at <- Sys.time()
+  results$data_version <- max(data$date_column, na.rm = TRUE)
+  results$sample_size <- nrow(data)
+
+  # OPTIONAL: Add extra metadata
+  results$model_version <- "v2.3.1"
+  results$computation_time <- elapsed_time
+
+  # Validate metadata
+  stopifnot(!is.na(results$computed_at))
+  stopifnot(!is.na(results$data_version))
+  stopifnot(results$sample_size > 0)
+
+  return(results)
+}
+
+# Save to database
+dbWriteTable(conn, "component_results", results, overwrite = TRUE)
+```
+
+### UI Component Requirements
+
+```r
+# In component UI
+poissonFeatureAnalysisUI <- function(id) {
+  ns <- NS(id)
+
+  div(
+    # Title
+    h3("Poisson Feature Analysis"),
+
+    # REQUIRED: Metadata banner
+    uiOutput(ns("metadata_banner")),
+
+    # Main content
+    plotlyOutput(ns("feature_plot")),
+    DT::dataTableOutput(ns("feature_table"))
+  )
+}
+
+# In component server
+poissonFeatureAnalysisServer <- function(id, app_data_connection) {
+  moduleServer(id, function(input, output, session) {
+
+    # Load Type B data
+    analysis_data <- reactive({
+      data <- universal_data_accessor(app_data_connection, "poisson_feature_analysis")
+
+      # REQUIRED: Validate metadata fields exist
+      req(data)
+      req(!is.null(data$computed_at))
+      req(!is.null(data$data_version))
+      req(!is.null(data$sample_size))
+
+      return(data)
+    })
+
+    # REQUIRED: Render metadata banner
+    output$metadata_banner <- renderUI({
+      data <- analysis_data()
+      req(data)
+
+      # Extract metadata (assume first row, or separate metadata table)
+      computed_at <- data$computed_at[1]
+      data_version <- data$data_version[1]
+      sample_size <- data$sample_size[1]
+
+      # Calculate staleness
+      staleness_days <- as.numeric(difftime(Sys.time(), data_version, units = "days"))
+      show_warning <- staleness_days > 30
+
+      # Render using Pattern 1
+      div(class = "metadata-banner steady-state-metadata",
+          # ... (full pattern code from above)
+      )
+    })
+
+    # Rest of component logic
+    # ...
+  })
+}
+```
+
+---
+
+## Visual Design Guidelines
+
+### Color Coding
+
+| State | Color | Use Case |
+|-------|-------|----------|
+| **Normal** | `#e8f4f8` (light blue) | Data is current (< threshold) |
+| **Stale** | `#fff3cd` (light yellow) | Data is stale but usable |
+| **Critical** | `#f8d7da` (light red) | Data is very stale (> 2× threshold) |
+
+### Typography
+
+```css
+.metadata-banner.steady-state-metadata {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.metadata-banner .label {
+  font-weight: 600;
+  color: #495057;
+}
+
+.metadata-banner .value {
+  font-weight: 400;
+  color: #6c757d;
+}
+
+.metadata-banner .warning {
+  color: #ffc107;
+  font-weight: 600;
+}
+```
+
+### Responsive Design
+
+```r
+# Mobile-friendly metadata display
+div(class = "metadata-banner",
+    # Desktop: horizontal layout
+    div(class = "d-none d-md-flex", style = "justify-content: space-between;",
+        div("基於全部歷史數據 (10,234 筆觀察值)"),
+        div("計算時間: 2025-11-13 08:30 | 數據截至: 2025-11-12")
+    ),
+    # Mobile: vertical layout
+    div(class = "d-md-none",
+        div("基於全部歷史數據"),
+        div("10,234 筆觀察值"),
+        div("更新於 2025-11-13")
+    )
+)
+```
+
+---
+
+## Testing Requirements
+
+### Unit Tests
+
+```r
+test_that("Type B component has required metadata fields", {
+  data <- load_steady_state_data("poisson_feature_analysis")
+
+  expect_true("computed_at" %in% names(data))
+  expect_true("data_version" %in% names(data))
+  expect_true("sample_size" %in% names(data))
+
+  expect_true(lubridate::is.POSIXct(data$computed_at[1]))
+  expect_true(lubridate::is.Date(data$data_version[1]))
+  expect_true(is.numeric(data$sample_size[1]))
+  expect_true(data$sample_size[1] > 0)
+})
+
+test_that("Staleness calculation is correct", {
+  old_data_version <- Sys.Date() - 45
+  staleness <- as.numeric(difftime(Sys.time(), old_data_version, units = "days"))
+
+  expect_true(staleness >= 45)
+  expect_true(staleness < 46)  # Should be very close to 45
+})
+```
+
+### Integration Tests
+
+```r
+test_that("Metadata banner renders correctly", {
+  # Mock data
+  test_data <- data.frame(
+    predictor = "fast_delivery",
+    coefficient = 0.23,
+    computed_at = as.POSIXct("2025-11-13 08:30:00"),
+    data_version = as.Date("2025-11-12"),
+    sample_size = 10234
+  )
+
+  # Create test app
+  app <- create_test_component("poissonFeatureAnalysis", test_data)
+
+  # Check metadata banner exists
+  expect_true(html_has_class(app$ui, "metadata-banner"))
+
+  # Check required text
+  expect_match(app$ui, "基於全部歷史數據")
+  expect_match(app$ui, "10,234")
+  expect_match(app$ui, "2025-11-13")
+})
+```
+
+### Visual Regression Tests
+
+```r
+# Capture metadata banner screenshot for visual comparison
+test_that("Metadata banner visual appearance", {
+  # Render component
+  app <- shinytest2::AppDriver$new(create_test_component(...))
+
+  # Capture screenshot of metadata banner
+  app$get_screenshot(selector = ".metadata-banner",
+                     filename = "metadata_banner_normal.png")
+
+  # Compare with baseline
+  expect_snapshot_image("metadata_banner_normal.png")
+})
+```
+
+---
+
+## Common Mistakes and Anti-Patterns
+
+### Anti-Pattern 1: Hidden Metadata
+
+**Mistake**: Putting metadata in tooltip only, not visible by default.
+
+**Why Wrong**: Users don't know data is stale unless they hover.
+
+**Correct**: Visible metadata banner, with tooltip for EXTRA details.
+
+### Anti-Pattern 2: Inconsistent Formatting
+
+**Mistake**: Each component formats metadata differently.
+
+**Why Wrong**: Users confused by inconsistency across components.
+
+**Correct**: Use standardized patterns (Pattern 1/2/3 from this rule).
+
+### Anti-Pattern 3: No Staleness Warning
+
+**Mistake**: Showing computed_at without checking if data is stale.
+
+**Why Wrong**: Users trust stale results, make bad decisions.
+
+**Correct**: Always calculate staleness, show warning if > threshold.
+
+### Anti-Pattern 4: Period Selector + Metadata
+
+**Mistake**: Type B component with BOTH period selector AND metadata banner.
+
+**Why Wrong**: Contradicts Type B definition (no periods).
+
+**Correct**: If component needs period selector, it's Type A (reclassify).
+
+---
+
+## Localization
+
+### Chinese (Traditional) - 繁體中文
+
+```r
+METADATA_LABELS_ZH_TW <- list(
+  foundation = "基於全部歷史數據",
+  observations = "筆觀察值",
+  computed_at = "計算時間",
+  data_version = "數據截至",
+  staleness_warning = "數據需要更新",
+  sample_size = "樣本數量"
+)
+```
+
+### English
+
+```r
+METADATA_LABELS_EN <- list(
+  foundation = "Based on All Historical Data",
+  observations = "observations",
+  computed_at = "Computed at",
+  data_version = "Data through",
+  staleness_warning = "Data needs update",
+  sample_size = "Sample size"
+)
+```
+
+### Usage
+
+```r
+# In component server
+translate <- function(key) {
+  language <- getOption("app.language", "zh_TW")
+  labels <- if (language == "en") METADATA_LABELS_EN else METADATA_LABELS_ZH_TW
+  labels[[key]]
+}
+
+# In UI rendering
+sprintf("%s (%s %s)",
+        translate("foundation"),
+        format(sample_size, big.mark = ","),
+        translate("observations"))
+```
+
+---
+
+## Accessibility
+
+### Screen Reader Support
+
+```r
+# Add ARIA labels for screen readers
+div(class = "metadata-banner",
+    role = "complementary",
+    `aria-label` = "Analytics metadata information",
+
+    span(`aria-label` = "Data foundation",
+         "基於全部歷史數據"),
+
+    span(`aria-label` = sprintf("Sample size: %d observations", sample_size),
+         sprintf("(%s 筆觀察值)", format(sample_size, big.mark = ",")))
+)
+```
+
+### Keyboard Navigation
+
+- Metadata banner should NOT be focusable (informational only)
+- If includes interactive elements (e.g., "Refresh" button), ensure keyboard accessible
+
+---
+
+## Related Principles
+
+### Parent Principles
+- **MP135: Analytics Temporal Classification** - Defines Type B analytics
+- **MP109: Information Flow Transparency** - Mandates metadata display
+
+### Sibling Rules
+- **UI_R022: Component Period Selector Contract** - For Type A components
+- **DM_R120: ETL Period Standardization** - For Type A data management
+
+### Supporting Principles
+- **MP029: No Fake Data** - Type B needs large real datasets
+- **MP073: Interactive Visualization Preference** - Applies to main content
+
+---
+
+## Approval and Maintenance
+
+**Version**: 1.0.0
+**Approved by**: UI Architecture Team
+**Date**: 2025-11-13
+**Status**: Active
+
+**Review Cycle**: Annually or when metadata requirements change
+
+**Change Log**:
+- 2025-11-13 v1.0.0: Initial version for Type B analytics
+
+---
+
+## Summary
+
+**Key Takeaway**: Type B analytics need clear metadata display to replace period selectors.
+
+**Required Metadata**:
+- ✅ Computed at (timestamp)
+- ✅ Data version (latest date)
+- ✅ Sample size (observations)
+- ✅ Staleness warning (if old)
+
+**Standard Patterns**:
+1. Metadata Banner (recommended for most components)
+2. Compact Tooltip (space-limited contexts)
+3. Value Box Integration (KPI components)
+
+**User Benefit**: Clear understanding of data foundation, trust in stable estimates.
+
+---
+
+*This rule ensures consistent, transparent metadata display across all Type B analytics components.*

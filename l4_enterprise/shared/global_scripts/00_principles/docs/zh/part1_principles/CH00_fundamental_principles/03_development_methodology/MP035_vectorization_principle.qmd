@@ -1,0 +1,195 @@
+---
+title: "MP030: 向量化原則 (Vectorization Principle)"
+subtitle: "優先使用向量、矩陣和數據框的整體操作而非個別元素操作"
+author: "Claude"
+date: "2025-04-06"
+date-modified: "2025-08-16"
+categories: [meta-principle, performance, R-programming, best-practices]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## 核心原則
+
+向量化是 R 編程中的基本範式，優先對整個向量、矩陣和數據框進行操作，而不是對個別元素進行操作。使用 R 時，應設計代碼以盡可能利用向量化操作，最小化顯式迭代。
+
+## 理由
+
+向量化原則對有效的 R 編程至關重要，原因如下：
+
+1. **與核心語言設計對齊**：R 專門為向量化統計操作而構建。
+
+2. **性能優化**：R 中的向量化操作通常執行速度顯著更快，因為它們：
+   - 利用優化的 C 實現
+   - 最小化解釋器開銷
+   - 利用專門的數值庫
+   - 減少內存分配和複製操作
+
+3. **代碼表達性**：向量化代碼簡潔地表達意圖，提高可讀性和可維護性。
+
+4. **錯誤減少**：更少的代碼行意味著更少的錯誤機會。
+
+5. **數學一致性**：向量化操作更好地與統計公式中的數學符號對齊。
+
+## 實施指南
+
+### 向量操作 {#vector-operations}
+
+優先使用向量化函數和運算符而非逐元素處理：
+
+```r
+# 非向量化（避免）
+result <- numeric(length(x))
+for (i in seq_along(x)) {
+  result[i] <- sqrt(x[i]) + y[i]
+}
+
+# 向量化（優先）
+result <- sqrt(x) + y
+```
+
+### Apply 函數 {#apply-functions}
+
+當無法對整個操作進行向量化時，使用 apply 系列函數（`lapply`、`sapply`、`vapply`、`mapply` 等）：
+
+```r
+# 非向量化循環（避免）
+results <- vector("list", length(models))
+for (i in seq_along(models)) {
+  results[[i]] <- predict(models[[i]], newdata)
+}
+
+# 函數式方法（優先）
+results <- lapply(models, predict, newdata = newdata)
+```
+
+### 向量化子集 {#vectorized-subsetting}
+
+利用 R 的向量化子集操作：
+
+```r
+# 非向量化（避免）
+selected <- numeric(sum(condition))
+j <- 1
+for (i in seq_along(condition)) {
+  if (condition[i]) {
+    selected[j] <- data[i]
+    j <- j + 1
+  }
+}
+
+# 向量化（優先）
+selected <- data[condition]
+```
+
+### 向量化函數 {#vectorized-functions}
+
+優先使用基礎 R 和關鍵包中的向量化函數：
+
+- `ifelse()` 而非條件循環
+- `rowSums()`、`colMeans()` 而非 apply 與 sum/mean
+- `outer()` 用於向量化函數應用
+- `%*%` 用於矩陣操作
+- `cut()` 用於連續變數分箱
+- `findInterval()` 用於向量化查找
+
+## 專門上下文
+
+### 數據操作 {#data-manipulation}
+
+在 data.table 或 dplyr 操作中，利用向量化表達式：
+
+```r
+# data.table 向量化方法
+dt[, new_col := log(col1) + col2 * col3]
+
+# dplyr 向量化方法
+df %>% mutate(new_col = log(col1) + col2 * col3)
+```
+
+### 統計建模 {#statistical-modeling}
+
+利用 R 的向量化公式符號：
+
+```r
+# 向量化模型公式
+model <- lm(y ~ x1 + x2 + I(x3^2), data = df)
+```
+
+## 例外和限制
+
+在以下情況下可能仍需要顯式迭代：
+
+1. **狀態相關操作**：操作依賴於先前的迭代
+2. **複雜程序邏輯**：算法無法向量化表達
+3. **內存限制**：處理大塊數據會超出可用內存
+4. **自定義累積**：需要專門的累積模式
+
+在這些情況下，考慮：
+- 預分配結果結構
+- 編譯解決方案（Rcpp）
+- 分塊處理方法
+
+## 性能考慮
+
+1. **基準測試關鍵代碼**：使用 `microbenchmark` 或 `bench` 驗證向量化的好處
+2. **考慮內存-計算權衡**：向量化有時會增加內存使用
+3. **注意隱式類型轉換**：確保向量化操作中的數據類型一致
+
+## 實施範例
+
+### 矩陣操作 {#matrix-operation}
+
+```r
+# 使用循環的慢速方法
+result <- matrix(0, nrow(X), nrow(Y))
+for (i in 1:nrow(X)) {
+  for (j in 1:nrow(Y)) {
+    result[i, j] <- sum(X[i, ] * Y[j, ])
+  }
+}
+
+# 快速向量化方法
+result <- X %*% t(Y)
+```
+
+### 統計計算 {#statistical-calculation}
+
+```r
+# 非向量化 z 分數計算
+z_scores <- numeric(length(x))
+for (i in seq_along(x)) {
+  z_scores[i] <- (x[i] - mean(x)) / sd(x)
+}
+
+# 向量化 z 分數計算
+z_scores <- (x - mean(x)) / sd(x)
+```
+
+## 與其他原則的整合
+
+向量化原則補充並擴展了幾個其他原則：
+
+1. **MP0016（模組化）**：向量化操作促進功能內聚
+2. **MP0018（不要重複自己）**：向量化減少重複的代碼模式
+3. **MP0023（語言偏好）**：與 R 的基本設計理念對齊
+4. **MP0026（R 統計查詢語言）**：實現簡潔的統計表達式
+
+## 歷史背景
+
+向量化自 R 誕生以來就是其基礎，繼承自 S，並受到 APL 的影響，APL 是一種專門為陣列處理而設計的編程語言。這種歷史淵源解釋了為什麼向量化在 R 中不僅僅是性能優化，而是塑造整個語言生態系統的核心設計範式。
+
+## 由此原則衍生的規則
+
+此元原則指導了幾個具體規則：
+
+1. **Apply 函數優於循環**：使用 lapply() 系列而非顯式 for 循環
+2. **向量化謂詞**：使用向量化邏輯操作而非逐元素比較
+3. **矩陣操作**：使用矩陣代數而非逐元素計算
+4. **向量化字串操作**：使用向量化字串函數而非逐字符處理

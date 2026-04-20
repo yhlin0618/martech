@@ -1,0 +1,653 @@
+---
+title: "Cyberbiz API Complete Specification"
+subtitle: "Platform ID: CBZ"
+author: "MAMBA Architecture Team"
+date: "2025-08-27"
+version: "1.0.0"
+---
+
+# Cyberbiz API Documentation
+
+## Overview
+
+Cyberbiz (賽博智) is a comprehensive e-commerce platform popular in Taiwan and Southeast Asia. This document provides complete API specifications for integrating with Cyberbiz.
+
+## API Information
+
+### Base URLs
+
+```
+Production: https://app-store-api.cyberbiz.io/
+API Documentation: https://api-doc.cyberbiz.co
+```
+
+### Test Account
+
+For API documentation access:
+- **Username**: apidemo
+- **Password**: apidemo
+
+### Authentication
+
+Cyberbiz uses Bearer Token authentication.
+
+```r
+# Environment Variables Required
+# Only the token is needed - shop_id is embedded in the JWT token payload
+CBZ_API_TOKEN=your_bearer_token
+
+# Header format
+Authorization: Bearer {access_token}
+```
+
+### Rate Limits
+
+- **Requests per second**: 5 (maximum)
+- **Request size limit**: 2 MB per request
+- **Test account limit**: 2 KB per request (apidemo account)
+
+### API Scopes
+
+Complete list of available API scopes as documented on Cyberbiz support:
+
+| Scope | 中文名稱 | Description | API Access |
+|-------|----------|-------------|------------|
+| `public` | 公開資料 | Public data access | GET /v2/product_feeds (default scope) |
+| `read_products` | 讀取商品 | Read products | products, custom_collections, smart_collections, inventory_sync_groups |
+| `write_products` | 修改商品 | Write products | products, custom_collections, smart_collections, inventory_sync_groups |
+| `read_customers` | 讀取會員 | Read customers | customers, orders, periodic_orders, einvoices |
+| `write_customers` | 修改會員 | Write customers | customers, orders, periodic_orders, einvoices |
+| `read_orders` | 讀取訂單 | Read orders | orders, periodic_orders, einvoices |
+| `write_orders` | 修改訂單 | Write orders | orders, periodic_orders, einvoices |
+| `read_affiliates` | 讀取分潤訂單 | Read affiliate orders | GET /v2/affiliate_vendor_orders |
+| `read_discounts` | 讀取促銷 | Read discounts | discounts, add_buy_collections, shop_coupons, special_collections, vip_groups |
+| `write_discounts` | 修改促銷 | Write discounts | discounts, add_buy_collections, shop_coupons, special_collections, vip_groups |
+| `read_pos` | 讀取 POS | Read POS data | pos_shops, stock_adjustments, stock_invoices, stock_receipts, stock_requisitions |
+| `write_pos` | 修改 POS | Write POS data | pos_shops, stock_adjustments, stock_invoices, stock_receipts, stock_requisitions |
+| `read_branch_stores` | 讀取門市 | Read branch stores | branch_stores |
+| `write_branch_stores` | 修改門市 | Write branch stores | branch_stores |
+| `read_edms` | 獲取 EDM 資訊 | Read EDMs | edms |
+
+**Note**: 
+- Read scopes allow HTTP GET methods
+- Write scopes allow HTTP POST, PUT, DELETE methods
+
+## API Endpoints
+
+### Customers API
+
+#### Get Customers
+
+```http
+GET /v1/customers
+```
+
+**Parameters:**
+- `page` (integer): Page number (default: 1)
+- `per_page` (integer): Items per page (default: 50, max: 200)
+- `created_at_min` (datetime): Filter by creation date
+- `created_at_max` (datetime): Filter by creation date
+- `updated_at_min` (datetime): Filter by update date
+- `updated_at_max` (datetime): Filter by update date
+- `email` (string): Filter by email (exact match)
+- `tags` (string): Filter by tags (comma-separated)
+
+**Response:**
+```json
+{
+  "customers": [
+    {
+      "id": "cust_123456",
+      "email": "customer@example.com",
+      "first_name": "John",
+      "last_name": "Doe",
+      "phone": "+886912345678",
+      "tags": ["vip", "repeat_buyer"],
+      "accepts_marketing": true,
+      "total_spent": 15000,
+      "orders_count": 5,
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-12-01T00:00:00Z",
+      "addresses": [
+        {
+          "id": "addr_789",
+          "first_name": "John",
+          "last_name": "Doe",
+          "company": "",
+          "address1": "No. 100, Section 2, Zhongshan North Road",
+          "address2": "",
+          "city": "Taipei",
+          "province": "Taiwan",
+          "country": "TW",
+          "zip": "104",
+          "phone": "+886912345678",
+          "default": true
+        }
+      ],
+      "default_address": {...}
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 50,
+    "total_pages": 10,
+    "total_count": 500
+  }
+}
+```
+
+#### Get Single Customer
+
+```http
+GET /v1/customers/{customer_id}
+```
+
+#### Create Customer
+
+```http
+POST /v1/customers
+```
+
+**Request Body:**
+```json
+{
+  "customer": {
+    "email": "new@example.com",
+    "first_name": "Jane",
+    "last_name": "Smith",
+    "phone": "+886987654321",
+    "accepts_marketing": true,
+    "tags": ["new_customer"],
+    "addresses": [
+      {
+        "first_name": "Jane",
+        "last_name": "Smith",
+        "address1": "No. 200, Xinyi Road",
+        "city": "Taipei",
+        "province": "Taiwan",
+        "country": "TW",
+        "zip": "110",
+        "phone": "+886987654321",
+        "default": true
+      }
+    ]
+  }
+}
+```
+
+#### Update Customer
+
+```http
+PUT /v1/customers/{customer_id}
+```
+
+### Orders API
+
+#### Get Orders
+
+```http
+GET /v1/orders
+```
+
+**Parameters:**
+- `page` (integer): Page number
+- `per_page` (integer): Items per page (max: 200)
+- `status` (string): Order status filter
+  - `pending`: Pending payment
+  - `processing`: Processing
+  - `shipped`: Shipped
+  - `delivered`: Delivered
+  - `cancelled`: Cancelled
+  - `refunded`: Refunded
+- `created_at_min` (datetime): Filter by creation date
+- `created_at_max` (datetime): Filter by creation date
+- `customer_id` (string): Filter by customer
+- `fulfillment_status` (string): `fulfilled`, `partial`, `unfulfilled`
+- `financial_status` (string): `paid`, `pending`, `refunded`, `voided`
+
+**Response:**
+```json
+{
+  "orders": [
+    {
+      "id": "ord_123456",
+      "order_number": "CB2024120001",
+      "status": "processing",
+      "customer_id": "cust_123456",
+      "email": "customer@example.com",
+      "currency": "TWD",
+      "subtotal_price": 3000,
+      "total_tax": 150,
+      "total_shipping": 60,
+      "total_price": 3210,
+      "payment_method": "credit_card",
+      "fulfillment_status": "unfulfilled",
+      "financial_status": "paid",
+      "created_at": "2024-12-01T10:00:00Z",
+      "updated_at": "2024-12-01T10:30:00Z",
+      "line_items": [
+        {
+          "id": "li_789",
+          "product_id": "prod_456",
+          "variant_id": "var_789",
+          "title": "Product Name",
+          "variant_title": "Size: M, Color: Blue",
+          "sku": "SKU-001",
+          "quantity": 2,
+          "price": 1500,
+          "total": 3000,
+          "fulfillable_quantity": 2,
+          "fulfillment_status": "unfulfilled"
+        }
+      ],
+      "shipping_address": {...},
+      "billing_address": {...},
+      "fulfillments": [],
+      "refunds": [],
+      "note": "Customer note",
+      "tags": ["urgent", "vip_customer"]
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 50,
+    "total_pages": 20,
+    "total_count": 1000
+  }
+}
+```
+
+#### Create Order
+
+```http
+POST /v1/orders
+```
+
+**Request Body:**
+```json
+{
+  "order": {
+    "customer_id": "cust_123456",
+    "line_items": [
+      {
+        "variant_id": "var_789",
+        "quantity": 2,
+        "price": 1500
+      }
+    ],
+    "shipping_address": {
+      "first_name": "John",
+      "last_name": "Doe",
+      "address1": "No. 100, Section 2, Zhongshan North Road",
+      "city": "Taipei",
+      "province": "Taiwan",
+      "country": "TW",
+      "zip": "104",
+      "phone": "+886912345678"
+    },
+    "payment_method": "credit_card",
+    "shipping_method": "standard",
+    "note": "Please handle with care"
+  }
+}
+```
+
+### Products API
+
+#### Get Products
+
+```http
+GET /v1/products
+```
+
+**Parameters:**
+- `page` (integer): Page number
+- `per_page` (integer): Items per page (max: 200)
+- `collection_id` (string): Filter by collection
+- `product_type` (string): Filter by product type
+- `vendor` (string): Filter by vendor
+- `status` (string): `active`, `archived`, `draft`
+- `created_at_min` (datetime): Filter by creation date
+- `created_at_max` (datetime): Filter by creation date
+- `updated_at_min` (datetime): Filter by update date
+- `updated_at_max` (datetime): Filter by update date
+
+**Response:**
+```json
+{
+  "products": [
+    {
+      "id": "prod_456",
+      "title": "Premium T-Shirt",
+      "body_html": "<p>High quality cotton t-shirt</p>",
+      "vendor": "Fashion Brand",
+      "product_type": "Clothing",
+      "status": "active",
+      "tags": ["summer", "cotton", "bestseller"],
+      "variants": [
+        {
+          "id": "var_789",
+          "product_id": "prod_456",
+          "title": "Size: M, Color: Blue",
+          "price": 1500,
+          "compare_at_price": 2000,
+          "sku": "TSH-M-BLU",
+          "barcode": "1234567890123",
+          "inventory_quantity": 50,
+          "weight": 200,
+          "weight_unit": "g",
+          "option1": "M",
+          "option2": "Blue",
+          "option3": null
+        }
+      ],
+      "options": [
+        {
+          "id": "opt_123",
+          "product_id": "prod_456",
+          "name": "Size",
+          "position": 1,
+          "values": ["S", "M", "L", "XL"]
+        },
+        {
+          "id": "opt_124",
+          "product_id": "prod_456",
+          "name": "Color",
+          "position": 2,
+          "values": ["Blue", "Red", "Black", "White"]
+        }
+      ],
+      "images": [
+        {
+          "id": "img_567",
+          "product_id": "prod_456",
+          "position": 1,
+          "src": "https://cdn.cyberbiz.io/products/tshirt-blue.jpg",
+          "width": 1024,
+          "height": 1024,
+          "alt": "Blue T-Shirt Front View"
+        }
+      ],
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-12-01T00:00:00Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 50,
+    "total_pages": 5,
+    "total_count": 250
+  }
+}
+```
+
+#### Update Inventory
+
+```http
+PUT /v1/inventory_levels/{variant_id}
+```
+
+**Request Body:**
+```json
+{
+  "inventory_level": {
+    "available": 100,
+    "location_id": "loc_123"
+  }
+}
+```
+
+### Discounts API
+
+#### Get Discount Codes
+
+```http
+GET /v1/discounts
+```
+
+**Response:**
+```json
+{
+  "discounts": [
+    {
+      "id": "disc_123",
+      "code": "SUMMER2024",
+      "type": "percentage",
+      "value": 20,
+      "minimum_purchase": 1000,
+      "usage_limit": 100,
+      "times_used": 45,
+      "starts_at": "2024-06-01T00:00:00Z",
+      "ends_at": "2024-08-31T23:59:59Z",
+      "status": "active",
+      "applies_to": "all_products",
+      "product_ids": [],
+      "collection_ids": []
+    }
+  ],
+  "meta": {...}
+}
+```
+
+## Webhooks
+
+### Available Webhook Events
+
+| Event | Description |
+|-------|-------------|
+| `customer/created` | New customer registered |
+| `customer/updated` | Customer information updated |
+| `customer/deleted` | Customer deleted |
+| `order/created` | New order placed |
+| `order/updated` | Order status changed |
+| `order/paid` | Order payment received |
+| `order/cancelled` | Order cancelled |
+| `order/fulfilled` | Order fulfilled |
+| `product/created` | New product created |
+| `product/updated` | Product information updated |
+| `product/deleted` | Product deleted |
+| `inventory/updated` | Inventory levels changed |
+
+### Webhook Registration
+
+```http
+POST /v1/webhooks
+```
+
+**Request Body:**
+```json
+{
+  "webhook": {
+    "topic": "order/created",
+    "address": "https://your-app.com/webhooks/cyberbiz",
+    "format": "json"
+  }
+}
+```
+
+### Webhook Payload Example
+
+```json
+{
+  "id": "webhook_123",
+  "topic": "order/created",
+  "shop_id": "shop_456",
+  "created_at": "2024-12-01T10:00:00Z",
+  "data": {
+    "order": {
+      "id": "ord_123456",
+      "order_number": "CB2024120001",
+      // ... full order object
+    }
+  }
+}
+```
+
+## Error Codes
+
+| Code | Description | Recovery Action |
+|------|-------------|-----------------|
+| `INVALID_API_KEY` | Invalid API key | Check API key configuration |
+| `INVALID_SIGNATURE` | Invalid HMAC signature | Verify API secret |
+| `RATE_LIMIT_EXCEEDED` | Too many requests | Implement rate limiting |
+| `RESOURCE_NOT_FOUND` | Resource doesn't exist | Check resource ID |
+| `VALIDATION_ERROR` | Invalid request data | Check request parameters |
+| `INSUFFICIENT_INVENTORY` | Not enough stock | Check inventory levels |
+| `PAYMENT_FAILED` | Payment processing failed | Retry or use different payment method |
+
+## Implementation Examples
+
+### Authentication Example
+
+```r
+library(httr)
+library(jsonlite)
+
+# Make authenticated request with Bearer Token
+make_cbz_request <- function(endpoint, method = "GET", body = NULL) {
+  base_url <- Sys.getenv("CBZ_API_BASE_URL", "https://app-store-api.cyberbiz.io/")
+  api_token <- Sys.getenv("CBZ_API_TOKEN")
+  
+  if (is.null(api_token) || api_token == "") {
+    stop("CBZ_API_TOKEN environment variable not set")
+  }
+  
+  full_url <- paste0(base_url, endpoint)
+  
+  # Make request with Bearer token
+  response <- VERB(
+    verb = method,
+    url = full_url,
+    add_headers(
+      "Authorization" = paste("Bearer", api_token),
+      "Accept" = "application/json",
+      "Content-Type" = "application/json"
+    ),
+    body = body,
+    encode = "json"
+  )
+  
+  # Check response
+  if (status_code(response) >= 400) {
+    error_content <- content(response, "text", encoding = "UTF-8")
+    stop(sprintf("API request failed [%d]: %s", status_code(response), error_content))
+  }
+  
+  return(content(response, "parsed"))
+}
+
+# Example usage from the documentation
+# curl https://app-store-api.cyberbiz.io/v1/customers \
+#   -H "Authorization: Bearer YOUR_TOKEN" \
+#   -H "Accept: application/json"
+```
+
+### Fetching Customers with Pagination
+
+```r
+fetch_all_customers <- function() {
+  all_customers <- list()
+  page <- 1
+  has_more <- TRUE
+  
+  while (has_more) {
+    result <- make_cbz_request(
+      sprintf("/v1/customers?page=%d&per_page=200", page)
+    )
+    
+    all_customers <- c(all_customers, result$customers)
+    
+    has_more <- page < result$meta$total_pages
+    page <- page + 1
+    
+    # Rate limiting - max 5 requests per second
+    Sys.sleep(0.2)  # 5 requests per second maximum
+  }
+  
+  return(all_customers)
+}
+```
+
+### Creating Order
+
+```r
+create_cbz_order <- function(customer_id, items, shipping_address) {
+  order_data <- list(
+    order = list(
+      customer_id = customer_id,
+      line_items = items,
+      shipping_address = shipping_address,
+      payment_method = "credit_card",
+      shipping_method = "standard"
+    )
+  )
+  
+  result <- make_cbz_request(
+    endpoint = "/v1/orders",
+    method = "POST",
+    body = order_data
+  )
+  
+  return(result$order)
+}
+```
+
+### Webhook Handler
+
+```r
+# Plumber API for receiving webhooks
+#* @post /webhooks/cyberbiz
+handle_cbz_webhook <- function(req) {
+  # Verify webhook signature
+  signature <- req$HTTP_X_CBZ_SIGNATURE
+  
+  # Parse webhook data
+  webhook_data <- fromJSON(req$postBody)
+  
+  # Process based on topic
+  switch(webhook_data$topic,
+    "order/created" = process_new_order(webhook_data$data$order),
+    "customer/created" = process_new_customer(webhook_data$data$customer),
+    "inventory/updated" = process_inventory_update(webhook_data$data)
+  )
+  
+  return(list(status = "success"))
+}
+```
+
+## Best Practices
+
+1. **Always use HTTPS** for API calls
+2. **Implement rate limiting** to avoid hitting limits
+3. **Use webhooks** for real-time updates instead of polling
+4. **Cache frequently accessed data** to reduce API calls
+5. **Handle errors gracefully** with retry logic
+6. **Log all API interactions** for debugging
+7. **Keep credentials secure** using environment variables
+8. **Test in staging** before production deployment
+9. **Monitor API usage** and performance
+10. **Stay updated** with API changelog and announcements
+
+## Migration Notes
+
+When migrating from other platforms to Cyberbiz:
+
+1. **Customer IDs**: Map existing customer IDs to Cyberbiz format
+2. **Product SKUs**: Ensure SKUs are unique and valid
+3. **Order Numbers**: Cyberbiz generates its own order numbers
+4. **Inventory Sync**: Initial bulk update, then use webhooks
+5. **Historical Data**: Limited historical data import capabilities
+
+## Support and Resources
+
+- **API Documentation**: https://developers.cyberbiz.io
+- **Status Page**: https://status.cyberbiz.io
+- **Support Email**: api-support@cyberbiz.io
+- **Developer Forum**: https://forum.cyberbiz.io/developers
+
+## Related Documentation
+
+- [API Architecture Overview](../API00_architecture_overview.qmd)
+- [Authentication Patterns](../API01_authentication_patterns.qmd)
+- [Rate Limiting](../API02_rate_limiting.qmd)
+- [Error Handling](../API03_error_handling.qmd)

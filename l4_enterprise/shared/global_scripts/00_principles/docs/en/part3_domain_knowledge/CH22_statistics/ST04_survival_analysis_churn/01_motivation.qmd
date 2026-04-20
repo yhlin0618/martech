@@ -1,0 +1,46 @@
+---
+title: "Section 1: Why Rethink Churn?"
+parent: "ST04"
+---
+
+# Why Rethink Churn? {#motivation}
+
+## 1.1 Problems with the Current Binary Approach
+
+The current `fn_analysis_dna.R` churn model uses logistic regression on a binary outcome:
+
+$$
+\text{nrec} = \begin{cases} 1 & \text{if last purchase} > 3 \text{ months ago (churned)} \\ 0 & \text{otherwise (retained)} \end{cases}
+$$
+
+This has several fundamental problems:
+
+1. **Arbitrary cutoff**: The 3-month threshold is fixed across all product lines, but a customer who buys racing parts quarterly is not "churned" at 3 months
+2. **Information loss**: A customer who last bought 91 days ago and one who last bought 2 years ago both get `nrec = 1`
+3. **Tautology risk**: Recency-based predictors (r_value, nes_status) are near-identical to the outcome — see ST03 §2.3
+4. **Missing data cascade**: The model requires `cai` which 99.7% of customers lack, producing all-NA for 8/10 product lines
+5. **No temporal dynamics**: The model cannot express "this customer is early-stage at risk" vs. "this customer is long gone"
+
+## 1.2 The Core Insight: Churn is Latent
+
+The key conceptual question is: **Can we observe when a customer churns?**
+
+In **contractual** settings (subscriptions, SaaS), yes — the customer explicitly cancels. But in **non-contractual** settings like e-commerce (our case), the answer is **no**. A customer who hasn't purchased in 6 months might be:
+
+- Genuinely gone (churned), or
+- Just in a long gap between purchases (will return)
+
+**We can never directly observe the churn event.** This is the central constraint that determines which modeling framework is appropriate.
+
+## 1.3 Connection to Existing DNA Metrics
+
+The temporal perspective is not new to our pipeline — several existing metrics are already informal survival/process quantities:
+
+| Existing Metric | Process Interpretation |
+|----------------|----------------------|
+| `ipt_mean` | Estimated mean inter-purchase time ($\hat{E}[T]$) |
+| `nes_ratio = gap / ipt_mean` | Crude standardized residual — how many "expected lifetimes" has this gap lasted? |
+| NES classification (N/E/S) | Informal discretization of "alive" status |
+| D04 Poisson rate $\hat{\lambda}_j$ | Purchase frequency (events per unit time) |
+
+What we need is a framework that **formalizes** these informal quantities while properly handling the latent nature of churn.

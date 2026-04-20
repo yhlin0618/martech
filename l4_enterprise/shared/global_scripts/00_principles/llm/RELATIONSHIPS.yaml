@@ -1,0 +1,403 @@
+# Relationships between Principles
+# This file defines how principles relate to each other
+
+relationships:
+  # Script Structure Standard - DEV_R032 is the mandatory five-part structure
+  DEV_R032_script_structure_standard:
+    category: rule
+    affects: ALL_SCRIPTS
+    implements:
+      - MP031_initialization_first
+      - MP033_deinitialization_final
+      - MP103_autodeinit_behavior
+      - MP105_principle_documentation_lifecycle
+    complements:
+      - DM_R036_etl_return_values
+      - DM_R039_database_connection_pattern
+      - MP058_database_table_creation
+    enforces:
+      - Five-part structure (INITIALIZE, MAIN, TEST, SUMMARIZE, DEINITIALIZE)
+      - SUMMARIZE for all reporting and return values
+      - DEINITIALIZE for cleanup only
+      - autodeinit() as absolute last statement
+    rationale: |
+      The five-part script structure is the mandatory standard for all update scripts
+      and ETL implementations. It provides complete separation of concerns, enables
+      proper variable access for reporting before cleanup, and maintains clean
+      resource management. The separation of SUMMARIZE from DEINITIALIZE solves
+      all autodeinit() variable access problems permanently.
+  
+  # Database Connection Pattern - DM_R039 ensures consistent connection management
+  DM_R039_database_connection_pattern:
+    category: rule
+    affects: ALL_ETL_AND_UPDATE_SCRIPTS
+    implements:
+      - MP031_initialization_first
+      - MP097_duckdb_refactoring_standards
+      - DM_R023_universal_dbi_approach
+    complements:
+      - DEV_R032_script_structure_standard
+      - MP104_etl_data_flow_separation
+      - DM_R028_etl_data_type_separation
+    enforces:
+      - Database connections at END of INITIALIZE section
+      - Use of dbConnectDuckdb() wrapper function
+      - Centralized path management via db_path_list
+      - Two-part INITIALIZE structure (1.1 Basic, 1.2 Connections)
+    rationale: |
+      Establishes a mandatory pattern for database connections in all ETL and update
+      scripts. Connections MUST be established at the END of the INITIALIZE section
+      using the dbConnectDuckdb() wrapper with paths from db_path_list. This ensures
+      proper initialization sequence, consistent error handling, and centralized
+      path configuration. The two-part INITIALIZE structure provides clear separation
+      between basic setup and database connections.
+  # File Encoding Foundation - MP100 affects all text processing
+  MP100_utf8_encoding_standard:
+    category: meta_principle
+    affects: ALL_TEXT_FILES
+    enables:
+      - MP099_realtime_progress_reporting
+      - MP095_claude_code_driven_changes
+      - SO_R002_file_naming_convention
+      - DEV_R003_platform_neutral_code
+    technical_foundation_for:
+      - Data processing pipelines
+      - Configuration file parsing
+      - Documentation generation
+      - Code generation and modification
+    rationale: |
+      Establishes UTF-8 as the mandatory character encoding for all text files
+      in the MAMBA framework. This meta-principle provides the foundation for:
+      - Cross-platform compatibility
+      - International character support
+      - Elimination of null character errors
+      - Clean version control operations
+      - Reliable text processing
+    implementation_tools:
+      - validate_utf8_encoding.sh script
+      - Automated conversion procedures
+      - Pre-commit validation hooks
+    migration_impact: |
+      All existing text files must be validated and converted to UTF-8 encoding.
+      Files with mixed encodings or null characters require immediate attention.
+
+  # ETL Pipeline Independence - MP107 defines horizontal independence
+  MP107_etl_pipeline_independence:
+    category: meta_principle
+    affects: ETL_ARCHITECTURE
+    complements:
+      - MP108_etl_phase_sequence
+      - MP109_derived_data_pipelines
+    enforces:
+      - "ETLs are independent of each other"
+      - "No cross-ETL dependencies in code"
+      - "Parallel execution capability"
+    enables:
+      - Scalable ETL execution
+      - Independent testing and deployment
+      - Flexible orchestration patterns
+    rationale: |
+      Each ETL pipeline must be able to run independently of all other ETLs.
+      This horizontal independence enables parallel execution, simplifies testing,
+      and allows flexible scheduling. Dependencies are data-based, not code-based.
+
+  # ETL Phase Sequence - MP108 defines vertical phase flow
+  MP108_etl_phase_sequence:
+    category: meta_principle
+    affects: BASE_ETL_PIPELINES
+    complements:
+      - MP107_etl_pipeline_independence
+      - MP109_derived_data_pipelines
+    enforces:
+      - "BASE ETLs must have 0IM→1ST→2TR phases"
+      - "Phases execute sequentially within each ETL"
+      - "Data flows from raw to staged to transformed"
+    clarification:
+      - "Applies to BASE ETLs processing external data"
+      - "DERIVED ETLs follow MP109 for flexible phases"
+    enables:
+      - Natural data progression
+      - Clear separation of concerns
+      - Selective phase re-execution
+    rationale: |
+      Within each BASE ETL pipeline, phases must execute in sequence when running
+      the complete pipeline. This vertical flow ensures proper data transformation
+      from raw external sources through staging to final transformed state.
+      Combined with MP107's horizontal independence, creates a 2D execution matrix.
+
+  # Derived Data Pipelines - MP109 defines flexible ETL types
+  MP109_derived_data_pipelines:
+    category: meta_principle
+    affects: ETL_ARCHITECTURE
+    complements:
+      - MP108_etl_phase_sequence
+      - MP107_etl_pipeline_independence
+      - DM_R040_structural_join_pattern
+    enables:
+      - Flexible phase structure for derived ETLs
+      - Clear distinction between base and derived pipelines
+      - Efficient data combination patterns
+    implements:
+      - BASE_ETL: "Full 0IM→1ST→2TR sequence for external data"
+      - DERIVED_ETL: "Flexible phases for composite entities"
+    examples:
+      base_etls:
+        - "cbz_orders, cbz_order_details (from API)"
+        - "eby_BAYORD, eby_BAYORE (from files)"
+      derived_etls:
+        - "sales (orders + details → 2TR only)"
+        - "customer_360 (multiple sources → 2TR only)"
+    rationale: |
+      Recognizes that not all data entities originate from external sources.
+      Many important business entities are derived by combining, aggregating,
+      or transforming data from other ETL pipelines. Base ETLs connecting to
+      external sources need the full phase sequence, while derived ETLs can
+      start at any appropriate phase, typically 2TR for combining already-clean data.
+    implementation_guidance: |
+      1. Classify each ETL as BASE (external source) or DERIVED (from other ETLs)
+      2. BASE ETLs must implement 0IM→1ST→2TR phases
+      3. DERIVED ETLs typically only need 2TR phase
+      4. Document dependencies explicitly in derived ETLs
+      5. Validate dependencies before processing
+
+  # Documentation Lifecycle - MP105 ensures documentation clarity
+  MP105_principle_documentation_lifecycle:
+    category: meta_principle
+    affects: ALL_DOCUMENTATION
+    complements:
+      - MP011_documentation_organization
+      - MP097_principle_implementation_separation
+    enforces:
+      - Current standards only in active documents
+      - Legacy content moved to archive
+      - No mixing of current and deprecated standards
+    archive_structure:
+      - /00_principles/archive/legacy_principles/
+      - /00_principles/archive/superseded_patterns/
+      - /00_principles/archive/migration_history/
+    rationale: |
+      Active principle documents must contain ONLY current standards and practices.
+      All deprecated, legacy, or superseded content must be immediately moved to
+      archive directories to maintain documentation clarity and prevent confusion.
+      This ensures developers always reference current standards while preserving
+      historical context in archives for reference.
+
+  # Fundamental Architecture - MP097 affects all principles
+  MP097_principle_implementation_separation:
+    category: meta_principle
+    affects: ALL_PRINCIPLES
+    implements:
+      - MP000_axiomatization_system
+      - MP011_documentation_organization
+      - MP031_separation_of_concerns
+      - MP032_dont_repeat_yourself
+    extends:
+      - MP031_separation_of_concerns
+      - MP011_documentation_organization
+    complements:
+      - MP093_script_separation_principle
+      - MP043_runnable_first
+    rationale: |
+      Establishes the fundamental architectural separation between conceptual 
+      documentation (principles) and executable code (implementations). This 
+      meta-principle affects ALL other principles by requiring:
+      - Minimal code in principle files (< 20 lines)
+      - External references to implementations
+      - Language-agnostic documentation
+      - Clear implementation registries
+      - Separation of WHAT/WHY from HOW
+    migration_impact: |
+      All existing principles must be audited for embedded implementations
+      and refactored to comply with the separation requirements.
+      
+  # Database Related
+  R0092_universal_dbi_approach:
+    implements:
+      - MP0016_modularity
+      - MP0017_separation_of_concerns
+      - MP0052_unidirectional_data_flow
+    related_to:
+      - R0076_module_data_connection
+      - R0091_universal_data_access
+      - P0076_error_handling_patterns
+      - P0077_performance_optimization
+      
+  R0093_database_status_display:
+    extends: R0092_universal_dbi_approach
+    implements:
+      - MP0016_modularity
+      - MP0017_separation_of_concerns
+      - MP0019_documentation_first
+    related_to:
+      - R0092_universal_dbi_approach
+      - P0076_error_handling_patterns
+      - P0077_performance_optimization
+      
+  R0116_tbl2_enhanced_data_access:
+    extends: R0101_unified_tbl_data_access
+    implements:
+      - MP0016_modularity
+    related_to:
+      - R100_database_access_tbl_rule
+      - R0101_unified_tbl_data_access
+      
+  # UI Components
+  R0110_explicit_namespace_in_shiny:
+    implements:
+      - MP0017_separation_of_concerns
+    related_to:
+      - R0109_bs4dash_namespace_rule
+      - R0106_selectize_input_usage
+      
+  R0090_bs4dash_structure_adherence:
+    implements:
+      - MP0016_modularity
+    related_to:
+      - R0109_bs4dash_namespace_rule
+      - R0092_bs4dash_direct_navigation
+      
+  # Testing
+  R0074_shiny_test_data:
+    implements:
+      - P0113_dual_testing_approach
+    related_to:
+      - R0075_test_script_initialization
+      - R0114_standard_mock_database
+      
+  R0114_standard_mock_database:
+    implements:
+      - MP0016_modularity
+      - P0113_dual_testing_approach
+    related_to:
+      - R0074_shiny_test_data
+      - R0092_universal_dbi_approach
+      
+  # Configuration
+  R0004_app_yaml_configuration:
+    implements:
+      - MP0016_modularity
+      - MP0017_separation_of_concerns
+      - MP0018_dont_repeat_yourself
+    related_to:
+      - R0097_config_requirement
+      - R0058_global_parameter_organization
+      
+  # Functions and Modules
+  R0021_one_function_one_file:
+    implements:
+      - MP0016_modularity
+      - MP0017_separation_of_concerns
+    related_to:
+      - R0069_function_file_naming
+      - R0108_function_deployment_rule
+      
+  R0076_module_data_connection:
+    implements:
+      - MP0016_modularity
+    related_to:
+      - R0091_universal_data_access
+      - R0092_universal_dbi_approach
+      
+  # Error Handling
+  P0076_error_handling_patterns:
+    implements:
+      - MP0011_sensible_defaults
+    related_to:
+      - P0102_defensive_error_handling
+      - R0092_universal_dbi_approach
+      - R0093_database_status_display
+      
+  # Data Storage Strategy
+  MP096_data_storage_selection_strategy:
+    extends:
+      - MP070_ai_friendly_formats
+    complements:
+      - MP060_database_table_creation_strategy
+      - MP063_data_processing_trinity
+    related_to:
+      - DM_R004_data_storage_organization
+      - DM_R023_universal_dbi_approach
+      - DM_R025_type_conversion_r_duckdb
+      - DM_R026_json_serialization_strategy
+      - MP052_data_source_hierarchy
+      
+  # Performance
+  P0077_performance_optimization:
+    implements:
+      - MP0030_vectorization_principle
+    related_to:
+      - P0106_performance_acceleration
+      - R0050_data_table_vectorization
+      - R0049_apply_over_loops
+      
+  # Documentation
+  MP0019_documentation_first:
+    related_to:
+      - P0010_documentation_update
+      - R0020_logic_document_creation
+      - R0094_roxygen2_function_examples_standard
+      
+  # Naming Conventions
+  P0005_naming_principles:
+    implements:
+      - MP0071_capitalization_convention
+    related_to:
+      - R0001_file_naming_convention
+      - R0051_lowercase_variable_naming
+      - R0069_function_file_naming
+      - R0120_filter_variable_naming
+
+  # Unit Suffix Column Naming - DM_R057 ensures unit clarity
+  DM_R057_unit_suffix_column_naming:
+    category: rule
+    affects: ALL_COLUMN_NAMING
+    implements:
+      - P0005_naming_principles
+    complements:
+      - DM_R025_type_conversion_r_duckdb
+      - DM_R016_lowercase_natural_key
+    extends:
+      - SO_R002_file_naming_convention
+    rationale: |
+      Establishes the standard for including unit suffixes in column names when
+      the column value represents a quantity with a specific unit. This is
+      particularly critical for difftime conversions where the default "auto"
+      units can produce different results depending on the time span. The suffix
+      makes the unit explicit and prevents data interpretation errors.
+      
+  # Console Output Transparency - Critical for AI debugging
+  # NOTE: MP106 → DEV_P022, MP053 → DM_P007 (reclassified 2026-02-28)
+  DEV_P022_console_output_transparency:
+    category: principle
+    affects: ALL_FUNCTIONS_AND_SCRIPTS
+    extends:
+      - DM_P007_information_flow_transparency
+      - MP046_debug_code_tracing
+    supports:
+      - DEV_P013_error_handling_patterns
+      - MP099_realtime_progress_reporting
+    complements:
+      - MP050_root_cause_resolution
+      - MP095_claude_code_driven_changes
+    technical_foundation_for:
+      - AI-assisted debugging workflows
+      - Error diagnosis and resolution
+      - Program execution transparency
+      - Development productivity
+    rationale: |
+      Establishes console output transparency as a fundamental requirement for all
+      program execution. This meta-principle ensures that:
+      - All errors remain visible and are never suppressed by error handling
+      - Program state changes are observable through console output
+      - AI debugging tools have access to complete execution context
+      - Silent failures are eliminated from the codebase
+      - Real-time progress is reported for long-running operations
+      This principle directly addresses the critical debugging challenges where
+      hidden errors make AI-assisted development nearly impossible.
+    implementation_requirements:
+      - No silent error suppression (no try(..., silent = TRUE))
+      - No output redirection to null (no capture.output(..., file = nullfile()))
+      - Transparent error handling with full context logging
+      - Progress reporting for operations over 5 seconds
+      - Structured output patterns for AI parsing
+      - Error context preservation in all exception handlers 

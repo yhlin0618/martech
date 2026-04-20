@@ -1,0 +1,291 @@
+---
+title: "SO_R007: 一個主函數一個檔案規則"
+subtitle: "精準行銷系統中的每個主函數應該定義在其專屬的檔案中，檔名與函數名稱相匹配。支援主函數的輔助函數可以定義在同一個檔案中。集合模組可以使用主檔案來源所有相關的函數檔案並提供統一的介面"
+chapter: "CH01"
+category: "rule"
+number: "SO_R007"
+date-created: "2025-04-04"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "結構組織法"
+article-number: 
+  number: 7
+  title: "一個主函數一個檔案規則"
+related_to:
+  - "MP017: 關注點分離"
+  - "MP018: 不要重複自己"
+  - "SO_P002: 腳本分離原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第七條：一個主函數一個檔案規則 {#overview}
+
+**結構組織法第七條（一個主函數一個檔案規則）**
+
+精準行銷系統中的每個主函數應該定義在其專屬的檔案中，檔名與函數名稱相匹配。支援主函數的輔助函數可以定義在同一個檔案中。集合模組可以使用主檔案來源所有相關的函數檔案並提供統一的介面。
+
+:::{.callout-important}
+## 核心要求
+透過給每個函數其專屬的空間，此規則創建清晰、有組織的程式碼結構，增強可維護性、可測試性和協作性。
+:::
+
+# 第一項：實施指南 {#implementation-guidelines}
+
+## 第一款：檔案命名和結構 {#file-naming-structure}
+
+**對於主函數：**
+- 檔案應該完全按照其包含的主函數命名
+- 範例：主函數 `get_sales_data()` 應該在檔案 `get_sales_data.R` 中
+- 支援此主函數的輔助函數可以定義在同一個檔案中
+
+**對於工具集合：**
+- 為集合創建目錄（例如 `object_id`）
+- 在目錄根部放置主檔案（例如 `object_identification.R`）
+- 創建包含個別函數檔案的 `functions` 子目錄
+- 主檔案應該源所有個別函數檔案
+
+## 第二款：函數組織模式 {#function-organization-patterns}
+
+**支援兩種主要的組織模式來結構化函數檔案：**
+
+### 自上而下組織（主函數優先）{#top-down-organization}
+
+此組織從主函數開始，後跟輔助函數。它在檔案開頭提供清晰的入口點：
+
+```r
+#' 主函數描述
+#'
+#' 主函數功能的詳細描述。
+#'
+#' @param param1 第一個參數的描述
+#' @param param2 第二個參數的描述
+#' @return 返回值的描述
+#' @examples
+#' example_usage()
+#'
+main_function_name <- function(param1, param2) {
+  # 呼叫輔助函數的實施
+  result <- auxiliary_function_name(param1)
+  return(process_result(result, param2))
+}
+
+#' 輔助函數描述
+#'
+#' 此輔助函數功能的描述。
+#' 輔助函數應該只被主函數或此檔案中的其他輔助函數使用。
+#'
+#' @param param1 第一個參數的描述
+#' @return 返回值的描述
+#'
+auxiliary_function_name <- function(param1) {
+  # 輔助功能的實施
+}
+```
+
+### 自下而上組織（輔助函數優先）{#bottom-up-organization}
+
+此組織在主函數之前定義輔助函數，遵循函數式程式設計中常見的「初始化優先」模式：
+
+```r
+#' 輔助函數描述
+#'
+#' 此輔助函數功能的描述。
+#' 輔助函數應該只被主函數或此檔案中的其他輔助函數使用。
+#'
+#' @param param1 第一個參數的描述
+#' @return 返回值的描述
+#'
+auxiliary_function_name <- function(param1) {
+  # 輔助功能的實施
+}
+
+#' 主函數描述
+#'
+#' 主函數功能的詳細描述。
+#' 透過將其放在最後，所有依賴項都已定義。
+#'
+#' @param param1 第一個參數的描述
+#' @param param2 第二個參數的描述
+#' @return 返回值的描述
+#' @examples
+#' example_usage()
+#'
+main_function_name <- function(param1, param2) {
+  # 呼叫輔助函數的實施
+  result <- auxiliary_function_name(param1)
+  return(process_result(result, param2))
+}
+```
+
+兩種組織模式都可接受，但應在專案內一致使用。
+
+## 第三款：集合主檔案的必需結構 {#collection-main-files}
+
+集合的主檔案應遵循此結構：
+
+```r
+#' 集合名稱 - 主模組
+#'
+#' 此檔案作為集合的主要入口點。
+#' 它源所有個別函數檔案以使其可用。
+#'
+#' @author 作者名稱
+#' @date 日期
+
+# 源所有函數檔案
+function_dir <- "functions"
+function_files <- list.files(function_dir, pattern = "\\.R$", full.names = TRUE)
+
+for (file in function_files) {
+  source(file)
+}
+```
+
+## 第四款：文檔要求 {#documentation-requirements}
+
+每個函數檔案必須包含：
+- 函數描述
+- 參數描述
+- 返回值描述
+- 至少一個使用範例
+- 任何其他相關文檔（依賴項、副作用等）
+
+# 第二項：主函數和輔助函數指南 {#main-auxiliary-guidelines}
+
+## 第一款：主函數 {#main-functions}
+
+**主函數**是：
+1. 提供檔案主要功能的函數
+2. 意圖從外部程式碼呼叫
+3. 作為檔案功能的主要入口點
+4. 通常被匯出或在公共 API 中可用
+5. 其名稱與檔名匹配
+
+## 第二款：輔助函數 {#auxiliary-functions}
+
+**輔助函數**是：
+1. 支援主函數操作的函數
+2. 通常只被主函數或同一檔案內的其他輔助函數呼叫
+3. 實施主函數的子任務
+4. 通常不被匯出或作為公共 API 的一部分公開
+5. 應在檔案內有良好的文檔
+
+# 第三項：例外情況 {#exceptions}
+
+## 第一款：允許的例外 {#permitted-exceptions}
+
+以下對一個主函數一個檔案規則的例外是允許的：
+
+1. **兄弟函數**：形成連貫 API 但沒有明確「主」函數的一組密切相關函數可以定義在具有描述性名稱的單一檔案中。
+
+2. **生成的函數**：程式化生成的函數（例如，透過元程式設計）豁免。
+
+3. **遺留程式碼**：現有的遺留程式碼可以隨時間逐漸重構以符合此規則。
+
+4. **測試函數**：主函數的測試函數可以放置在單獨的測試檔案中。
+
+# 第四項：實施範例 {#implementation-examples}
+
+## 第一款：單一函數檔案 {#single-function-file}
+
+檔案：`calculate_revenue.R`
+```r
+#' 計算收入
+#'
+#' 從銷售資料計算總收入。
+#'
+#' @param sales_data 包含銷售記錄的資料框
+#' @param include_tax 布林值，指示是否在計算中包含稅
+#' @return 代表總收入的數值
+#' @examples
+#' calculate_revenue(sales_df, include_tax = TRUE)
+#'
+calculate_revenue <- function(sales_data, include_tax = FALSE) {
+  if (include_tax) {
+    return(sum(sales_data$amount * (1 + sales_data$tax_rate), na.rm = TRUE))
+  } else {
+    return(sum(sales_data$amount, na.rm = TRUE))
+  }
+}
+```
+
+## 第二款：集合結構 {#collection-structure}
+
+目錄：`object_id/`
+- `object_identification.R`（主檔案）
+- `functions/`
+  - `get_rigid_id.R`
+  - `get_descriptors.R`
+  - `load_latest.R`
+  - `load_version.R`
+  - `list_versions.R`
+  - `save_version.R`
+
+主檔案：`object_identification.R`
+```r
+#' 物件識別工具 - 主模組
+#'
+#' 此檔案作為物件識別工具的主要入口點。
+#' 它源所有個別函數檔案以使其可用。
+#'
+#' @author 開發者名稱
+#' @date 2025-04-04
+
+# 源所有函數檔案
+function_dir <- "functions"
+function_files <- list.files(function_dir, pattern = "\\.R$", full.names = TRUE)
+
+for (file in function_files) {
+  source(file)
+}
+```
+
+# 第五項：實施策略 {#implementation-strategy}
+
+## 第一款：實施步驟 {#implementation-steps}
+
+1. **新函數**：所有新函數應立即遵循此規則
+2. **現有程式碼**：隨著修改逐漸重構現有程式碼
+3. **文檔**：更新文檔以反映此組織模式
+4. **測試**：確保每個函數檔案都有相應的測試
+
+# 第六項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：實施的原則 {#implements-principles}
+
+此規則實施：
+1. **MP017（關注點分離）**：透過隔離每個函數，關注點自然分離
+2. **MP018（不要重複自己）**：個別檔案中的函數更容易重用而不重複
+
+## 第二款：相關的原則 {#relates-to-principles}
+
+此規則與以下相關：
+1. **SO_P002（腳本分離）**：將分離的概念擴展到函數層級
+
+# 第七項：優點 {#benefits}
+
+## 第一款：開發優點 {#development-benefits}
+
+1. **改進的可維護性**：每個函數可以獨立維護
+2. **更好的版本控制**：對函數的更改被清楚追蹤
+3. **更容易測試**：函數可以隔離測試
+4. **更好的組織**：專案結構清楚反映功能
+
+## 第二款：協作優點 {#collaboration-benefits}
+
+1. **增強的可重用性**：單一目的檔案更容易重用
+2. **減少合併衝突**：開發人員編輯不同函數時較少發生衝突
+3. **專注的程式碼審查**：審查可以專注於特定功能
+4. **更好的知識轉移**：新開發人員可以更容易理解隔離的函數
+
+---
+
+*基於：結構組織法第七條*  
+*相關連結：[MP017 關注點分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd), [SO_P002 腳本分離原則](../principles/SO_P002_script_separation.qmd)*

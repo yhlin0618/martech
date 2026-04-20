@@ -1,0 +1,112 @@
+---
+title: "UI_R024: Component Dataflow Logging"
+subtitle: "Every UI component must log its data acquisition and UI rendering targets"
+category: "UI & UX"
+type: "Rule"
+status: "active"
+created: "2026-02-28"
+dependencies:
+  - DM_P007  # Information Flow Transparency (parent: "data flow must be logged and traceable")
+  - DEV_P022  # Console Output Transparency (parent: "no silent execution")
+  - MP050  # Debug Code Tracing
+  - UI_R001  # UI-Server-Defaults Triple Pattern
+  - UI_R003  # Integrated Component Pattern
+---
+
+## Summary
+
+Every Shiny UI component in `10_rshinyapp_components/` MUST include `message()` logging at the data acquisition boundary — the point where data is fetched from a database and before it flows into UI rendering. This creates a traceable pipeline from data source to UI output.
+
+## Rationale
+
+When UI components silently fail to load data (e.g., wrong column names, empty queries), the user sees blank panels with no indication of what went wrong. By logging the data→UI pipeline at the acquisition boundary, developers can immediately identify:
+
+1. **Which component** loaded data (or failed)
+2. **How many records** were fetched
+3. **Which columns** are available for rendering
+4. **Which UI outputs** will consume this data
+
+## Implementation
+
+### Required Log Points
+
+Each component's `reactive()` data fetch must include three log messages:
+
+#### 1. On Success — Data Summary
+```r
+message("[componentName] Loaded ", nrow(df), " records | cols: ", paste(names(df), collapse=", "))
+```
+
+#### 2. On Success — UI Targets
+```r
+message("[componentName] UI targets: kpi_xxx, chart_xxx, table_xxx")
+```
+
+#### 3. On Empty/Error — Explicit Failure
+```r
+# Empty result
+if (nrow(df) == 0) { message("[componentName] No data returned"); return(NULL) }
+
+# Error
+message("[componentName] Data load error: ", e$message)
+```
+
+### Complete Pattern
+
+```r
+dna_data <- reactive({
+  cfg <- comp_config()
+  tryCatch({
+    df <- DBI::dbGetQuery(app_connection, paste0(
+      "SELECT ... FROM table_name",
+      " WHERE platform_id = '", cfg$filters$platform_id, "'"
+    ))
+    if (nrow(df) == 0) { message("[componentName] No data returned"); return(NULL) }
+    message("[componentName] Loaded ", nrow(df), " records | cols: ", paste(names(df), collapse=", "))
+    message("[componentName] UI targets: kpi_a, kpi_b, chart_x, table_y")
+    df
+  }, error = function(e) {
+    message("[componentName] Data load error: ", e$message)
+    NULL
+  })
+})
+```
+
+### Log Format Standard
+
+```
+[componentName] Loaded {N} records | cols: col1, col2, col3
+[componentName] UI targets: output_id1, output_id2, output_id3
+```
+
+- **Prefix**: Always `[componentName]` matching the R file/function name
+- **Record count**: Integer, no formatting
+- **Columns**: Comma-separated, from `names(df)`
+- **UI targets**: Comma-separated output IDs matching `ns("...")` in the UI definition
+
+## Checklist
+
+- [ ] Every `reactive()` that fetches data has a success log with record count and columns
+- [ ] Every `reactive()` that fetches data has a UI targets log listing all output IDs
+- [ ] Empty result sets produce an explicit "[componentName] No data returned" message
+- [ ] Error handlers produce "[componentName] Data load error: {message}"
+- [ ] Component name in brackets matches the actual component identifier
+
+## Principle Hierarchy
+
+This rule is a **concrete implementation** of the Transparency Principle at the UI component level:
+
+```
+MP150 Transparency Principle (Meta-Principle)
+  ├── DM_P007 Information Flow Transparency (Principle, was MP053)
+  ├── DEV_P022 Console Output Transparency (Principle, was MP106)
+  └── UI_R024 Component Dataflow Logging (Rule) ← this rule
+```
+
+## Related Principles
+
+- **MP150**: Transparency Principle — umbrella meta-principle: "nothing happens silently"
+- **DM_P007**: Information Flow Transparency — data flow must be logged and traceable (was MP053)
+- **DEV_P022**: Console Output Transparency — no silent execution; all operations visible in console (was MP106)
+- **UI_R001**: UI-Server-Defaults Triple — component structure this logging fits into
+- **UI_R003**: Integrated Component Pattern — single-file components where logging is added

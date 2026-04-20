@@ -1,0 +1,162 @@
+---
+title: "DEV_R013: Use Switch Over Multiple If-Else"
+subtitle: "When handling multiple conditional cases based on the same variable or expression, prefer using switch() statements over cascading if-else constructs"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R013"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "Development Methodology Law"
+article-number: 
+  number: 13
+  title: "Conditional Statement Rules"
+related_to:
+  - "MP016: Modularity"
+  - "MP017: Separation of Concerns"
+  - "DEV_R012: Check Existing Functions"
+  - "MP077: Object Naming Convention"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 13: Conditional Statement Rules {#overview}
+
+**Development Methodology Law Article 13 (Conditional Statement Rules)**
+
+This rule establishes the principle of using switch statements when handling multiple conditional cases.
+
+:::{.callout-important}
+## Core Rule
+When handling multiple conditional cases based on the same variable or expression, prefer using `switch()` statements over cascading `if-else` constructs.
+:::
+
+# Section 1: Rationale {#rationale}
+
+## Subsection 1: Benefits of Using Switch {#benefits}
+
+Using `switch()` statements rather than multiple `if-else` statements:
+
+1. **Improves code readability** by making it immediately clear that different actions correspond to different values of the same expression
+2. **Reduces complexity** by eliminating nested conditional structures
+3. **Enhances maintainability** by making it easier to add or modify cases
+4. **Can improve performance** in languages that optimize switch statements
+5. **Reduces the likelihood of logical errors** that can occur in complex if-else chains
+
+# Section 2: Implementation Guidelines {#implementation-guidelines}
+
+## Subsection 1: When to Use Switch {#when-to-use}
+
+Use `switch()` statements when:
+
+1. You need to select among multiple options based on the value of a single variable
+2. You have more than two alternative cases to handle
+3. The conditions are based on equality comparisons (exact matches)
+
+## Subsection 2: R Implementation {#r-implementation}
+
+In R, `switch()` takes the expression to test as its first argument, followed by named or positional values:
+
+```r
+# Named values approach (preferred for readability)
+result <- switch(column_type,
+  "numeric" = calculate_mean(x),
+  "character" = calculate_frequency(x),
+  "date" = calculate_range(x),
+  calculate_default(x)  # Default case
+)
+
+# Positional values approach (less readable)
+result <- switch(action_code,
+  sum(values),           # case 1
+  mean(values),          # case 2
+  median(values),        # case 3
+  max(values)            # case 4
+)
+```
+
+## Subsection 3: Other Language Implementations {#other-languages}
+
+Other languages have similar constructs:
+
+```python
+# Python example
+result = {
+    'numeric': lambda: calculate_mean(x),
+    'character': lambda: calculate_frequency(x),
+    'date': lambda: calculate_range(x)
+}.get(column_type, lambda: calculate_default(x))()
+```
+
+# Section 3: Correct vs. Incorrect Examples {#examples}
+
+## Subsection 1: Incorrect vs. Correct Comparisons {#incorrect-vs-correct}
+
+**Incorrect (using if-else chain):**
+```r
+if (column_type == "numeric") {
+  result <- calculate_mean(x)
+} else if (column_type == "character") {
+  result <- calculate_frequency(x)
+} else if (column_type == "date") {
+  result <- calculate_range(x)
+} else {
+  result <- calculate_default(x)
+}
+```
+
+**Correct (using switch):**
+```r
+result <- switch(column_type,
+  "numeric" = calculate_mean(x),
+  "character" = calculate_frequency(x),
+  "date" = calculate_range(x),
+  calculate_default(x)  # Default case
+)
+```
+
+# Section 4: Handling Complex Conditions {#complex-conditions}
+
+## Subsection 1: Using Switch for Multiple Conditions {#multiple-conditions}
+
+When using `switch()` for multiple conditions:
+
+1. **Simplify expressions** when possible
+2. **Use functions for complex logic** rather than inline code
+3. **Handle the default case explicitly** rather than letting it fall through
+
+# Section 5: Exceptions {#exceptions}
+
+## Subsection 1: When If-Else May Still Be Preferable {#when-if-else-preferred}
+
+`if-else` chains may still be preferable when:
+
+1. Conditions involve **complex expressions** rather than simple value comparisons
+2. Using **range comparisons** rather than exact matches
+3. Different conditions test **different variables**
+4. Very **simple binary conditions** where the intentions are clear
+
+# Section 6: Benefits Summary {#benefits-summary}
+
+1. **Self-documenting code**: Switch statements clearly indicate that different code paths correspond to different values of the same expression
+2. **Maintainable structure**: Adding new cases is simpler and less error-prone than extending if-else chains
+3. **Prevention of logical errors**: Switch statements help avoid mistakes like forgetting to check a condition or having unreachable code
+
+# Section 7: Integration with Other Principles {#integration}
+
+This rule complements:
+
+1. **MP016 (Modularity)**: Enhances code modularity by clearly separating different conditional paths
+2. **MP017 (Separation of Concerns)**: Helps separate different logic paths based on a common decision point
+3. **DEV_R012 (Check Existing Functions)**: Encourages using established control flow mechanisms effectively
+
+---
+
+*Based on: Development Methodology Law Article 13*  
+*Related to: [MP016 Modularity](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [MP017 Separation of Concerns](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd)*

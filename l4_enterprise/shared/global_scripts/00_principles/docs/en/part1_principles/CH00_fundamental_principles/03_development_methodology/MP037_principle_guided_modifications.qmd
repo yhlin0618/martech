@@ -1,0 +1,161 @@
+---
+title: "MP037: Principle-Guided Modifications"
+subtitle: "Every code modification must follow at least one Meta-Principle, Principle, or Rule"
+author: "System"
+date: "2025-04-06"
+date-modified: "2026-02-13"
+categories: [meta-principle, governance, documentation, best-practices]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+crossref:
+  chapters: true
+---
+
+## Core Concept
+
+Every code modification must follow at least one Meta-Principle (MP), Principle (P), or Rule (R), and the implementation must explicitly state which principles are being followed.
+
+## Rationale
+
+Requiring an explicit link between code changes and governance principles ensures:
+
+1. **Intentional Design**: Every change has a clear purpose aligned with system architecture
+2. **Consistent Evolution**: Code changes maintain conceptual integrity over time
+3. **Knowledge Transfer**: New team members can understand the rationale behind implementations
+4. **Drift Prevention**: Prevents gradual deviation from established best practices
+5. **Traceability**: Creates an auditable relationship between principles and code
+
+## Implementation Requirements
+
+### For Human Developers {#for-human-developers}
+
+1. Identify relevant principles before implementing changes
+2. Document which principles you are following in commit messages
+3. Include principle references in code comments for significant changes
+4. When proposing new features, explain which principles support the approach
+
+### For AI Assistants {#for-ai-assistants}
+
+1. For each code modification, identify and state the principles being followed
+2. When multiple implementation approaches exist, compare them based on principles to determine the best option
+3. If no existing principle seems to apply, suggest creating a new principle
+4. Include principle identifiers when describing changes (e.g., "MP064", "DM_R028", "SO_R007")
+
+### Required Documentation {#required-documentation}
+
+When making changes, reference principles using this format:
+
+```
+Following:
+- MP064 (ETL-Derivation Separation): By separating data preparation from business logic
+- DM_R028 (ETL Data Type Separation): By organizing scripts as {platform}_ETL_{datatype}_{phase}.R
+- SO_R007 (One Function One File): By placing each function in its own file
+```
+
+## Implementation Examples
+
+When fixing a function:
+
+```r
+# Following R33 (Recursive Loading), enhanced to support include/exclude patterns
+# and properly handle directory traversal with max depth control
+get_r_files_recursive <- function(dir_path,
+                                include_pattern = "\\.R$",
+                                exclude_pattern = NULL,
+                                max_depth = Inf) {
+  # Implementation...
+}
+```
+
+When updating documentation:
+
+```
+# Commit message
+Update fn_get_r_files_recursive.R to support include/exclude patterns
+
+Following:
+- R33 (Recursive Loading): Enhanced directory traversal with pattern support
+- MP014 (Separation of Concerns): Improved filtering capabilities for different file types
+- P13 (Language Standard Adherence): Updated roxygen documentation
+```
+
+## Principle-First Doctrine {#principle-first-doctrine}
+
+*Added 2025-12-26*
+
+When introducing new architectural patterns or significant system changes:
+
+1. **Principle Before Code**: Create or update relevant principles FIRST
+2. **Document the Pattern**: Define the pattern in principle documentation
+3. **Then Implement**: Write code that follows the documented principle
+4. **Reference in Code**: Include principle references in implementation
+
+This ensures:
+
+- Architectural decisions are documented before implementation
+- Code reviews can verify principle compliance
+- Future developers understand the design rationale
+- System evolution remains coherent and traceable
+
+### Precedence and Conflict Rule
+
+When code modifications conflict with an existing principle:
+
+1. **Do not patch around the conflict directly in script**.
+2. **Update the governing principle first** (or add a new one).
+3. Reconcile terminology, scope, and edge cases in principle documentation, then align DRV mapping.
+4. Only after approval of the updated principle, update implementation scripts.
+
+This is the explicit spec-driven requirement:
+
+- **No code change is allowed to outrank principle guidance.**
+- **Principle changes must be documented before implementation changes.**
+- **Exceptional technical reasons must be expressed as principle amendments first**, not as script exceptions.
+
+### Updated Workflow Example
+
+| Step | Action | Type |
+|------|--------|------|
+| 1 | Detect mismatch between DRV spec and existing implementation | Analysis |
+| 2 | Identify affected MP/P/R and describe the gap | Documentation |
+| 3 | Create/update principle text (scope, constraints, precedence) | Documentation |
+| 4 | Run a short review for principle updates | Governance |
+| 5 | Refactor scripts to match updated governing documents | Code |
+| 6 | Record references: script diff + principle version | Documentation |
+
+### Workflow Example
+
+| Step | Action | Type |
+|------|--------|------|
+| 1 | Identify need for new pattern | Analysis |
+| 2 | Create/update principle documentation | **Documentation** |
+| 3 | Update implementation guides (e.g., CH09) | **Documentation** |
+| 4 | Write code following the principle | Code |
+| 5 | Reference principle in code comments | Code |
+
+## When No Principle Exists
+
+If no existing principle directly applies to the required change:
+
+1. Implement based on the closest related principle
+2. Document why existing principles don't fully address the need
+3. Propose a new principle to fill the gap
+4. Once approved, update documentation to reference the new principle
+
+## Benefits
+
+1. Makes architectural intent visible in code
+2. Reduces arbitrary decisions and inconsistencies
+3. Facilitates knowledge sharing and onboarding
+4. Creates transparent reasoning for design choices
+5. Establishes a shared vocabulary among team members
+
+## Related Principles
+
+- MP001 (Axiomatization System)
+- MP028 (Instance vs Principle)
+- MP005 (Statute Law Analogy)

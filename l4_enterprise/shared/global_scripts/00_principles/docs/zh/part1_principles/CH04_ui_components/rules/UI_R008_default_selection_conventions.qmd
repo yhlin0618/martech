@@ -1,0 +1,180 @@
+---
+title: "UI_R008: 預設選擇約定"
+subtitle: "下拉選單、篩選器和選擇控制項中的預設選擇必須基於選擇類型和上下文遵循一致的約定，對「全部」選項進行特殊處理"
+chapter: "CH04"
+category: "rule"
+number: "UI_R008"
+date-created: "2025-08-17"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "UI組件法"
+article-number: 
+  number: 8
+  title: "預設選擇約定規則"
+related_to:
+  - "MP034: 「全部」類別的特殊處理"
+  - "MP011: 合理預設值"
+  - "SO_P010: 配置驅動的自訂"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第八條：預設選擇約定規則 {#overview}
+
+**UI組件法第八條（預設選擇約定規則）**
+
+此規則建立下拉選單、篩選器和選擇控制項中預設選擇的一致約定。
+
+:::{.callout-important}
+## 核心規則
+下拉選單、篩選器和選擇控制項中的預設選擇必須基於選擇類型和上下文遵循一致的約定，對「全部」選項進行特殊處理。
+:::
+
+# 第一項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：「全部」類別作為預設值 {#all-as-default}
+
+1. 在存在「全部」選項的篩選上下文中，它**必須**是預設選擇
+   - 產品類別篩選器
+   - 具有「全部」選項的時間段篩選器
+   - 平台或通道選擇
+   - 任何多實體篩選上下文
+
+2. 實施模式
+   ```r
+   # 使用第一個產品（全部）作為預設值的正確實施
+   pickerInput(
+     inputId = "filter_id",
+     label = "篩選器標籤",
+     choices = category_dictionary,  # 第一項是 ID 為 "000" 的全部
+     selected = category_dictionary[[1]]  # 選擇第一個產品（全部）
+   )
+   ```
+
+## 第二款：上下文特定的預設選擇 {#context-specific}
+
+1. **固定時間段**：預設為最近的完整期間
+   - 月份選擇中的當前月份
+   - 季度選擇中的最近季度
+   - 年份選擇中的當前年份
+
+2. **相對時間段**：預設為最短的合理期間
+   - 相對時間選擇器中的「最近 7 天」
+   - 相對期間選擇器中的「上個月」
+
+3. **位置選擇器**：預設為使用者的當前位置或總部
+   - 如果可用，基於使用者個人資料位置
+   - 否則基於公司總部位置
+
+4. **排序控制項**：預設為主要業務相關順序
+   - 基於時間的列表為最新優先
+   - 財務措施為最高值優先
+   - 分類名稱為字母順序
+
+# 第二項：實施策略 {#implementation-strategy}
+
+## 第一款：配置驅動的預設值 {#configuration-driven}
+
+```r
+# 從配置取得預設值
+default_period <- config$defaults$time_period
+
+# 如果未配置則回退到合理預設值
+if (is.null(default_period)) {
+  default_period <- "last_7_days"
+}
+```
+
+## 第二款：使用者偏好覆寫 {#user-preference}
+
+```r
+# 如果可用，使用使用者的儲存偏好
+if (!is.null(user_preferences$time_period)) {
+  default_period <- user_preferences$time_period
+}
+```
+
+## 第三款：上下文感知預設值 {#context-aware}
+
+```r
+# 基於可用資料調整預設值
+if (has_data_for_current_month()) {
+  default_period <- "current_month"
+} else {
+  default_period <- "previous_month"
+}
+```
+
+# 第三項：預設持久性規則 {#persistence-rules}
+
+1. **會話持久性**：會話內的選擇變更應該持續
+2. **跨會話預設值**：新會話返回全域預設值
+3. **使用者特定預設值**：在個人資料中儲存使用者偏好
+4. **URL 參數覆寫**：允許 URL 參數覆寫預設值
+
+# 第四項：特殊值的 ID 約定 {#id-conventions}
+
+1. **全部類別**：使用 `"000"` 或 `"all"`
+2. **無/空選擇**：使用 `NA`、`NULL` 或 `""`
+3. **自訂/其他**：使用 `"999"` 或 `"other"`
+
+# 第五項：實施範例 {#examples}
+
+## 第一款：完整實施範例 {#complete-example}
+
+```r
+# 具有上下文感知預設值的篩選器
+create_filter <- function(filter_type, user_prefs = NULL, config = NULL) {
+  # 確定預設值層次結構
+  default_value <- NULL
+  
+  # 1. URL 參數（最高優先級）
+  url_value <- parseQueryString(session$clientData$url_search)[[filter_type]]
+  if (!is.null(url_value)) {
+    default_value <- url_value
+  }
+  
+  # 2. 使用者偏好
+  if (is.null(default_value) && !is.null(user_prefs[[filter_type]])) {
+    default_value <- user_prefs[[filter_type]]
+  }
+  
+  # 3. 配置預設值
+  if (is.null(default_value) && !is.null(config$defaults[[filter_type]])) {
+    default_value <- config$defaults[[filter_type]]
+  }
+  
+  # 4. 上下文預設值
+  if (is.null(default_value)) {
+    default_value <- get_context_default(filter_type)
+  }
+  
+  # 5. 系統預設值（全部）
+  if (is.null(default_value)) {
+    default_value <- "000"  # 全部類別
+  }
+  
+  return(default_value)
+}
+```
+
+# 第六項：優點 {#benefits}
+
+遵循此規則將：
+
+1. **提高使用者體驗**：透過合理的預設值減少使用者工作
+2. **確保一致性**：跨應用程式的可預測行為
+3. **支援個人化**：允許使用者偏好和上下文調整
+4. **簡化開發**：清晰的預設值選擇指導原則
+5. **增強可用性**：減少初始配置需求
+
+---
+
+*基於：UI組件法第八條*  
+*相關連結：[MP034 「全部」類別的特殊處理](../../CH00_fundamental_principles/meta_principles/MP034_special_treatment_all.qmd), [SO_P010 配置驅動的自訂](../../CH01_structure_organization/principles/SO_P010_config_driven_customization.qmd)*

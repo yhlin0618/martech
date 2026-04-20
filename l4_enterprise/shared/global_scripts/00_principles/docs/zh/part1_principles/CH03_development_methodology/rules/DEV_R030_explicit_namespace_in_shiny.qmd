@@ -1,0 +1,235 @@
+---
+title: "DEV_R030: Shiny 應用程式中的明確命名空間規則"
+subtitle: "Shiny 應用程式中所有外部套件的函數必須使用明確的命名空間限定符前綴（package::function()），無論套件是否已使用 library() 載入"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R030"
+date-created: "2025-08-18"
+date-modified: "2025-08-18"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 30
+  title: "Shiny 應用程式中的明確命名空間規則"
+related_to:
+  - "MP58: 命名空間衝突避免"
+  - "R109: bs4Dash 命名空間規則"
+  - "R95: 匯入需求規則"
+  - "MP19: 套件一致性"
+  - "R10: 套件一致性命名"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第三十條：Shiny 應用程式中的明確命名空間規則 {#overview}
+
+**開發方法法第三十條（Shiny 應用程式中的明確命名空間規則）**
+
+此規則要求在 Shiny 應用程式中對所有套件函數一致且明確地使用命名空間前綴，消除透過套件載入順序對隱式命名空間解析的任何依賴。
+
+:::{.callout-important}
+## 規則定義
+Shiny 應用程式中所有外部套件的函數必須使用明確的命名空間限定符前綴（`package::function()`），無論套件是否已使用 library() 載入。
+:::
+
+# 第一項：需求 {#requirements}
+
+## 第一款：普遍應用 {#universal-application}
+
+此規則適用於 Shiny 應用程式中的所有外部套件函數，除第六款所述例外。
+
+## 第二款：明確優於隱式 {#explicit-over-implicit}
+
+始終使用明確的命名空間前綴，即使：
+- 套件已使用 library() 或 require() 載入
+- 當前環境中沒有明顯衝突
+- 函數名稱看起來是唯一的
+
+## 第三款：常見 Shiny 套件 {#common-shiny-packages}
+
+對所有套件的函數應用命名空間，包括但不限於：
+- `shiny::` 用於所有 Shiny 函數（例如，`shiny::renderUI`、`shiny::reactive`）
+- `shinyjs::` 用於 ShinyJS 函數（例如，`shinyjs::useShinyjs`、`shinyjs::hidden`）
+- `bs4Dash::` 用於 bs4Dash 函數（詳見 R109）
+- `DT::` 用於資料表函數（例如，`DT::renderDataTable`、`DT::dataTableOutput`）
+- `plotly::` 用於 plotly 函數（例如，`plotly::renderPlotly`、`plotly::plotlyOutput`）
+- `dplyr::` 用於 dplyr 函數（例如，`dplyr::filter`、`dplyr::mutate`）
+
+## 第四款：文檔代碼 {#documentation-code}
+
+在所有範例和文檔代碼中包含命名空間前綴。
+
+## 第五款：一致性 {#consistency}
+
+在整個應用程式代碼庫中一致地應用此方法。
+
+## 第六款：核心 Shiny 例外 {#core-shiny-exception}
+
+作為務實的例外，如果滿足所有這些條件，核心 `shiny` 套件函數可以省略 `shiny::` 前綴：
+- shiny 套件在腳本開始時明確使用 `library(shiny)` 載入
+- 函數在整個應用程式中常用（例如，UI 元素、renderUI、observe）
+- 團隊達成一致同意省略 shiny 前綴
+- 專案中與其他套件沒有命名空間衝突的風險
+
+此例外承認在以 Shiny 為中心的應用程式中，要求每個 HTML 元素和核心函數都使用 `shiny::` 前綴可能會降低可讀性。但是，請注意，為了最大安全性，即使對於核心函數，仍建議使用 `shiny::` 前綴。
+
+# 第二項：實施模式 {#implementation-pattern}
+
+## 第一款：BS4DASH 範例 {#bs4dash-example}
+
+```r
+# 正確：
+ui <- shiny::fluidPage(
+  bs4Dash::dashboardPage(
+    header = bs4Dash::dashboardHeader(title = "我的應用程式"),
+    sidebar = bs4Dash::dashboardSidebar(),
+    body = bs4Dash::dashboardBody(
+      shinyjs::useShinyjs(),
+      shiny::h1("我的應用程式"),
+      shiny::fluidRow(
+        shiny::column(
+          width = 6,
+          DT::dataTableOutput("table")
+        ),
+        shiny::column(
+          width = 6,
+          plotly::plotlyOutput("plot")
+        )
+      )
+    )
+  )
+)
+```
+
+## 第二款：BSLIB 範例 {#bslib-example}
+
+```r
+# 正確：
+ui <- bslib::page_fillable(
+  shinyjs::useShinyjs(),
+  bslib::layout_sidebar(
+    sidebar = bslib::sidebar(
+      shiny::h4("設定"),
+      shiny::sliderInput("n", "點數", 10, 100, 50)
+    ),
+    bslib::navset_card_tab(
+      bslib::nav_panel(
+        title = "資料",
+        icon = shiny::icon("table"),
+        DT::dataTableOutput("table")
+      ),
+      bslib::nav_panel(
+        title = "視覺化",
+        icon = shiny::icon("chart-bar"),
+        plotly::plotlyOutput("plot")
+      ),
+      bslib::nav_panel(
+        title = "分析",
+        icon = shiny::icon("calculator"),
+        bslib::card(
+          bslib::card_header("統計摘要"),
+          shiny::verbatimTextOutput("summary")
+        )
+      )
+    )
+  )
+)
+```
+
+## 第三款：伺服器函數範例 {#server-example}
+
+```r
+server <- function(input, output, session) {
+  data <- shiny::reactive({
+    dplyr::tibble(
+      x = 1:input$n,
+      y = stats::rnorm(input$n)
+    )
+  })
+  
+  output$table <- DT::renderDataTable({
+    DT::datatable(data())
+  })
+  
+  output$plot <- plotly::renderPlotly({
+    plotly::plot_ly(data(), x = ~x, y = ~y, type = "scatter", mode = "markers")
+  })
+  
+  output$summary <- shiny::renderPrint({
+    stats::summary(data()$y)
+  })
+}
+```
+
+# 第三項：需要注意的常見套件和函數 {#common-packages-functions}
+
+## 第一款：Shiny 函數 {#shiny-functions}
+
+- `fluidPage`、`navbarPage`、`tagList`、`div`、`h1`-`h6`、`p` 應為 `shiny::`
+- 所有渲染函數（`renderText`、`renderPlot`）應為 `shiny::`
+- 所有輸入/輸出函數（`textInput`、`plotOutput`）應為 `shiny::`
+
+## 第二款：ShinyJS 函數 {#shinyjs-functions}
+
+- `useShinyjs`、`hidden`、`show`、`hide`、`toggle` 應為 `shinyjs::`
+
+## 第三款：現代 Shiny UI 套件 {#modern-shiny-ui}
+
+- `page_fillable`、`layout_columns`、`card` 應為 `bslib::`
+- `nav_panel`、`nav_product`、`nav_menu` 應為 `bslib::`
+- `input_switch`、`input_slider`、`accordion` 應為 `bslib::`
+
+## 第四款：表格/圖表套件 {#table-plot-packages}
+
+- `renderDataTable`、`dataTableOutput` 應為 `DT::`
+- `renderPlotly`、`plotlyOutput` 應為 `plotly::`
+- `renderHighchart`、`highchartOutput` 應為 `highcharter::`
+
+## 第五款：資料操作 {#data-manipulation}
+
+- `filter`、`select`、`mutate`、`group_by` 應為 `dplyr::`
+
+# 第四項：相關原則 {#related-principles}
+
+- MP58：命名空間衝突避免
+- R109：bs4Dash 命名空間規則
+- R95：匯入需求規則
+- MP19：套件一致性
+- R10：套件一致性命名
+
+# 第五項：注意事項 {#notes}
+
+在 Shiny 應用程式中一致使用明確的命名空間提供顯著的好處：
+
+1. **可靠性**：無論載入哪些套件或其載入順序如何，應用程式行為一致。
+
+2. **可維護性**：代碼自我記錄每個函數來自哪個套件。
+
+3. **錯誤預防**：防止由命名空間衝突或遮蔽函數引起的微妙錯誤。
+
+4. **學習**：幫助開發人員學習哪些函數來自哪些套件。
+
+5. **穩定性**：防止未來套件更新可能引入具有衝突名稱的新函數。
+
+6. **選擇性省略**：核心 shiny 函數的例外承認安全性和可讀性之間的平衡：
+   - 純 Shiny 應用程式與少數其他套件可以合理地省略 `shiny::` 前綴
+   - 具有許多套件或複雜依賴關係的應用程式應始終使用明確前綴
+   - 所有非 shiny 套件無論上下文如何都應始終使用明確前綴
+
+7. **建議的團隊實踐**：團隊範圍內同意以下方法之一：
+   - **嚴格模式**：對所有套件的所有函數使用 `shiny::`，無例外
+   - **平衡模式**：僅對核心 HTML/UI 元素省略 `shiny::`，其他所有內容使用前綴
+   - **務實模式**：對最常見的函數省略 `shiny::`，但明確記錄此決定
+
+雖然最初可能看起來冗長，但可靠性和可維護性的好處遠遠超過所需的少量額外輸入。這種方法還允許對套件依賴關係進行更精細的控制，因為您可以使用套件中的特定函數而無需載入整個套件命名空間。
+
+---
+
+*基於：開發方法法第三十條*  
+*相關連結：[R109 bs4Dash 命名空間規則](../../CH04_ui_components/rules/UI_R017_bs4dash_namespace.qmd), [MP58 命名空間衝突避免](../../CH00_fundamental_principles/meta_principles/MP058_namespace_conflict_avoidance.qmd)*

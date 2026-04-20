@@ -1,0 +1,516 @@
+---
+id: "DM_R038"
+title: "Company Suffix Scope Limitation Rule"
+type: "rule"
+category: "data_management"
+date_created: "2025-08-28"
+date_modified: "2025-08-28"
+author: "Claude"
+status: "active"
+version: "1.0"
+weight: 38
+implements:
+  - "DM_R037": "Company-Specific ETL Naming Rule"
+  - "MP102": "ETL Output Standardization Principle"
+related_to:
+  - "DM_R028": "ETL Data Type Separation Rule"
+  - "MP092": "Platform ID Standard"
+  - "MP096": "Data Storage Selection Strategy"
+---
+
+# DM_R038: Company Suffix Scope Limitation Rule
+
+## Rule Statement
+
+**Company suffixes (e.g., `___MAMBA`) MUST be used ONLY for script identification, NEVER for data artifacts**: The `___COMPANY` suffix pattern is restricted to script filenames to identify company-specific implementations, but data outputs (tables, databases, files) must remain framework-agnostic for compatibility and portability.
+
+## Core Requirement
+
+### Scope Limitation Definition
+
+```yaml
+company_suffix_scope:
+  allowed_usage:
+    script_names:
+      description: "Company-specific ETL and processing scripts"
+      pattern: "{platform}_ETL_{datatype}_{phase}___COMPANY.R"
+      examples:
+        - "eby_ETL_sales_0IM___MAMBA.R"
+        - "cbz_ETL_customers_1ST___ACME.R"
+        - "amz_ETL_products_2TR___WIDGET.R"
+    
+    function_names:
+      description: "Company-specific functions within scripts"
+      pattern: "{operation}_{datatype}_{context}_COMPANY()"
+      examples:
+        - "process_sales_import_MAMBA()"
+        - "validate_ACME_requirements()"
+        - "apply_WIDGET_transformations()"
+
+  prohibited_usage:
+    table_names:
+      description: "Database tables must be framework-agnostic"
+      wrong_pattern: "df_{platform}_{datatype}___raw___COMPANY"
+      correct_pattern: "df_{platform}_{datatype}___raw"
+      examples:
+        - wrong: "df_eby_sales___raw___MAMBA"
+        - correct: "df_eby_sales___raw"
+    
+    database_names:
+      description: "Database files must be standardized"
+      wrong_pattern: "{database_name}___COMPANY.duckdb"
+      correct_pattern: "{database_name}.duckdb"
+      examples:
+        - wrong: "raw_data___MAMBA.duckdb"
+        - correct: "raw_data.duckdb"
+    
+    exported_files:
+      description: "Data export files must be portable"
+      wrong_pattern: "{datatype}_export___COMPANY.{ext}"
+      correct_pattern: "{platform}_{datatype}_export.{ext}"
+      examples:
+        - wrong: "sales_export___MAMBA.csv"
+        - correct: "eby_sales_export.csv"
+```
+
+## Rationale
+
+### 1. Data Compatibility
+
+Company suffixes in data artifacts create compatibility problems:
+
+```yaml
+compatibility_issues:
+  cross_company_usage:
+    problem: "Different companies cannot share data artifacts"
+    example: "ACME cannot use df_sales___raw___MAMBA table"
+    solution: "Standardized df_sales___raw works for all companies"
+    
+  system_integration:
+    problem: "Downstream systems expect standard table names"
+    example: "Reporting tools hardcoded to df_eby_sales___raw"
+    solution: "Framework-agnostic naming prevents integration breaks"
+    
+  maintenance_overhead:
+    problem: "Multiple table versions for same data"
+    example: "df_sales___raw___MAMBA vs df_sales___raw___ACME"
+    solution: "Single standardized table reduces maintenance"
+```
+
+### 2. Script vs. Data Separation
+
+**Scripts contain logic; Data contains content**:
+
+```yaml
+separation_principle:
+  script_responsibility:
+    - "Contains company-specific business logic"
+    - "Implements custom connection methods"
+    - "Applies proprietary transformations"
+    - "Handles company-specific validations"
+    
+  data_responsibility:
+    - "Stores standardized data structures"
+    - "Maintains consistent schema across companies"
+    - "Enables cross-company data analysis"
+    - "Provides framework-agnostic output"
+
+logic_vs_content:
+  eby_ETL_sales_0IM___MAMBA.R:  # Company-specific LOGIC
+    - "Uses MAMBA's SQL Server connection"
+    - "Applies MAMBA's business rules"
+    - "Handles MAMBA's data formats"
+    
+  df_eby_sales___raw:           # Framework-agnostic CONTENT
+    - "Standard eBay sales schema"
+    - "Consistent column names"
+    - "Portable data format"
+```
+
+## Implementation Examples
+
+### ✅ CORRECT Implementation
+
+```r
+# eby_ETL_sales_0IM___MAMBA.R
+# ==============================================================================
+# MAMBA-SPECIFIC EBAY SALES IMPORT
+# Contains MAMBA's proprietary connection and processing logic
+# ==============================================================================
+
+mamba_eby_sales_import <- function() {
+  # COMPANY-SPECIFIC: Connection logic
+  con <- establish_mamba_ssh_tunnel(
+    ssh_host = "220.128.138.146",
+    db_host = "125.227.84.85"
+  )
+  
+  # COMPANY-SPECIFIC: Business logic
+  sales_data <- fetch_mamba_ebay_data(con)
+  processed_sales <- apply_mamba_sales_rules(sales_data)
+  
+  # FRAMEWORK-AGNOSTIC: Data output
+  write_to_raw_data("df_eby_sales___raw", processed_sales)
+  #                   ^^^^^^^^^^^^^^^^^ NO company suffix
+  
+  close_mamba_connection(con)
+}
+```
+
+### ❌ INCORRECT Implementation
+
+```r
+# ❌ WRONG: Company suffix in data artifacts
+mamba_eby_sales_import_WRONG <- function() {
+  # Company-specific logic (correct)
+  con <- establish_mamba_connection()
+  sales_data <- fetch_mamba_data(con)
+  
+  # WRONG: Company suffix in table name
+  write_to_raw_data("df_eby_sales___raw___MAMBA", sales_data)
+  #                                    ^^^^^^^^^^ INCORRECT
+  
+  # WRONG: Company suffix in database name  
+  dbWriteTable(con_mamba_db, "sales_table", sales_data)
+  #            ^^^^^^^^^^^^ INCORRECT database name
+}
+```
+
+## Directory Structure Compliance
+
+### File Organization Pattern
+
+```
+scripts/update_scripts/
+├── generic/                        # Standard platform ETLs
+│   ├── eby_ETL_sales_0IM.R        # ✅ Generic script
+│   ├── eby_ETL_sales_1ST.R        # ✅ Generic script
+│   └── eby_ETL_sales_2TR.R        # ✅ Generic script
+│
+├── company_specific/               # Company-specific ETLs
+│   └── MAMBA/
+│       ├── eby_ETL_sales_0IM___MAMBA.R    # ✅ Company suffix in script
+│       ├── eby_ETL_sales_1ST___MAMBA.R    # ✅ Company suffix in script
+│       └── eby_ETL_sales_2TR___MAMBA.R    # ✅ Company suffix in script
+│
+└── databases/                      # Framework-agnostic data
+    ├── raw_data.duckdb            # ✅ No company suffix
+    ├── staged_data.duckdb         # ✅ No company suffix
+    └── transformed_data.duckdb    # ✅ No company suffix
+```
+
+### Data Artifact Organization
+
+```
+data/
+├── raw/                           # Framework-agnostic raw data
+│   ├── df_eby_sales___raw         # ✅ Standard table name
+│   ├── df_cbz_customers___raw     # ✅ Standard table name  
+│   └── df_amz_products___raw      # ✅ Standard table name
+│
+├── staged/                        # Framework-agnostic staged data
+│   ├── df_eby_sales___staged      # ✅ Standard table name
+│   └── df_cbz_customers___staged  # ✅ Standard table name
+│
+└── exports/                       # Framework-agnostic exports
+    ├── eby_sales_export.csv       # ✅ Platform identifier only
+    └── cbz_customers_export.parquet # ✅ Platform identifier only
+```
+
+## Configuration Management
+
+### Company-Specific Configuration (Allowed)
+
+```yaml
+# config/companies/MAMBA/etl_config.yaml
+# ✅ CORRECT: Configuration can be company-specific
+mamba_configuration:
+  ebay_connection:
+    ssh_tunnel: "220.128.138.146"
+    database_server: "125.227.84.85"
+    custom_processing: true
+    
+  output_specification:
+    # ✅ CORRECT: Configuration specifies standard table names
+    raw_table: "df_eby_sales___raw"        # Framework-agnostic
+    staged_table: "df_eby_sales___staged"  # Framework-agnostic
+    transformed_table: "df_eby_sales___transformed" # Framework-agnostic
+```
+
+### Application Configuration (Standard)
+
+```yaml
+# app_config.yaml
+# ✅ CORRECT: Applications reference standard table names
+data_sources:
+  ebay_sales:
+    raw_table: "df_eby_sales___raw"        # ✅ Framework-agnostic
+    staged_table: "df_eby_sales___staged"  # ✅ Framework-agnostic
+    
+  cyberbiz_customers:
+    raw_table: "df_cbz_customers___raw"    # ✅ Framework-agnostic
+    staged_table: "df_cbz_customers___staged" # ✅ Framework-agnostic
+```
+
+## Validation Functions
+
+### 1. Company Suffix Scope Validation
+
+```r
+# Function: validate_company_suffix_scope
+validate_company_suffix_scope <- function(file_path_or_name) {
+  
+  # Determine if input is script name or data artifact name
+  is_script <- grepl("\\.(R|r)$", file_path_or_name)
+  basename_input <- basename(file_path_or_name)
+  
+  # Check for company suffix pattern
+  has_company_suffix <- grepl("___[A-Z]{3,10}", basename_input)
+  
+  if (is_script) {
+    # Scripts: Company suffix is allowed for company-specific implementations
+    if (has_company_suffix) {
+      # Validate it follows company-specific ETL pattern
+      company_etl_pattern <- "^[a-z]{3}_ETL_[a-z_]+_(0IM|1ST|2TR)___[A-Z]{3,10}\\.(R|r)$"
+      
+      if (grepl(company_etl_pattern, basename_input)) {
+        message(sprintf("✅ DM_R038: Valid company-specific script: %s", basename_input))
+        return(TRUE)
+      } else {
+        warning(sprintf("DM_R038: Script with company suffix should follow ETL naming: %s", 
+                       basename_input))
+        return(FALSE)
+      }
+    } else {
+      message(sprintf("✅ DM_R038: Valid generic script: %s", basename_input))
+      return(TRUE)
+    }
+    
+  } else {
+    # Data artifacts: Company suffix is prohibited
+    if (has_company_suffix) {
+      stop(sprintf("VIOLATION DM_R038: Data artifact cannot have company suffix: %s", 
+                   basename_input))
+    } else {
+      message(sprintf("✅ DM_R038: Valid framework-agnostic data artifact: %s", 
+                     basename_input))
+      return(TRUE)
+    }
+  }
+}
+```
+
+### 2. Data Artifact Name Validation
+
+```r
+# Function: validate_data_artifact_naming
+validate_data_artifact_naming <- function(table_name_or_file) {
+  
+  # Check for prohibited company suffix in data artifacts
+  prohibited_patterns <- c(
+    "___MAMBA",
+    "___ACME", 
+    "___WIDGET",
+    "___[A-Z]{3,10}"  # Any uppercase company code
+  )
+  
+  violations <- sapply(prohibited_patterns, function(pattern) {
+    grepl(pattern, table_name_or_file, ignore.case = FALSE)
+  })
+  
+  if (any(violations)) {
+    violated_pattern <- names(violations)[which(violations)[1]]
+    stop(sprintf("VIOLATION DM_R038: Data artifact '%s' contains prohibited company suffix '%s'", 
+                 table_name_or_file, violated_pattern))
+  }
+  
+  # Check for correct framework-agnostic patterns
+  valid_patterns <- c(
+    "^df_[a-z]{3}_[a-z_]+___raw$",
+    "^df_[a-z]{3}_[a-z_]+___staged$", 
+    "^df_[a-z]{3}_[a-z_]+___transformed$",
+    "^[a-z_]+\\.duckdb$",
+    "^[a-z_]+\\.csv$",
+    "^[a-z_]+\\.parquet$"
+  )
+  
+  is_valid <- any(sapply(valid_patterns, function(pattern) {
+    grepl(pattern, table_name_or_file)
+  }))
+  
+  if (!is_valid) {
+    warning(sprintf("DM_R038: Data artifact '%s' does not follow standard naming patterns", 
+                   table_name_or_file))
+  }
+  
+  return(is_valid)
+}
+```
+
+### 3. Bulk Validation Function
+
+```r
+# Function: audit_company_suffix_compliance
+audit_company_suffix_compliance <- function(directory_path) {
+  
+  # Find all R scripts and data files
+  all_files <- list.files(directory_path, recursive = TRUE, full.names = TRUE)
+  
+  scripts <- grep("\\.(R|r)$", all_files, value = TRUE)
+  data_files <- grep("\\.(duckdb|csv|parquet|rds)$", all_files, value = TRUE)
+  
+  violations <- c()
+  
+  # Check scripts
+  for (script in scripts) {
+    tryCatch({
+      validate_company_suffix_scope(script)
+    }, error = function(e) {
+      violations <<- c(violations, sprintf("Script: %s - %s", script, e$message))
+    })
+  }
+  
+  # Check data files  
+  for (data_file in data_files) {
+    tryCatch({
+      validate_data_artifact_naming(basename(data_file))
+    }, error = function(e) {
+      violations <<- c(violations, sprintf("Data file: %s - %s", data_file, e$message))
+    })
+  }
+  
+  # Check database tables (if connection available)
+  if (exists("con") && DBI::dbIsValid(con)) {
+    tables <- DBI::dbListTables(con)
+    for (table in tables) {
+      tryCatch({
+        validate_data_artifact_naming(table)
+      }, error = function(e) {
+        violations <<- c(violations, sprintf("Table: %s - %s", table, e$message))
+      })
+    }
+  }
+  
+  if (length(violations) > 0) {
+    stop(sprintf("DM_R038 VIOLATIONS FOUND:\n%s", paste(violations, collapse = "\n")))
+  } else {
+    message("✅ DM_R038: All files comply with company suffix scope limitations")
+  }
+  
+  return(TRUE)
+}
+```
+
+## Migration Strategy
+
+### Step 1: Identify Violations
+
+```r
+# Scan for data artifacts with company suffixes
+find_company_suffix_violations <- function(base_path) {
+  
+  # Database tables with company suffixes
+  if (exists("con") && DBI::dbIsValid(con)) {
+    tables <- DBI::dbListTables(con)
+    table_violations <- grep("___[A-Z]{3,10}$", tables, value = TRUE)
+  } else {
+    table_violations <- c()
+  }
+  
+  # Files with company suffixes
+  data_files <- list.files(base_path, pattern = "\\.(duckdb|csv|parquet|rds)$", 
+                          recursive = TRUE, full.names = TRUE)
+  file_violations <- grep("___[A-Z]{3,10}", data_files, value = TRUE)
+  
+  return(list(
+    table_violations = table_violations,
+    file_violations = file_violations
+  ))
+}
+```
+
+### Step 2: Create Migration Plan
+
+```r
+# Generate plan to rename data artifacts
+create_suffix_removal_plan <- function(violations) {
+  
+  migration_plan <- list()
+  
+  # Plan table renames
+  if (length(violations$table_violations) > 0) {
+    migration_plan$tables <- data.frame(
+      old_name = violations$table_violations,
+      new_name = gsub("___[A-Z]{3,10}$", "", violations$table_violations),
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Plan file renames
+  if (length(violations$file_violations) > 0) {
+    migration_plan$files <- data.frame(
+      old_path = violations$file_violations,
+      new_path = gsub("___[A-Z]{3,10}", "", violations$file_violations),
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  return(migration_plan)
+}
+```
+
+### Step 3: Execute Migration
+
+```r
+# Execute the migration plan
+execute_suffix_removal_migration <- function(migration_plan, con = NULL) {
+  
+  # Rename tables
+  if (!is.null(migration_plan$tables) && !is.null(con)) {
+    for (i in seq_len(nrow(migration_plan$tables))) {
+      old_name <- migration_plan$tables$old_name[i]
+      new_name <- migration_plan$tables$new_name[i]
+      
+      # Rename table
+      DBI::dbExecute(con, sprintf("ALTER TABLE %s RENAME TO %s", old_name, new_name))
+      message(sprintf("Renamed table: %s → %s", old_name, new_name))
+    }
+  }
+  
+  # Rename files
+  if (!is.null(migration_plan$files)) {
+    for (i in seq_len(nrow(migration_plan$files))) {
+      old_path <- migration_plan$files$old_path[i]
+      new_path <- migration_plan$files$new_path[i]
+      
+      # Rename file
+      file.rename(old_path, new_path)
+      message(sprintf("Renamed file: %s → %s", basename(old_path), basename(new_path)))
+    }
+  }
+}
+```
+
+## Compliance Checklist
+
+- [ ] Scripts with company suffixes follow `{platform}_ETL_{datatype}_{phase}___COMPANY.R` pattern
+- [ ] Table names do NOT contain company suffixes
+- [ ] Database names do NOT contain company suffixes  
+- [ ] Export file names do NOT contain company suffixes
+- [ ] Configuration files specify standard (framework-agnostic) table names
+- [ ] Application configurations reference standard table names
+- [ ] Company-specific functions include company identifiers in names
+- [ ] Validation functions pass for all scripts and data artifacts
+- [ ] Migration plan addresses any existing violations
+
+## Conclusion
+
+DM_R038 establishes clear boundaries for company suffix usage, restricting it to script identification while ensuring data artifacts remain framework-agnostic. This rule is fundamental for:
+
+- **Data Portability**: Output works across different company implementations
+- **System Integration**: Downstream systems use consistent table names
+- **Maintenance Simplicity**: Single data artifacts instead of company-specific duplicates
+- **Cross-Company Compatibility**: Shared data formats enable collaboration
+- **Framework Independence**: Data content is decoupled from implementation details
+
+The distinction between "implementation logic" (scripts) and "data content" (artifacts) ensures that customization happens at the processing level while maintaining standardized output formats across all company implementations.

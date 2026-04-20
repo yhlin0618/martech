@@ -1,0 +1,312 @@
+---
+title: "DEV_R008: 最小修改規則"
+subtitle: "在增強或擴展現有程式碼時，僅進行達成所需功能所必需的最小變更集。除非特定增強需要變更，否則保留程式碼的原始結構、流程和行為"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R008"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 8
+  title: "最小修改規則"
+related_to:
+  - "MP018: 不要重複自己原則"
+  - "MP014: 變更追蹤原則"
+  - "SO_P008: 文件更新原則"
+  - "IC_R001: 全域腳本同步規則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第八條：最小修改規則 {#overview}
+
+**開發方法法第八條（最小修改規則）**
+
+在增強或擴展現有程式碼時，僅進行達成所需功能所必需的最小變更集。除非特定增強需要變更，否則保留程式碼的原始結構、流程和行為。
+
+:::{.callout-important}
+## 核心要求
+透過遵循最小修改原則，開發人員可以在最小化風險的同時增強系統，保留現有知識，並維持整體程式碼品質。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：範圍限制 {#scope-limitation}
+
+**對現有程式碼的所有修改必須：**
+
+1. **狹窄聚焦**：僅針對需要變更的特定區域
+2. **保留結構**：維持整體架構和組織
+3. **尊重原始意圖**：遵循原始程式碼的設計決策
+4. **避免連鎖變更**：防止變更在整個程式碼庫中產生連鎖反應
+5. **維持介面**：保持現有的 API 契約和介面完整
+
+## 第二款：可接受的修改類型 {#acceptable-modifications}
+
+**修改應限於：**
+
+1. **新增**：在不更改現有程式碼的情況下添加新功能
+2. **擴展**：以向後相容的方式擴展現有功能
+3. **選擇性替換**：在維持介面的同時替換特定組件
+4. **針對性修復**：以最小的周圍變更修正特定問題
+
+## 第三款：保留要求 {#preservation-requirements}
+
+**除非特別針對變更，否則必須保留以下方面：**
+
+1. **控制流程**：操作的順序和邏輯
+2. **變數名稱**：現有變數的名稱和範圍
+3. **函數簽名**：參數、返回類型和呼叫模式
+4. **文件**：現有的註解和文件
+5. **錯誤處理**：現有的錯誤處理模式
+6. **依賴關係**：外部函式庫使用和版本要求
+
+# 第二項：文件和測試要求 {#documentation-testing}
+
+## 第一款：變更文件化 {#documentation-of-changes}
+
+**所有修改必須徹底記錄：**
+
+1. **變更範圍**：記錄修改的確切範圍和意圖
+2. **前後對比**：記錄變更前後的狀態
+3. **理由**：解釋為什麼每個修改是必要的
+4. **替代方案**：記錄考慮過但被拒絕的替代方案
+5. **測試**：記錄如何測試修改
+
+## 第二款：測試要求 {#testing-requirements}
+
+**所有修改必須經過測試以確保：**
+
+1. **維持功能**：現有功能仍按預期運作
+2. **新功能**：添加的功能按預期運作
+3. **邊緣案例**：正確處理原始和新的邊緣案例
+4. **整合**：修改後的程式碼與系統其餘部分正確整合
+5. **效能**：維持或改善效能特性
+
+# 第三項：實施範例 {#implementation-examples}
+
+## 第一款：添加側邊欄組件 {#adding-sidebar-component}
+
+**原始程式碼：**
+```r
+# UI 定義
+ui <- page_navbar(
+  title = config$title,
+  theme = bs_theme(...),
+  
+  # 直接使用微觀客戶組件
+  microCustomerUI("customer_module")
+)
+
+# 伺服器邏輯
+server <- function(input, output, session) {
+  # 初始化微觀客戶模組
+  microCustomerServer("customer_module", data_source = ...)
+}
+```
+
+**最小修改（良好）：**
+```r
+# 來源新的側邊欄組件
+source(file.path("update_scripts", "global_scripts", "10_rshinyapp_components", 
+                "sidebars", "sidebar", "sidebar.R"))
+
+# UI 定義 - 僅修改相關部分
+ui <- page_sidebar(
+  title = config$title,
+  theme = bs_theme(...),
+  sidebar = sidebarUI("app_sidebar"),  # 添加側邊欄
+  
+  # 直接使用微觀客戶組件（未變更）
+  microCustomerUI("customer_module")
+)
+
+# 伺服器邏輯 - 僅添加所需內容
+server <- function(input, output, session) {
+  # 初始化側邊欄
+  sidebarServer("app_sidebar", data_source = ...)
+  
+  # 初始化微觀客戶模組（未變更）
+  microCustomerServer("customer_module", data_source = ...)
+}
+```
+
+**過度修改（不良）：**
+```r
+# 完全重寫，採用不同的導航結構、
+# 重新命名的組件和修訂的控制流程
+ui <- page_sidebar(
+  title = "完全不同的標題",
+  theme = bs_theme(version = 5, bootswatch = "flatly"),  # 變更主題
+  sidebar = sidebarUI("completely_renamed"),
+  
+  # 完全不同的導航結構
+  navset_pill(
+    nav_panel("新面板 1", ...),
+    nav_panel("新面板 2", ...),
+    nav_panel("新面板 3", ...)
+  )
+)
+
+# 完全修訂的伺服器，具有重新命名的組件和不同的流程
+server <- function(input, output, session) {
+  # 複雜的新初始化邏輯
+  observeEvent(input$some_new_input, { ... })
+  
+  # 重新命名和修改的模組
+  newModuleServer("renamed_module", ...)
+}
+```
+
+## 第二款：添加配置選項 {#adding-configuration-option}
+
+**原始程式碼：**
+```r
+# 載入配置
+config <- list(
+  title = "My App",
+  theme = list(version = 4, bootswatch = "flatly"),
+  data_source = "database"
+)
+
+# 使用配置
+connect_to_data(config$data_source)
+```
+
+**最小修改（良好）：**
+```r
+# 載入配置 - 未變更
+config <- list(
+  title = "My App",
+  theme = list(version = 4, bootswatch = "flatly"),
+  data_source = "database"
+)
+
+# 如果不存在，添加新的預設配置值
+if (is.null(config$cache_enabled)) {
+  config$cache_enabled <- FALSE
+}
+
+# 使用配置 - 未變更
+connect_to_data(config$data_source)
+
+# 使用新配置值
+if (config$cache_enabled) {
+  setup_caching()
+}
+```
+
+**過度修改（不良）：**
+```r
+# 完全重新設計的配置結構
+config <- list(
+  app = list(
+    title = "My App",
+    version = "2.0"  # 無需添加
+  ),
+  ui = list(
+    theme = list(version = 5, bootswatch = "darkly"),  # 變更現有值
+    layout = "sidebar"  # 無需添加
+  ),
+  data = list(
+    source = "database",  # 從 data_source 重新命名
+    cache_enabled = FALSE
+  )
+)
+
+# 修改整個使用方式
+connect_to_data(config$data$source)  # 變更存取模式
+
+if (config$data$cache_enabled) {
+  setup_caching()
+}
+```
+
+# 第四項：常見錯誤和解決方案 {#common-errors}
+
+## 第一款：當擴展足夠時進行重寫 {#error-rewriting}
+
+**問題**：添加功能時完全重寫現有程式碼。
+
+**解決方案**：使用擴展模式添加功能而不修改現有程式碼：
+- 添加新函數而不是修改現有函數
+- 使用繼承或組合來擴展物件
+- 使用事件處理程序回應現有流程
+- 添加具有合理預設值的可選參數
+
+## 第二款：不必要地更改介面 {#error-changing-interfaces}
+
+**問題**：修改函數簽名、返回值或預期行為。
+
+**解決方案**：保留介面並維持向後相容性：
+- 保持現有參數名稱和順序
+- 維持返回值類型和結構
+- 在參數列表末尾添加可選參數
+- 為新介面使用包裝函數
+
+## 第三款：重新格式化或重組無關程式碼 {#error-reformatting}
+
+**問題**：對與功能變更無直接關係的程式碼進行樣式或組織變更。
+
+**解決方案**：僅專注於功能變更：
+- 抵制「改進」無關程式碼的衝動
+- 將格式變更保留給專門的重構任務
+- 在不同的提交中分離功能變更和樣式變更
+- 遵循現有的程式碼風格，即使它與您的偏好不同
+
+## 第四款：連鎖變更 {#error-cascading-changes}
+
+**問題**：進行影響整個程式碼庫、影響許多檔案的變更。
+
+**解決方案**：設計自包含的變更：
+- 使用適配器模式橋接新舊程式碼
+- 創建相容層以維持介面
+- 使用配置選項啟用/停用新功能
+- 實施功能標誌以進行漸進推出
+
+# 第五項：與其他原則的關聯性 {#relationship-to-other-principles}
+
+## 第一款：與不要重複自己原則的關聯（MP018）{#relation-to-dry}
+
+最小修改規則透過以下方式支援 DRY：
+1. **避免重複**：鼓勵重用現有程式碼
+2. **單一真相來源**：維持現有實施的權威性
+3. **知識封裝**：尊重嵌入在原始程式碼中的知識
+4. **一致性**：在整個程式碼庫中保持一致的模式
+
+## 第二款：與變更追蹤原則的關聯（MP014）{#relation-to-change-tracking}
+
+此規則透過以下方式補充變更追蹤：
+1. **聚焦的變更**：使變更更容易追蹤和理解
+2. **清晰的意圖**：為每個修改提供清晰的理由
+3. **影響限制**：限制變更範圍以最小化追蹤複雜性
+4. **文件**：要求支援變更追蹤的文件
+
+# 第六項：優點 {#benefits}
+
+## 第一款：技術優點 {#technical-benefits}
+
+1. **穩定性**：最小化引入錯誤或退化的風險
+2. **可預測性**：創建可預測、易於理解的變更
+3. **效率**：減少實施和測試變更所需的努力
+4. **相容性**：維持與現有程式碼和介面的相容性
+
+## 第二款：維護優點 {#maintenance-benefits}
+
+1. **可讀性**：保留程式碼庫的可讀性和結構
+2. **協作**：使多個開發人員更容易並行工作
+3. **知識保留**：保留嵌入在原始程式碼中的領域知識
+4. **漸進改進**：支援持續、漸進增強的文化
+
+---
+
+*基於：開發方法法第八條*  
+*相關連結：[MP018 不要重複自己原則](../../CH00_fundamental_principles/meta_principles/MP018_dry.qmd), [SO_P008 文件更新原則](../../CH01_structure_organization/principles/SO_P008_documentation_update.qmd)*

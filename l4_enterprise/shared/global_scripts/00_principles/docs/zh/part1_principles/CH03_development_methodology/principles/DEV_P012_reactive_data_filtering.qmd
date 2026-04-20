@@ -1,0 +1,559 @@
+---
+title: "DEV_P012: 反應式資料過濾原則"
+subtitle: "應用程式應使用反應式資料過濾來高效處理大型資料集，在資料處理管道中儘早應用過濾器"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P012"
+date-created: "2025-04-03"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article-number: 
+  number: 12
+  title: "反應式資料過濾原則"
+related_to:
+  - "DEV_P001: 除錯原則"
+  - "DM_R003: 資料庫存取模式"
+  - "UI_P003: 側邊欄過濾專用"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十二條：反應式資料過濾原則 {#overview}
+
+**開發方法法第十二條（反應式資料過濾原則）**
+
+應用程式應使用反應式資料過濾來高效處理大型資料集，在資料處理管道中儘早應用過濾器，確保只處理必要的資料。
+
+:::{.callout-important}
+## 核心原則
+在資料源層級實施反應式過濾，在進行計算或視覺化之前，以提高應用程式效能和響應性。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：反應式過濾的優勢 {#benefits}
+
+實施早期反應式過濾提供：
+
+1. **效能提升**：減少對不必要資料的計算
+2. **響應性**：即使處理大型資料集也能維持UI響應性
+3. **可擴展性**：使應用程式能夠處理不斷增長的資料集
+4. **資源效率**：最小化記憶體消耗
+5. **使用者體驗**：確保在不同資料大小下的一致效能
+
+## 第二款：效能優化原理 {#performance-principles}
+
+反應式過濾通過以下機制優化效能：
+
+- **資料量減少**：早期過濾顯著減少後續處理的資料量
+- **計算優化**：只對相關資料執行聚合和統計計算
+- **記憶體管理**：避免將整個資料集載入記憶體
+- **響應時間**：減少使用者等待時間
+- **資源分配**：更有效地利用系統資源
+
+# 第二項：實作指南 {#implementation}
+
+## 第一款：過濾優先架構 {#filter-first-architecture}
+
+建立反應式過濾資料集作為所有後續操作的基礎：
+
+```r
+# 創建反應式過濾資料集
+filtered_data <- reactive({
+  # 對原始資料集應用過濾器
+  result <- raw_data[raw_data$category == input$category_filter, ]
+  
+  # 額外過濾條件
+  if (!is.null(input$search) && input$search != "") {
+    result <- result[grepl(input$search, result$name, fixed = TRUE), ]
+  }
+  
+  # 日期範圍過濾
+  if (!is.null(input$date_range)) {
+    result <- result[
+      result$date >= input$date_range[1] & 
+      result$date <= input$date_range[2], 
+    ]
+  }
+  
+  return(result)
+})
+
+# 對所有輸出使用過濾後的資料
+output$plot <- renderPlot({
+  # 使用已過濾的資料
+  ggplot(filtered_data(), aes(x = value, y = count)) + 
+    geom_point() +
+    theme_minimal()
+})
+
+output$summary_table <- renderDataTable({
+  # 相同的過濾資料用於表格
+  datatable(filtered_data(), options = list(pageLength = 25))
+})
+```
+
+## 第二款：漸進式載入策略 {#progressive-loading}
+
+實施分階段資料載入以優化初始載入時間：
+
+### 初始載入優化 {#initial-loading}
+
+```r
+# 初始僅載入必要資料
+initial_data <- reactive({
+  # 載入基本欄位和最近的記錄
+  tbl2(conn, "main_table") %>%
+    filter(created_date >= Sys.Date() - 30) %>%  # 最近30天
+    select(id, name, category, value, created_date) %>%
+    collect()
+})
+
+# 詳細資料按需載入
+detailed_data <- reactive({
+  req(input$selected_id)
+  
+  tbl2(conn, "main_table") %>%
+    filter(id == input$selected_id) %>%
+    collect()
+})
+```
+
+### 分頁和增量載入 {#pagination-incremental}
+
+```r
+# 實施分頁載入
+paginated_data <- reactive({
+  page_size <- 100
+  offset <- (input$page_number - 1) * page_size
+  
+  filtered_query <- tbl2(conn, "large_table") %>%
+    filter(
+      category %in% input$selected_categories,
+      date >= input$start_date
+    )
+  
+  # 分頁查詢
+  filtered_query %>%
+    arrange(date) %>%
+    slice(offset + 1:(offset + page_size)) %>%
+    collect()
+})
+```
+
+## 第三款：計算優化模式 {#computation-optimization}
+
+### 過濾後聚合 {#filtered-aggregation}
+
+```r
+# 對過濾資料進行聚合計算
+summary_stats <- reactive({
+  data <- filtered_data()
+  
+  list(
+    total_count = nrow(data),
+    average_value = mean(data$value, na.rm = TRUE),
+    category_breakdown = data %>%
+      group_by(category) %>%
+      summarise(
+        count = n(),
+        avg_value = mean(value, na.rm = TRUE),
+        .groups = "drop"
+      )
+  )
+})
+```
+
+### 結果快取 {#result-caching}
+
+```r
+# 快取昂貴計算的結果
+cached_analysis <- reactive({
+  # 建立快取鍵
+  cache_key <- paste(
+    input$category_filter,
+    input$date_range[1],
+    input$date_range[2],
+    sep = "_"
+  )
+  
+  # 檢查快取
+  if (exists(paste0("cache_", cache_key), envir = .GlobalEnv)) {
+    return(get(paste0("cache_", cache_key), envir = .GlobalEnv))
+  }
+  
+  # 執行計算
+  result <- perform_complex_analysis(filtered_data())
+  
+  # 存儲到快取
+  assign(paste0("cache_", cache_key), result, envir = .GlobalEnv)
+  
+  return(result)
+})
+```
+
+## 第四款：結果大小限制 {#result-size-limits}
+
+實施合理的結果集大小限制：
+
+```r
+# 應用結果大小限制
+limited_results <- reactive({
+  data <- filtered_data()
+  max_rows <- 1000
+  
+  if (nrow(data) > max_rows) {
+    # 顯示警告訊息
+    showNotification(
+      paste("顯示前", max_rows, "筆結果，共", nrow(data), "筆"),
+      type = "warning",
+      duration = 5
+    )
+    
+    # 返回限制的結果
+    return(data[1:max_rows, ])
+  }
+  
+  return(data)
+})
+```
+
+## 第五款：高效文字搜尋 {#efficient-text-search}
+
+實施優化的文字搜尋機制：
+
+```r
+# 高效文字搜尋實作
+text_filtered_data <- reactive({
+  base_data <- category_filtered_data()  # 先應用其他過濾器
+  
+  if (is.null(input$search_text) || input$search_text == "") {
+    return(base_data)
+  }
+  
+  search_term <- trimws(tolower(input$search_text))
+  
+  # 使用固定字串匹配以提高效能
+  if (nchar(search_term) > 0) {
+    # 預先計算小寫版本以進行不區分大小寫搜尋
+    base_data$name_lower <- tolower(base_data$name)
+    base_data$description_lower <- tolower(base_data$description)
+    
+    # 進行搜尋
+    matches <- grepl(search_term, base_data$name_lower, fixed = TRUE) |
+               grepl(search_term, base_data$description_lower, fixed = TRUE)
+    
+    result <- base_data[matches, ]
+    
+    # 清理臨時欄位
+    result$name_lower <- NULL
+    result$description_lower <- NULL
+    
+    return(result)
+  }
+  
+  return(base_data)
+})
+```
+
+# 第三項：效能優化指南 {#performance-guidelines}
+
+## 第一款：資料庫層級優化 {#database-optimization}
+
+### 索引策略 {#indexing-strategy}
+
+確保在資料庫中為常用過濾欄位建立索引：
+
+```sql
+-- 為常用過濾欄位建立索引
+CREATE INDEX idx_category ON main_table(category);
+CREATE INDEX idx_date_range ON main_table(created_date);
+CREATE INDEX idx_status ON main_table(status);
+
+-- 複合索引用於多欄位過濾
+CREATE INDEX idx_category_date ON main_table(category, created_date);
+```
+
+### 查詢優化 {#query-optimization}
+
+將過濾邏輯推送到資料庫層級：
+
+```r
+# 資料庫端過濾
+db_filtered_data <- reactive({
+  tbl2(conn, "large_table") %>%
+    filter(
+      category %in% !!input$selected_categories,
+      created_date >= !!input$start_date,
+      created_date <= !!input$end_date,
+      status == !!input$status_filter
+    ) %>%
+    collect()  # 只有在必要時才將資料帶入R
+})
+```
+
+## 第二款：預聚合策略 {#pre-aggregation}
+
+為常見查詢預先計算聚合：
+
+```r
+# 預先計算的摘要統計
+pre_computed_summary <- reactive({
+  # 檢查是否有預先計算的摘要表
+  summary_table <- tryCatch({
+    tbl2(conn, "daily_summary") %>%
+      filter(
+        date >= !!input$start_date,
+        date <= !!input$end_date
+      ) %>%
+      collect()
+  }, error = function(e) {
+    # 回退到即時計算
+    db_filtered_data() %>%
+      group_by(date = as.Date(created_date)) %>%
+      summarise(
+        total_count = n(),
+        avg_value = mean(value, na.rm = TRUE),
+        .groups = "drop"
+      )
+  })
+  
+  return(summary_table)
+})
+```
+
+## 第三款：採樣策略 {#sampling-strategy}
+
+對於探索性視覺化考慮資料採樣：
+
+```r
+# 智能採樣
+sampled_data <- reactive({
+  full_data <- filtered_data()
+  max_sample_size <- 5000
+  
+  if (nrow(full_data) > max_sample_size) {
+    # 分層採樣保持代表性
+    if ("category" %in% names(full_data)) {
+      sampled <- full_data %>%
+        group_by(category) %>%
+        sample_n(min(n(), max_sample_size / n_distinct(full_data$category))) %>%
+        ungroup()
+    } else {
+      # 簡單隨機採樣
+      sampled <- full_data[sample(nrow(full_data), max_sample_size), ]
+    }
+    
+    showNotification(
+      paste("使用", nrow(sampled), "個樣本進行視覺化（共", nrow(full_data), "筆）"),
+      type = "info"
+    )
+    
+    return(sampled)
+  }
+  
+  return(full_data)
+})
+```
+
+# 第四項：增量更新模式 {#incremental-updates}
+
+## 第一款：智能資料更新 {#smart-data-updates}
+
+避免在只有部分資料變更時重新計算整個資料集：
+
+```r
+# 增量資料更新
+incremental_data <- reactiveVal()
+
+# 初始載入
+observeEvent(input$initial_load, {
+  initial <- load_initial_data()
+  incremental_data(initial)
+})
+
+# 增量更新
+observeEvent(input$add_filter, {
+  current_data <- incremental_data()
+  
+  # 只更新受影響的部分
+  if (input$filter_type == "category") {
+    updated_data <- current_data[current_data$category %in% input$new_categories, ]
+  } else {
+    # 其他過濾邏輯
+    updated_data <- apply_incremental_filter(current_data)
+  }
+  
+  incremental_data(updated_data)
+})
+```
+
+## 第二款：選擇性重新計算 {#selective-recomputation}
+
+```r
+# 條件式反應式
+conditional_reactive <- reactive({
+  # 只在特定輸入變更時重新計算
+  if (input$major_filter_change > 0) {
+    # 完整重新計算
+    return(full_recalculation())
+  } else {
+    # 使用快取結果
+    return(cached_results())
+  }
+}) %>% bindEvent(input$major_filter_change, ignoreNULL = FALSE)
+```
+
+# 第五項：例外和特殊情況 {#exceptions}
+
+## 第一款：授權例外 {#authorized-exceptions}
+
+在以下情況下允許例外：
+
+### 小型資料集 {#small-datasets}
+
+```r
+# 當總資料集大小足夠小時
+data_processing_strategy <- reactive({
+  total_rows <- get_total_row_count()
+  
+  if (total_rows < 1000) {
+    # 小資料集：載入全部資料
+    return("load_all")
+  } else if (total_rows < 100000) {
+    # 中等資料集：簡單過濾
+    return("simple_filter")
+  } else {
+    # 大資料集：複雜過濾和分頁
+    return("complex_filter")
+  }
+})
+```
+
+### 複雜資料關係 {#complex-relationships}
+
+```r
+# 當過濾會破壞資料關係時
+relational_data <- reactive({
+  if (input$maintain_relationships) {
+    # 保持完整資料集以維護關係
+    return(load_complete_relational_data())
+  } else {
+    # 應用標準過濾
+    return(filtered_data())
+  }
+})
+```
+
+### 特殊視覺化需求 {#special-visualizations}
+
+```r
+# 特定視覺化需要完整資料集
+visualization_data <- reactive({
+  if (input$chart_type %in% c("distribution", "correlation_matrix")) {
+    # 這些圖表需要完整資料集
+    return(complete_dataset())
+  } else {
+    # 其他圖表可以使用過濾資料
+    return(filtered_data())
+  }
+})
+```
+
+## 第二款：例外文件化 {#exception-documentation}
+
+記錄所有效能例外：
+
+```r
+# 效能例外記錄
+log_performance_exception <- function(reason, data_size, processing_time) {
+  cat(sprintf(
+    "PERFORMANCE EXCEPTION: %s\n",
+    "Reason: %s\n",
+    "Data Size: %d rows\n", 
+    "Processing Time: %.2f seconds\n\n"
+  ), reason, data_size, processing_time)
+}
+```
+
+# 第六項：測試和監控 {#testing-monitoring}
+
+## 第一款：效能測試 {#performance-testing}
+
+定期測試過濾效能：
+
+```r
+# 效能基準測試
+benchmark_filtering <- function() {
+  test_sizes <- c(1000, 10000, 100000, 1000000)
+  
+  results <- map_dfr(test_sizes, function(size) {
+    test_data <- generate_test_data(size)
+    
+    # 測試過濾效能
+    timing <- system.time({
+      filtered <- test_data[test_data$category == "A", ]
+    })
+    
+    data.frame(
+      data_size = size,
+      filter_time = timing["elapsed"],
+      memory_used = object.size(filtered)
+    )
+  })
+  
+  return(results)
+}
+```
+
+## 第二款：效能監控 {#performance-monitoring}
+
+實施即時效能監控：
+
+```r
+# 效能監控功能
+monitor_performance <- reactive({
+  start_time <- Sys.time()
+  
+  # 執行過濾操作
+  result <- filtered_data()
+  
+  end_time <- Sys.time()
+  processing_time <- as.numeric(end_time - start_time)
+  
+  # 記錄效能指標
+  performance_log <- data.frame(
+    timestamp = Sys.time(),
+    operation = "data_filtering",
+    data_size = nrow(result),
+    processing_time = processing_time,
+    memory_usage = object.size(result)
+  )
+  
+  # 警告慢速查詢
+  if (processing_time > 2) {
+    showNotification(
+      paste("查詢處理時間：", round(processing_time, 2), "秒"),
+      type = "warning"
+    )
+  }
+  
+  return(list(data = result, performance = performance_log))
+})
+```
+
+# 結論 {#conclusion}
+
+反應式資料過濾原則通過在資料處理管道的早期階段實施智能過濾，確保Shiny應用程式能夠高效處理大型資料集。通過過濾優先架構、漸進式載入、預聚合和智能快取等策略，應用程式可以在各種資料大小下維持優秀的效能和使用者體驗。
+
+---
+
+*基於：開發方法法第十二條*  
+*相關：[DEV_P001 除錯原則](DEV_P001_debug_principles.qmd)、[DM_R003 資料庫存取模式](../../CH02_data_management/rules/DM_R003_database_access_tbl.qmd)*

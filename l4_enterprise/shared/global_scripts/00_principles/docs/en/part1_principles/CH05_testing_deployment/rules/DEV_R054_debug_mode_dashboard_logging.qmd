@@ -1,0 +1,91 @@
+---
+id: DEV_R054
+type: rule
+name: debug_mode_dashboard_logging
+display_name: "DEBUG_MODE Dashboard Output Logging"
+implements: TD_P002
+scope: "All Shiny render*() outputs"
+---
+
+# DEV_R054: DEBUG_MODE Dashboard Output Logging
+
+## One-Liner
+
+When `SHINY_DEBUG_MODE=TRUE`, **every dashboard-visible element** must log its output to R console — if it's visible on screen, it must be visible in the log.
+
+## Rationale
+
+NULL outputs in Shiny render as **blank panels** without any error. These are invisible bugs: no R error is thrown, but the user sees nothing. By requiring all `render*()` blocks to log their output in DEBUG_MODE, we can:
+
+1. **Detect blank panels automatically** — grep for `= NULL` in DEBUG logs
+2. **Speed up debugging** — `/shiny-debug` and E2E tests see exactly what each component produces
+3. **Verify completeness** — confirm all components are rendering real content
+
+Related: [Issue #286](https://github.com/kiki830621/ai_martech_global_scripts/issues/286)
+
+## Enabling DEBUG_MODE
+
+```r
+# Environment variable (E2E tests set this automatically in setup.R)
+Sys.setenv(SHINY_DEBUG_MODE = "TRUE")
+```
+
+## Tool Functions
+
+Located in `04_utils/fn_debug_mode.R`:
+
+| Function | Purpose |
+|----------|---------|
+| `is_debug_mode()` | Check if DEBUG_MODE is enabled |
+| `debug_log(component, ...)` | Log `[DEBUG][component] ...` message |
+| `debug_log_output(component, output_name, value)` | Log output type, dimensions, and preview |
+
+## Implementation Requirements
+
+Every Shiny component's `render*()` block must call `debug_log_output()` **before returning**:
+
+```r
+output$kpi_cards <- renderUI({
+  cards <- build_kpi_cards(data)
+  debug_log_output("revenuePulse", "kpi_cards", cards)
+  cards
+})
+
+output$main_chart <- renderPlotly({
+  p <- create_chart(df)
+  debug_log_output("macroTrends", "main_chart", p)
+  p
+})
+
+output$detail_table <- renderDT({
+  dt <- prepare_table(df)
+  debug_log_output("customerValue", "detail_table", dt)
+  dt
+})
+```
+
+## Log Format
+
+```
+[DEBUG][{component}] {output_name} = {type}({dimensions}) {preview}
+```
+
+Examples:
+```
+[DEBUG][revenuePulse] kpi_cards = list(4) keys: total_revenue, avg_order, ...
+[DEBUG][macroTrends] trend_chart = plotly
+[DEBUG][customerValue] detail_table = data.frame [350 x 12] cols: customer_id, r_value, ...
+[DEBUG][customerStatus] status_ui = NULL      <- This is a blank panel bug!
+```
+
+## E2E Integration
+
+- `98_test/e2e/setup.R` automatically sets `SHINY_DEBUG_MODE=TRUE`
+- E2E tests can grep `[DEBUG]` logs for `= NULL` to detect blank panel bugs
+- `fn_ai_insight_async.R` already instruments template vars and AI results
+
+## Relationship
+
+- **Implements**: TD_P002 (Dual Testing Approach)
+- **Used by**: TD_R007 (E2E Testing Standard — DEBUG_MODE enables automated output verification)
+- **Related**: MP029 (No Fake Data — blank panels are a form of invisible data loss)

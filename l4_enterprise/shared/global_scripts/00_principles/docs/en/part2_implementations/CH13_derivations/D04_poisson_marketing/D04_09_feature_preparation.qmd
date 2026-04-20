@@ -1,0 +1,62 @@
+---
+
+title: "D04_09: Precision Feature Preparation (All)"
+subtitle: "Aggregate product features for precision Poisson analysis"
+parent: "D04_poisson_marketing"
+chapter: "CH12"
+category: "derivation-task"
+number: "D04_09"
+date-created: "2025-12-24"
+date-modified: "2025-12-30"
+author: "Claude"
+type: "derivation-task"
+depends_on: []
+outputs_to:
+  - "processed_data.df_precision_features"
+implements:
+  - script: "all_D04_09.R"
+    path: "update_scripts/DRV/all/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D04_09: Precision Feature Preparation (All) {#overview}
+
+This task aggregates product features across all product lines into a single
+table for cross-platform Poisson analysis.
+
+## Implementation Scripts
+
+| Platform | Script | Location | Output |
+|----------|--------|----------|--------|
+| All | `all_D04_09.R` | `update_scripts/DRV/all/` | `processed_data.df_precision_features` |
+
+## Inputs
+
+- `transformed_data.transformed_precision_{product_line}` (ETL 2TR outputs)
+
+## Task Definition (NSQL)
+
+```nsql
+AGGREGATE D04_09_precision_features:
+  UNION ALL transformed_data.transformed_precision_{product_line}
+  GROUP BY product_line, country
+  CALCULATE summary_metrics
+  OUTPUT TO processed_data.df_precision_features
+```
+
+## Outputs
+
+- `processed_data.df_precision_features`
+
+## Notes
+
+- Aggregation is metadata-heavy (MP102) and uses only real ETL outputs (MP029).
+- Designed to support D04_08 precision Poisson regression.
+
+## Next Task
+
+Proceed to [D04_08: Precision Poisson Analysis](D04_08_precision_poisson_analysis.qmd).

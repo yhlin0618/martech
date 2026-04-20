@@ -1,0 +1,664 @@
+---
+id: "R117"
+title: "Time Series Filling Transparency Rule"
+type: "rule"
+category: "etl_pipelines"
+date_created: "2025-11-12"
+date_modified: "2026-01-02"
+author: "principle-product-manager"
+status: "active"
+version: "1.1"
+weight: 117
+implements:
+  - "MP029": "No Fake Data Principle"
+  - "MP109": "Derived Data Pipelines"
+  - "MP064": "ETL-Derivation Separation Principle"
+related_to:
+  - "R116": "Currency Standardization in ETL 1ST"
+  - "R118": "Statistical Significance Documentation"
+  - "MP108": "Base ETL Pipeline Separation"
+---
+
+# R117: Time Series Filling Transparency Rule
+
+## Rule Statement
+
+**All filled or interpolated time series data MUST be explicitly marked with a `data_source` field ('REAL' vs 'FILLED') to maintain transparency and prevent MP029 violations. Time series completion logic belongs in the DRV layer by default, but may be implemented as a derived ETL time series step when producing standardized time series inputs for downstream derivations.**
+
+## Core Requirements
+
+### 1. When Time Series Filling is Required
+
+**APPLICABLE** when working with incomplete time series data:
+
+```yaml
+requires_time_series_filling:
+  missing_dates:
+    description: "Product not sold on certain dates (gaps in daily/weekly/monthly series)"
+    example: "Product sales from 2024-01-01 to 2024-12-31 with 45 missing dates"
+    issue: "Analysis requires complete time series for trend detection"
+
+  sparse_data:
+    description: "Product sold intermittently (sporadic transactions)"
+    example: "Seasonal product only sold in Q4, missing Q1-Q3 data"
+    issue: "Visualization breaks, trend analysis fails with gaps"
+
+  multi_product_alignment:
+    description: "Different products have different date ranges"
+    example: "Product A: 2024-01 to 2024-12, Product B: 2024-03 to 2024-10"
+    issue: "Cross-product comparison requires aligned time ranges"
+```
+
+### 2. Implementation Location
+
+**CRITICAL**: Time series filling MUST NOT happen in base ETL 0IM/1ST or transaction 2TR stages. It must happen in either a **derived ETL time series step** or the **DRV layer**:
+
+```yaml
+stage_responsibilities:
+  etl_0im_import:
+    responsibility: "Import raw transaction data as-is"
+    time_series: "Import actual transactions only, no filling"
+    rationale: "0IM preserves raw data integrity"
+
+  etl_1st_standardization:
+    responsibility: "Standardize formats, currencies, dimensions"
+    time_series: "Standardize date formats, no filling"
+    rationale: "1ST standardizes existing data, does not create new data"
+
+  etl_2tr_transformation:
+    responsibility: "Apply business logic transformations"
+    time_series: "Transform existing transactions, no filling in base ETL"
+    rationale: "Base 2TR transforms real data, does not synthesize data"
+
+  etl_2tr_time_series:  # ⭐ DERIVED ETL TIME SERIES (ALLOWED)
+    responsibility: "Create standardized time series inputs for derivations"
+    time_series: |
+      - Use fn_complete_time_series() to fill gaps
+      - Add data_source column: "REAL" or "FILLED"
+      - Document fill_rate per product/country
+      - Preserve original transaction counts
+
+  df_2tr_derivation:  # ⭐ DRV TIME SERIES (ALLOWED)
+    responsibility: "Create complete time series for analysis"
+    time_series: |
+      - Use fn_complete_time_series() to fill gaps
+      - Add data_source column: "REAL" or "FILLED"
+      - Document fill_rate per product/country
+      - Preserve original transaction counts
+```
+
+### 3. Transparency Requirements
+
+**MANDATORY**: All time series data must indicate real vs filled status:
+
+```yaml
+required_data_source_column:
+  column_name: "data_source"
+  data_type: "VARCHAR(10)"
+  allowed_values:
+    - "REAL": "Data from actual transactions/observations"
+    - "FILLED": "Synthesized data to complete time series"
+
+  implementation:
+    df_stage: "Derived ETL 2TR or DRV 2TR - Time Series Completion"
+    function: "fn_complete_time_series(data, mark_filled = TRUE)"
+    validation: "Check data_source column exists and all rows marked"
+
+  metadata_tracking:
+    fill_rate_by_product:
+      description: "Percentage of filled vs real data points per product"
+      threshold: "If fill_rate > 50%, data quality issue - investigate"
+
+    fill_method:
+      description: "Method used to fill gaps (forward fill, interpolation, zero-fill)"
+      options: ["forward_fill", "linear_interpolation", "zero_fill", "mean_imputation"]
+```
+
+## Rationale
+
+### 1. Constitutional Justification (MP029 - No Fake Data)
+
+Filling time series without marking violates MP029 by presenting **synthetic data as real**:
+
+```r
+# ❌ VIOLATION MP029: Filled data not marked, appears identical to real data
+sales_complete <- sales_raw %>%
+  complete(
+    date = seq(min(date), max(date), by = "1 day"),
+    product_id
+  ) %>%
+  fill(sales_quantity, .direction = "down")  # Forward fill, but no marking!
+
+# User cannot distinguish filled from real data
+# This is FAKE DATA pretending to be real
+
+# ✅ CORRECT: Explicitly mark filled data
+sales_complete_marked <- sales_raw %>%
+  mutate(data_source = "REAL") %>%  # Mark original data as REAL
+  complete(
+    date = seq(min(date), max(date), by = "1 day"),
+    product_id
+  ) %>%
+  mutate(
+    data_source = ifelse(is.na(data_source), "FILLED", data_source),
+    sales_quantity = ifelse(data_source == "FILLED", 0, sales_quantity)
+  )
+
+# Now users can filter, analyze, or visualize real vs filled separately
+```
+
+### 2. MP109 Alignment (Derived ETL or DRV Responsibility)
+
+Time series completion creates derived rows and can be implemented either as a
+**derived ETL time series step** or a DRV derivation:
+
+```yaml
+mp109_derivation_tasks:
+  join_operations:
+    - "Combine sales + customer + product dimensions"
+    - "Merge multiple data sources"
+
+  aggregation:
+    - "Sum sales by date/product"
+    - "Calculate rolling averages"
+
+  time_series_operations:  # ⭐ Includes filling
+    - "Complete sparse time series"
+    - "Align multi-product date ranges"
+    - "Fill gaps for continuous analysis"
+
+  calculation:
+    - "Compute derived metrics (growth rates, etc.)"
+```
+
+Time series filling creates **derived data** (new rows) based on existing data, making it a derived ETL or DRV responsibility (per MP109).
+
+### 3. Analytical Integrity
+
+Marking filled data enables proper analysis:
+
+```r
+# Analysts can choose how to handle filled data
+sales_analysis <- sales_complete_marked %>%
+  # Option 1: Analyze only real data
+  filter(data_source == "REAL") %>%
+  summarize(avg_sales = mean(sales_quantity))
+
+# Option 2: Analyze complete series but flag filled periods
+sales_trend <- sales_complete_marked %>%
+  ggplot(aes(x = date, y = sales_quantity, color = data_source)) +
+  geom_line() +
+  geom_point(data = . %>% filter(data_source == "FILLED"), shape = 1)  # Hollow points for filled
+
+# Option 3: Calculate separate metrics for real vs filled
+sales_summary <- sales_complete_marked %>%
+  group_by(product_id) %>%
+  summarize(
+    total_days = n(),
+    real_days = sum(data_source == "REAL"),
+    filled_days = sum(data_source == "FILLED"),
+    fill_rate = filled_days / total_days,
+    avg_real_sales = mean(sales_quantity[data_source == "REAL"])
+  )
+```
+
+## Implementation Guidelines
+
+### 1. Standard Time Series Completion Function
+
+Use the centralized utility function:
+
+```r
+# Function: fn_complete_time_series
+# Location: scripts/global_scripts/04_utils/fn_complete_time_series.R
+
+fn_complete_time_series <- function(
+  data,
+  time_column = "date",
+  group_columns = c("product_id", "country"),
+  value_columns = c("sales_quantity", "revenue"),
+  fill_method = "zero_fill",      # "zero_fill", "forward_fill", "linear_interpolation"
+  mark_filled = TRUE,
+  min_date = NULL,
+  max_date = NULL
+) {
+  # 1. Mark original data as REAL
+  data_marked <- data %>%
+    mutate(data_source = "REAL")
+
+  # 2. Determine time range
+  if (is.null(min_date)) min_date <- min(data[[time_column]])
+  if (is.null(max_date)) max_date <- max(data[[time_column]])
+
+  time_sequence <- seq(min_date, max_date, by = "1 day")
+
+  # 3. Create complete grid of time x groups
+  complete_grid <- expand.grid(
+    time = time_sequence,
+    stringsAsFactors = FALSE
+  )
+
+  # Add group columns
+  if (length(group_columns) > 0) {
+    group_combinations <- data %>%
+      select(all_of(group_columns)) %>%
+      distinct()
+
+    complete_grid <- complete_grid %>%
+      crossing(group_combinations)
+  }
+
+  # 4. Join with original data
+  result <- complete_grid %>%
+    rename({{time_column}} := time) %>%
+    left_join(data_marked, by = c(time_column, group_columns))
+
+  # 5. Fill missing values based on method
+  result <- result %>%
+    group_by(across(all_of(group_columns))) %>%
+    mutate(
+      data_source = ifelse(is.na(data_source), "FILLED", data_source)
+    )
+
+  # Apply filling method to value columns
+  for (col in value_columns) {
+    result <- result %>%
+      mutate(
+        {{col}} := case_when(
+          data_source == "REAL" ~ .data[[col]],
+          fill_method == "zero_fill" ~ 0,
+          fill_method == "forward_fill" ~ zoo::na.locf(.data[[col]], na.rm = FALSE),
+          fill_method == "linear_interpolation" ~ zoo::na.approx(.data[[col]], na.rm = FALSE),
+          TRUE ~ NA_real_
+        )
+      )
+  }
+
+  result <- result %>% ungroup()
+
+  # 6. Calculate fill rate metadata
+  fill_rate_summary <- result %>%
+    group_by(across(all_of(group_columns))) %>%
+    summarize(
+      total_days = n(),
+      filled_days = sum(data_source == "FILLED"),
+      fill_rate = filled_days / total_days,
+      .groups = "drop"
+    )
+
+  # Log fill rate summary
+  message(sprintf("✅ R117: Time series completed. Overall fill rate: %.1f%%",
+                 mean(fill_rate_summary$fill_rate) * 100))
+
+  # Warn if high fill rate
+  high_fill_products <- fill_rate_summary %>%
+    filter(fill_rate > 0.5)
+
+  if (nrow(high_fill_products) > 0) {
+    warning(sprintf("R117 WARNING: %d products have >50%% fill rate. Data quality issue?",
+                   nrow(high_fill_products)))
+  }
+
+  return(list(
+    data = result,
+    fill_rate_summary = fill_rate_summary
+  ))
+}
+```
+
+### 2. Derived ETL or DRV 2TR Implementation Pattern
+
+The same pattern applies to **derived ETL time series scripts**; only the
+target database and orchestration layer change. Example from precision marketing
+DRV 2TR:
+
+```r
+# precision_DRV_time_series.R
+# STAGE: DRV 2TR - Time Series Derivation
+# PURPOSE: Create complete time series for all product-country combinations
+
+precision_time_series_drv <- function() {
+  # Load transformed data from ETL 2TR
+  sales_data <- tbl2(con_transformed, "df_precision_sales___transformed") %>%
+    collect()
+
+  # === TIME SERIES COMPLETION (R117) ⭐ ===
+
+  # Complete time series with explicit marking
+  completed_result <- fn_complete_time_series(
+    data = sales_data,
+    time_column = "date",
+    group_columns = c("product_id", "country_iso"),
+    value_columns = c("sales_quantity", "revenue_usd"),
+    fill_method = "zero_fill",  # Absent sales = 0 sales
+    mark_filled = TRUE  # ⭐ Explicitly mark filled data
+  )
+
+  completed_data <- completed_result$data
+  fill_summary <- completed_result$fill_rate_summary
+
+  # === VALIDATION (R117) ===
+
+  # Check data_source column exists
+  if (!"data_source" %in% names(completed_data)) {
+    stop("VIOLATION R117: data_source column missing after time series completion")
+  }
+
+  # Check all rows marked
+  unmarked_rows <- completed_data %>%
+    filter(is.na(data_source) | !data_source %in% c("REAL", "FILLED"))
+
+  if (nrow(unmarked_rows) > 0) {
+    stop(sprintf("VIOLATION R117: %d rows have invalid data_source values",
+                nrow(unmarked_rows)))
+  }
+
+  # === OUTPUT ===
+
+  # Write to DRV database
+  dbWriteTable(
+    conn = con_drv,
+    name = "df_precision_time_series___complete",
+    value = completed_data,
+    overwrite = TRUE
+  )
+
+  # Write fill rate metadata
+  dbWriteTable(
+    conn = con_drv,
+    name = "meta_precision_time_series_fill_rates",
+    value = fill_summary,
+    overwrite = TRUE
+  )
+
+  # Log summary
+  message(sprintf("✅ R117: Time series derivation complete"))
+  message(sprintf("  - Total rows: %d", nrow(completed_data)))
+  message(sprintf("  - Real data rows: %d", sum(completed_data$data_source == "REAL")))
+  message(sprintf("  - Filled data rows: %d", sum(completed_data$data_source == "FILLED")))
+  message(sprintf("  - Overall fill rate: %.1f%%",
+                 mean(fill_summary$fill_rate) * 100))
+}
+```
+
+### 3. Validation Pattern
+
+Always validate time series transparency:
+
+```r
+# Function: validate_time_series_transparency
+validate_time_series_transparency <- function(data) {
+  # Check 1: data_source column exists
+  if (!"data_source" %in% names(data)) {
+    stop("VIOLATION R117: data_source column missing")
+  }
+
+  # Check 2: All rows have valid data_source values
+  invalid_sources <- data %>%
+    filter(!data_source %in% c("REAL", "FILLED"))
+
+  if (nrow(invalid_sources) > 0) {
+    stop(sprintf("VIOLATION R117: %d rows have invalid data_source (not 'REAL' or 'FILLED')",
+                nrow(invalid_sources)))
+  }
+
+  # Check 3: Calculate and report fill rate
+  fill_stats <- data %>%
+    summarize(
+      total_rows = n(),
+      real_rows = sum(data_source == "REAL"),
+      filled_rows = sum(data_source == "FILLED"),
+      fill_rate = filled_rows / total_rows
+    )
+
+  message(sprintf("✅ R117 Validation: Time series transparency passed"))
+  message(sprintf("  - Total: %d rows", fill_stats$total_rows))
+  message(sprintf("  - Real: %d rows (%.1f%%)",
+                 fill_stats$real_rows,
+                 fill_stats$real_rows / fill_stats$total_rows * 100))
+  message(sprintf("  - Filled: %d rows (%.1f%%)",
+                 fill_stats$filled_rows,
+                 fill_stats$fill_rate * 100))
+
+  # Warning if high fill rate
+  if (fill_stats$fill_rate > 0.5) {
+    warning(sprintf("R117 WARNING: High fill rate (%.1f%%). Data quality issue?",
+                   fill_stats$fill_rate * 100))
+  }
+
+  return(TRUE)
+}
+```
+
+## Integration with Other Principles
+
+### 1. MP029 (No Fake Data Principle)
+
+R117 prevents time series filling violations of MP029:
+
+```yaml
+mp029_violations_prevented:
+  unmarked_synthetic_data:
+    violation: "Filled data presented as real observations"
+    prevention: "R117 requires data_source column marking real vs filled"
+
+  misleading_completeness:
+    violation: "Sparse data appearing as rich/complete dataset"
+    prevention: "R117 requires fill_rate metadata documentation"
+
+  false_continuity:
+    violation: "Gaps in time series filled without acknowledgment"
+    prevention: "R117 marks filled periods, enabling informed analysis"
+```
+
+### 2. MP109 (Derived ETL or DRV Time Series)
+
+R117 enforces proper layer assignment for time series operations:
+
+```yaml
+mp109_time_series_responsibilities:
+  time_series_completion:
+    task: "Fill gaps in sparse time series"
+    layer: "Derived ETL 2TR or DRV 2TR"
+    rationale: "Creates derived data (new rows) from existing data"
+
+  alignment:
+    task: "Align multi-product date ranges"
+    layer: "Derived ETL 2TR or DRV 2TR"
+    rationale: "Derivation task to enable cross-product analysis"
+
+  continuity:
+    task: "Create continuous series for visualization"
+    layer: "Derived ETL 2TR or DRV 2TR"
+    rationale: "Analytical preparation, not raw data transformation"
+```
+
+### 3. MP064 (ETL-Derivation Separation)
+
+R117 clarifies the ETL-DRV boundary for time series:
+
+```yaml
+mp064_boundary_clarification:
+  etl_responsibilities:
+    - "Import actual transactions (0IM)"
+    - "Standardize date formats (1ST)"
+    - "Transform transaction attributes (2TR)"
+    - "NO time series filling in base ETL 0IM/1ST/transaction 2TR"
+    - "Derived ETL time series completion is allowed only in a dedicated step"
+
+  df_responsibilities:
+    - "Complete time series with filling (derived ETL 2TR or DRV 2TR)"
+    - "Mark filled data with data_source column"
+    - "Document fill rates per product/dimension"
+    - "Enable real vs filled analysis"
+```
+
+## Fill Methods
+
+### 1. Zero-Fill (Recommended for Sales Data)
+
+Most appropriate when absence means "no activity":
+
+```r
+# Zero-fill: Assume missing sales dates = 0 sales
+completed_sales <- fn_complete_time_series(
+  data = sales_raw,
+  fill_method = "zero_fill"
+)
+
+# ✅ BEST FOR: Sales transactions, website visits, order counts
+# RATIONALE: If no transaction recorded, quantity = 0 (not missing data)
+```
+
+### 2. Forward Fill (Use with Caution)
+
+Carry forward last known value:
+
+```r
+# Forward-fill: Repeat last known price
+completed_prices <- fn_complete_time_series(
+  data = price_history,
+  fill_method = "forward_fill"
+)
+
+# ⚠️ USE CAREFULLY FOR: Product prices, inventory levels, status flags
+# RATIONALE: Value assumed unchanged until next update
+# WARNING: Can create misleading trends if gaps are large
+```
+
+### 3. Linear Interpolation (Rarely Appropriate)
+
+Estimate values between known points:
+
+```r
+# Linear interpolation: Estimate in-between values
+completed_temps <- fn_complete_time_series(
+  data = temperature_readings,
+  fill_method = "linear_interpolation"
+)
+
+# ⚠️ RARELY APPROPRIATE FOR: Continuous physical measurements
+# WARNING: Creates "fake" intermediate values that never existed
+# MUST be marked as FILLED per R117
+```
+
+### 4. Mean Imputation (Discouraged)
+
+Replace with average value:
+
+```r
+# Mean imputation: Fill with mean of existing values
+# ❌ DISCOURAGED: Creates artificial patterns, violates MP029
+# Only use if explicitly required and well-documented
+```
+
+## Common Mistakes to Avoid
+
+### ❌ Mistake 1: Filling in Base ETL Layer
+
+```r
+# WRONG: Filling time series in base ETL 2TR
+cbz_ETL_sales_2TR <- function() {
+  sales <- read_staged_data()
+
+  # ❌ VIOLATION R117: Time series filling in base ETL layer
+  sales_complete <- sales %>%
+    complete(date = seq(min(date), max(date), by = "1 day"))
+
+  write_transformed_data(sales_complete)
+}
+
+# CORRECT: Use derived ETL time series step or DRV layer
+cbz_ETL_sales_2TR <- function() {
+  sales <- read_staged_data()
+  write_transformed_data(sales)  # ✅ No filling in ETL
+}
+
+cbz_ETL_sales_time_series_2TR <- function() {
+  sales <- read_transformed_data()
+  sales_complete <- fn_complete_time_series(sales, mark_filled = TRUE)
+  write_app_data(sales_complete)  # ✅ Derived ETL time series step
+}
+
+cbz_DRV_time_series <- function() {
+  sales <- read_transformed_data()
+  sales_complete <- fn_complete_time_series(sales, mark_filled = TRUE)  # ✅ Fill in DRV
+  write_drv_data(sales_complete)
+}
+```
+
+### ❌ Mistake 2: Not Marking Filled Data
+
+```r
+# WRONG: Filling without marking
+sales_complete <- sales_raw %>%
+  complete(date = seq(min(date), max(date), by = "1 day")) %>%
+  replace_na(list(sales_quantity = 0))  # ❌ No data_source marking
+
+# CORRECT: Explicit marking
+sales_complete <- sales_raw %>%
+  mutate(data_source = "REAL") %>%
+  complete(date = seq(min(date), max(date), by = "1 day")) %>%
+  mutate(
+    data_source = ifelse(is.na(data_source), "FILLED", data_source),
+    sales_quantity = ifelse(data_source == "FILLED", 0, sales_quantity)
+  )
+```
+
+### ❌ Mistake 3: Not Tracking Fill Rate
+
+```r
+# WRONG: No fill rate metadata
+write_drv_data(sales_complete)  # ❌ How much is filled? Unknown.
+
+# CORRECT: Track and document fill rate
+result <- fn_complete_time_series(sales_raw, mark_filled = TRUE)
+write_drv_data(result$data)
+write_metadata(result$fill_rate_summary)  # ✅ Document fill rates
+```
+
+### ❌ Mistake 4: Ignoring High Fill Rates
+
+```r
+# WRONG: Accepting >50% fill rate without investigation
+if (fill_rate > 0.5) {
+  # ❌ Just log warning and continue
+  message("High fill rate, but proceeding anyway")
+}
+
+# CORRECT: Investigate data quality issues
+if (fill_rate > 0.5) {
+  warning("R117 WARNING: Fill rate >50% indicates data quality issue")
+  # Investigate:
+  # - Is product actually active in this market?
+  # - Is data collection failing?
+  # - Should this product be excluded from analysis?
+  # - Do we need to adjust date range?
+}
+```
+
+## Compliance Checklist
+
+- [ ] Time series filling implemented in derived ETL 2TR or DRV layer (not base ETL 0IM/1ST/transaction 2TR)
+- [ ] `data_source` column added with values "REAL" or "FILLED"
+- [ ] All rows have valid data_source marking (no NA, no other values)
+- [ ] Fill rate metadata calculated and documented per product/dimension
+- [ ] fn_complete_time_series() utility function used with mark_filled = TRUE
+- [ ] Fill method documented (zero_fill, forward_fill, etc.)
+- [ ] Validation function passes all transparency checks
+- [ ] Warning issued if fill rate > 50% for any product
+- [ ] Analysts can filter by data_source for analysis
+- [ ] UI/reports acknowledge filled data (if applicable)
+
+## Conclusion
+
+R117 ensures all filled time series data is explicitly marked to maintain transparency and prevent MP029 violations. By handling time series completion in a **derived ETL time series step** or the **DRV layer** and requiring `data_source` column marking, the system preserves analytical integrity while enabling complete time series analysis.
+
+This rule is essential for:
+- **Transparency**: Users know which data is real vs filled
+- **Compliance**: Satisfies MP029 (No Fake Data) and MP109 (Derived ETL/DRV)
+- **Analytical Integrity**: Enables informed analysis with real vs filled awareness
+- **Data Quality**: Fill rate tracking reveals data collection issues
+- **Flexibility**: Analysts can choose how to handle filled data
+
+**Critical Reminder**: Time series filling is a **derived data task** that belongs in a **derived ETL time series step** or **DRV 2TR**, not in base ETL 0IM/1ST/transaction 2TR. Always mark filled data with `data_source` column, track fill rates, and investigate high fill rates (>50%) as potential data quality issues.

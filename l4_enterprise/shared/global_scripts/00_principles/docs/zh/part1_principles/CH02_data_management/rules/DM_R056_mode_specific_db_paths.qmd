@@ -1,0 +1,117 @@
+---
+title: "DM_R056: Mode-Specific Database Path Loading"
+subtitle: "APP_MODE loads only app_data; ETL paths load only in UPDATE_MODE/GLOBAL_MODE"
+chapter: "CH02"
+category: "rule"
+number: "DM_R056"
+date-created: "2026-01-08"
+date-modified: "2026-01-08"
+author: "Claude"
+type: "rule"
+law: "Data Management"
+article-number: "Rule 56"
+parent_principle: "MP010"
+related_to:
+  - "MP010": "Operating Modes"
+  - "MP064": "ETL-Derivation Separation"
+  - "DM_R028": "ETL Data Type Separation"
+  - "DM_R045": "Database File Naming Standard"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# DM_R056: Mode-Specific Database Path Loading {#overview}
+
+Database paths from `db_paths.yaml` must be loaded conditionally based on `OPERATION_MODE`.
+APP_MODE should only load paths to databases that exist in the deployment environment.
+
+## Rule Statement
+
+**When loading database paths in `autoinit()`, filter paths by OPERATION_MODE:**
+
+- **APP_MODE**: Load only `app_data` (the only database bundled in Posit Connect deployments)
+- **UPDATE_MODE / GLOBAL_MODE**: Load all database paths (6-layer ETL + domain databases)
+
+## Rationale {#rationale}
+
+1. **Deployment Compatibility**: Posit Connect deployments only include `app_data.duckdb`. Loading paths to non-existent databases causes runtime errors.
+
+2. **Principle Compliance**: MP010 (Operating Modes) specifies APP_MODE should not access ETL-layer databases.
+
+3. **Security**: Prevents accidental access to intermediate ETL data from production applications.
+
+4. **Clean Separation**: Enforces the ETL-Derivation separation (MP064) at the configuration level.
+
+## Implementation {#implementation}
+
+In `scripts/global_scripts/22_initializations/sc_Rprofile.R`, the `autoinit()` function must:
+
+```r
+# Process databases section (DM_R056: Mode-Specific Path Loading)
+if (!is.null(db_config$databases)) {
+  if (.InitEnv$OPERATION_MODE == "APP_MODE") {
+    # APP_MODE: only load app_data (deployment environment only has this)
+    if ("app_data" %in% names(db_config$databases)) {
+      db_path_list$app_data <- file.path(base, db_config$databases$app_data)
+    }
+  } else {
+    # UPDATE_MODE/GLOBAL_MODE: load all paths
+    for (name in names(db_config$databases)) {
+      db_path_list[[name]] <- file.path(base, db_config$databases[[name]])
+    }
+  }
+}
+
+# Process domain section (only for UPDATE_MODE/GLOBAL_MODE)
+if (!is.null(db_config$domain) &&
+    .InitEnv$OPERATION_MODE %in% c("UPDATE_MODE", "GLOBAL_MODE")) {
+  for (name in names(db_config$domain)) {
+    db_path_list[[name]] <- file.path(base, db_config$domain[[name]])
+  }
+}
+```
+
+## Database Path Categories {#categories}
+
+| Category | Databases | APP_MODE | UPDATE_MODE | GLOBAL_MODE |
+|----------|-----------|----------|-------------|-------------|
+| Application | `app_data` | Loaded | Loaded | Loaded |
+| ETL Layer 0-4 | `raw_data`, `staged_data`, `transformed_data`, `processed_data`, `cleansed_data` | Not Loaded | Loaded | Loaded |
+| Metadata | `meta_data` | Not Loaded | Loaded | Loaded |
+| Domain | `comment_property_*` | Not Loaded | Loaded | Loaded |
+
+## Verification {#verification}
+
+### Local Testing
+
+```r
+# Test APP_MODE
+OPERATION_MODE <- "APP_MODE"
+autoinit()
+names(db_path_list)
+# Expected: "app_data" only
+
+# Test UPDATE_MODE
+OPERATION_MODE <- "UPDATE_MODE"
+autoinit()
+names(db_path_list)
+# Expected: all 6 layers + domain databases
+```
+
+### Deployment Testing
+
+After deploying to Posit Connect:
+1. Check logs for absence of "file not found" errors
+2. Verify application functions correctly
+3. Confirm no attempts to access ETL databases
+
+## Checklist {#checklist}
+
+- [ ] `autoinit()` checks `OPERATION_MODE` before loading paths
+- [ ] APP_MODE only loads `app_data`
+- [ ] UPDATE_MODE/GLOBAL_MODE load all paths
+- [ ] Domain databases excluded from APP_MODE
+- [ ] No breaking changes to ETL scripts

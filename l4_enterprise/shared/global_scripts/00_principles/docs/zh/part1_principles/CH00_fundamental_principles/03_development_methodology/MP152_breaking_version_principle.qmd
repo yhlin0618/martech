@@ -1,0 +1,82 @@
+---
+title: "MP152: 破壞式版本原則"
+subtitle: "大版本升級必須是明確遷移，而非隱性兼容"
+author: "MAMBA Architecture Team"
+date: "2026-02-28"
+version: "1.0.0"
+category: "Meta-Principle"
+tags: ["release", "versioning", "migration", "compatibility", "operability"]
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+---
+
+## 原則聲明
+
+**新版本發布時，需明確宣告新的契約，且不得在未完成遷移前隱性支援舊版本行為。**
+
+當版本切換被視為重大不相容變更時，輸入資料、設定、啟動入口都必須先透過文件化的遷移流程升級，才能進入新版本執行。
+
+這不與無 fallback 原則衝突，而是其版本邊界：  
+- 無 fallback 是約束「同版本內」不能掩蓋錯誤。  
+- Breaking Version 則定義「版本更迭時」如何處理舊相容。
+
+## 核心規則
+
+### 1) 新版本不能含隱性舊版分支
+
+新版本不應在缺少新版資源時，偷偷退回舊版 schema、舊環境欄位或舊部署流程。
+
+```r
+# 錯誤：v2 仍偷偷用 v1 設定
+cfg <- if (file.exists("app_config_v2.yaml")) {
+  yaml::read_yaml("app_config_v2.yaml")
+} else {
+  yaml::read_yaml("app_config.yaml")
+}
+
+# 正確：明確阻擋並要求遷移
+cfg_path <- "app_config_v2.yaml"
+if (!file.exists(cfg_path)) {
+  stop(
+    "缺少 v2 設定檔：", cfg_path,
+    "\n請先執行 migrate_config_v1_to_v2() 完成遷移。"
+  )
+}
+cfg <- yaml::read_yaml(cfg_path)
+```
+
+### 2) 全量替換優先於局部補丁
+
+不採用「只改一部分」來同時維持新舊版並行；若語義不相容，發布時就以完整遷移路徑一次性替換相關設定與流程。
+
+### 3) 遷移是明確契約，而非盡力恢復
+
+升級程序需具體且可驗證：
+- 檢查來源版本
+- 執行遷移步驟
+- 驗證遷移結果
+- 任一步驟缺失即直接失敗
+
+## 適用範圍
+
+- 重大版本升級的設定、schema、API 契約與部署入口
+- AI 協助的版本遷移任務
+- 需一次性棄用舊約定的全域改版作業
+
+## 合規檢查
+
+1. 新版本入口檢查是否對預期版本標記與遷移檔做 hard fail。
+2. 檢查舊版 fallback 分支是否已移除，或有明確兼容 adapter + 棄用計畫。
+3. 遷移腳本需版本化、可重跑、且有更新紀錄。
+4. 驗證項目必須包含缺必要欄位/檔案的失敗測試。
+
+## 相關原則
+
+- **MP151**: 無 fallback 原則
+- **MP137**: 不含專案特定硬編碼
+- **MP004**: 合理預設（僅限同版本穩定邊界內）
+- **MP037**: 原則指導修改

@@ -1,0 +1,193 @@
+---
+title: "UI_P012: Multi-Language UI Support Principle"
+subtitle: "UI applications must support multiple languages through a dictionary-driven translation system, enabling internationalization without code changes"
+chapter: "CH04"
+category: "principle"
+number: "UI_P012"
+date-created: "2025-12-26"
+date-modified: "2025-12-26"
+author: "Claude"
+type: "principle"
+law: "UI Components Law"
+article-number:
+  number: 12
+  title: "Multi-Language UI Support Principle"
+related_to:
+  - "UI_P001: Natural Language UI"
+  - "UI_R007: UI Text Standardization"
+  - "UI_R022: UI Text Translation Pattern"
+  - "UI_R023: Language Fallback Chain"
+  - "SO_P010: Config-Driven Customization"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# Article 12: Multi-Language UI Support Principle {#overview}
+
+**UI Components Law Article 12 (Multi-Language UI Support Principle)**
+
+UI applications must support multiple languages through a dictionary-driven translation system. All user-facing text should be translatable without code modifications, using a centralized CSV dictionary as the single source of truth for all translations.
+
+:::{.callout-important}
+## Core Principle
+Separate translatable text from code by using a dictionary-driven `translate()` function. Language selection is controlled via configuration, not hardcoded in source.
+:::
+
+# Section 1: Implementation Requirements {#implementation-requirements}
+
+## Subsection 1: Dictionary-Driven Translation {#dictionary-driven}
+
+**Translation System Standards:**
+
+- All UI text must use the `translate()` function
+- Translations stored in CSV dictionary file
+- Dictionary location: X_global_data/parameters/scd_type2/df_ui_terminology_dictionary.csv`
+- English (en_us) serves as the primary key and fallback language
+
+**Dictionary CSV Format:**
+
+```csv
+en_us,zh_tw,zh_cn
+Application Settings,應用程式設定,应用程序设置
+Marketing Channel,行銷通路,营销渠道
+Customer Profile,客戶檔案,客户档案
+```
+
+## Subsection 2: Translate Function Pattern {#translate-function}
+
+**Implementation Example:**
+
+```r
+# Initialize translation at app startup
+translate <<- identity   # Default fallback
+
+if (exists("initialize_ui_translation", mode = "function")) {
+  translate <<- initialize_ui_translation()
+}
+
+# Usage in UI components
+actionButton(
+  inputId = "submit_btn",
+  label = translate("Submit"),
+  icon = icon("check")
+)
+
+# Usage in server output
+output$title <- renderText({
+  translate("Customer Analysis Dashboard")
+})
+```
+
+## Subsection 3: Language Configuration {#language-configuration}
+
+**Configuration in app_config.yaml:**
+
+```yaml
+app_info:
+  name: "MAMBA"
+  language: "zh_TW"  # Options: en, zh_TW, zh_CN
+```
+
+**Language Detection:**
+
+```r
+# Language is read from app_configs$language
+# Supported values:
+# - "en", "en_US", "en_us" -> English
+# - "zh_TW", "zh-TW", "zh_tw" -> Traditional Chinese
+# - "zh_CN", "zh-CN", "zh_cn" -> Simplified Chinese
+```
+
+# Section 2: Fallback Mechanism {#fallback-mechanism}
+
+## Subsection 1: Language Fallback Chain {#fallback-chain}
+
+**Fallback Priority:**
+
+1. Requested language (e.g., zh_CN)
+2. Related language fallback (zh_CN -> zh_TW)
+3. English (identity function)
+
+**Implementation:**
+
+```r
+# If zh_CN translation is empty, use zh_TW
+if (target_lang == "zh_cn" && nchar(translation) == 0) {
+  translation <- dictionary[key, "zh_tw"]
+}
+
+# If still empty, return original English text
+if (nchar(translation) == 0) {
+  return(english_text)
+}
+```
+
+## Subsection 2: Graceful Degradation {#graceful-degradation}
+
+**System Unavailability Handling:**
+
+- If dictionary file not found, return identity function
+- If translation key not in dictionary, return original text
+- Never crash due to missing translations
+
+```r
+initialize_ui_translation <- function() {
+
+  # Graceful fallback if system unavailable
+  if (!file.exists(dictionary_path)) {
+    message("Translation dictionary not found, using identity")
+    return(identity)
+  }
+
+  # Return translation function
+  function(text) {
+    translation <- lookup(text)
+    if (is.null(translation) || nchar(translation) == 0) {
+      return(text)  # Return original if not found
+    }
+    translation
+  }
+}
+```
+
+# Section 3: Benefits Analysis {#benefits-analysis}
+
+## Subsection 1: Separation of Concerns {#separation-of-concerns}
+
+**Advantages:**
+
+1. **Code-Translation Separation**: Developers work on code, translators work on dictionary
+2. **No Deployment for Language Changes**: Update CSV without redeploying app
+3. **Consistent Terminology**: Single source ensures consistent translation across app
+4. **Easy Addition of Languages**: Add new column to CSV to support new language
+
+## Subsection 2: Maintainability {#maintainability}
+
+**Maintenance Benefits:**
+
+1. **Centralized Management**: All translations in one file
+2. **Easy Auditing**: Simple to verify all text is translated
+3. **Version Control Friendly**: CSV changes are easily tracked in git
+4. **Non-Technical Editing**: Translators can edit CSV without code knowledge
+
+# Section 4: Principle Relationships {#principle-relationships}
+
+## Subsection 1: Extending Relationships {#extending-relationships}
+
+This principle:
+
+1. **Extends UI_P001 (Natural Language UI)** to support multiple natural languages
+2. **Implements SO_P010 (Config-Driven Customization)** for language selection
+3. **Standardizes UI_R007 (UI Text Standardization)** across languages
+4. **Implemented By UI_R022 (UI Text Translation Pattern)** for specific patterns
+5. **Implemented By UI_R023 (Language Fallback Chain)** for fallback behavior
+
+---
+
+*Based on: UI Components Law Article 12*
+*Related to: [UI_P001 Natural Language UI](UI_P001_natural_language_ui.qmd), [SO_P010 Config-Driven Customization](../../CH01_structure_organization/principles/SO_P010_config_driven_customization.qmd)*

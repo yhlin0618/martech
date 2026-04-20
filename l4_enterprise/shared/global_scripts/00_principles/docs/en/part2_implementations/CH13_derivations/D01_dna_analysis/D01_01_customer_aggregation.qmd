@@ -1,0 +1,149 @@
+---
+
+title: "D01_01: Customer Aggregation"
+subtitle: "Aggregate transactions by customer, platform, and product line"
+parent: "D01_dna_analysis"
+chapter: "CH12"
+category: "derivation-task"
+number: "D01_01"
+date-created: "2025-12-14"
+date-modified: "2026-02-08"
+author: "Claude"
+type: "derivation-task"
+depends_on:
+  - "D01_00_consume_etl_output"
+outputs_to:
+  - "D01_02_rfm_calculation"
+implements:
+  - script: "cbz_D01_01.R"
+    path: "update_scripts/DRV/cbz/"
+  - script: "amz_D01_01.R"
+    path: "update_scripts/DRV/amz/"
+  - script: "eby_D01_01.R"
+    path: "update_scripts/DRV/eby/"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# D01_01: Customer Aggregation {#overview}
+
+This task performs customer-level aggregation with multi-dimensional grouping. It groups transactions by customer, platform, and product line to calculate transaction metrics per customer.
+
+## Task Definition (NSQL)
+
+```nsql
+AGGREGATE transformed_data.df_{platform}_sales___standardized BY customer_id, platform_id, product_line_id_filter
+TO processed_data.df_{platform}_sales_by_customer_by_date
+THEN AGGREGATE TO processed_data.df_{platform}_sales_by_customer
+```
+
+## Detailed Aggregation Specification (NSQL) {#aggregation-detail-nsql}
+
+```nsql
+# D01_01: Customer Aggregation Detailed Specification
+AGGREGATE D01_01_customer_aggregation:
+  FROM transformed_data.df_{platform}_sales___standardized
+
+  GROUP BY:
+    customer_id
+    platform_id
+    product_line_id_filter
+
+  CALCULATE:
+    sum_spent_by_date: SUM(lineproduct_price) [na.rm = TRUE]
+    count_transactions_by_date: COUNT(*)
+    min_time_by_date: MIN(payment_time) [na.rm = TRUE]
+
+  OUTPUT:
+    TABLE: processed_data.df_{platform}_sales_by_customer_by_date
+    MODE: OVERWRITE
+
+  THEN AGGREGATE BY customer_id, platform_id, product_line_id_filter:
+    sum_sales_by_customer: SUM(sum_spent_by_date)
+    sum_transactions_by_customer: SUM(count_transactions_by_date)
+    ipt: INTER_PURCHASE_TIME(min_time_by_date)
+    ni: PURCHASE_COUNT
+    min_time_by_date: MIN(min_time_by_date)
+    max_time_by_date: MAX(min_time_by_date)
+
+  OUTPUT:
+    TABLE: processed_data.df_{platform}_sales_by_customer
+    MODE: OVERWRITE
+```
+
+## Aggregation Logic {#aggregate-logic}
+
+Performs customer-level aggregation with multi-dimensional grouping:
+
+1. **Groups by customer, platform, and product line**
+2. **Calculates transaction metrics per customer**
+3. **Maintains temporal information for RFM analysis**
+
+### Output Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `customer_id` | INTEGER | Customer identifier |
+| `platform_id` | VARCHAR | Platform identifier |
+| `product_line_id_filter` | VARCHAR | Product line filter (must be populated; fallback to "all" only when upstream lacks product_line_id) |
+| `sum_sales_by_customer` | NUMERIC | Sum of all transactions |
+| `sum_transactions_by_customer` | INTEGER | Number of transactions |
+| `ipt` | NUMERIC | Inter-purchase time (days) |
+| `ni` | INTEGER | Purchase count |
+| `min_time_by_date` | TIMESTAMP | First purchase date |
+| `max_time_by_date` | TIMESTAMP | Most recent purchase date |
+
+## Filter Field Semantics {#filter-field-semantics}
+
+To avoid UI/DRV ambiguity, treat product-line fields as three separate layers:
+
+| Field | Layer | Purpose |
+|-------|-------|---------|
+| `filters.product_line_id` | Dashboard UI config | User-selected product line for presentation/filter controls |
+| `filters.product_line_id_sliced` | Runtime config (internal) | Resolved "already-filtered" scope consumed by DRV-backed components |
+| `product_line_id_filter` | D01 storage schema | Persisted derivation dimension used in SQL tables and primary keys |
+
+`product_line_id_sliced` maps to the table column `product_line_id_filter` during query execution.  
+Do not rename DB columns without coordinated schema migration.
+
+## Implementation Reference {#implementation}
+
+Aggregation is implemented as dedicated D01_01 scripts:
+
+- **Cyberbiz**: `update_scripts/DRV/cbz/cbz_D01_01.R`
+- **Amazon**: `update_scripts/DRV/amz/amz_D01_01.R`
+- **eBay**: `update_scripts/DRV/eby/eby_D01_01.R`
+
+## Aggregation Output Validation (NSQL) {#aggregation-validation-nsql}
+
+```nsql
+# Validate Aggregation Output
+VALIDATE D01_01_output:
+  FROM processed_data.df_{platform}_sales_by_customer
+
+  RULES:
+    unique_key: UNIQUE(customer_id, platform_id, product_line_id_filter)
+    no_negative_values: sum_sales_by_customer >= 0 AND sum_transactions_by_customer > 0
+    valid_dates: min_time_by_date <= max_time_by_date
+    completeness: COUNT(*) > 0
+
+  ON_FAILURE:
+    LOG_WARNING "Aggregation validation failed"
+    RETURN validation_report
+```
+
+## Key Principle
+
+The aggregation **must preserve product-line granularity** end-to-end:
+1. **Customer** - Who is buying
+2. **Platform** - Where they're buying
+3. **Product Line** - What line they're buying within
+
+`product_line_id_filter` must be populated from standardized sales data. Only use `"all"` when upstream data truly lacks `product_line_id`, and record that limitation.
+
+## Next Task
+
+After aggregation, proceed to [D01_02: Customer Features & DNA Computation](D01_02_rfm_calculation.qmd).

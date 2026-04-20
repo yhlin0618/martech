@@ -1,0 +1,119 @@
+---
+title: "DP_R002: Integer Display Fidelity"
+subtitle: "Integer-typed values must never display decimal points in the UI"
+category: "Data Presentation"
+type: "Rule"
+id: "DP_R002"
+created: "2026-03-07"
+triggered_by: "Issue #276 — Purchase count (f_value) displayed as '3.0' instead of '3'"
+parent: "MP153"
+---
+
+## Summary
+
+Values that are semantically integers (counts, quantities, ranks) **must** be displayed without decimal points in all UI contexts: KPI cards, tables, charts, tooltips, and exported reports.
+
+## Motivation
+
+DuckDB and R frequently promote integers to doubles during joins, aggregations, or column operations. For example:
+
+- `f_value` (purchase frequency) stored as `INTEGER` in DuckDB becomes `numeric` after `collect()` in R
+- `SUM(order_count)` returns `DOUBLE` even when all inputs are integers
+- `dplyr::left_join()` may coerce integer columns to double
+
+If the UI renders these raw values, users see "購買次數: 3.0" instead of "購買次數: 3", which is confusing and unprofessional.
+
+## Rule
+
+> Any value whose semantic type is "integer count" MUST be formatted with `as.integer()` or equivalent before display. This applies to KPI cards, data tables, chart axes, tooltips, and any other user-visible rendering.
+
+## Common Integer Fields in This Project
+
+| Field | Description | Source Table |
+|-------|-------------|-------------|
+| `f_value` | Purchase frequency | `df_dna_by_customer` |
+| `customer_count` | Number of customers | Various aggregations |
+| `order_count` | Number of orders | Various aggregations |
+| `n_transactions` | Transaction count | BTYD calculations |
+| `rank` | Any ranking | Computed fields |
+| `quantity` | Product quantity | Order details |
+
+## Implementation
+
+### KPI Cards
+
+```r
+# Bad: raw value may show decimals
+bs4ValueBox(value = data$f_value, ...)
+
+# Good: explicit integer formatting
+bs4ValueBox(value = as.integer(data$f_value), ...)
+```
+
+### Data Tables (DT)
+
+```r
+# Bad: DT renders raw doubles
+datatable(df)
+
+# Good: format integer columns explicitly
+df$f_value <- as.integer(df$f_value)
+df$customer_count <- as.integer(df$customer_count)
+datatable(df)
+
+# Alternative: use DT::formatRound with 0 digits
+datatable(df) %>%
+  formatRound(columns = c("f_value", "customer_count"), digits = 0)
+```
+
+### Plotly Charts
+
+```r
+# Bad: tooltip shows "F: 3.0"
+plot_ly(x = ~f_value, text = ~f_value)
+
+# Good: format in hover text
+plot_ly(x = ~f_value, text = ~paste0("F: ", as.integer(f_value)))
+```
+
+## Scope
+
+This rule applies to **all UI rendering contexts**:
+
+- `bs4ValueBox` / `valueBox` values
+- `DT::datatable` columns
+- `plotly` hover text and axis labels
+- `renderText` / `renderUI` output
+- Downloaded CSV/Excel files (ensure integer columns remain integer)
+
+## Detection
+
+To find potential violations, search for integer fields rendered without formatting:
+
+```r
+# grep for common integer fields in UI code
+grep -rn "f_value\|customer_count\|order_count" 10_rshinyapp_components/ | grep -v "as.integer"
+```
+
+## Dependencies
+
+- **MP153**: Data Type Presentation Fidelity — this rule derives from MP153
+- **MP029**: No Fake Data — `as.integer()` does not fabricate; it restores the semantic type
+
+## Related Principles
+
+- **DP_R001**: Distribution Winsorization — handles visualization of integer distributions
+- **DM_R025**: Type Conversion — upstream cause of integer-to-double promotion
+- **DEV_R051**: CSV Download UTF-8 BOM — exported data should also respect integer formatting
+
+## Violations
+
+- Displaying `f_value` as "3.0" in a KPI card or table
+- Showing "Customer Count: 1247.0" in any UI element
+- Chart tooltip showing "Orders: 5.00"
+
+## Compliant
+
+- `as.integer(f_value)` before rendering in `bs4ValueBox`
+- `DT::formatRound(columns = "f_value", digits = 0)` in data tables
+- Plotly hover text using `paste0("F: ", as.integer(f_value))`

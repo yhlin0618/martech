@@ -1,0 +1,1053 @@
+---
+title: "DEV_P019: 一致性組件狀態原則"
+subtitle: "應用程式組件應維持一致的內部狀態追蹤，用於可見性和配置管理，並具有標準化的狀態變更機制。這確保了可預測的行為、簡化的狀態管理，並使組件能夠正確響應導航或使用者互動事件"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P019"
+date-created: "2025-04-09"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article-number: 
+  number: 19
+  title: "一致性組件狀態原則"
+related_to:
+  - "MP017: 模組化原則"
+  - "UI_R001: UI-Server-Defaults三元組規則"
+  - "MP100: 應用程式動態原則"
+  - "DEV_P014: 性能優化原則"
+  - "UI_P011: 階層式導航原則"
+  - "R092: bs4Dash導航欄導航規則"
+  - "MP056: 連接組件原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十九條：一致性組件狀態原則 {#overview}
+
+**開發方法法第十九條（一致性組件狀態原則）**
+
+應用程式組件應維持一致的內部狀態追蹤，用於可見性和配置管理，並具有標準化的狀態變更機制。這確保了可預測的行為、簡化的狀態管理，並使組件能夠正確響應導航或使用者互動事件。
+
+:::{.callout-important}
+## 核心原則
+透過定義清晰的狀態模型、提供一致的狀態變更機制，並將狀態與導航系統整合，使組件變得更可預測、可維護和穩健。
+:::
+
+# 第一項：實施要求 {#implementation-requirements}
+
+## 第一款：組件狀態定義 {#component-state-definition}
+
+**狀態定義標準：**
+
+- 每個組件應有明確定義的狀態模型
+- 使用響應式值追蹤組件狀態（如：活動子標籤、可見性）
+- 使用合理的預設值初始化狀態
+- 記錄預期的狀態屬性和有效值
+
+**實施範例：**
+
+```r
+# 定義組件狀態的響應式值
+initialize_component <- function(id, config = NULL) {
+  # 狀態初始化
+  active_view <- reactiveVal("default")
+  is_expanded <- reactiveVal(FALSE)
+  is_loading <- reactiveVal(FALSE)
+  error_state <- reactiveVal(NULL)
+  
+  # 狀態驗證函數
+  validate_state <- function(state_name, value) {
+    valid_states <- list(
+      active_view = c("default", "detail", "summary", "analysis"),
+      is_expanded = c(TRUE, FALSE),
+      is_loading = c(TRUE, FALSE)
+    )
+    
+    if (state_name %in% names(valid_states)) {
+      return(value %in% valid_states[[state_name]])
+    }
+    return(TRUE)
+  }
+  
+  # 返回具有狀態管理的組件
+  list(
+    # 組件狀態 API
+    component_state = list(
+      # 設定活動視圖
+      set_active_view = function(view_name) {
+        if (validate_state("active_view", view_name)) {
+          active_view(view_name)
+          message(sprintf("組件 %s: 視圖變更為 %s", id, view_name))
+        } else {
+          warning(sprintf("無效的視圖名稱：%s", view_name))
+        }
+      },
+      
+      # 取得活動視圖
+      get_active_view = function() {
+        active_view()
+      },
+      
+      # 切換展開狀態
+      toggle_expanded = function(expanded = NULL) {
+        if (is.null(expanded)) {
+          is_expanded(!is_expanded())
+        } else {
+          is_expanded(expanded)
+        }
+      },
+      
+      # 設定載入狀態
+      set_loading = function(loading) {
+        is_loading(loading)
+      },
+      
+      # 設定錯誤狀態
+      set_error = function(error_msg = NULL) {
+        error_state(error_msg)
+        if (!is.null(error_msg)) {
+          is_loading(FALSE)  # 錯誤時停止載入
+        }
+      },
+      
+      # 取得完整狀態
+      get_state = function() {
+        list(
+          active_view = active_view(),
+          is_expanded = is_expanded(),
+          is_loading = is_loading(),
+          error_state = error_state()
+        )
+      },
+      
+      # 重置狀態
+      reset = function() {
+        active_view("default")
+        is_expanded(FALSE)
+        is_loading(FALSE)
+        error_state(NULL)
+      }
+    ),
+    
+    # UI實施使用狀態
+    ui = list(
+      display = function(ns) {
+        tagList(
+          # 載入指示器
+          conditionalPanel(
+            condition = "true",
+            ns = ns,
+            uiOutput(ns("loading_indicator"))
+          ),
+          
+          # 主要內容
+          uiOutput(ns("main_content"))
+        )
+      }
+    ),
+    
+    # 伺服器實施
+    server = function(input, output, session, connection) {
+      ns <- session$ns
+      
+      # 載入指示器
+      output$loading_indicator <- renderUI({
+        if (is_loading()) {
+          div(
+            class = "text-center p-3",
+            icon("spinner", class = "fa-spin"),
+            span("載入中...", class = "ml-2")
+          )
+        }
+      })
+      
+      # 主要內容基於狀態
+      output$main_content <- renderUI({
+        if (!is.null(error_state())) {
+          div(
+            class = "alert alert-danger",
+            icon("exclamation-triangle"),
+            strong("錯誤："),
+            error_state()
+          )
+        } else if (!is_loading()) {
+          # 基於 active_view 渲染內容
+          switch(active_view(),
+            default = div("預設視圖內容"),
+            detail = div("詳細視圖內容"),
+            summary = div("摘要視圖內容"),
+            analysis = div("分析視圖內容")
+          )
+        }
+      })
+    }
+  )
+}
+```
+
+## 第二款：狀態變更機制 {#state-change-mechanisms}
+
+**狀態變更標準：**
+
+- 實施標準化的狀態變更函數
+- 使用響應式編程模式進行狀態更新
+- 確保狀態變更觸發適當的UI更新
+- 驗證狀態變更以防止無效狀態
+
+**實施範例：**
+
+```r
+# 創建狀態管理器
+createStateManager <- function(initial_state = list()) {
+  # 私有狀態儲存
+  .state <- reactiveValues()
+  
+  # 初始化狀態
+  for (key in names(initial_state)) {
+    .state[[key]] <- initial_state[[key]]
+  }
+  
+  # 狀態變更歷史
+  .history <- reactiveVal(list())
+  
+  # 狀態變更監聽器
+  .listeners <- list()
+  
+  list(
+    # 取得狀態值
+    get = function(key = NULL) {
+      if (is.null(key)) {
+        return(reactiveValuesToList(.state))
+      }
+      return(.state[[key]])
+    },
+    
+    # 設定狀態值
+    set = function(key, value) {
+      old_value <- .state[[key]]
+      .state[[key]] <- value
+      
+      # 記錄變更
+      history_entry <- list(
+        timestamp = Sys.time(),
+        key = key,
+        old_value = old_value,
+        new_value = value
+      )
+      .history(append(.history(), list(history_entry)))
+      
+      # 觸發監聽器
+      if (key %in% names(.listeners)) {
+        for (listener in .listeners[[key]]) {
+          listener(old_value, value)
+        }
+      }
+      
+      invisible(value)
+    },
+    
+    # 批次更新狀態
+    update = function(updates) {
+      for (key in names(updates)) {
+        .state[[key]] <- updates[[key]]
+      }
+      invisible(TRUE)
+    },
+    
+    # 添加狀態變更監聽器
+    on_change = function(key, callback) {
+      if (!key %in% names(.listeners)) {
+        .listeners[[key]] <- list()
+      }
+      .listeners[[key]] <- append(.listeners[[key]], callback)
+      invisible(TRUE)
+    },
+    
+    # 取得變更歷史
+    get_history = function(key = NULL) {
+      history <- .history()
+      if (!is.null(key)) {
+        history <- Filter(function(h) h$key == key, history)
+      }
+      return(history)
+    },
+    
+    # 重置到初始狀態
+    reset = function() {
+      for (key in names(initial_state)) {
+        .state[[key]] <- initial_state[[key]]
+      }
+      .history(list())
+      invisible(TRUE)
+    }
+  )
+}
+```
+
+# 第二項：組件聯合中的狀態管理 {#state-management-in-unions}
+
+## 第一款：聯合組件API {#union-component-api}
+
+**聯合組件狀態管理：**
+
+- 聯合組件應提供一致的狀態管理API
+- 實施如 `toggle_component()` 等方法進行可見性控制
+- 包含查詢當前狀態的函數（如 `get_visible_components()`）
+- 適當時將狀態變更傳播到子組件
+
+**實施範例：**
+
+```r
+# 組件聯合的狀態管理
+createComponentUnion <- function(components) {
+  # 組件可見性狀態
+  component_visibility <- reactiveValues()
+  
+  # 組件載入狀態
+  component_loaded <- reactiveValues()
+  
+  # 初始化所有組件為隱藏
+  for (name in names(components)) {
+    component_visibility[[name]] <- FALSE
+    component_loaded[[name]] <- FALSE
+  }
+  
+  # 聯合狀態管理API
+  list(
+    components = components,
+    
+    component_state = list(
+      # 切換組件可見性
+      toggle_component = function(component_name, visible) {
+        # 驗證組件存在
+        if (!component_name %in% names(components)) {
+          warning("無法切換不存在的組件：", component_name)
+          return(FALSE)
+        }
+        
+        # 更新可見性狀態
+        component_visibility[[component_name]] <- visible
+        
+        # 如果顯示組件，確保已初始化
+        if (visible && !component_loaded[[component_name]]) {
+          initialize_component_if_needed(component_name)
+          component_loaded[[component_name]] <- TRUE
+        }
+        
+        # 記錄狀態變更
+        message(sprintf(
+          "組件 %s 可見性變更為：%s", 
+          component_name, 
+          ifelse(visible, "顯示", "隱藏")
+        ))
+        
+        return(TRUE)
+      },
+      
+      # 取得可見組件
+      get_visible_components = function() {
+        visible <- reactiveValuesToList(component_visibility)
+        names(visible)[unlist(visible)]
+      },
+      
+      # 檢查組件是否可見
+      is_visible = function(component_name) {
+        component_visibility[[component_name]] %||% FALSE
+      },
+      
+      # 顯示單一組件（隱藏其他）
+      show_only = function(component_name) {
+        for (name in names(components)) {
+          component_visibility[[name]] <- (name == component_name)
+        }
+        
+        # 確保顯示的組件已載入
+        if (!component_loaded[[component_name]]) {
+          initialize_component_if_needed(component_name)
+          component_loaded[[component_name]] <- TRUE
+        }
+      },
+      
+      # 顯示所有組件
+      show_all = function() {
+        for (name in names(components)) {
+          component_visibility[[name]] <- TRUE
+          if (!component_loaded[[name]]) {
+            initialize_component_if_needed(name)
+            component_loaded[[name]] <- TRUE
+          }
+        }
+      },
+      
+      # 隱藏所有組件
+      hide_all = function() {
+        for (name in names(components)) {
+          component_visibility[[name]] <- FALSE
+        }
+      },
+      
+      # 取得組件狀態摘要
+      get_state_summary = function() {
+        list(
+          visible = get_visible_components(),
+          loaded = names(component_loaded)[unlist(reactiveValuesToList(component_loaded))],
+          total = length(components)
+        )
+      }
+    ),
+    
+    # UI渲染基於狀態
+    ui = function(id) {
+      ns <- NS(id)
+      
+      tagList(
+        lapply(names(components), function(comp_name) {
+          conditionalPanel(
+            condition = sprintf("true"),  # 使用JavaScript條件
+            ns = ns,
+            div(
+              id = ns(paste0(comp_name, "_container")),
+              style = if (!component_visibility[[comp_name]]) "display: none;" else "",
+              components[[comp_name]]$ui$display(ns(comp_name))
+            )
+          )
+        })
+      )
+    },
+    
+    # 伺服器邏輯
+    server = function(input, output, session, connection) {
+      # 為每個組件創建觀察器
+      lapply(names(components), function(comp_name) {
+        observe({
+          # 基於可見性狀態更新UI
+          if (component_visibility[[comp_name]]) {
+            shinyjs::show(paste0(comp_name, "_container"))
+          } else {
+            shinyjs::hide(paste0(comp_name, "_container"))
+          }
+        })
+      })
+    }
+  )
+}
+
+# 初始化組件的輔助函數
+initialize_component_if_needed <- function(component_name) {
+  message(sprintf("初始化組件：%s", component_name))
+  # 組件初始化邏輯
+}
+```
+
+## 第二款：狀態傳播機制 {#state-propagation}
+
+**狀態傳播實施：**
+
+```r
+# 父子組件狀態同步
+createParentChildSync <- function(parent_state, child_states) {
+  
+  # 監聽父狀態變更
+  observe({
+    parent_view <- parent_state$get_active_view()
+    
+    # 根據父狀態更新子組件
+    if (parent_view == "detail") {
+      # 展開所有子組件
+      for (child in child_states) {
+        child$toggle_expanded(TRUE)
+      }
+    } else if (parent_view == "summary") {
+      # 收縮所有子組件
+      for (child in child_states) {
+        child$toggle_expanded(FALSE)
+      }
+    }
+  })
+  
+  # 監聽子狀態變更
+  lapply(seq_along(child_states), function(i) {
+    child <- child_states[[i]]
+    
+    observe({
+      if (child$get_error()) {
+        # 如果任何子組件有錯誤，通知父組件
+        parent_state$set_error(sprintf("子組件 %d 發生錯誤", i))
+      }
+    })
+  })
+}
+```
+
+# 第三項：與導航的整合 {#navigation-integration}
+
+## 第一款：導航事件連結 {#navigation-event-linking}
+
+**導航整合標準：**
+
+- 將組件狀態連結到導航事件
+- 確保導航發生時狀態變更
+- 使用狀態決定活動/非活動樣式
+- 跨導航層級維持狀態一致性
+
+**實施範例：**
+
+```r
+# 連結導航到組件狀態
+setupNavigationStateSync <- function(input, session, component_union) {
+  
+  # 主導航觀察器
+  observeEvent(input$main_navbar, {
+    # 取得選中的標籤
+    tab_id <- input$main_navbar
+    
+    # 從標籤ID提取組件名稱
+    comp_name <- sub("_tab$", "", tab_id)
+    
+    # 更新活動標籤狀態
+    session$userData$active_tab <- tab_id
+    
+    # 透過聯合的API更新組件可見性
+    if (!is.null(component_union) && 
+        !is.null(component_union$component_state) && 
+        is.function(component_union$component_state$show_only)) {
+      
+      # 顯示選中的組件，隱藏其他
+      component_union$component_state$show_only(comp_name)
+      
+      # 記錄導航動作
+      logNavigation(
+        user = session$user,
+        from = session$userData$previous_tab,
+        to = tab_id,
+        timestamp = Sys.time()
+      )
+      
+      # 更新前一個標籤
+      session$userData$previous_tab <- tab_id
+    }
+  })
+  
+  # 次級導航觀察器
+  observeEvent(input$secondary_nav, {
+    subtab_id <- input$secondary_nav
+    
+    # 取得當前主標籤
+    main_tab <- session$userData$active_tab
+    
+    # 更新次級導航狀態
+    session$userData[[paste0(main_tab, "_subtab")]] <- subtab_id
+    
+    # 通知相應組件
+    if (!is.null(component_union$components[[main_tab]])) {
+      component <- component_union$components[[main_tab]]
+      if (!is.null(component$component_state)) {
+        component$component_state$set_active_view(subtab_id)
+      }
+    }
+  })
+}
+
+# 導航記錄函數
+logNavigation <- function(user, from, to, timestamp) {
+  log_entry <- data.frame(
+    user = user %||% "unknown",
+    from_tab = from %||% "none",
+    to_tab = to,
+    timestamp = timestamp,
+    stringsAsFactors = FALSE
+  )
+  
+  # 儲存到日誌（可以是檔案或資料庫）
+  appendToLog(log_entry)
+}
+```
+
+## 第二款：狀態持久化 {#state-persistence}
+
+**狀態持久化實施：**
+
+```r
+# 狀態持久化管理器
+createStatePersistence <- function(storage_key = "app_state") {
+  
+  list(
+    # 儲存狀態到本地儲存
+    save_state = function(state_manager) {
+      state_data <- state_manager$get()
+      
+      # 序列化狀態
+      serialized <- jsonlite::toJSON(state_data, auto_unbox = TRUE)
+      
+      # 儲存到瀏覽器本地儲存
+      shinyjs::runjs(sprintf(
+        "localStorage.setItem('%s', '%s');",
+        storage_key,
+        serialized
+      ))
+      
+      message("狀態已儲存到本地儲存")
+      invisible(TRUE)
+    },
+    
+    # 從本地儲存載入狀態
+    load_state = function(state_manager, session) {
+      # 從瀏覽器讀取狀態
+      session$sendCustomMessage("getLocalStorage", list(
+        key = storage_key,
+        callback = "restoreState"
+      ))
+      
+      # 處理返回的狀態
+      observeEvent(input$restoredState, {
+        if (!is.null(input$restoredState)) {
+          state_data <- jsonlite::fromJSON(input$restoredState)
+          state_manager$update(state_data)
+          message("狀態已從本地儲存恢復")
+        }
+      })
+    },
+    
+    # 清除儲存的狀態
+    clear_state = function() {
+      shinyjs::runjs(sprintf(
+        "localStorage.removeItem('%s');",
+        storage_key
+      ))
+      message("已清除儲存的狀態")
+    },
+    
+    # 自動儲存設定
+    setup_autosave = function(state_manager, interval_seconds = 30) {
+      observe({
+        invalidateLater(interval_seconds * 1000)
+        isolate({
+          save_state(state_manager)
+        })
+      })
+    }
+  )
+}
+
+# JavaScript處理器（添加到UI）
+state_persistence_js <- tags$script(HTML("
+  Shiny.addCustomMessageHandler('getLocalStorage', function(params) {
+    var value = localStorage.getItem(params.key);
+    if (value) {
+      Shiny.setInputValue(params.callback, value);
+    }
+  });
+"))
+```
+
+# 第四項：效益分析 {#benefits-analysis}
+
+## 第一款：技術效益 {#technical-benefits}
+
+**可預測的組件行為：**
+
+1. 組件對相同輸入的響應一致
+2. 狀態轉換遵循預期模式
+3. 減少非預期的副作用或狀態衝突
+
+**簡化除錯：**
+
+1. 清晰的狀態模型使問題追蹤更容易
+2. 狀態可被檢查和驗證
+3. 狀態轉換可記錄用於故障排除
+
+## 第二款：使用者體驗效益 {#ux-benefits}
+
+**增強的使用者體驗：**
+
+1. 應用程式中一致的UI行為
+2. 導航期間狀態適當地持續
+3. 視覺指示器與實際組件狀態匹配
+
+**改善的可維護性：**
+
+1. 跨組件的標準化狀態管理模式
+2. 更容易實施遵循模式的新組件
+3. 狀態相關邏輯的複雜性降低
+
+# 第五項：完整實施範例 {#complete-implementation}
+
+## 第一款：完整狀態管理系統 {#complete-state-system}
+
+**應用程式實施：**
+
+```r
+# app_with_state.R - 完整狀態管理示範
+library(shiny)
+library(bs4Dash)
+library(shinyjs)
+
+# 創建應用程式狀態管理器
+createAppStateManager <- function() {
+  # 全域狀態
+  app_state <- createStateManager(list(
+    current_tab = "dashboard",
+    user_authenticated = FALSE,
+    theme = "light",
+    language = "zh_TW"
+  ))
+  
+  # 組件狀態集合
+  component_states <- list()
+  
+  list(
+    # 註冊組件狀態
+    register_component = function(name, state) {
+      component_states[[name]] <<- state
+    },
+    
+    # 取得組件狀態
+    get_component_state = function(name) {
+      component_states[[name]]
+    },
+    
+    # 全域狀態
+    app_state = app_state,
+    
+    # 取得所有狀態摘要
+    get_summary = function() {
+      list(
+        app = app_state$get(),
+        components = lapply(component_states, function(cs) {
+          if (!is.null(cs$get_state)) {
+            cs$get_state()
+          } else {
+            "未定義狀態"
+          }
+        })
+      )
+    }
+  )
+}
+
+ui <- bs4DashPage(
+  title = "狀態管理示範",
+  
+  header = bs4DashNavbar(
+    title = "應用程式",
+    rightUi = tagList(
+      actionButton("save_state", "儲存狀態", icon = icon("save")),
+      actionButton("load_state", "載入狀態", icon = icon("upload")),
+      actionButton("reset_state", "重置", icon = icon("undo"))
+    )
+  ),
+  
+  sidebar = bs4DashSidebar(
+    bs4SidebarMenu(
+      id = "sidebar_menu",
+      bs4SidebarMenuItem(
+        text = "儀表板",
+        tabName = "dashboard",
+        icon = icon("dashboard")
+      ),
+      bs4SidebarMenuItem(
+        text = "分析",
+        tabName = "analysis",
+        icon = icon("chart-line")
+      ),
+      bs4SidebarMenuItem(
+        text = "設定",
+        tabName = "settings",
+        icon = icon("cog")
+      )
+    )
+  ),
+  
+  body = bs4DashBody(
+    useShinyjs(),
+    state_persistence_js,
+    
+    tags$style(HTML("
+      .state-indicator {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        padding: 10px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border-radius: 5px;
+        font-size: 12px;
+        z-index: 1000;
+      }
+    ")),
+    
+    # 狀態指示器
+    div(
+      class = "state-indicator",
+      id = "state_indicator",
+      verbatimTextOutput("state_display", placeholder = FALSE)
+    ),
+    
+    bs4TabItems(
+      bs4TabItem(
+        tabName = "dashboard",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "儀表板",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("dashboard_content")
+            )
+          )
+        )
+      ),
+      
+      bs4TabItem(
+        tabName = "analysis",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "分析",
+              status = "info",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("analysis_content")
+            )
+          )
+        )
+      ),
+      
+      bs4TabItem(
+        tabName = "settings",
+        fluidRow(
+          column(12,
+            bs4Card(
+              title = "設定",
+              status = "warning",
+              solidHeader = TRUE,
+              width = 12,
+              uiOutput("settings_content")
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # 初始化狀態管理器
+  state_manager <- createAppStateManager()
+  persistence <- createStatePersistence()
+  
+  # 創建組件
+  dashboard_component <- initialize_component("dashboard")
+  analysis_component <- initialize_component("analysis")
+  settings_component <- initialize_component("settings")
+  
+  # 註冊組件狀態
+  state_manager$register_component("dashboard", dashboard_component$component_state)
+  state_manager$register_component("analysis", analysis_component$component_state)
+  state_manager$register_component("settings", settings_component$component_state)
+  
+  # 側邊欄導航觀察器
+  observeEvent(input$sidebar_menu, {
+    state_manager$app_state$set("current_tab", input$sidebar_menu)
+    
+    # 更新組件可見性
+    components <- c("dashboard", "analysis", "settings")
+    for (comp in components) {
+      comp_state <- state_manager$get_component_state(comp)
+      if (!is.null(comp_state)) {
+        if (comp == input$sidebar_menu) {
+          comp_state$set_loading(TRUE)
+          # 模擬載入
+          invalidateLater(1000)
+          observeEvent(invalidateLater(1000), {
+            comp_state$set_loading(FALSE)
+          }, once = TRUE)
+        }
+      }
+    }
+  })
+  
+  # 儀表板內容
+  output$dashboard_content <- renderUI({
+    comp_state <- state_manager$get_component_state("dashboard")
+    
+    if (comp_state$is_loading) {
+      return(div(
+        class = "text-center p-5",
+        icon("spinner", class = "fa-spin fa-3x"),
+        h4("載入儀表板...")
+      ))
+    }
+    
+    tagList(
+      h4("儀表板視圖：", comp_state$get_active_view()),
+      fluidRow(
+        column(6,
+          actionButton("dash_view_summary", "摘要視圖", 
+            class = if(comp_state$get_active_view() == "summary") "btn-primary" else "btn-default"
+          )
+        ),
+        column(6,
+          actionButton("dash_view_detail", "詳細視圖",
+            class = if(comp_state$get_active_view() == "detail") "btn-primary" else "btn-default"
+          )
+        )
+      ),
+      hr(),
+      div(
+        id = "dashboard_view_content",
+        if (comp_state$get_active_view() == "summary") {
+          p("這是儀表板摘要視圖")
+        } else {
+          p("這是儀表板詳細視圖")
+        }
+      )
+    )
+  })
+  
+  # 儀表板視圖切換
+  observeEvent(input$dash_view_summary, {
+    state_manager$get_component_state("dashboard")$set_active_view("summary")
+  })
+  
+  observeEvent(input$dash_view_detail, {
+    state_manager$get_component_state("dashboard")$set_active_view("detail")
+  })
+  
+  # 分析內容
+  output$analysis_content <- renderUI({
+    comp_state <- state_manager$get_component_state("analysis")
+    
+    tagList(
+      h4("分析組件"),
+      p("展開狀態：", ifelse(comp_state$is_expanded, "已展開", "已收縮")),
+      actionButton("toggle_analysis", 
+        ifelse(comp_state$is_expanded, "收縮", "展開"),
+        icon = icon(ifelse(comp_state$is_expanded, "compress", "expand"))
+      ),
+      if (comp_state$is_expanded) {
+        div(
+          class = "mt-3",
+          plotOutput("analysis_plot")
+        )
+      }
+    )
+  })
+  
+  observeEvent(input$toggle_analysis, {
+    state_manager$get_component_state("analysis")$toggle_expanded()
+  })
+  
+  output$analysis_plot <- renderPlot({
+    hist(rnorm(100), main = "分析圖表")
+  })
+  
+  # 設定內容
+  output$settings_content <- renderUI({
+    app_state <- state_manager$app_state$get()
+    
+    tagList(
+      h4("應用程式設定"),
+      selectInput("theme_select", "主題",
+        choices = c("light" = "light", "dark" = "dark"),
+        selected = app_state$theme
+      ),
+      selectInput("language_select", "語言",
+        choices = c("繁體中文" = "zh_TW", "English" = "en_US"),
+        selected = app_state$language
+      ),
+      hr(),
+      h5("狀態歷史"),
+      verbatimTextOutput("state_history")
+    )
+  })
+  
+  observeEvent(input$theme_select, {
+    state_manager$app_state$set("theme", input$theme_select)
+  })
+  
+  observeEvent(input$language_select, {
+    state_manager$app_state$set("language", input$language_select)
+  })
+  
+  # 狀態顯示
+  output$state_display <- renderPrint({
+    invalidateLater(1000)  # 每秒更新
+    summary <- state_manager$get_summary()
+    cat("當前標籤:", summary$app$current_tab, "\n")
+    cat("主題:", summary$app$theme, "\n")
+    cat("語言:", summary$app$language)
+  })
+  
+  # 狀態歷史
+  output$state_history <- renderPrint({
+    history <- state_manager$app_state$get_history()
+    if (length(history) > 0) {
+      recent <- tail(history, 5)
+      for (h in recent) {
+        cat(sprintf("[%s] %s: %s -> %s\n",
+          format(h$timestamp, "%H:%M:%S"),
+          h$key,
+          toString(h$old_value),
+          toString(h$new_value)
+        ))
+      }
+    } else {
+      cat("無歷史記錄")
+    }
+  })
+  
+  # 狀態操作按鈕
+  observeEvent(input$save_state, {
+    persistence$save_state(state_manager$app_state)
+    showNotification("狀態已儲存", type = "success")
+  })
+  
+  observeEvent(input$load_state, {
+    persistence$load_state(state_manager$app_state, session)
+    showNotification("狀態已載入", type = "info")
+  })
+  
+  observeEvent(input$reset_state, {
+    state_manager$app_state$reset()
+    for (comp in c("dashboard", "analysis", "settings")) {
+      comp_state <- state_manager$get_component_state(comp)
+      if (!is.null(comp_state) && !is.null(comp_state$reset)) {
+        comp_state$reset()
+      }
+    }
+    showNotification("狀態已重置", type = "warning")
+  })
+  
+  # 設定自動儲存
+  persistence$setup_autosave(state_manager$app_state, interval_seconds = 60)
+}
+
+shinyApp(ui, server)
+```
+
+# 第六項：原則關聯性 {#principle-relationships}
+
+## 第一款：擴展關係 {#extending-relationships}
+
+此原則：
+
+1. **實施 MP017（模組化原則）**：透過模組化狀態管理實現
+2. **建立於 UI_R001（UI-Server-Defaults三元組）**：在所有三個組件中管理狀態
+3. **支援 MP100（應用程式動態）**：提供動態狀態管理機制
+4. **增強 DEV_P014（性能優化）**：透過高效狀態管理改善性能
+5. **相關於 UI_P011（階層式導航）**：與導航系統整合狀態
+6. **實施 MP056（連接組件）**：確保組件間的狀態連接
+
+---
+
+*基於：開發方法法第十九條*  
+*相關連結：[MP017 模組化原則](../../CH00_fundamental_principles/meta_principles/MP017_modularity.qmd), [UI_P011 階層式導航原則](../../CH04_ui_components/principles/UI_P011_hierarchical_navigation.qmd)*

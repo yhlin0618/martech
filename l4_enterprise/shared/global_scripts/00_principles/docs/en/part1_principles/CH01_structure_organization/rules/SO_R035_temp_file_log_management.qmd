@@ -1,0 +1,527 @@
+---
+rule_id: "SO_R035"
+title: "Temporary File and Log Management"
+category: "Script Organization"
+status: "active"
+created: "2025-11-30"
+version: "1.0"
+related_principles:
+  - "SO_R025"
+  - "SO_R033"
+  - "SO_R034"
+  - "MP100"
+applies_to:
+  - "Log files"
+  - "Temporary data"
+  - "Cache files"
+  - "Output files"
+---
+
+# SO_R035: Temporary File and Log Management
+
+## Principle Statement
+
+Temporary files and logs MUST be stored in designated directories with clear retention policies, NEVER in project root.
+
+## Rationale
+
+**Problem**: Scattered temporary files and logs cause:
+- Git status pollution with untracked files
+- Unclear which files can be safely deleted
+- Wasted storage space with obsolete data
+- Lost important logs when cleanup is needed
+- Security risks (temporary files may contain sensitive data)
+
+**Solution**: Structured directories with clear retention and cleanup policies.
+
+## Directory Structure
+
+### Required Directories
+
+```
+project_root/
+├── logs/
+│   ├── active/              # Current operational logs
+│   │   ├── etl/             # ETL execution logs
+│   │   ├── api/             # API interaction logs
+│   │   ├── app/             # Application logs
+│   │   └── error/           # Error logs
+│   └── archive/             # Historical logs (by date)
+│       ├── 2025-11/
+│       └── 2025-12/
+├── data/
+│   ├── temp/                # Temporary data files
+│   │   ├── cache/           # Cache files (can be regenerated)
+│   │   └── scratch/         # Scratch workspace (safe to delete)
+│   └── output/              # Generated output (may need archival)
+└── output/                  # Application output files
+```
+
+### .gitignore Configuration
+
+```gitignore
+# Temporary files
+logs/active/
+logs/archive/
+data/temp/
+*.log
+*.tmp
+*.cache
+*.rds  # Unless explicitly documented as persistent
+
+# Output files (unless documented)
+output/
+*.csv  # Generated data
+*.xlsx # Generated reports
+```
+
+## File Type Management
+
+### Log Files (.log)
+
+#### Naming Convention
+```
+[component]_[action]_YYYYMMDD_HHMMSS.log
+
+Examples:
+etl_eby_execution_20251130_143022.log
+api_openai_request_20251130_143523.log
+app_startup_20251130_120000.log
+error_database_connection_20251130_145030.log
+```
+
+#### Storage Rules
+
+**Active Logs**: `logs/active/[component]/`
+```r
+# ETL logs
+logs/active/etl/
+├── etl_eby_execution_20251130_143022.log
+└── etl_cbz_execution_20251130_150000.log
+
+# API logs
+logs/active/api/
+├── api_openai_request_20251130_143523.log
+└── api_authentication_20251130_120100.log
+
+# Application logs
+logs/active/app/
+└── app_startup_20251130_120000.log
+
+# Error logs
+logs/active/error/
+└── error_database_connection_20251130_145030.log
+```
+
+#### Retention Policy
+- **Active period**: 30 days in `logs/active/`
+- **Archive**: Move to `logs/archive/YYYY-MM/` after 30 days
+- **Long-term**: Keep archives for 12 months
+- **Deletion**: Logs older than 12 months can be deleted (unless documenting critical incident)
+
+#### Archival Process
+```bash
+#!/bin/bash
+# Archive logs older than 30 days
+
+ARCHIVE_DIR="logs/archive/$(date +%Y-%m)"
+mkdir -p "$ARCHIVE_DIR"
+
+find logs/active -name "*.log" -mtime +30 -exec mv {} "$ARCHIVE_DIR/" \;
+```
+
+### Temporary Data Files (.rds, .tmp, .cache)
+
+#### Classification
+
+**Cache Files**: Can be regenerated from source
+```r
+data/temp/cache/
+├── api_response_cache_openai.rds
+├── database_query_cache_20251130.rds
+└── translation_cache_en_zh.rds
+```
+
+**Scratch Files**: Working temporary data
+```r
+data/temp/scratch/
+├── intermediate_calculation_123.rds
+├── temp_join_result.rds
+└── validation_output_temp.rds
+```
+
+#### Retention Policy
+- **Cache files**: Delete after 7 days or when regenerated
+- **Scratch files**: Delete after task completion or 24 hours
+- **Exception**: Verification results documenting issue resolution should be archived
+
+#### Storage Rules
+- **Location**: `data/temp/cache/` or `data/temp/scratch/`
+- **Naming**: Include timestamp or purpose
+- **Documentation**: If file is persistent data, move to `data/` and document in README
+
+#### Cleanup Automation
+```bash
+#!/bin/bash
+# Clean temporary files
+
+# Delete old cache (7 days)
+find data/temp/cache -type f -mtime +7 -delete
+
+# Delete old scratch files (1 day)
+find data/temp/scratch -type f -mtime +1 -delete
+```
+
+### Output Files (.csv, .xlsx, .html)
+
+#### Classification
+
+**Routine Output**: Regenerable from source
+```r
+output/reports/daily/
+output/exports/customer_list.csv
+output/visualizations/trend_plot.html
+```
+
+**Significant Results**: Worth archiving
+```r
+output/analysis/
+output/validation/
+output/benchmarks/
+```
+
+#### Retention Policy
+- **Routine output**: Delete after 14 days or when regenerated
+- **Significant results**: Archive to `output/archive/YYYY-MM/`
+- **Critical results**: Version control or move to permanent storage
+
+#### Archive Decision Tree
+```
+Is this output reproducible from code + data?
+├─ YES: Can delete after retention period
+└─ NO: Consider archiving or version control
+   ├─ Contains manual analysis? → Archive
+   ├─ Documents critical decision? → Archive + version control
+   └─ Used in publication? → Permanent storage + version control
+```
+
+## Root Directory Policy
+
+### PROHIBITED in Root
+
+**Absolutely forbidden**:
+- Log files (`*.log`)
+- Temporary data (`*.rds`, `*.tmp`, `*.cache`)
+- Output CSVs (`*.csv` unless documented)
+- Backup files (`*.backup`, `*.bak`)
+
+### EXCEPTION: None
+
+All temporary and log files must be in designated directories.
+
+### Root Directory Allowed Files
+
+Only these file types in root:
+- `app.R` - Application entry point
+- `*.Rproj` - RStudio project file
+- `README.md` - Project documentation
+- `CHANGELOG.md` - Change history
+- Configuration files (`.Rprofile`, `renv.lock`, `app_config.yaml`)
+- `.gitignore`, `.Rbuildignore`, etc.
+
+## Implementation Examples
+
+### Correct File Management ✓
+
+```r
+# Writing logs
+log_file <- file.path("logs/active/etl",
+                      sprintf("etl_execution_%s.log", format(Sys.time(), "%Y%m%d_%H%M%S")))
+write_log(message, log_file)
+
+# Temporary cache
+cache_file <- file.path("data/temp/cache",
+                        sprintf("api_cache_%s.rds", Sys.Date()))
+saveRDS(api_response, cache_file)
+
+# Scratch workspace
+scratch_file <- file.path("data/temp/scratch",
+                          sprintf("temp_calculation_%s.rds", Sys.time()))
+saveRDS(intermediate_data, scratch_file)
+
+# Important output with archival
+output_file <- file.path("output/analysis",
+                         sprintf("validation_results_%s.csv", Sys.Date()))
+write.csv(results, output_file)
+```
+
+### Incorrect File Management ✗
+
+```r
+# WRONG: Log in root
+write_log(message, "execution.log")
+
+# WRONG: Temporary data in root
+saveRDS(temp_data, "temp_results.rds")
+
+# WRONG: Output in root
+write.csv(results, "output.csv")
+
+# WRONG: No timestamp or context
+saveRDS(data, "cache.rds")  # Which cache? When was it created?
+```
+
+## Logging Best Practices
+
+### Log Levels and Organization
+
+```r
+# Recommended log structure
+logs/active/
+├── etl/
+│   ├── success/          # Successful executions
+│   ├── error/            # Failed executions
+│   └── warning/          # Executions with warnings
+├── api/
+│   ├── request/          # API requests
+│   ├── response/         # API responses
+│   └── error/            # API errors
+└── app/
+    ├── startup/          # Application initialization
+    ├── runtime/          # Runtime operations
+    └── shutdown/         # Cleanup operations
+```
+
+### Log Rotation Script
+
+```r
+#!/usr/bin/env Rscript
+# Log rotation and archival
+
+library(lubridate)
+
+# Archive logs older than 30 days
+archive_logs <- function() {
+  log_dirs <- c("logs/active/etl", "logs/active/api", "logs/active/app", "logs/active/error")
+
+  for (dir in log_dirs) {
+    if (!dir.exists(dir)) next
+
+    log_files <- list.files(dir, pattern = "\\.log$", full.names = TRUE)
+
+    for (log_file in log_files) {
+      file_age <- difftime(Sys.time(), file.info(log_file)$mtime, units = "days")
+
+      if (file_age > 30) {
+        # Determine archive directory based on file date
+        file_date <- format(file.info(log_file)$mtime, "%Y-%m")
+        archive_dir <- file.path("logs/archive", file_date)
+
+        dir.create(archive_dir, showWarnings = FALSE, recursive = TRUE)
+
+        file.copy(log_file, file.path(archive_dir, basename(log_file)))
+        file.remove(log_file)
+
+        message(sprintf("Archived: %s -> %s", basename(log_file), archive_dir))
+      }
+    }
+  }
+}
+
+# Clean old cache files
+clean_cache <- function(days = 7) {
+  cache_dir <- "data/temp/cache"
+  if (!dir.exists(cache_dir)) return()
+
+  cache_files <- list.files(cache_dir, full.names = TRUE)
+
+  for (cache_file in cache_files) {
+    file_age <- difftime(Sys.time(), file.info(cache_file)$mtime, units = "days")
+
+    if (file_age > days) {
+      file.remove(cache_file)
+      message(sprintf("Deleted cache: %s (%.1f days old)", basename(cache_file), file_age))
+    }
+  }
+}
+
+# Clean scratch workspace
+clean_scratch <- function(hours = 24) {
+  scratch_dir <- "data/temp/scratch"
+  if (!dir.exists(scratch_dir)) return()
+
+  scratch_files <- list.files(scratch_dir, full.names = TRUE)
+
+  for (scratch_file in scratch_files) {
+    file_age <- difftime(Sys.time(), file.info(scratch_file)$mtime, units = "hours")
+
+    if (file_age > hours) {
+      file.remove(scratch_file)
+      message(sprintf("Deleted scratch: %s (%.1f hours old)", basename(scratch_file), file_age))
+    }
+  }
+}
+
+# Execute cleanup
+archive_logs()
+clean_cache()
+clean_scratch()
+```
+
+## Automated Cleanup
+
+### Recommended Cron Job
+
+```bash
+# /etc/cron.d/mamba_cleanup
+# Run daily at 2 AM
+
+0 2 * * * /usr/bin/Rscript /path/to/MAMBA/scripts/maintenance/cleanup_temp_files.R
+```
+
+### Weekly Cleanup Script
+
+```bash
+#!/bin/bash
+# Weekly cleanup of temporary files
+
+echo "=== MAMBA Temporary File Cleanup ==="
+echo "Started: $(date)"
+
+# Archive old logs (30+ days)
+echo "Archiving logs..."
+ARCHIVE_DIR="logs/archive/$(date +%Y-%m)"
+mkdir -p "$ARCHIVE_DIR"
+find logs/active -name "*.log" -mtime +30 -exec mv {} "$ARCHIVE_DIR/" \;
+
+# Clean cache (7+ days)
+echo "Cleaning cache..."
+find data/temp/cache -type f -mtime +7 -delete
+
+# Clean scratch (1+ days)
+echo "Cleaning scratch..."
+find data/temp/scratch -type f -mtime +1 -delete
+
+# Report
+echo "Completed: $(date)"
+echo "Logs archived: $(ls -l logs/archive/$(date +%Y-%m) | wc -l) files"
+echo "Current cache: $(du -sh data/temp/cache)"
+echo "Current scratch: $(du -sh data/temp/scratch)"
+```
+
+## Security Considerations
+
+### Sensitive Data in Temporary Files
+
+**Risk**: Temporary files may contain:
+- API keys or credentials
+- Customer PII (Personally Identifiable Information)
+- Proprietary business data
+
+**Mitigation**:
+1. **Never commit** temporary files to version control
+2. **Encrypt** temporary files containing sensitive data
+3. **Securely delete** (not just unlink) sensitive temporary files
+4. **Audit** temporary file locations for sensitive data
+
+```r
+# Secure deletion function
+secure_delete <- function(file_path) {
+  if (file.exists(file_path)) {
+    # Overwrite with random data before deletion
+    file_size <- file.info(file_path)$size
+    con <- file(file_path, "wb")
+    writeBin(as.raw(sample(0:255, file_size, replace = TRUE)), con)
+    close(con)
+
+    # Delete file
+    file.remove(file_path)
+    message("Securely deleted: ", file_path)
+  }
+}
+```
+
+## Enforcement
+
+### Pre-Commit Hook
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# Check for temporary files being committed
+TEMP_FILES=$(git diff --cached --name-only --diff-filter=A | grep -E '\.(log|tmp|cache|rds)$' | grep -v 'data/temp/')
+
+if [ -n "$TEMP_FILES" ]; then
+  echo "ERROR: Temporary files detected in commit:"
+  echo "$TEMP_FILES"
+  echo ""
+  echo "Temporary files should be in:"
+  echo "  - logs/active/ (logs)"
+  echo "  - data/temp/ (temporary data)"
+  exit 1
+fi
+
+# Check for files in root that should be in logs/ or data/temp/
+ROOT_TEMP=$(git diff --cached --name-only --diff-filter=A | grep -E '^[^/]+\.(log|rds|tmp)$')
+
+if [ -n "$ROOT_TEMP" ]; then
+  echo "ERROR: Temporary files in root directory:"
+  echo "$ROOT_TEMP"
+  echo ""
+  echo "Move to appropriate directory:"
+  echo "  - logs/active/[component]/ (for .log)"
+  echo "  - data/temp/cache/ or data/temp/scratch/ (for .rds, .tmp)"
+  exit 1
+fi
+```
+
+### Code Review Checklist
+
+- [ ] No .log, .rds, .tmp files in root directory
+- [ ] Logs written to `logs/active/[component]/`
+- [ ] Temporary data in `data/temp/cache/` or `data/temp/scratch/`
+- [ ] File names include timestamps or clear context
+- [ ] Sensitive data in temporary files is handled securely
+
+## Monitoring and Auditing
+
+### Disk Space Monitoring
+
+```r
+#!/usr/bin/env Rscript
+# Monitor disk usage of temporary directories
+
+check_disk_usage <- function() {
+  dirs <- c("logs/active", "logs/archive", "data/temp/cache", "data/temp/scratch")
+
+  for (dir in dirs) {
+    if (dir.exists(dir)) {
+      size_mb <- sum(file.info(list.files(dir, recursive = TRUE, full.names = TRUE))$size) / 1024^2
+      file_count <- length(list.files(dir, recursive = TRUE))
+
+      cat(sprintf("%-25s: %6.1f MB, %4d files\n", dir, size_mb, file_count))
+
+      # Warn if excessive
+      if (size_mb > 1000) {
+        warning(sprintf("%s exceeds 1 GB - consider cleanup", dir))
+      }
+    }
+  }
+}
+
+check_disk_usage()
+```
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-11-30 | Initial creation after root directory cleanup |
+
+## See Also
+
+- SO_R025: Script Organization Hierarchy
+- SO_R033: Test Script Location Standard
+- SO_R034: Debug Script Management
+- MP100: UTF-8 Encoding Standard (applies to all files)

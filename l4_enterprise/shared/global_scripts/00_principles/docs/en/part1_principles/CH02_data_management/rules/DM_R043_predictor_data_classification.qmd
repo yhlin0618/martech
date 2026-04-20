@@ -1,0 +1,506 @@
+---
+title: "DM_R043: Predictor Data Classification"
+subtitle: "Three-field classification system for analytical datasets"
+date: "2025-12-26"
+category: "Rule"
+domain: "Data Management"
+status: "Active"
+version: "2.0"
+related_principles:
+  - "MP135: Type B Analytics"
+  - "DM_R028: ETL Data Type Separation"
+  - "UI_R024: Metadata Display Standards"
+  - "UI_P013: Category-Level Language Override"
+revision_history:
+  - date: 2025-12-26
+    version: "2.0"
+    changes: "Added three-field classification system (predictor_type, data_type, source_variable)"
+  - date: 2025-11-14
+    version: "1.0"
+    changes: "Initial creation based on structural column exclusion fix"
+---
+
+# DM_R043: Predictor Data Classification
+
+## Purpose
+
+Establish a standard framework for distinguishing between predictor variables (actual product/service attributes) and structural variables (identifiers and names) in analytical datasets, particularly for regression analysis and machine learning applications.
+
+## Problem Statement
+
+In data analytics pipelines, not all columns in a dataset are valid predictors for statistical modeling. Mixing structural identifiers (like product names, IDs) with analytical attributes (like price, quality) leads to:
+
+1. **Statistical Invalidity**: High-cardinality categorical variables create sparse dummy variable matrices
+2. **User Confusion**: Long identifier strings displayed as "attributes" users should optimize
+3. **Performance Waste**: Meaningless regression results stored in database
+4. **Interpretation Issues**: Uninterpretable coefficients for structural variables
+
+## Three-Field Classification System (v2.0)
+
+This section describes the improved classification system using three complementary fields.
+
+### Field 1: `predictor_type` (Business Classification)
+
+Determines which UI analysis module uses the variable.
+
+| Value | Description | UI Module |
+|-------|-------------|-----------|
+| `time_feature` | Temporal patterns (month_1, monday, year...) | poissonTimeAnalysis |
+| `product_attribute` | Product/service features (brand, material, color...) | poissonFeatureAnalysis |
+| `comment_attribute` | Review/sentiment attributes (rating, sentiment...) | poissonCommentAnalysis |
+| `structural` | Identifiers and names (product_name, seller_id...) | ❌ Excluded |
+
+**Classification Logic**:
+```r
+predictor_type = case_when(
+  # Time features: temporal dummy variables
+  grepl("^(month_|monday|tuesday|wednesday|thursday|friday|saturday|sunday|year|day$)",
+        predictor) ~ "time_feature",
+
+  # Structural: identifiers and names
+  grepl("_name$|_name[A-Z]|_id$|_code$|_series_name|^sku$",
+        predictor, ignore.case = TRUE) ~ "structural",
+
+  # Comment attributes: review-related
+  grepl("rating|sentiment|review|comment",
+        predictor, ignore.case = TRUE) ~ "comment_attribute",
+
+  # Default: product attributes
+  TRUE ~ "product_attribute"
+)
+```
+
+### Field 2: `data_type` (Statistical Type)
+
+Describes the statistical nature of the variable for proper analysis handling.
+
+| Value | Description | Identification Logic |
+|-------|-------------|---------------------|
+| `binary` | True binary variables | Original 0/1 variables (source_variable = NA) |
+| `numerical` | Continuous values | Range > 1 AND many unique values |
+| `dummy` | Dummy-coded categories | Generated from categorical (source_variable has value) |
+
+**Classification Logic**:
+```r
+data_type = case_when(
+  # Dummy-coded: has source_variable reference
+  !is.na(source_variable) ~ "dummy",
+
+  # Binary: only 0 and 1 values, no source
+  all(unique_values %in% c(0, 1, NA)) ~ "binary",
+
+  # Numerical: everything else
+  TRUE ~ "numerical"
+)
+```
+
+### Field 3: `source_variable` (Dummy Variable Origin)
+
+Tracks the original categorical variable for dummy-coded columns. This enables:
+- Grouping related dummy variables in UI displays
+- Proper interpretation of categorical effects
+- Avoiding multicollinearity issues
+
+| predictor | data_type | source_variable | Explanation |
+|-----------|-----------|-----------------|-------------|
+| `is_holiday` | binary | NA | Original binary, not dummy-coded |
+| `has_warranty` | binary | NA | Original binary, not dummy-coded |
+| `brand_A` | dummy | brand | Dummy from "brand" category |
+| `brand_B` | dummy | brand | Dummy from "brand" category |
+| `color_red` | dummy | color | Dummy from "color" category |
+| `price` | numerical | NA | Continuous variable |
+
+**Recording in DRV Scripts**:
+```r
+# When creating dummy variables, record the source
+dummy_matrix <- fastDummies::dummy_cols(
+  data,
+  select_columns = c("brand", "color", "material")
+)
+
+# Add source_variable metadata
+dummy_cols <- names(dummy_matrix)[grepl("^(brand_|color_|material_)", names(dummy_matrix))]
+for (col in dummy_cols) {
+  source_var <- sub("_.*$", "", col)  # Extract prefix
+  # Record in metadata table
+}
+```
+
+### Complete Classification Example
+
+```
+| predictor          | predictor_type    | data_type  | source_variable |
+|--------------------|-------------------|------------|-----------------|
+| month_1            | time_feature      | binary     | NA              |
+| monday             | time_feature      | binary     | NA              |
+| year               | time_feature      | numerical  | NA              |
+| is_holiday         | time_feature      | binary     | NA              |
+| brand_TurboMaster  | product_attribute | dummy      | brand           |
+| brand_ProMax       | product_attribute | dummy      | brand           |
+| color_red          | product_attribute | dummy      | color           |
+| price              | product_attribute | numerical  | NA              |
+| has_warranty       | product_attribute | binary     | NA              |
+| avg_rating         | comment_attribute | numerical  | NA              |
+| positive_sentiment | comment_attribute | binary     | NA              |
+| product_name       | structural        | -          | NA              |
+| seller_id          | structural        | -          | NA              |
+```
+
+---
+
+## Legacy Classification Framework (v1.0)
+
+The following four-category system is retained for reference but superseded by the three-field system above.
+
+### Category 1: Predictor Variables (INCLUDE in Analysis)
+
+**Definition**: Product or service attributes that genuinely influence customer behavior and have analytical value.
+
+**Characteristics**:
+- Moderate cardinality (not thousands of unique values)
+- Interpretable relationship with outcome variable
+- Actionable for business decisions
+- Measurable as continuous or categorical features
+
+**Examples**:
+```
+Continuous:
+- price, discount_rate, shipping_cost
+- product_weight, product_size
+- review_rating, seller_rating
+
+Categorical:
+- color, material, design_style
+- brand_tier, product_category
+- balancing_technology, actuator_type
+```
+
+**Action**: INCLUDE in regression analysis
+
+### Category 2: Structural Variables (EXCLUDE from Analysis)
+
+**Definition**: Identifiers and names used for reference, joining, and display purposes only.
+
+**Characteristics**:
+- Very high cardinality (each observation may have unique value)
+- No interpretable relationship with outcome
+- Not actionable (you can't "optimize" a product name)
+- Serves identification, not analytical purpose
+
+**Examples**:
+```
+Names:
+- product_name, brand_name, category_name
+- seller_name, supplier_name, manufacturer_name
+- compressor_wheel_design_series_name
+
+Identifiers:
+- product_id, customer_id, order_id
+- sku, barcode, product_code
+- transaction_id, session_id
+
+Codes:
+- postal_code (for joining, not analyzing)
+- internal_code, reference_code
+```
+
+**Action**: EXCLUDE from regression analysis
+
+### Category 3: Metadata Variables (EXCLUDE from Predictor Analysis)
+
+**Definition**: Technical tracking columns for data pipeline management.
+
+**Characteristics**:
+- Technical, not business-relevant
+- Track data processing, not product features
+- Managed by Type B metadata framework (MP135)
+
+**Examples**:
+```
+Type B Metadata:
+- computed_at, data_version
+- etl_timestamp, load_date
+
+Regression Outputs:
+- convergence, p_value, coefficient
+- std_error, aic, sample_size
+
+Timestamps:
+- created_at, updated_at
+- modified_at, deleted_at
+```
+
+**Action**: EXCLUDE from predictor analysis (handle separately via `predictor_type`)
+
+### Category 4: Time Features (CONDITIONAL)
+
+**Definition**: Temporal patterns that may or may not be focus of analysis.
+
+**Characteristics**:
+- Temporal attributes of transactions/events
+- May be predictor or nuisance variable depending on analysis goal
+
+**Examples**:
+```
+- day_of_week, month, season
+- holiday_flag, weekend_flag
+- hour_of_day, quarter
+```
+
+**Action**:
+- EXCLUDE if analyzing product attributes (use `predictor_type = "time_feature"`)
+- INCLUDE if analyzing temporal patterns (use separate time analysis module)
+
+## Pattern Matching Rules
+
+### Structural Column Recognition
+
+Use regex patterns to automatically identify structural columns:
+
+```r
+# Pattern for structural columns
+structural_pattern <- "_name$|_name[A-Z]|^product_name|^seller_name|^brand\\.|_series_name|_id$|_code$"
+
+# Apply filter
+is_structural <- grepl(structural_pattern, column_name, ignore.case = TRUE)
+```
+
+**Pattern Components**:
+- `_name$`: Columns ending with `_name`
+- `_name[A-Z]`: Columns with `_name` followed by uppercase letter
+- `^product_name`, `^seller_name`: Columns starting with these prefixes
+- `^brand\\.`: Columns starting with `brand.`
+- `_series_name`: Design/model series identifiers
+- `_id$`: Columns ending with `_id`
+- `_code$`: Columns ending with `_code`
+
+### Edge Cases
+
+**1. Categorical Variables with Moderate Cardinality**
+```r
+# INCLUDE: brand_tier (3-5 levels: luxury, mid, budget)
+# EXCLUDE: brand_name (100+ levels: Nike, Adidas, etc.)
+```
+
+**2. Composite Variables**
+```r
+# INCLUDE: product_category (10-20 categories)
+# EXCLUDE: product_description (thousands of unique descriptions)
+```
+
+**3. Numerical Identifiers**
+```r
+# EXCLUDE: product_id (even if numeric, it's an identifier)
+# INCLUDE: product_generation (1, 2, 3 = ordinal feature)
+```
+
+## Implementation Guidelines
+
+### In DRV Scripts (Recommended)
+
+Exclude structural columns BEFORE running statistical models:
+
+```r
+# cbz_DRV_product_line_poisson.R
+
+# Step 1: Classify columns
+structural_columns <- colnames(predictor_data)[
+  grepl("_name$|_name[A-Z]|_id$|_code$|_series_name",
+        colnames(predictor_data),
+        ignore.case = TRUE)
+]
+
+# Step 2: Exclude structural columns
+predictor_data <- predictor_data %>%
+  select(-all_of(structural_columns))
+
+# Step 3: Document exclusion
+cat("Excluded structural columns:", length(structural_columns), "\n")
+cat("Remaining predictors:", ncol(predictor_data), "\n")
+
+# Step 4: Run Poisson regression on clean data
+# ... regression code here ...
+```
+
+### In UI Components (Fallback)
+
+Filter out structural columns in display logic:
+
+```r
+# poissonFeatureAnalysis.R
+
+data <- tbl2(app_data_connection, table_name) %>%
+  filter((is.na(predictor_type) | predictor_type != "time_feature") &
+         convergence == TRUE) %>%
+  collect() %>%
+  # Following DM_R043: Exclude structural columns
+  filter(!grepl("_name$|_name[A-Z]|^product_name|^seller_name|^brand\\.|_series_name",
+               predictor, ignore.case = TRUE))
+```
+
+### predictor_type Enhancement (Best Practice)
+
+Add classification to DRV output:
+
+```r
+# In DRV script, add predictor_type classification
+final_results <- final_results %>%
+  mutate(
+    predictor_type = case_when(
+      grepl("_name$|_name[A-Z]|_id$|_code$|_series_name", predictor, ignore.case = TRUE)
+        ~ "structural",
+      grepl("day_|month_|season_|holiday|weekend", predictor, ignore.case = TRUE)
+        ~ "time_feature",
+      TRUE ~ "attribute"
+    )
+  )
+
+# In UI component, simple filter
+data <- tbl2(app_data_connection, table_name) %>%
+  filter(predictor_type == "attribute" & convergence == TRUE) %>%
+  collect()
+```
+
+## Validation and Testing
+
+### Automated Validation
+
+```r
+# Create validation function
+validate_predictor_classification <- function(data) {
+  # Check for structural columns
+  structural_found <- data %>%
+    filter(grepl("_name$|_id$|_code$", predictor, ignore.case = TRUE)) %>%
+    nrow()
+
+  if (structural_found > 0) {
+    warning("Found ", structural_found, " structural columns in predictor data")
+    return(FALSE)
+  }
+
+  return(TRUE)
+}
+
+# Apply in DRV script
+if (!validate_predictor_classification(final_results)) {
+  stop("Structural columns detected - review data classification")
+}
+```
+
+### Unit Testing
+
+```r
+# Test classification patterns
+test_that("structural column patterns work correctly", {
+  test_predictors <- c(
+    "product_nameMAMBA",    # Should exclude
+    "seller_nameUSA",       # Should exclude
+    "brand.xTEK",           # Should exclude
+    "price",                # Should include
+    "actuator_type"         # Should include
+  )
+
+  pattern <- "_name$|_name[A-Z]|^product_name|^seller_name|^brand\\.|_series_name"
+  excluded <- grepl(pattern, test_predictors, ignore.case = TRUE)
+
+  expect_equal(sum(excluded), 3)  # First 3 should be excluded
+  expect_equal(sum(!excluded), 2) # Last 2 should be included
+})
+```
+
+## Decision Tree
+
+```
+Column in dataset
+│
+├─ Is it a unique identifier? (product_id, sku)
+│  └─ YES → Structural (EXCLUDE)
+│
+├─ Is it a name/description? (product_name, brand_name)
+│  └─ YES → Structural (EXCLUDE)
+│
+├─ Does it have >100 unique values with no business interpretation?
+│  └─ YES → Structural (EXCLUDE)
+│
+├─ Is it metadata about the data pipeline? (computed_at, convergence)
+│  └─ YES → Metadata (EXCLUDE from predictor analysis)
+│
+├─ Is it a temporal feature not relevant to current analysis? (day_of_week)
+│  └─ YES → Time Feature (EXCLUDE or separate analysis)
+│
+└─ Is it an actionable product/service attribute? (price, color, quality)
+   └─ YES → Predictor (INCLUDE)
+```
+
+## Common Pitfalls
+
+### Pitfall 1: Treating Identifiers as Categorical Predictors
+
+**Wrong**:
+```r
+# Including product_id as predictor
+model <- glm(sales ~ product_id + price + quality)
+# Creates thousands of dummy variables, each meaningless
+```
+
+**Correct**:
+```r
+# Use product features, not IDs
+model <- glm(sales ~ price + quality + brand_tier + category)
+```
+
+### Pitfall 2: Confusing High-Cardinality Categories with Identifiers
+
+**Analysis Required**:
+```r
+# Check cardinality
+n_unique <- data %>% distinct(brand_name) %>% nrow()
+
+if (n_unique > 50) {
+  # Too many levels → treat as structural
+  # Consider: brand_tier, brand_category instead
+} else {
+  # Moderate cardinality → may be valid predictor
+}
+```
+
+### Pitfall 3: Excluding Legitimate Categorical Features
+
+**Wrong**:
+```r
+# Excluding all categorical variables
+data <- data %>% select(where(is.numeric))
+```
+
+**Correct**:
+```r
+# Exclude only structural columns, keep valid categorical features
+data <- data %>%
+  select(-matches("_name$|_id$|_code$"))  # Exclude structural
+# Keep: color, material, brand_tier, etc. (valid categorical predictors)
+```
+
+## Related Principles
+
+- **MP135: Type B Analytics** - Metadata handling framework
+- **DM_R028: ETL Data Type Separation** - Data pipeline organization
+- **UI_R024: Metadata Display Standards** - UI component data handling
+- **MP064: ETL Derivation Separation** - Data transformation standards
+
+## References
+
+- Changelog: `2025-11-14_structural_column_exclusion_fix.md`
+- Issue: Product names appearing as predictors in Poisson analysis
+- Database: 43 structural columns identified in `df_cbz_poisson_analysis_tur`
+- Test: `test_structural_filter.R`
+
+## Version History
+
+- **2.0** (2025-12-26): Added three-field classification system (predictor_type, data_type, source_variable)
+- **1.0** (2025-11-14): Initial principle creation based on structural column exclusion fix
+
+---
+
+**Status**: Active
+**Last Updated**: 2025-12-26
+**Principle Type**: Rule (Data Management)

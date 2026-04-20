@@ -1,0 +1,269 @@
+---
+title: "DEV_P001: Debug Principles"
+subtitle: "Foundational principles for systematic debugging and troubleshooting"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P001"
+date-created: "2025-04-02"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法 (Development Methodology Law)"
+article-number: "第1條"
+derives_from:
+  - "CH00.MP002: Structural Blueprint"
+influences:
+  - "CH01.SO_P004: App Bottom-Up Construction"
+related_to:
+  - "CH02.DM_P001: Data Integrity"
+  - "CH01.SO_P005: Naming Principles"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概述 {#overview}
+
+**開發方法法第1條（除錯原則）**
+
+本條建立在精準行銷系統中除錯和排除故障的基礎原則，確保一致、高效且有效的問題診斷和解決。
+
+:::{.callout-important}
+## 核心概念
+除錯是一個系統化的過程，需要清晰的可見性、有條理的調查和全面的文檔。這些原則提供了識別、隔離、重現和解決整個程式碼庫問題的結構化方法。
+:::
+
+# 第一項：可見性原則 {#visibility-principle}
+
+## 第一款：透明狀態檢查 {#transparent-state}
+
+所有程式碼都應提供檢查內部狀態的機制：
+
+- **明確記錄**：在整個程式碼庫中使用一致的記錄模式
+- **結構化輸出**：格式化除錯輸出以便於解析和分析
+- **上下文保留**：在每個記錄條目中包含上下文（時間戳記、函數、參數）
+- **詳細程度級別**：實作可調整的詳細程度級別（ERROR、WARN、INFO、DEBUG、TRACE）
+
+## 第二款：可觀察的執行 {#observable-execution}
+
+使執行流程和決策點可觀察：
+
+- **執行追蹤**：記錄關鍵函數的進入/退出點
+- **決策記錄**：記錄分支決策和條件評估
+- **進度指示器**：為長時間執行的操作包含進度指示器
+- **環境上下文**：記錄相關環境細節（版本、平台、配置）
+
+# 第二項：隔離原則 {#isolation-principle}
+
+## 第一款：組件隔離 {#component-isolation}
+
+問題應隔離到特定組件：
+
+- **邊界測試**：在組件邊界測試組件
+- **輸入驗證**：在組件邊界驗證輸入參數
+- **輸出驗證**：在組件邊界驗證輸出
+- **模擬相依性**：使用模擬來隔離組件與相依性
+
+## 第二款：漸進式縮小 {#progressive-narrowing}
+
+使用系統化方法縮小問題來源：
+
+:::{.callout-note}
+## 縮小策略
+- **二分法**：使用二分搜尋方法來隔離問題
+- **自上而下分析**：從最高層級開始向下深入
+- **自下而上驗證**：從基礎組件開始向上建構
+- **控制參數變化**：系統地改變輸入以識別模式
+:::
+
+# 第三項：可重現性原則 {#reproducibility-principle}
+
+## 第一款：確定性執行 {#deterministic-execution}
+
+問題應該能夠一致地重現：
+
+- **種子控制**：控制隨機種子以實現可重現的隨機性
+- **環境隔離**：最小化環境相依性
+- **輸入捕獲**：記錄和重播輸入序列
+- **配置快照**：捕獲完整的配置狀態
+
+## 第二款：最小測試案例 {#minimal-test-cases}
+
+創建重現問題的最小測試案例：
+
+- **簡化**：逐步簡化重現案例
+- **參數縮減**：識別所需的最小參數集
+- **環境縮減**：識別所需的最小環境
+- **自動化測試**：將重現案例轉換為自動化測試
+
+# 第四項：文檔原則 {#documentation-principle}
+
+## 第一款：問題追蹤 {#issue-tracking}
+
+維護全面的問題文檔：
+
+:::{.panel-tabset}
+
+### 問題文檔模板
+
+```markdown
+## 問題陳述
+清楚定義觀察到的問題
+
+## 預期行為
+記錄應該發生什麼
+
+## 實際行為
+記錄實際發生什麼
+
+## 重現步驟
+提供詳細的重現步驟
+
+## 環境上下文
+記錄相關環境細節
+
+## 嚴重性評估
+評估影響和優先級
+```
+
+### 範例文檔
+
+```markdown
+## 問題陳述
+當日期範圍跨越月份邊界時，客戶資料未正確過濾。
+
+## 預期行為
+指定日期範圍內的所有客戶記錄都應包含在內，無論月份邊界如何。
+
+## 實際行為
+當日期範圍跨越月份邊界時，第二個月的客戶記錄遺失。
+
+## 重現步驟
+1. 設定日期範圍從 2025-03-28 到 2025-04-02
+2. 執行 get_customer_activity() 函數
+3. 觀察只返回三月的記錄
+
+## 隔離分析
+- 確認輸入參數正確
+- 驗證 SQL 查詢生成包含正確的日期範圍
+- 識別日期格式化函數中的問題，無法正確處理月份邊界
+- 創建最小測試案例 fn_test_date_boundary.R 重現問題
+
+## 根本原因
+date_to_iso() 函數將日期轉換為 ISO 格式，但在處理月份邊界時錯誤地截斷時間部分，導致查詢排除第二個月。
+```
+
+:::
+
+## 第二款：解決方案文檔 {#resolution-documentation}
+
+完整記錄問題解決：
+
+- **根本原因**：識別並記錄根本原因
+- **解決方法**：記錄解決問題的方法
+- **實作變更**：記錄更改了什麼以及為什麼
+- **驗證方法**：記錄如何驗證修復
+- **回歸預防**：記錄如何防止再次發生
+
+# 第五項：實作範例 {#implementation-examples}
+
+## 第一款：除錯資料處理問題 {#debugging-example}
+
+```r
+# 之前：沒有除錯資訊
+process_data <- function(data) {
+  result <- transform_data(data)
+  return(result)
+}
+
+# 之後：應用適當的除錯原則
+process_data <- function(data, debug_level = "INFO") {
+  log_debug("process_data", "Starting with input rows", nrow(data), level = debug_level)
+  
+  # 輸入驗證
+  if (!is.data.frame(data) || nrow(data) == 0) {
+    log_debug("process_data", "Invalid input data", NULL, level = "ERROR")
+    stop("Invalid input: data must be a non-empty data frame")
+  }
+  
+  # 帶記錄的處理
+  result <- tryCatch({
+    log_debug("process_data", "Calling transform_data", NULL, level = debug_level)
+    transform_data(data, debug_level = debug_level)
+  }, error = function(e) {
+    log_debug("process_data", "Error in transform_data", e$message, level = "ERROR")
+    stop(paste("Error in transform_data:", e$message))
+  })
+  
+  log_debug("process_data", "Completed with output rows", nrow(result), level = debug_level)
+  return(result)
+}
+```
+
+# 第六項：工具選擇原則 {#tool-selection}
+
+## 第一款：適當的工具選擇 {#appropriate-tools}
+
+選擇適合問題的除錯工具：
+
+- **靜態分析**：用於結構和潛在問題
+- **動態分析**：用於執行時期行為問題
+- **分析**：用於效能問題
+- **記錄**：用於執行流程和狀態問題
+- **互動式除錯**：用於複雜的行為問題
+
+## 第二款：工具知識 {#tool-knowledge}
+
+保持對關鍵除錯工具的熟練度：
+
+:::{.callout-note}
+## R 除錯工具
+- **語言特定工具**：R 的 browser()、debug()、trace()
+- **IDE 功能**：RStudio 的除錯功能
+- **記錄框架**：建立的記錄模式
+- **分析工具**：效能測量工具
+:::
+
+# 第七項：與開發過程的整合 {#development-integration}
+
+## 第一款：開發整合 {#integration-approach}
+
+除錯原則應整合到開發過程中：
+
+- **可除錯性設計**：在設計時考慮除錯
+- **可測試性**：設計程式碼易於測試
+- **記錄策略**：在整個程式碼庫中實作一致的記錄
+- **除錯文檔**：維護除錯方法的文檔
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 除錯檢查清單
+
+實作除錯時，確認：
+
+- [ ] 實作適當的記錄級別
+- [ ] 包含執行追蹤點
+- [ ] 驗證輸入和輸出
+- [ ] 創建可重現的測試案例
+- [ ] 記錄問題和解決方案
+- [ ] 使用適當的除錯工具
+- [ ] 隔離問題到特定組件
+- [ ] 捕獲環境上下文
+- [ ] 實作錯誤處理
+- [ ] 維護除錯文檔
+:::
+
+# 結論 {#conclusion}
+
+有效的除錯需要基於可見性、隔離、可重現性和文檔的系統化方法。透過遵循這些除錯原則，開發人員可以高效地識別、解決和預防問題，維持系統的可靠性和效能。
+
+---
+
+*依據：開發方法法第1條*  
+*衍生自：[MP002 結構藍圖](../../CH00_fundamental_principles/MP002_structural_blueprint.qmd)*  
+*影響：[SO_P004 應用程式自下而上建構](../../CH01_structure_organization/principles/SO_P004_app_bottom_up_construction.qmd)*

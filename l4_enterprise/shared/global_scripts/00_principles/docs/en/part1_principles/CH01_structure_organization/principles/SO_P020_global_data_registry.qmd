@@ -1,0 +1,169 @@
+---
+title: "SO_P020: Global Data Registry"
+subtitle: "Documentation of 30_global_data directory contents and structure"
+chapter: "CH01"
+category: "principle"
+number: "SO_P020"
+date-created: "2026-01-08"
+date-modified: "2026-01-08"
+author: "Claude"
+type: "principle"
+law: "Structure Organization"
+article-number: "Principle 20"
+related_to:
+  - "SO_P011": "Parameter Organization Structure"
+  - "SO_P018": "Directory Structure Governance"
+  - "DEV_R040": "No Symlinks in Deployable Code"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+---
+
+# SO_P020: Global Data Registry {#overview}
+
+The `30_global_data/` directory contains shared parameters, reference data, and configuration
+files used across the application. This principle documents its structure and contents.
+
+## Directory Structure {#structure}
+
+```
+30_global_data/
+├── geo/                          # Geographic data
+│   └── us_census/                # US Census boundary files
+│       ├── gz_2010_us_040_00_500k.json  # State boundaries
+│       └── gz_2010_us_050_00_500k.json  # County boundaries
+│
+├── parameters/                   # Application parameters
+│   ├── scd_type1/                # Slowly Changing (rarely updated)
+│   │   ├── db_paths.yaml         # Database path definitions
+│   │   ├── df_platform.csv       # Platform registry
+│   │   └── ai_prompts.yaml       # AI prompt templates
+│   │
+│   └── scd_type2/                # Moderately Changing (updated periodically)
+│       ├── exclusion_rules.yaml  # Data exclusion rules
+│       ├── ui_terminology.csv    # UI label translations
+│       ├── column_aliases.yaml   # Column name mappings
+│       ├── brand_aliases.yaml    # Brand name normalization
+│       └── chinese_labels.yaml   # Chinese UI labels
+│
+├── reference/                    # Reference data
+│   └── (industry standards, lookup tables)
+│
+└── testing/                      # Test fixtures
+    └── (test data for unit tests)
+```
+
+## SCD Type Classification {#scd-types}
+
+Files are organized by their **Slowly Changing Dimension (SCD)** type:
+
+### SCD Type 1: Rarely Updated
+
+| File | Purpose | Update Frequency |
+|------|---------|------------------|
+| `db_paths.yaml` | Database connection paths | Architecture changes only |
+| `df_platform.csv` | Platform definitions (cbz, eby, amz) | New platform onboarding |
+| `ai_prompts.yaml` | AI/LLM prompt templates | Prompt engineering iterations |
+
+**Characteristics**:
+- Core configuration that defines system behavior
+- Changes require careful testing
+- Version controlled with explicit changelog
+
+### SCD Type 2: Periodically Updated
+
+| File | Purpose | Update Frequency |
+|------|---------|------------------|
+| `exclusion_rules.yaml` | Data filtering rules | As business rules change |
+| `ui_terminology.csv` | UI text/labels | Localization updates |
+| `column_aliases.yaml` | Column name mappings | Schema evolution |
+| `brand_aliases.yaml` | Brand name normalization | New brands discovered |
+| `chinese_labels.yaml` | Chinese translations | Translation updates |
+
+**Characteristics**:
+- Business logic that evolves with requirements
+- Can be updated by non-developers
+- More frequent changes expected
+
+## Deployment Requirements {#deployment}
+
+### Files Required for Posit Connect Deployment
+
+These files **MUST** be included in deployment bundles:
+
+| File | Required | Reason |
+|------|----------|--------|
+| `parameters/scd_type1/db_paths.yaml` | YES | Database configuration |
+| `parameters/scd_type1/df_platform.csv` | YES | Platform initialization |
+| `parameters/scd_type2/ui_terminology.csv` | YES | UI rendering |
+| `parameters/scd_type2/chinese_labels.yaml` | YES | Localization |
+| `geo/us_census/*.json` | CONDITIONAL | Only if map features used |
+| `testing/*` | NO | Not needed in production |
+
+### Deployment Constraints
+
+Per **DEV_R040**: All files must be **real files**, not symbolic links.
+
+```bash
+# Verify no symlinks before deployment
+find scripts/global_scripts/30_global_data -type l
+```
+
+## File Format Standards {#formats}
+
+### CSV Files
+
+- **Encoding**: UTF-8 with BOM for Excel compatibility
+- **Delimiter**: Comma
+- **Header**: Required, first row
+- **Naming**: `df_` prefix for data frames
+
+### YAML Files
+
+- **Encoding**: UTF-8
+- **Style**: Block style preferred over flow style
+- **Comments**: Use `#` for documentation
+
+### JSON Files
+
+- **Encoding**: UTF-8
+- **Formatting**: Pretty-printed for readability
+- **Use Case**: GeoJSON and complex nested structures
+
+## Adding New Files {#adding-files}
+
+When adding new parameter files:
+
+1. **Determine SCD Type**:
+   - Type 1 if changes are rare and require testing
+   - Type 2 if changes are business-driven and frequent
+
+2. **Choose Directory**:
+   - `scd_type1/` for core configuration
+   - `scd_type2/` for business parameters
+   - `reference/` for lookup tables
+   - `geo/` for geographic data
+
+3. **Follow Naming Convention**:
+   - `df_*.csv` for data frames
+   - `*_rules.yaml` for rule definitions
+   - `*_aliases.yaml` for mapping tables
+   - `*_labels.yaml` for UI labels
+
+4. **Document in This File**:
+   - Add to the directory structure diagram
+   - Add to the appropriate SCD table
+   - Update deployment requirements if needed
+
+## Checklist {#checklist}
+
+When working with `30_global_data/`:
+
+- [ ] File is in the correct SCD directory
+- [ ] File follows naming convention
+- [ ] File is UTF-8 encoded
+- [ ] File is a real file (not symlink)
+- [ ] File is documented in SO_P020
+- [ ] Deployment requirements updated if needed

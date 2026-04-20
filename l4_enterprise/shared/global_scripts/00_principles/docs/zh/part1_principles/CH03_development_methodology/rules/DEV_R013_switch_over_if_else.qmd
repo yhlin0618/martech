@@ -1,0 +1,162 @@
+---
+title: "DEV_R013: 使用 Switch 替代多個 If-Else"
+subtitle: "處理基於相同變數或表達式的多個條件情況時，優先使用 switch() 語句而非層疊的 if-else 結構"
+chapter: "CH03"
+category: "rule"
+number: "DEV_R013"
+date-created: "2025-04-06"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "rule"
+law: "開發方法法"
+article-number: 
+  number: 13
+  title: "條件語句規則"
+related_to:
+  - "MP016: 模組化"
+  - "MP017: 關注點分離"
+  - "DEV_R012: 檢查現有函數"
+  - "MP077: 物件命名約定"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 第十三條：條件語句規則 {#overview}
+
+**開發方法法第十三條（條件語句規則）**
+
+此規則建立處理多個條件情況時使用 switch 語句的原則。
+
+:::{.callout-important}
+## 核心規則
+處理基於相同變數或表達式的多個條件情況時，優先使用 `switch()` 語句而非層疊的 `if-else` 結構。
+:::
+
+# 第一項：規則理由 {#rationale}
+
+## 第一款：使用 switch 的優點 {#benefits}
+
+使用 `switch()` 語句而非多個 `if-else` 語句：
+
+1. **改善程式碼可讀性**：立即清楚不同動作對應相同表達式的不同值
+2. **降低複雜度**：消除巢狀條件結構
+3. **增強可維護性**：更容易添加或修改案例
+4. **可改善效能**：在優化 switch 語句的語言中
+5. **減少邏輯錯誤的可能性**：在複雜的 if-else 鏈中可能發生的錯誤
+
+# 第二項：實施指導原則 {#implementation-guidelines}
+
+## 第一款：何時使用 Switch {#when-to-use}
+
+當以下情況時使用 `switch()` 語句：
+
+1. 需要基於單一變數的值在多個選項中選擇
+2. 有超過兩個替代案例需要處理
+3. 條件基於相等比較（精確匹配）
+
+## 第二款：R 語言實施 {#r-implementation}
+
+在 R 中，`switch()` 將要測試的表達式作為第一個參數，後跟命名或位置值：
+
+```r
+# 命名值方法（為可讀性優先）
+result <- switch(column_type,
+  "numeric" = calculate_mean(x),
+  "character" = calculate_frequency(x),
+  "date" = calculate_range(x),
+  calculate_default(x)  # 預設情況
+)
+
+# 位置值方法（可讀性較差）
+result <- switch(action_code,
+  sum(values),           # 情況 1
+  mean(values),          # 情況 2
+  median(values),        # 情況 3
+  max(values)            # 情況 4
+)
+```
+
+## 第三款：其他語言實施 {#other-languages}
+
+其他語言有類似結構：
+
+```python
+# Python 範例
+result = {
+    'numeric': lambda: calculate_mean(x),
+    'character': lambda: calculate_frequency(x),
+    'date': lambda: calculate_range(x)
+}.get(column_type, lambda: calculate_default(x))()
+```
+
+# 第三項：正確與錯誤範例 {#examples}
+
+## 第一款：錯誤與正確對比 {#incorrect-vs-correct}
+
+**錯誤（使用 if-else 鏈）：**
+```r
+if (column_type == "numeric") {
+  result <- calculate_mean(x)
+} else if (column_type == "character") {
+  result <- calculate_frequency(x)
+} else if (column_type == "date") {
+  result <- calculate_range(x)
+} else {
+  result <- calculate_default(x)
+}
+```
+
+**正確（使用 switch）：**
+```r
+result <- switch(column_type,
+  "numeric" = calculate_mean(x),
+  "character" = calculate_frequency(x),
+  "date" = calculate_range(x),
+  calculate_default(x)  # 預設情況
+)
+```
+
+# 第四項：處理複雜條件 {#complex-conditions}
+
+## 第一款：使用 switch 處理多個條件 {#multiple-conditions}
+
+當使用 `switch()` 處理多個條件時：
+
+1. **盡可能簡化表達式**
+2. **對複雜邏輯使用函數**而非內聯程式碼
+3. **明確處理預設情況**而非讓它失敗
+
+# 第五項：例外情況 {#exceptions}
+
+## 第一款：if-else 仍可能更優的情況 {#when-if-else-preferred}
+
+當以下情況時，`if-else` 鏈可能仍更優：
+
+1. 條件涉及**複雜表達式**而非簡單值比較
+2. 使用**範圍比較**而非精確匹配
+3. 不同條件測試**不同變數**
+4. 非常**簡單的二元條件**，意圖清晰
+
+# 第六項：優點總結 {#benefits-summary}
+
+1. **自我文件化程式碼**：Switch 語句清楚指示不同程式碼路徑對應相同表達式的不同值
+2. **可維護結構**：添加新案例比擴展 if-else 鏈更簡單且較不易出錯
+3. **防止邏輯錯誤**：Switch 語句幫助避免錯誤，如忘記檢查條件或有無法到達的程式碼
+
+# 第七項：與其他原則整合 {#integration}
+
+此規則補充：
+
+1. **MP016（模組化）**：透過清楚分離不同條件路徑增強程式碼模組化
+2. **MP017（關注點分離）**：基於共同決策點幫助分離不同邏輯路徑
+3. **DEV_R012（檢查現有函數）**：鼓勵有效使用既定控制流機制
+
+---
+
+*基於：開發方法法第十三條*  
+*相關連結：[MP016 模組化](../../CH00_fundamental_principles/meta_principles/MP016_modularity.qmd), [MP017 關注點分離](../../CH00_fundamental_principles/meta_principles/MP017_separation_of_concerns.qmd)*

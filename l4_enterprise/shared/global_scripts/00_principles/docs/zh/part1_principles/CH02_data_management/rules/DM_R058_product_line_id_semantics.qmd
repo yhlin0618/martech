@@ -1,0 +1,270 @@
+---
+id: "DM_R058"
+title: "Product Line ID Semantics Rule"
+type: "rule"
+category: "data_management"
+date_created: "2026-01-26"
+date_modified: "2026-03-01"
+author: "Claude"
+status: "active"
+version: "2.0"
+weight: 58
+implements:
+  - "MP055": "Special Treatment of 'ALL' Category"
+  - "MP092": "Platform ID Standard"
+related_to:
+  - "DM_R044": "Derivation Implementation Standard Rule"
+  - "R120": "Filter Variable Naming Convention"
+  - "DM_R028": "ETL Data Type Separation"
+---
+
+# DM_R058: Product Line ID Semantics Rule
+
+## Rule Statement
+
+**The `product_line_id` field is a categorical identifier that partitions business data by product line, with a special `'all'` value representing the aggregate across all product lines**: This rule defines the semantics, data source, value domain, and relationship to other identifiers.
+
+## Definition
+
+### What is product_line_id?
+
+`product_line_id` is a **categorical identifier** used to partition and filter business data by product line. It enables:
+
+1. **Data Partitioning**: Separate analysis by product category
+2. **Aggregation Control**: Support for both per-line and cross-line analysis
+3. **UI Filtering**: User selection of product line scope
+
+### 命名變體（三層架構, v2）
+
+| 層級 | 欄位名稱 | 語意 | 位置 |
+|------|----------|------|------|
+| **UI 層** | `product_line_id_chosen` | 用戶在 sidebar 選擇的值 | `cfg$filters$product_line_id_chosen` |
+| **Slice 層** | `product_line_id_sliced` | DRV 預計算的資料切片標識 | `cfg$filters$product_line_id_sliced` |
+| **DB 層** | `product_line_id_filter` | DuckDB 表中用於 WHERE 的欄位 | SQL WHERE 子句 |
+| **ETL 源資料** | `product_line_id` | ETL staging 階段的原始欄位（不改名）| 原始/暫存資料表 |
+
+**資料流**：
+```
+用戶選擇 (chosen) → 有時等於 sliced（預計算切片）
+                   → 有時等於 filter（DB WHERE 欄位值）
+```
+
+**重要**：ETL 源資料中的 `product_line_id` 欄位名不改——它代表原始資料欄位。
+
+## Data Source
+
+### ETL Phase Origin
+
+`product_line_id` is assigned during the ETL phase based on product categorization rules:
+
+```
+ETL01_0IM (Import)
+  ↓
+ETL01_1ST (Staging) - product categorization applied
+  ↓ product_line_id assigned here
+ETL01_2TR (Transform) - product_line_id in standardized output
+  ↓
+DRV (Derivation) - uses product_line_id for filtering/aggregation
+```
+
+### Assignment Logic (ETL01_1ST)
+
+```r
+# Example: Product line assignment in staging
+df_staged <- df_raw %>%
+  mutate(
+    product_line_id = case_when(
+      product_category %in% c("Electronics", "Gadgets") ~ "PL001",
+      product_category %in% c("Clothing", "Apparel") ~ "PL002",
+      product_category %in% c("Home", "Kitchen") ~ "PL003",
+      TRUE ~ "PL999"  # Other/Unknown
+    )
+  )
+```
+
+## Value Domain
+
+### Standard Values
+
+| Value | Meaning | Cardinality |
+|-------|---------|-------------|
+| `'all'` | Aggregate across ALL product lines | Meta-value (special) |
+| `'PL001'`, `'PL002'`, ... | Specific product line IDs | Business-defined |
+| `'PL999'` or `'other'` | Uncategorized products | Catch-all |
+
+### Cardinality
+
+- **Typical Range**: 3-20 product lines per platform
+- **Upper Bound**: Should not exceed 100 for performance reasons
+- **Special Value**: `'all'` is always valid but requires explicit support (see MP055)
+
+## Relationship to platform_id
+
+### Hierarchy
+
+```
+platform_id (e.g., 'cbz', 'amz', 'eby')
+  └── product_line_id (e.g., 'PL001', 'PL002', 'all')
+```
+
+### Cross-Platform Considerations
+
+| platform_id | product_line_id | Notes |
+|-------------|-----------------|-------|
+| `'cbz'` | `'PL001'` | CBZ-specific product line |
+| `'amz'` | `'PL001'` | May have different products than CBZ PL001 |
+| `'all'` | `'all'` | Aggregate across all platforms AND all lines |
+| `'all'` | `'PL001'` | Same product line across all platforms |
+
+### Composite Key Pattern
+
+```sql
+-- Primary key for customer-level data with product line
+PRIMARY KEY (platform_id, customer_id, product_line_id_filter)
+
+-- Example: df_dna_by_customer
+CREATE TABLE df_dna_by_customer (
+  platform_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  product_line_id_filter TEXT NOT NULL DEFAULT 'all',
+  -- ... other columns
+  PRIMARY KEY (platform_id, customer_id, product_line_id_filter)
+);
+```
+
+## Implementation Requirements
+
+### Required vs Optional
+
+| Context | Required? | Default |
+|---------|-----------|---------|
+| ETL Output Tables | Yes | N/A (must be assigned) |
+| DRV Filter Parameters | Yes | `'all'` or specific line |
+| App UI Selection | Yes | `'all'` (show aggregate first) |
+
+### UI Presentation (Following MP055)
+
+```r
+# Product line selector following MP055 principles
+product_line_choices <- c(
+  "All Product Lines" = "all",  # Always first
+  "Electronics" = "PL001",
+  "Apparel" = "PL002",
+  "Home & Kitchen" = "PL003"
+)
+
+selectInput(
+  "product_line_selector",
+  "Product Line",
+  choices = product_line_choices,
+  selected = "all"  # Default to 'all'
+)
+```
+
+### Query Pattern
+
+```r
+# DRV query pattern with product_line_id support
+get_filtered_data <- function(platform_id, product_line_id = "all") {
+  base_query <- tbl(conn, "df_source")
+
+  # Apply platform filter
+  if (platform_id != "all") {
+    base_query <- base_query %>%
+      filter(platform_id == !!platform_id)
+  }
+
+  # Apply product line filter (only if not 'all')
+  if (product_line_id != "all") {
+    base_query <- base_query %>%
+      filter(product_line_id_filter == !!product_line_id)
+  }
+
+  return(base_query)
+}
+```
+
+## Validation
+
+### ETL Validation
+
+```r
+# Validate product_line_id assignment in ETL
+validate_product_line_assignment <- function(df) {
+  # Check no NULLs
+  null_count <- sum(is.na(df$product_line_id))
+  if (null_count > 0) {
+    warning(sprintf("%d rows have NULL product_line_id", null_count))
+  }
+
+  # Check against valid values
+  valid_lines <- get_valid_product_line_ids()
+  invalid <- df %>%
+    filter(!product_line_id %in% valid_lines) %>%
+    distinct(product_line_id)
+
+  if (nrow(invalid) > 0) {
+    warning(sprintf("Invalid product_line_id values: %s",
+                    paste(invalid$product_line_id, collapse = ", ")))
+  }
+
+  return(null_count == 0 && nrow(invalid) == 0)
+}
+```
+
+### DRV Validation
+
+```r
+# Validate product_line_id parameter in DRV
+validate_product_line_id_param <- function(product_line_id, supports_all = FALSE) {
+  # Check 'all' support
+  if (product_line_id == "all" && !supports_all) {
+    stop("This derivation does not support product_line_id='all'")
+  }
+
+  # Check specific value exists
+  if (product_line_id != "all") {
+    valid_lines <- get_valid_product_line_ids()
+    if (!product_line_id %in% valid_lines) {
+      stop(sprintf("Invalid product_line_id: %s", product_line_id))
+    }
+  }
+
+  return(TRUE)
+}
+```
+
+## Error Messages
+
+### Standard Error Messages
+
+```r
+# Error: 'all' not supported
+"product_line_id='all' is not supported by this derivation. Please specify a specific product line."
+
+# Error: Invalid product_line_id
+"Invalid product_line_id: '%s'. Valid options are: %s"
+
+# Warning: Empty result
+"No data found for product_line_id='%s'. The product line may have no transactions."
+```
+
+## Related Principles and Rules
+
+| ID | Title | Relationship |
+|----|-------|--------------|
+| **MP055** | Special Treatment of 'ALL' Category | Defines 'all' semantics |
+| **MP092** | Platform ID Standard | Defines platform_id standard |
+| **DM_R044** | Derivation Implementation Standard | DRV handling patterns |
+| **R120** | Filter Variable Naming | Naming convention (_filter suffix) |
+| **DM_R028** | ETL Data Type Separation | ETL phase responsibility |
+
+## Summary
+
+The `product_line_id` field:
+
+1. **Is assigned** during ETL01_1ST (Staging phase)
+2. **Has special value** `'all'` for cross-line aggregation
+3. **Works with** `platform_id` in a hierarchical relationship
+4. **Requires explicit support** for `'all'` in DRV scripts (per MP055)
+5. **Follows naming convention** `product_line_id_filter` in filter parameters (per R120)

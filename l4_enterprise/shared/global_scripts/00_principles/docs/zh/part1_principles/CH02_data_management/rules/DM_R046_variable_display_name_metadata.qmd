@@ -1,0 +1,693 @@
+---
+rule_id: DM_R046
+title: "Variable Display Name Metadata Rule"
+chapter: "CH02_data_management"
+type: "rule"
+version: "1.0"
+created: "2025-11-14"
+last_updated: "2025-11-14"
+status: "active"
+tags: ["metadata", "display-names", "UI", "UX", "i18n", "naming"]
+related_principles: ["R120", "MP102", "MP029", "UI_R018", "UI_R019"]
+---
+
+# DM_R046: Variable Display Name Metadata Rule
+
+## Purpose
+
+Provide user-friendly, human-readable display names for technical variable names in Poisson analysis and other statistical components, eliminating the need for users to understand standardized technical naming conventions.
+
+## Problem Statement
+
+**Legacy Pattern (Poor UX)**:
+UI components displayed technical standardized variable names directly to users:
+- `month_5` → Users must understand this means "May"
+- `seller_mambatek` → Unclear what this represents
+- `location_台中` → Mix of English and Chinese
+- `price_us_dollar` → Technical database naming
+- `customer_ratings` → Not capitalized or formatted
+
+**User Experience Issues**:
+1. **Cognitive Load**: Users must decode technical naming patterns
+2. **Learning Curve**: New users struggle to understand variable meanings
+3. **Inconsistent Formatting**: Mix of snake_case, camelCase, and natural language
+4. **Language Mixing**: Chinese and English mixed in variable names
+5. **Missing Context**: No tooltips explaining technical details
+
+## Solution (DM_R046)
+
+**Three-Layer Name System**:
+
+1. **Technical Name** (`predictor`): Internal database name for queries
+2. **Display Name** (`display_name`): User-friendly label for UI
+3. **Technical Tooltip** (optional): Hover text showing technical details
+
+### Required Metadata Columns
+
+```r
+# Add to all predictor analysis tables (e.g., Poisson, regression)
+display_name = col_character()           # User-friendly label
+display_name_en = col_character()        # English display name
+display_name_zh = col_character()        # Chinese display name (if applicable)
+display_category = col_character()       # Grouping for organization
+display_description = col_character()    # Brief explanation
+display_icon = col_character()           # Icon name (optional)
+```
+
+## Display Name Generation Rules
+
+### Rule 1: Time Variables
+
+```r
+# Month variables
+"month_1"  → "1月" / "January"
+"month_2"  → "2月" / "February"
+"month_12" → "12月" / "December"
+
+# Day of week variables
+"monday"    → "星期一" / "Monday"
+"tuesday"   → "星期二" / "Tuesday"
+"sunday"    → "星期日" / "Sunday"
+
+# Time features
+"year"      → "年份" / "Year"
+"day"       → "日期" / "Day of Month"
+"quarter"   → "季度" / "Quarter"
+```
+
+### Rule 2: Product Attributes
+
+```r
+# Price variables
+"price_us_dollar"        → "價格 (美金)" / "Price (USD)"
+"avg_price"              → "平均價格" / "Average Price"
+"original_price"         → "原價" / "Original Price"
+
+# Rating variables
+"customer_ratings"       → "顧客評分" / "Customer Ratings"
+"rating"                 → "評分" / "Rating"
+
+# Product features
+"color_options_藍色"     → "顏色: 藍色" / "Color: Blue"
+"material_鋁合金"        → "材質: 鋁合金" / "Material: Aluminum Alloy"
+```
+
+### Rule 3: Seller/Location Variables
+
+```r
+# Seller variables
+"seller_mambatek"        → "賣家: MambaTek" / "Seller: MambaTek"
+"seller_uk_mambatek"     → "賣家: MambaTek UK" / "Seller: MambaTek UK"
+
+# Location variables
+"location_台中"          → "地點: 台中" / "Location: Taichung"
+"location_uk"            → "地點: 英國" / "Location: UK"
+"nation_us"              → "國家: 美國" / "Country: USA"
+```
+
+### Rule 4: Derived/Binary Variables
+
+```r
+# Missing indicators
+"price_is_missing"       → "價格缺失" / "Price Missing"
+"rating_NA"              → "評分缺失" / "Rating N/A"
+
+# Binary features
+"brand.x"                → "品牌 A" / "Brand A"
+"brand.y"                → "品牌 B" / "Brand B"
+```
+
+## Implementation Architecture
+
+### Layer 1: ETL (1ST) - Generate Variable Metadata
+
+**File**: `scripts/update_scripts/ETL/{platform}/{platform}_ETL_generate_variable_name_metadata.R`
+
+```r
+# Generate display name mapping table
+variable_metadata <- tibble(
+  predictor = c("month_1", "month_2", ..., "price_us_dollar"),
+
+  # Display names
+  display_name = c("1月", "2月", ..., "價格 (美金)"),
+  display_name_en = c("January", "February", ..., "Price (USD)"),
+  display_name_zh = c("1月", "2月", ..., "價格 (美金)"),
+
+  # Categorization
+  display_category = c("time", "time", ..., "product_attribute"),
+
+  # Description
+  display_description = c(
+    "Sales in January",
+    "Sales in February",
+    ...,
+    "Product price in US dollars"
+  ),
+
+  # Metadata tracking
+  metadata_source = "ETL_1ST",
+  metadata_date = Sys.Date()
+)
+
+# Write to database
+dbWriteTable(con, "tbl_variable_display_names", variable_metadata, overwrite = TRUE)
+```
+
+### Layer 2: DRV - Enrich Analysis Results
+
+**File**: `scripts/global_scripts/04_utils/fn_enrich_with_display_names.R`
+
+```r
+fn_enrich_with_display_names <- function(analysis_results, con) {
+
+  # Load display name metadata
+  display_names <- dbReadTable(con, "tbl_variable_display_names")
+
+  # Join with analysis results
+  enriched <- analysis_results %>%
+    left_join(
+      display_names %>% select(predictor, display_name, display_name_en,
+                               display_name_zh, display_category),
+      by = "predictor"
+    ) %>%
+    mutate(
+      # Fallback to technical name if no display name
+      display_name = coalesce(display_name, predictor),
+      display_name_en = coalesce(display_name_en, predictor),
+      display_name_zh = coalesce(display_name_zh, predictor),
+      display_category = coalesce(display_category, "uncategorized")
+    )
+
+  return(enriched)
+}
+```
+
+### Layer 3: UI Components - Display User-Friendly Names
+
+**Pattern**: Use `display_name` for labels, show `predictor` in tooltips
+
+```r
+# In Poisson UI components
+renderDT({
+  poisson_data %>%
+    select(
+      `屬性` = display_name,           # User sees this
+      `係數` = coefficient,
+      `顯著性` = p_value,
+      `技術名稱` = predictor           # Optional technical column
+    ) %>%
+    datatable(
+      options = list(
+        columnDefs = list(
+          # Hide technical name column by default
+          list(visible = FALSE, targets = 3)
+        )
+      )
+    )
+})
+
+# Tooltip showing technical details
+observe({
+  showTooltip(
+    "predictor_info",
+    paste0(
+      "<strong>Display Name:</strong> ", selected_row$display_name, "<br>",
+      "<strong>Technical Name:</strong> ", selected_row$predictor, "<br>",
+      "<strong>Category:</strong> ", selected_row$display_category
+    )
+  )
+})
+```
+
+## Schema Extension
+
+### Poisson Analysis Schema Update
+
+```r
+SCHEMA_poisson_analysis <- list(
+  columns = list(
+    # Existing columns...
+    predictor = list(
+      type = "VARCHAR",
+      required = TRUE,
+      description = "Technical variable name for queries"
+    ),
+
+    # DM_R046: Display Name Metadata (NEW)
+    display_name = list(
+      type = "VARCHAR",
+      required = TRUE,
+      description = "User-friendly display name (current locale)",
+      example = "1月",
+      critical = "REQUIRED for UI display - generated from metadata table"
+    ),
+
+    display_name_en = list(
+      type = "VARCHAR",
+      required = FALSE,
+      description = "English display name",
+      example = "January"
+    ),
+
+    display_name_zh = list(
+      type = "VARCHAR",
+      required = FALSE,
+      description = "Chinese display name",
+      example = "1月"
+    ),
+
+    display_category = list(
+      type = "VARCHAR",
+      required = TRUE,
+      description = "Variable category for UI grouping",
+      example = "time",
+      valid_values = c("time", "product_attribute", "seller", "location",
+                      "derived", "other")
+    ),
+
+    display_description = list(
+      type = "VARCHAR",
+      required = FALSE,
+      description = "Brief explanation of variable meaning"
+    )
+  )
+)
+```
+
+## Benefits
+
+1. **Improved UX**: Users see familiar, readable labels
+2. **Reduced Training**: No need to learn technical naming conventions
+3. **Consistency**: All variable names follow same formatting rules
+4. **Internationalization**: Support for multiple languages (zh/en)
+5. **Maintainability**: Centralized mapping table, not scattered in UI code
+6. **Transparency**: Technical details still available via tooltips
+
+## Data Flow
+
+```
+ETL 1ST (Generate Metadata)
+  → tbl_variable_display_names
+    ↓
+DRV 3 (Enrich Analysis)
+  → processed_data.df_{platform}_poisson_analysis_{product_line}
+    (includes display_name columns)
+    ↓
+MERGE (D04_02)
+  → app_data.df_{platform}_poisson_analysis_all
+    ↓
+UI Components (Display to Users)
+  → Show display_name, tooltip with predictor
+```
+
+## Validation
+
+**ETL Validation**: Ensure all known predictors have display names
+
+```r
+# Check for missing display names
+missing_names <- dbGetQuery(con, "
+  SELECT DISTINCT p.predictor
+  FROM df_cbz_poisson_analysis_all p
+  LEFT JOIN tbl_variable_display_names v ON p.predictor = v.predictor
+  WHERE v.predictor IS NULL
+    AND p.product_line_id = 'alf'
+")
+
+if (nrow(missing_names) > 0) {
+  warning("DM_R046 INCOMPLETE: ", nrow(missing_names),
+          " predictors missing display names")
+  print(missing_names)
+}
+```
+
+**DRV Validation**: Confirm enrichment succeeded
+
+```r
+# Verify display names populated
+r046_check <- dbGetQuery(con, "
+  SELECT
+    COUNT(*) as total,
+    COUNT(display_name) as with_display_name,
+    COUNT(*) - COUNT(display_name) as missing
+  FROM df_cbz_poisson_analysis_alf
+")
+
+if (r046_check$missing > 0) {
+  stop("DM_R046 VIOLATION: ", r046_check$missing,
+       " rows missing display_name")
+}
+```
+
+**UI Validation**: Ensure components use display names
+
+```r
+# UI should never display raw predictor names to users
+# Exception: Technical details view or debugging mode
+```
+
+## Backward Compatibility
+
+**Graceful Fallback**: If `display_name` is missing, use `predictor`
+
+```r
+# In UI components
+display_label <- coalesce(row$display_name, row$predictor)
+```
+
+**Migration Path**: Existing data without display names continues to work
+
+```r
+# Legacy data: predictor = "month_5", display_name = NULL
+# Display: "month_5" (fallback to technical name)
+
+# New data: predictor = "month_5", display_name = "5月"
+# Display: "5月" (user-friendly name)
+```
+
+## Example: Complete Workflow
+
+### Step 1: ETL Generates Metadata (One-Time)
+
+```r
+# cbz_ETL_generate_variable_name_metadata.R
+source("scripts/global_scripts/04_utils/fn_generate_display_name.R")
+
+variable_metadata <- generate_variable_display_names(
+  platform = "cbz",
+  locale = "zh_TW"
+)
+
+dbWriteTable(con, "tbl_variable_display_names", variable_metadata,
+             overwrite = TRUE)
+```
+
+### Step 2: DRV Enriches Poisson Results
+
+```r
+# cbz_DRV_sales_analysis.R
+source("scripts/global_scripts/04_utils/fn_enrich_with_display_names.R")
+
+poisson_results_raw <- run_poisson_regression(...)
+
+poisson_results_enriched <- fn_enrich_with_display_names(
+  poisson_results_raw,
+  con
+)
+
+dbWriteTable(con, "df_cbz_poisson_analysis_alf",
+             poisson_results_enriched, overwrite = TRUE)
+```
+
+### Step 3: UI Displays User-Friendly Names
+
+```r
+# poissonFeatureAnalysis.R
+output$feature_table <- renderDT({
+  poisson_data() %>%
+    select(
+      `屬性名稱` = display_name,      # "5月", "價格 (美金)"
+      `影響係數` = coefficient,
+      `顯著性` = p_value
+    ) %>%
+    datatable()
+})
+```
+
+## AI-Powered Translation for Unknown Variables
+
+**Enhancement (2025-11-14)**: For predictors not covered by rule-based mappings, DM_R046 now supports **AI-assisted translation** as a fallback mechanism.
+
+### When to Use AI Translation
+
+```r
+# Use case: Unknown variable without predefined rule
+predictor <- "customer_churn_probability"
+
+# Rule-based check fails (no match)
+display_info <- fn_generate_display_name(predictor, locale = "zh_TW")
+# Returns: predictor (no translation found)
+
+# AI translation fallback
+display_info <- fn_generate_display_name(
+  predictor,
+  locale = "zh_TW",
+  use_ai = TRUE,  # Enable AI fallback
+  cache_con = con # Database connection for caching
+)
+# Returns: "客戶流失機率" (AI-generated translation)
+```
+
+### AI Translation Architecture
+
+```r
+# Function: fn_translate_display_name_with_ai()
+# Location: scripts/global_scripts/04_utils/fn_translate_display_name_with_ai.R
+
+fn_translate_display_name_with_ai <- function(
+  predictor,
+  target_locale = "zh_TW",
+  cache_con = NULL
+) {
+  # 1. Check cache (avoid redundant API calls)
+  # 2. Call OpenAI API if not cached
+  # 3. Store result with metadata (translation_method = "ai_generated")
+  # 4. Mark for human review (is_approved = FALSE)
+  # 5. Return translated display name
+}
+```
+
+### Compliance with MP054 (No Fake Data)
+
+**Important**: AI translation does NOT violate MP054 because:
+
+1. **Not Creating Data**: We're translating existing technical names, not fabricating facts
+2. **Language Conversion**: Changing how information is expressed, not what it means
+3. **Human Review**: All AI translations are flagged for verification
+4. **Transparent Metadata**: Translation method is tracked (`translation_method = "ai_generated"`)
+
+```r
+# Example of what MP054 prohibits (fake data):
+fake_sales <- rnorm(100, mean = 1000)  # ❌ Creating non-existent sales data
+
+# Example of what DM_R046 allows (language translation):
+"customer_lifetime_value" → "客戶終身價值"  # ✅ Translating technical term
+```
+
+### Extended Schema for AI Translation
+
+```r
+SCHEMA_variable_display_names <- list(
+  columns = list(
+    # Existing columns...
+    predictor = list(type = "VARCHAR", required = TRUE),
+    display_name = list(type = "VARCHAR", required = TRUE),
+    display_name_en = list(type = "VARCHAR"),
+    display_name_zh = list(type = "VARCHAR"),
+    display_category = list(type = "VARCHAR"),
+
+    # NEW: AI Translation Metadata
+    translation_method = list(
+      type = "VARCHAR",
+      valid_values = c("rule_based", "ai_generated", "manual"),
+      description = "Method used to generate display name"
+    ),
+
+    translation_confidence = list(
+      type = "DOUBLE",
+      description = "AI confidence score (0-1), NULL for rule-based"
+    ),
+
+    is_approved = list(
+      type = "BOOLEAN",
+      default = FALSE,
+      description = "Has human reviewed and approved AI translation?"
+    ),
+
+    approved_by = list(
+      type = "VARCHAR",
+      description = "User who approved the translation"
+    ),
+
+    approved_at = list(
+      type = "TIMESTAMP",
+      description = "When the translation was approved"
+    )
+  )
+)
+```
+
+### Review Workflow for AI Translations
+
+```r
+# 1. Generate AI translations during ETL
+ai_translations <- predictors_without_rules %>%
+  lapply(function(pred) {
+    fn_translate_display_name_with_ai(pred, locale = "zh_TW", cache_con = con)
+  })
+
+# 2. Query unapproved AI translations
+unapproved <- dbGetQuery(con, "
+  SELECT predictor, display_name, translation_method, created_at
+  FROM df_variable_display_names
+  WHERE translation_method = 'ai_generated'
+    AND (is_approved IS NULL OR is_approved = FALSE)
+  ORDER BY created_at DESC
+")
+
+# 3. Human review and approval
+approve_translation <- function(predictor, reviewer_name) {
+  dbExecute(con, "
+    UPDATE df_variable_display_names
+    SET is_approved = TRUE,
+        approved_by = ?,
+        approved_at = ?
+    WHERE predictor = ?
+  ", params = list(reviewer_name, Sys.time(), predictor))
+}
+
+# 4. Override if needed
+override_translation <- function(predictor, new_display_name, reviewer_name) {
+  dbExecute(con, "
+    UPDATE df_variable_display_names
+    SET display_name = ?,
+        translation_method = 'manual',
+        is_approved = TRUE,
+        approved_by = ?,
+        approved_at = ?
+    WHERE predictor = ?
+  ", params = list(new_display_name, reviewer_name, Sys.time(), predictor))
+}
+```
+
+### Caching Strategy
+
+```r
+# Avoid redundant API calls by caching translations
+# Table: df_ai_translation_cache
+
+CREATE TABLE df_ai_translation_cache (
+  predictor VARCHAR PRIMARY KEY,
+  locale VARCHAR NOT NULL,
+  display_name VARCHAR NOT NULL,
+  translation_method VARCHAR DEFAULT 'ai_generated',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  api_model VARCHAR,  -- e.g., "gpt-4o-mini"
+  api_cost DOUBLE,    -- Track API costs
+  UNIQUE(predictor, locale)
+);
+
+# Cache lookup before API call
+cached_translation <- dbGetQuery(con, "
+  SELECT display_name
+  FROM df_ai_translation_cache
+  WHERE predictor = ? AND locale = ?
+", params = list(predictor, target_locale))
+
+if (nrow(cached_translation) > 0) {
+  return(cached_translation$display_name[1])  # Use cache
+} else {
+  # Call API and cache result
+}
+```
+
+### Quality Assurance
+
+**Validation Rules**:
+1. AI translations must be reviewed within 7 days
+2. High-frequency variables (>100 uses/month) require mandatory approval
+3. Low-frequency variables can auto-approve after 30 days if no issues
+4. All AI translations logged for audit trail
+
+```r
+# Quality check: Find AI translations needing review
+review_needed <- dbGetQuery(con, "
+  SELECT
+    v.predictor,
+    v.display_name,
+    v.created_at,
+    COUNT(p.predictor) as usage_count
+  FROM df_variable_display_names v
+  LEFT JOIN df_cbz_poisson_analysis_alf p ON v.predictor = p.predictor
+  WHERE v.translation_method = 'ai_generated'
+    AND (v.is_approved IS NULL OR v.is_approved = FALSE)
+    AND v.created_at < DATE('now', '-7 days')
+  GROUP BY v.predictor
+  ORDER BY usage_count DESC, v.created_at ASC
+")
+```
+
+## Cross-Platform Deployment (DM_R047)
+
+**CRITICAL**: When implementing DM_R046 display names, ALL production platforms MUST be updated simultaneously.
+
+### Platform Synchronization Requirement
+
+**Discovered Issue (2025-11-14)**:
+- DM_R046 initially implemented only on CBZ platform
+- EBY platform lacked display_name columns
+- UI platform switching caused schema mismatch errors
+
+**DM_R047 Compliance**:
+When adding display name metadata to any analysis table:
+
+1. **Update ALL platforms simultaneously**:
+   ```bash
+   # Use universal wrapper script
+   Rscript scripts/update_scripts/DRV/update_all_platforms_poisson.R
+
+   # NOT individual platform scripts (can cause inconsistency)
+   ```
+
+2. **Verify consistency before deployment**:
+   ```r
+   source("scripts/global_scripts/04_utils/fn_verify_platform_consistency.R")
+
+   validation <- fn_verify_platform_consistency(
+     con = con,
+     table_base_name = "poisson_analysis",
+     platforms = c("cbz", "eby")
+   )
+
+   if (!validation$valid) {
+     stop("DM_R047 violation: ", validation$error)
+   }
+   ```
+
+3. **Document in CHANGELOG**:
+   - List all platforms updated
+   - Confirm schema consistency
+   - Note any platform-specific exceptions
+
+**Enforcement**:
+- Pre-deployment checks MUST include platform consistency verification
+- UI platform switching MUST work without errors
+- All platforms MUST have identical display name schemas
+
+See **DM_R047: Multi-Platform Data Synchronization** for complete requirements.
+
+## Related Principles
+
+- **DM_R047**: Multi-Platform Data Synchronization (MANDATORY for deployment)
+- **R120**: Variable Range Metadata Requirement (complementary metadata)
+- **MP102**: Completeness Principle (ensure all variables have display names)
+- **MP054**: No Fake Data (AI translation is language conversion, not data fabrication)
+- **MP123**: AI Prompt Configuration Management (centralized AI prompt management)
+- **UI_R018**: Component Display Standards
+- **UI_R019**: User Experience Guidelines
+
+## Conclusion
+
+DM_R046 transforms technical variable names into user-friendly labels, dramatically improving UX without compromising technical accuracy. By centralizing display name mapping in the ETL layer and enriching analysis results in the DRV layer, UI components can focus on presentation rather than name translation logic.
+
+**Mandate**: All predictor analysis tables MUST include `display_name` metadata. All UI components displaying variable names to users MUST use `display_name` instead of raw `predictor` values.
+
+---
+
+**Version History**:
+- v1.0 (2025-11-14): Initial creation
+  - Three-layer name system (technical → display → tooltip)
+  - Display name generation rules for time, product, seller, location variables
+  - ETL metadata generation, DRV enrichment, UI display patterns
+  - Schema extension for Poisson analysis tables
+  - Backward compatibility and validation strategies

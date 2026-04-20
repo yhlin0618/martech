@@ -1,0 +1,336 @@
+---
+title: "DEV_P010: 反應值存取安全原則"
+subtitle: "確保 Shiny 反應式程式設計中的安全值存取模式"
+chapter: "CH03"
+category: "principle"
+number: "DEV_P010"
+date-created: "2025-04-13"
+date-modified: "2025-08-17"
+author: "Claude"
+type: "principle"
+law: "開發方法法"
+article-number: "第十條"
+related_to:
+  - "DEV_P009: 例外驅動規則演進"
+  - "CH00.MP035: Null 特殊處理"
+  - "DEV_P001: 除錯原則"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    number-sections: true
+---
+
+# 條文概覽 {#overview}
+
+**開發方法法第十條（反應值存取安全原則）**
+
+反應值必須始終使用適合其特定反應容器類型的存取模式，並且應該通過靜態分析防止對反應容器的直接存取。
+
+:::{.callout-important}
+## 核心原則
+反應值必須使用正確的存取模式，避免直接存取反應容器以防止執行時錯誤。
+:::
+
+# 第一項：理論基礎 {#rationale}
+
+## 第一款：類型混淆問題 {#type-confusion}
+
+反應物件看起來像一般的 R 物件，但行為不同，導致類型混淆錯誤：
+- 反應表達式需要函數調用
+- 反應值需要特定存取方法
+- 錯誤的存取模式導致難以偵錯的問題
+
+## 第二款：錯誤特性 {#error-characteristics}
+
+1. **執行時錯誤**：不正確的反應值存取經常表現為執行時錯誤而非編譯時錯誤
+2. **連鎖失敗**：反應存取錯誤可能導致整個反應系統的連鎖失敗
+3. **靜默失敗**：某些反應存取錯誤產生難以檢測的靜默失敗
+4. **偵錯困難**：錯誤訊息常常不夠明確，增加偵錯難度
+
+# 第二項：安全存取模式 {#safe-access-patterns}
+
+## 第一款：反應容器類型與存取方法 {#container-types}
+
+```r
+# 1. reactive() - 反應表達式
+# 必須作為函數調用
+my_reactive <- reactive({
+  input$value * 2
+})
+# 正確存取
+result <- my_reactive()  # ✓
+# 錯誤存取
+result <- my_reactive    # ✗ 錯誤：invalid argument type
+
+# 2. reactiveVal() - 反應值
+# 必須作為函數調用
+counter <- reactiveVal(0)
+# 正確存取
+current_value <- counter()     # ✓ 讀取
+counter(current_value + 1)     # ✓ 寫入
+# 錯誤存取
+current_value <- counter       # ✗ 錯誤：得到函數物件而非值
+
+# 3. reactiveValues() - 反應值列表
+# 使用 $ 或 [[ ]] 存取元素
+values <- reactiveValues(
+  count = 0,
+  name = "default"
+)
+# 正確存取
+count_val <- values$count     # ✓
+name_val <- values[["name"]]  # ✓
+# 錯誤存取
+count_val <- values()$count   # ✗ 錯誤：reactiveValues 不是函數
+```
+
+## 第二款：存取模式總覽 {#access-overview}
+
+| 反應容器類型 | 建立方式 | 讀取方式 | 寫入方式 |
+|-------------|---------|---------|---------|
+| `reactive()` | `reactive({expr})` | `value()` | 不可寫入 |
+| `reactiveVal()` | `reactiveVal(initial)` | `value()` | `value(new)` |
+| `reactiveValues()` | `reactiveValues(...)` | `values$item` | `values$item <- new` |
+| `eventReactive()` | `eventReactive(trigger, {expr})` | `value()` | 不可寫入 |
+
+# 第三項：防禦性程式設計 {#defensive-programming}
+
+## 第一款：NULL 值處理 {#null-handling}
+
+```r
+# 安全的 NULL 處理模式
+safe_reactive_access <- function(reactive_expr) {
+  tryCatch({
+    value <- reactive_expr()
+    if (is.null(value)) {
+      return(NULL)  # 或返回預設值
+    }
+    value
+  }, error = function(e) {
+    warning(paste("反應值存取錯誤:", e$message))
+    NULL  # 返回安全預設值
+  })
+}
+
+# 使用範例
+observeEvent(input$button, {
+  # 不安全的存取
+  # current_filter <- filters()$selected_filter  # 如果 filters() 返回 NULL 會出錯
+  
+  # 安全的存取
+  filters_value <- safe_reactive_access(filters)
+  if (!is.null(filters_value)) {
+    current_filter <- filters_value$selected_filter
+    # 處理篩選邏輯
+  }
+})
+```
+
+## 第二款：條件檢查模式 {#conditional-checks}
+
+```r
+# 在邏輯判斷中的安全存取
+observeEvent(input$search, {
+  # 錯誤：直接存取反應表達式
+  # if (search_results) {  # 錯誤：invalid argument type
+  
+  # 正確：函數調用並檢查
+  results <- search_results()
+  if (!is.null(results) && length(results) > 0) {
+    # 顯示結果
+    output$results <- renderTable({
+      results
+    })
+  } else {
+    # 顯示無結果訊息
+    output$results <- renderText({
+      "沒有找到結果"
+    })
+  }
+})
+```
+
+# 第四項：靜態分析與驗證 {#static-analysis}
+
+## 第一款：程式碼檢查工具 {#linting-tools}
+
+```r
+# 自訂檢查函數
+check_reactive_access <- function(code_file) {
+  code <- readLines(code_file)
+  issues <- list()
+  
+  # 檢查可能的錯誤模式
+  patterns <- list(
+    # 檢查 if 語句中的反應值
+    list(
+      pattern = "if\\s*\\([^)]*reactive[^)]*\\)",
+      message = "可能在 if 語句中直接使用反應值"
+    ),
+    # 檢查缺少括號的反應值
+    list(
+      pattern = "\\breactive\\w+(?!\\()",
+      message = "可能缺少反應值的函數調用括號"
+    )
+  )
+  
+  for (i in seq_along(code)) {
+    for (p in patterns) {
+      if (grepl(p$pattern, code[i], perl = TRUE)) {
+        issues <- append(issues, list(list(
+          line = i,
+          message = p$message,
+          code = code[i]
+        )))
+      }
+    }
+  }
+  
+  issues
+}
+```
+
+## 第二款：測試驗證 {#test-validation}
+
+```r
+# 反應值存取測試
+test_reactive_access <- function() {
+  testServer(
+    app = myApp,
+    {
+      # 測試反應表達式存取
+      session$setInputs(value = 10)
+      expect_equal(my_reactive(), 20)  # 正確的函數調用
+      
+      # 測試 NULL 處理
+      session$setInputs(value = NULL)
+      expect_null(safe_reactive_access(my_reactive))
+      
+      # 測試錯誤處理
+      expect_error(
+        if (my_reactive) {},  # 錯誤的直接存取
+        "invalid argument type"
+      )
+    }
+  )
+}
+```
+
+# 第五項：常見錯誤模式與修正 {#common-errors}
+
+## 第一款：條件判斷錯誤 {#conditional-errors}
+
+```r
+# ❌ 錯誤模式 1：在 if 中直接使用反應值
+if (active_tab) {  # 錯誤：active_tab 是 reactiveVal
+  # ...
+}
+
+# ✅ 正確模式 1
+if (active_tab()) {  # 正確：函數調用
+  # ...
+}
+
+# ❌ 錯誤模式 2：忘記調用反應表達式
+current_data <- filtered_data  # 錯誤：filtered_data 是 reactive
+
+# ✅ 正確模式 2
+current_data <- filtered_data()  # 正確：函數調用
+```
+
+## 第二款：賦值錯誤 {#assignment-errors}
+
+```r
+# ❌ 錯誤模式：混淆 reactiveVal 和 reactiveValues
+my_val <- reactiveVal(0)
+my_val <- 10  # 錯誤：覆蓋了 reactiveVal 物件
+
+# ✅ 正確模式
+my_val(10)  # 正確：使用函數調用更新值
+
+# ❌ 錯誤模式：錯誤的 reactiveValues 存取
+values <- reactiveValues(count = 0)
+values() <- list(count = 10)  # 錯誤：reactiveValues 不是函數
+
+# ✅ 正確模式
+values$count <- 10  # 正確：直接賦值給元素
+```
+
+# 第六項：最佳實踐 {#best-practices}
+
+## 第一款：命名慣例 {#naming-conventions}
+
+```r
+# 使用明確的命名來表示反應類型
+selected_items_reactive <- reactive({...})     # 反應表達式
+counter_val <- reactiveVal(0)                   # 反應值
+app_state <- reactiveValues(...)                # 反應值列表
+
+# 避免模糊的命名
+data <- reactive({...})  # 不清楚是否為反應值
+```
+
+## 第二款：存取封裝 {#access-encapsulation}
+
+```r
+# 封裝反應值存取邏輯
+get_current_filter <- function() {
+  tryCatch({
+    filter_val <- current_filter()
+    if (is.null(filter_val) || filter_val == "") {
+      return("all")  # 預設值
+    }
+    filter_val
+  }, error = function(e) {
+    "all"  # 錯誤時的預設值
+  })
+}
+
+# 使用封裝的存取器
+observeEvent(input$apply_filter, {
+  filter <- get_current_filter()
+  # 應用篩選邏輯
+})
+```
+
+# 實作檢查清單 {#checklist}
+
+:::{.callout-note}
+## 反應值存取安全檢查清單
+
+**程式碼審查**：
+- [ ] 所有 `reactive()` 都使用 `()` 調用
+- [ ] 所有 `reactiveVal()` 都使用 `()` 存取
+- [ ] `reactiveValues()` 使用 `$` 或 `[[]]` 存取
+- [ ] 條件判斷中沒有直接使用反應容器
+
+**防禦性程式設計**：
+- [ ] NULL 值檢查實施
+- [ ] tryCatch 包裝敏感存取
+- [ ] 提供合理的預設值
+- [ ] 錯誤訊息清晰明確
+
+**測試覆蓋**：
+- [ ] 測試正常存取路徑
+- [ ] 測試 NULL 值情況
+- [ ] 測試錯誤處理
+- [ ] 測試邊界條件
+
+**靜態分析**：
+- [ ] 程式碼檢查工具配置
+- [ ] 建構流程包含檢查
+- [ ] 定期執行分析
+- [ ] 修正識別的問題
+:::
+
+# 結論 {#conclusion}
+
+反應值存取安全原則是建構穩健 Shiny 應用程式的基礎。通過遵循正確的存取模式、實施防禦性程式設計，並使用靜態分析工具，可以顯著減少執行時錯誤並提高應用程式的可靠性。記住，反應式程式設計的力量來自於其依賴管理，但這需要謹慎和一致的存取模式才能發揮最大效益。
+
+---
+
+*基於：開發方法法第十條*  
+*相關：[DEV_P009 例外驅動規則演進](DEV_P009_exception_as_rule.qmd)、[MP035 Null 特殊處理](../../CH00_fundamental_principles/MP035_null_special_treatment.qmd)*

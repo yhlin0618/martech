@@ -1,0 +1,107 @@
+---
+id: TD_R007
+type: rule
+name: e2e_testing_standard
+display_name: "E2E Testing Standard"
+category: Testing & Deployment
+dependencies: [TD_P002, TD_R001]
+created: 2026-03-07
+---
+
+# TD_R007: E2E Testing Standard {.unnumbered}
+
+## Summary
+
+Use shinytest2 for automated E2E browser testing, with `/shiny-debug` as a supplementary interactive tool.
+
+## Rationale
+
+The project has 80+ unit/integration test scripts but zero automated browser tests. Interactive testing via `/shiny-debug` is valuable for exploration but cannot be run automatically. shinytest2 is already declared as a dependency and integrates with testthat for batch execution.
+
+## Strategy: Dual-Track Testing
+
+| Track | Tool | Role | When |
+|-------|------|------|------|
+| **Automated** (primary) | shinytest2 + testthat | Regression, CI/CD, commit gate | Every commit, feature changes |
+| **Interactive** (supplementary) | /shiny-debug + agent-browser | Exploration, visual verification, debugging | Ad-hoc, new features |
+
+## Test Levels
+
+| Level | Name | Content | Frequency |
+|-------|------|---------|-----------|
+| L1 | Smoke Test | Login + home page loads | Every commit |
+| L2 | Navigation | All tabs switchable, no R errors | Every commit |
+| L3 | Functional | Component interaction, data filtering, KPI correctness | After feature changes |
+| L4 | Visual | Screenshot comparison (shinytest2 snapshot) | Major UI changes |
+
+## Implementation
+
+### Directory Structure
+
+```
+98_test/e2e/
+├── setup.R                     # Shared setup (loaded by testthat)
+├── helpers/
+│   ├── fn_e2e_app_driver.R     # AppDriver factory + login
+│   └── fn_e2e_assertions.R     # Shared assertions
+├── test-login.R                # L1: Login flow
+├── test-tab-navigation.R       # L2: All tabs
+├── test-vitalsigns.R           # L3: VitalSigns module
+├── test-global-filters.R       # L3: Global filter interaction
+└── test-{scenario}.R           # Additional test scenarios
+```
+
+### Execution
+
+Tests MUST be run from a company project root directory (where `app.R` exists):
+
+```bash
+# Direct execution
+cd D_RACING
+Rscript -e "testthat::test_dir('scripts/global_scripts/98_test/e2e')"
+
+# Via Makefile
+cd D_RACING/scripts/update_scripts
+make e2e
+
+# Filter specific tests
+make e2e-filter FILTER=login
+```
+
+### Core Pattern
+
+```r
+test_that("feature works correctly", {
+  app <- create_logged_in_app()
+  on.exit(stop_app_safely(app), add = TRUE)
+
+  # Navigate
+  app$set_inputs(sidebar_menu = "revenuePulse")
+  app$wait_for_idle(timeout = 10000)
+
+  # Assert
+  assert_no_r_errors(app, "revenuePulse load")
+  expect_equal(app$get_value(input = "sidebar_menu"), "revenuePulse")
+})
+```
+
+### Key Design Decisions
+
+1. **Real data only** (MP029): Tests read from the company's actual `app_data.duckdb`
+2. **Login encapsulated**: `create_logged_in_app()` handles AppDriver creation + passwordOnly login
+3. **Shared across companies**: Test scripts in `global_scripts/98_test/e2e/` work for any company
+4. **Cleanup required**: Every test must use `on.exit(stop_app_safely(app))` to prevent orphan processes
+
+## Violations
+
+- E2E tests using mock or synthetic data
+- No AppDriver cleanup after test completion
+- Tests placed outside `98_test/e2e/`
+- Running E2E tests from wrong working directory (not company root)
+- Hardcoding company-specific paths in shared test files
+
+## Compliant Examples
+
+- shinytest2 tests in `98_test/e2e/` using real `app_data`
+- `create_logged_in_app()` with `on.exit(stop_app_safely(app))`
+- `make e2e` from `update_scripts/` directory
