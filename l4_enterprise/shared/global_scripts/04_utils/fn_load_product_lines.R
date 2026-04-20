@@ -47,7 +47,7 @@ load_product_lines <- function(
     else meta_data_path, "\n",
     "Local fix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` ",
     "to bootstrap meta_data.duckdb from the CSV seed.",
-    "\nConnect fix: set SUPABASE_DB_* and ensure `df_product_line_profile` exists in app_data DB."
+    "\nConnect fix: set SUPABASE_DB_* or PGHOST/PGPASSWORD; ensure `df_product_line_profile` exists in app_data DB."
   )
 
   required_fields <- c(
@@ -60,8 +60,8 @@ load_product_lines <- function(
     file.exists(meta_data_path)
 
   if (!meta_ok) {
-    supabase_ok <- nzchar(Sys.getenv("SUPABASE_DB_HOST", "")) &&
-      nzchar(Sys.getenv("SUPABASE_DB_PASSWORD", ""))
+    supabase_ok <- exists("supabase_env_available", mode = "function", inherits = TRUE) &&
+      isTRUE(supabase_env_available())
     if (!supabase_ok || !exists("dbConnectAppData", mode = "function", inherits = TRUE)) {
       stop(actionable, call. = FALSE)
     }

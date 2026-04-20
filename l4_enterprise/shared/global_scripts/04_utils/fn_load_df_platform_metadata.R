@@ -20,7 +20,7 @@ load_df_platform_metadata <- function(
       "(DM_R054 v2.1.1).\n",
       detail,
       "Local fix: run `Rscript shared/update_scripts/ETL/all/all_ETL_meta_init_0IM.R` from company root.\n",
-      "Connect fix: set SUPABASE_DB_* and `database.mode: supabase` (or auto) in app_config.yaml.",
+      "Connect fix: set SUPABASE_DB_* or PGHOST/PGPASSWORD; use `database.mode: supabase` (or auto) in app_config.yaml.",
       call. = FALSE
     )
   }
@@ -36,13 +36,13 @@ load_df_platform_metadata <- function(
     return(DBI::dbReadTable(.meta_con, "df_platform"))
   }
 
-  supabase_ok <- nzchar(Sys.getenv("SUPABASE_DB_HOST", "")) &&
-    nzchar(Sys.getenv("SUPABASE_DB_PASSWORD", ""))
+  supabase_ok <- exists("supabase_env_available", mode = "function", inherits = TRUE) &&
+    isTRUE(supabase_env_available())
   if (!supabase_ok) {
     .fail(paste0(
       "  meta_data path: ",
       if (is.null(meta_path) || !nzchar(meta_path)) "(not set / missing file)" else meta_path,
-      "\n  Supabase: SUPABASE_DB_HOST or SUPABASE_DB_PASSWORD unset.\n"
+      "\n  DB env: need SUPABASE_DB_HOST+SUPABASE_DB_PASSWORD or PGHOST+PGPASSWORD.\n"
     ))
   }
   if (!exists("dbConnectAppData", mode = "function", inherits = TRUE)) {

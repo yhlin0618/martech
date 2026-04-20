@@ -23,6 +23,10 @@
 #'   - SUPABASE_DB_NAME: Default "postgres"
 #'   - SUPABASE_DB_USER: Default "postgres"
 #'
+#' If `SUPABASE_DB_HOST` / `SUPABASE_DB_PASSWORD` are unset, falls back to
+#' `PGHOST` / `PGPASSWORD` (and `PGPORT`, `PGDATABASE`, `PGUSER`) for Posit
+#' Connect and standard libpq tooling.
+#'
 #' Following Principles:
 #'   - SEC_R001: Credential Management (no hardcoded credentials)
 #'   - DM_R023: Universal DBI Approach
@@ -51,9 +55,18 @@ dbConnectSupabase <- function(
   }
 
   # Get connection parameters from environment variables if not provided
-  host <- trimws(host %||% Sys.getenv("SUPABASE_DB_HOST", ""))
-  port <- port %||% Sys.getenv("SUPABASE_DB_PORT", "5432")
-  dbname <- dbname %||% Sys.getenv("SUPABASE_DB_NAME", "postgres")
+  host <- trimws(host %||% "")
+  if (!nzchar(host)) host <- trimws(Sys.getenv("SUPABASE_DB_HOST", ""))
+  if (!nzchar(host)) host <- trimws(Sys.getenv("PGHOST", ""))
+
+  port <- port %||% ""
+  if (!nzchar(port)) port <- Sys.getenv("SUPABASE_DB_PORT", "")
+  if (!nzchar(port)) port <- Sys.getenv("PGPORT", "5432")
+  if (!nzchar(port)) port <- "5432"
+
+  dbname <- dbname %||% ""
+  if (!nzchar(dbname)) dbname <- Sys.getenv("SUPABASE_DB_NAME", "")
+  if (!nzchar(dbname)) dbname <- Sys.getenv("PGDATABASE", "postgres")
   dbname <- trimws(dbname)
   if (!nzchar(dbname)) {
     dbname <- "postgres"
@@ -64,22 +77,28 @@ dbConnectSupabase <- function(
       (nzchar(supabase_url) && grepl("supabase", supabase_url, ignore.case = TRUE))) {
     dbname <- "postgres"
   }
-  user <- user %||% Sys.getenv("SUPABASE_DB_USER", "postgres")
-  password <- password %||% Sys.getenv("SUPABASE_DB_PASSWORD", "")
+  user <- user %||% ""
+  if (!nzchar(user)) user <- Sys.getenv("SUPABASE_DB_USER", "")
+  if (!nzchar(user)) user <- Sys.getenv("PGUSER", "postgres")
+  if (!nzchar(user)) user <- "postgres"
+
+  password <- password %||% ""
+  if (!nzchar(password)) password <- Sys.getenv("SUPABASE_DB_PASSWORD", "")
+  if (!nzchar(password)) password <- Sys.getenv("PGPASSWORD", "")
 
   # Validate required parameters
   if (host == "") {
     stop(
-      "Supabase host not configured!\n",
-      "Set SUPABASE_DB_HOST environment variable or pass 'host' parameter.\n",
-      "Example: db.xxxxx.supabase.co"
+      "Database host not configured!\n",
+      "Set SUPABASE_DB_HOST or PGHOST (or pass 'host').\n",
+      "Example: aws-0-....pooler.supabase.com or db.xxxxx.supabase.co"
     )
   }
 
   if (password == "") {
     stop(
-      "Supabase password not configured!\n",
-      "Set SUPABASE_DB_PASSWORD environment variable or pass 'password' parameter."
+      "Database password not configured!\n",
+      "Set SUPABASE_DB_PASSWORD or PGPASSWORD (or pass 'password')."
     )
   }
 

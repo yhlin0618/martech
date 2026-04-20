@@ -24,6 +24,18 @@
 #'   - DM_R056: Posit Connect Deployment Assets
 #'   - SEC_R001: Credential Management
 #'
+#' Postgres credentials may use either `SUPABASE_DB_HOST` / `SUPABASE_DB_PASSWORD`
+#' or standard `PGHOST` / `PGPASSWORD` (and optional `PGPORT`, `PGDATABASE`, `PGUSER`)
+#' so Posit Connect Variable Sets can follow standard libpq naming.
+#'
+#' @keywords internal
+supabase_env_available <- function() {
+  (nzchar(Sys.getenv("SUPABASE_DB_HOST", "")) &&
+     nzchar(Sys.getenv("SUPABASE_DB_PASSWORD", ""))) ||
+    (nzchar(Sys.getenv("PGHOST", "")) &&
+       nzchar(Sys.getenv("PGPASSWORD", "")))
+}
+
 #' @export
 dbConnectAppData <- function(
     db_path = NULL,
@@ -82,10 +94,8 @@ duckdb_valid <- FALSE
     }
   }
 
-  # 5. Check Supabase availability
-  supabase_host <- Sys.getenv("SUPABASE_DB_HOST", "")
-  supabase_password <- Sys.getenv("SUPABASE_DB_PASSWORD", "")
-  supabase_available <- supabase_host != "" && supabase_password != ""
+  # 5. Check Supabase / Postgres (DM_R054: SUPABASE_* or libpq PG* vars)
+  supabase_available <- supabase_env_available()
 
   # 6. Connect based on mode
   if (mode == "duckdb") {
@@ -107,10 +117,10 @@ duckdb_valid <- FALSE
     if (!supabase_available) {
       stop(
         "Supabase mode requested but credentials not configured!\n",
-        "  SUPABASE_DB_HOST: ", if (supabase_host == "") "NOT SET" else "set", "\n",
-        "  SUPABASE_DB_PASSWORD: ", if (supabase_password == "") "NOT SET" else "set", "\n\n",
+        "  Set SUPABASE_DB_HOST + SUPABASE_DB_PASSWORD, or PGHOST + PGPASSWORD ",
+        "(optional: PGPORT, PGDATABASE, PGUSER).\n\n",
         "Solutions:\n",
-        "  1. Set environment variables in .env file or shell\n",
+        "  1. Define variables in a Posit Connect Variable Set attached to this content\n",
         "  2. Change database.mode to 'auto' or 'duckdb' in app_config.yaml"
       )
     }
@@ -129,7 +139,7 @@ duckdb_valid <- FALSE
         "  Supabase: credentials not configured\n\n",
         "Solutions:\n",
         "  1. For local dev: Run 'git lfs pull' to get app_data.duckdb\n",
-        "  2. For deployment: Set SUPABASE_DB_HOST and SUPABASE_DB_PASSWORD env vars"
+        "  2. For deployment: set SUPABASE_DB_* or PGHOST/PGPASSWORD env vars"
       )
     }
   }
