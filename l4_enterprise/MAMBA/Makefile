@@ -67,6 +67,11 @@ deploy-sync:
 		--exclude='*.duckdb' \
 		--exclude='*.wal' \
 		data/app_data/parameters/ $(DEPLOY_DIR)/data/app_data/parameters/
+	@# NOTE: meta_data.duckdb intentionally NOT shipped to the deploy bundle.
+	@# Posit Connect runs app_config.yaml > database.mode: supabase, so
+	@# Shiny reads df_platform / df_product_line from Supabase's canonical
+	@# tables (via dbConnectAppData). meta_data.duckdb is only a local-dev /
+	@# UPDATE_MODE canonical (DM_R054 v2.1 mode-aware).
 	@echo ""
 	@echo "✅ 同步完成。執行 'make deploy-push' 提交並推送。"
 
