@@ -39,10 +39,22 @@ load_df_platform_metadata <- function(
   supabase_ok <- exists("supabase_env_available", mode = "function", inherits = TRUE) &&
     isTRUE(supabase_env_available())
   if (!supabase_ok) {
+    .env_diag <- vapply(
+      c("SUPABASE_DB_HOST", "SUPABASE_DB_PASSWORD",
+        "SUPABASE_DB_PORT", "SUPABASE_DB_USER", "SUPABASE_DB_NAME",
+        "SUPABASE_URL",
+        "PGHOST", "PGPASSWORD", "PGPORT", "PGUSER", "PGDATABASE"),
+      function(v) sprintf("  %s = %s", v,
+                          if (nzchar(Sys.getenv(v, ""))) "SET" else "unset"),
+      character(1)
+    )
     .fail(paste0(
       "  meta_data path: ",
       if (is.null(meta_path) || !nzchar(meta_path)) "(not set / missing file)" else meta_path,
-      "\n  DB env: need SUPABASE_DB_HOST+SUPABASE_DB_PASSWORD or PGHOST+PGPASSWORD.\n"
+      "\n  DB env: need SUPABASE_DB_HOST+SUPABASE_DB_PASSWORD or PGHOST+PGPASSWORD.\n",
+      "  --- env var visibility (names only, values hidden) ---\n",
+      paste(.env_diag, collapse = "\n"),
+      "\n  ------------------------------------------------------\n"
     ))
   }
   if (!exists("dbConnectAppData", mode = "function", inherits = TRUE)) {
