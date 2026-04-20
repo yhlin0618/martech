@@ -58,20 +58,72 @@ if (is.null(app_configs$platforms)) {
 
 # DM_R054 v2.1.1: metadata from meta_data.duckdb when present; else PostgreSQL
 # app_data (see sc_Rprofile.R APP_MODE branch + fn_load_df_platform_metadata.R).
+# DEV bypass (temporary): set `startup.allow_missing_metadata: true` in
+# app_config.yaml (or env ALLOW_MISSING_METADATA=1) to boot with stub data
+# when neither DuckDB file nor Supabase creds are reachable. The UI will
+# render but data-dependent panels will be empty/broken.
+.allow_missing_metadata <- isTRUE(
+  (exists("app_configs", inherits = TRUE) &&
+     isTRUE(app_configs$startup$allow_missing_metadata))
+) ||
+  identical(tolower(Sys.getenv("ALLOW_MISSING_METADATA", "")),
+            "1")
+
+.stub_platform <- function() {
+  message("[startup] Using STUB df_platform (allow_missing_metadata).")
+  data.frame(
+    platform_name_english = c("All", "Shopee", "eBay"),
+    platform_name_chinese = c("\u5168\u90e8", "\u8766\u76ae", "eBay"),
+    platform_id = c("all", "cbz", "eby"),
+    product_id_coding = c("", "", ""),
+    stringsAsFactors = FALSE
+  )
+}
+.stub_product_line <- function() {
+  message("[startup] Using STUB df_product_line (allow_missing_metadata).")
+  data.frame(
+    product_line_name_english = "All",
+    product_line_name_chinese = "\u5168\u90e8",
+    product_line_id = "all",
+    stringsAsFactors = FALSE
+  )
+}
 
 if (!exists("df_platform", inherits = TRUE)) {
-  df_platform <- load_df_platform_metadata()
+  df_platform <- tryCatch(
+    load_df_platform_metadata(),
+    error = function(e) {
+      if (.allow_missing_metadata) {
+        warning("[startup] load_df_platform_metadata failed: ", conditionMessage(e),
+                "\n  Falling back to stub per allow_missing_metadata.")
+        .stub_platform()
+      } else {
+        stop(e)
+      }
+    }
+  )
 }
 
 if (!exists("df_product_line", inherits = TRUE)) {
   .scratch_con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  df_product_line <- load_product_lines(
-    conn = .scratch_con,
-    meta_data_path = if (exists("db_path_list", inherits = TRUE) &&
-      !is.null(db_path_list$meta_data)) {
-      db_path_list$meta_data
-    } else {
-      NULL
+  df_product_line <- tryCatch(
+    load_product_lines(
+      conn = .scratch_con,
+      meta_data_path = if (exists("db_path_list", inherits = TRUE) &&
+        !is.null(db_path_list$meta_data)) {
+        db_path_list$meta_data
+      } else {
+        NULL
+      }
+    ),
+    error = function(e) {
+      if (.allow_missing_metadata) {
+        warning("[startup] load_product_lines failed: ", conditionMessage(e),
+                "\n  Falling back to stub per allow_missing_metadata.")
+        .stub_product_line()
+      } else {
+        stop(e)
+      }
     }
   )
   try(DBI::dbDisconnect(.scratch_con), silent = TRUE)
