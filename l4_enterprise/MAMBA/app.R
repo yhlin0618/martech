@@ -6,6 +6,9 @@
 # (必須在此明確載入，以確保 rsconnect 將其包含在 manifest.json 中)
 library(RPostgres)
 
+# 在 profile / autoinit 之前鎖定 app 根目錄（Connect 上 here::here() 會落在 repo 根）
+Sys.setenv(PROJECT_ROOT = normalizePath(getwd()))
+
 # 載入 .Rprofile 以確保 autoinit() 函數可用
 if (file.exists(".Rprofile")) {
   source(".Rprofile")
@@ -22,9 +25,6 @@ main_file <- config$deployment$main_file
 if (!file.exists(main_file)) {
   stop("Cannot find main_file: ", main_file)
 }
-
-# Save project root so union files can restore it after shiny::runApp() changes wd
-Sys.setenv(PROJECT_ROOT = normalizePath(getwd()))
 
 # Ensure tags resolves to htmltools in runApp/Connect envs.
 # Avoids masked `tags` objects breaking tags$head usage in UI scripts.

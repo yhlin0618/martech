@@ -72,7 +72,13 @@
   base <- if (exists("APP_DIR", envir = .InitEnv)) {
     .InitEnv$APP_DIR
   } else {
-    base <- here::here()
+    # Posit Connect / subdir deploy: here::here() = git repo root, not the Shiny app folder.
+    # app.R sets PROJECT_ROOT = getwd() before sourcing the union; prefer that over here().
+    base <- if (nzchar(Sys.getenv("PROJECT_ROOT", ""))) {
+      normalizePath(Sys.getenv("PROJECT_ROOT"), winslash = "/", mustWork = FALSE)
+    } else {
+      here::here()
+    }
     list2env(list(
       APP_DIR = base,
       COMPANY_DIR = dirname(base),
